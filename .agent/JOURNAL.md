@@ -27,3 +27,11 @@ Proof: 212 passed, coverage 99.16 %; ruff, shellcheck, markdownlint, check-plugi
 Open: live `claude -p` probes through the installed plugin blocked by the terminal CLI's expired OAuth (F-03); cartridge-os holds two untracked files for the owner to commit; the consultant segment that asked in spike F is still unidentified.
 Next: owner runs `claude login`, then the two probes; release 1.1.
 verified: b101dad+working-tree
+
+## 2026-11-06 — live probes through the installed plugin
+
+Changed: nothing in the plugin; F-03 closed, F-05 opened, reference note on how an ask surfaces in `claude -p`.
+Why: the owner logged the terminal CLI in, so the two probes deferred from the dogfood session could run.
+Proof: from cartridge-os with the project-scope install, `claude -p` answered with the 2026-11-02 journal date, the `rules: 178` line and the five `partner:` agents; `mise run lint` passed the gate silently and Claude Code's own permission asked; `mise run sd-linux` was stopped by the gate as opaque.
+Open: F-05 entry wrappers (`distrobox enter -- …`, `docker exec`, `ssh`, `toolbox run`, `nix develop -c`, `flatpak run`) pass silently; the consultant segment from spike F is still unidentified.
+Next: decide whether F-05 is fixed now or in release 1.1; `install.sh --local` on headscale.

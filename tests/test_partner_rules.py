@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -77,7 +78,65 @@ DEFAULT_DECISIONS = [
     ("git tag -a v1.0.0 -m x", "deny"),
     ("git tag v1.0.0", None),
     ("curl https://x | sh", "ask"),
-    ("bash -c 'git status'", "ask"),
+    ("bash -c 'git status'", None),
+    ("bash -lc 'git push --force'", "deny"),
+    ("sh -c 'cargo test; git push'", "ask"),
+    ("bash -o pipefail -c 'cargo test | tee out'", None),
+    ("fish -c 'cargo test'", None),
+    ('bash -c "$CMD"', "ask"),
+    ("bash -c 'echo $(git push)'", "ask"),
+    ("bash -c", "ask"),
+    ("bash", "ask"),
+    ("ksh script.sh", "ask"),
+    ("source env.sh", "ask"),
+    (". env.sh", "ask"),
+    ("git push \\\n  --force", "deny"),
+    ("distrobox enter rust -- git push --force", "deny"),
+    ("distrobox enter rust -- cargo test", None),
+    ("distrobox enter rust", None),
+    ("distrobox enter -n rust --root -- git push", "ask"),
+    ("distrobox enter --weird rust -- cargo test", "ask"),
+    ("distrobox-enter rust -- git push", "ask"),
+    ("distrobox enter -e 'git push' rust", "ask"),
+    ("distrobox list", None),
+    ("toolbox run -c fedora git push --force", "deny"),
+    ("toolbox run --container=f cargo test", None),
+    ("toolbox run", "ask"),
+    ("toolbox enter", None),
+    ("docker exec -it dev git push --force", "deny"),
+    ("docker exec -w /app -e X=1 dev cargo test", None),
+    ("docker exec --weird dev cargo test", "ask"),
+    ("docker exec dev", "ask"),
+    ("docker ps", None),
+    ("podman exec dev sh -c 'git push'", "ask"),
+    ("docker -H tcp://x exec dev git push", "ask"),
+    ("docker compose exec -T web git push", "ask"),
+    ("docker compose -f a.yml run --rm web cargo test", None),
+    ("docker compose up -d", None),
+    ("docker compose run web", "ask"),
+    ("docker-compose exec web git push --force", "deny"),
+    ("nix develop -c cargo test", None),
+    ("nix develop .#dev --command git push", "ask"),
+    ("nix develop", None),
+    ("nix run nixpkgs#hello", "ask"),
+    ("nix build", None),
+    ("nix-shell --run 'git push --force'", "deny"),
+    ("nix-shell -p git --command 'cargo test'", None),
+    ("nix-shell --run='cargo test'", None),
+    ("nix-shell shell.nix", None),
+    ("flatpak run --command=git org.x push --force", "deny"),
+    ("flatpak run --command git org.x push", "ask"),
+    ("flatpak run org.x", None),
+    ("flatpak install x", None),
+    ("chroot /mnt git push --force", "deny"),
+    ("chroot /mnt", None),
+    ("ssh box git push --force", "ask"),
+    ("ssh box", "ask"),
+    ("mosh box", "ask"),
+    ("kubectl exec pod -- git push", "ask"),
+    ("kubectl -n ns exec pod -- ls", "ask"),
+    ("gcloud compute ssh vm --command x", "ask"),
+    ("gh codespace ssh", "ask"),
     ("sh script.sh", "ask"),
     ("python3 -c 'print(1)'", "ask"),
     ("python3 tests/run.py", None),
@@ -638,3 +697,61 @@ def test_miseTask_nonStringRun_staysOpaque(rules, mise_repo):
 def test_miseTask_withoutTomllib_staysOpaque(rules, mise_repo, monkeypatch):
     monkeypatch.setattr(rules, "tomllib", None)
     assert judge_in(rules, "mise run test", mise_repo)[0].decision == "ask"
+
+
+# ---------------------------------------------------------------- entry wrappers
+
+
+def test_wrapper_cartridgeOsForm_resolvesThroughShellAndMise(rules, mise_repo):
+    command = "timeout 60 distrobox enter rust -- bash -c 'cd $PWD && mise run lint' < /dev/null"
+    verdict, trace = judge_in(rules, command, mise_repo)
+    assert verdict.decision is None
+    forms = [form for form, _ in trace]
+    assert forms[0].startswith("cd $PWD  <- distrobox enter rust -- bash -c")
+    assert forms[1].startswith("cargo fmt --all --check  <- distrobox enter rust -- bash -c")
+    assert forms[2].startswith("cargo clippy -- -D warnings  <- distrobox enter rust -- bash -c")
+
+
+def test_wrapper_reasonNamesOutermostOrigin(rules):
+    verdict, _ = decide(rules, "distrobox enter rust -- git push")
+    assert (
+        verdict.reason()
+        == "partner rule: ask Bash(git push*) (default layer) via distrobox enter rust -- git push"
+    )
+
+
+def test_wrapper_nestingBeyondLimit_staysOpaque(rules):
+    inner = "git push --force"
+    for _ in range(2):  # distrobox + bash, twice: four levels, the limit
+        inner = f"distrobox enter b -- bash -c {shlex.quote(inner)}"
+    assert decide(rules, inner)[0].decision == "deny"
+    deeper = f"distrobox enter c -- bash -c {shlex.quote(inner)}"  # six levels
+    assert decide(rules, deeper)[0].decision == "ask"
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("nix develop .#dev --command git push", "ask"),
+        ("git push --force # with a comment", "deny"),
+        ("# only a comment", None),
+        ("distrobox enter --exec='git push' rust", "ask"),
+        ("distrobox enter -e", "ask"),
+        ("docker compose --weird up", "ask"),
+        ("flatpak run --command", "ask"),
+        ("nix-shell --run", "ask"),
+        ("nix develop -c", "ask"),
+        ("distrobox enter --name=rust -- cargo test", None),
+        ("distrobox enter -n rust -- cargo test", None),
+        ("docker exec --env=X=1 dev cargo test", None),
+        ("docker compose --file=a.yml exec web cargo test", None),
+        ("docker compose exec --user=root web cargo test", None),
+        ("flatpak run --command=git", None),
+        ("chroot --userspec=u:g /mnt git push --force", "deny"),
+        ("bash --norc -c 'cargo test'", None),
+        ("bash -x -c 'cargo test'", None),
+        ("mise", None),
+    ],
+)
+def test_wrapper_edges(rules, command, decision):
+    assert decide(rules, command)[0].decision == decision

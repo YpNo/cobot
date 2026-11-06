@@ -13,7 +13,8 @@ one line of context:
   `.agent/partner.rules`), their counts, every rule with provenance.
 - `check "<cmd>" [--tool T] [--agent A]` → `deny`, `ask` or `none`, with the winning rule and layer.
 - `explain "<cmd>"` → each segment after normalisation and every rule that matched it; a mise
-  task appears as the commands it runs (`cargo test --workspace  <- mise run test`).
+  task, a `bash -c` string or an entry wrapper (`distrobox enter … --`, `docker exec`) appears as
+  the commands behind it (`cargo test --workspace  <- mise run test`).
 - `sync [--settings PATH]` → the JSON fragment and a unified diff. Show it; the owner applies it.
   You never edit `settings.json` (the gate denies it, and the owner's trust depends on it).
 

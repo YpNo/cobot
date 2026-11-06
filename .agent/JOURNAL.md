@@ -35,3 +35,11 @@ Why: the owner logged the terminal CLI in, so the two probes deferred from the d
 Proof: from cartridge-os with the project-scope install, `claude -p` answered with the 2026-11-02 journal date, the `rules: 178` line and the five `partner:` agents; `mise run lint` passed the gate silently and Claude Code's own permission asked; `mise run sd-linux` was stopped by the gate as opaque.
 Open: F-05 entry wrappers (`distrobox enter -- …`, `docker exec`, `ssh`, `toolbox run`, `nix develop -c`, `flatpak run`) pass silently; the consultant segment from spike F is still unidentified.
 Next: decide whether F-05 is fixed now or in release 1.1; `install.sh --local` on headscale.
+
+## 2026-11-06 — F-05: entry wrappers looked through
+
+Changed: the gate parses entry wrappers with per-wrapper option tables (an unknown option keeps the wrapper opaque) and judges the command behind them, recursively with mise tasks and shell `-c` strings up to four levels; remote execution (`ssh`, `mosh`, `kubectl exec`, `gcloud … ssh`, `gh codespace ssh`) and `source`/`.` ask; backslash line continuations no longer split a command; `#` inside a word no longer truncates it.
+Why: cartridge-os's documented form `distrobox enter rust -- bash -c "cd $PWD && mise run lint"` passed the gate silently, as did docker exec, ssh and the rest (F-05); a force push written over two lines only asked.
+Proof: 292 passed, Total coverage: 99.09%; ruff, shellcheck, markdownlint, check-plugin, `claude plugin validate --strict` clean; live from cartridge-os through the refreshed install: the distrobox form reached Claude Code's own permission prompt with the gate silent, `ssh box git push --force` was stopped by the gate as opaque.
+Open: the consultant segment that asked in spike F is still unidentified; cartridge-os's CONTEXT could drop the redundant `cd $PWD` (distrobox keeps the working directory).
+Next: `install.sh --local` on headscale; release 1.1.

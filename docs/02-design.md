@@ -186,6 +186,12 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
   first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a
   task with `depends`, `file`, `shell`, `dir`, templating or command substitution stays opaque;
+- looks through **entry wrappers** the same way: `distrobox enter … -- <cmd>`, `toolbox run`,
+  `docker|podman exec`, `docker compose exec|run`, `nix develop -c`, `nix-shell --run`,
+  `flatpak run --command=`, `chroot`, and a shell's `-c '<string>'`, each parsed with its own option
+  table (an option the table does not know keeps the wrapper opaque), nested up to four levels;
+  remote execution (`ssh`, `mosh`, `kubectl exec`, `gcloud … ssh`, `gh codespace ssh`) cannot be
+  judged and asks;
 - emits `hookSpecificOutput.permissionDecision: deny` (reason = rule + layer, quoted and truncated)
   or `ask`; **it never emits `allow`**, so the plugin can only narrow what Claude Code permits;
 - resolves the project layer through `git rev-parse --git-common-dir`, so worktrees share it;

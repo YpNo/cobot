@@ -142,8 +142,10 @@ is pinned to a commit SHA and tokens are read-only except the release job.
 ## Security
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined
-obfuscation. Shell interpreters, task runners and command substitution are opaque and ask; `mise`
-tasks are the exception, resolved from the mise config and judged command by command.
+obfuscation. Interpreters running code, task runners, remote execution and command substitution
+are opaque and ask. `mise` tasks, a shell's `-c` string and container or sandbox entry wrappers
+(`distrobox enter`, `toolbox run`, `docker exec`, `nix develop -c`, …) are looked through and the
+command behind them is judged.
 Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
 protection is advisory for the model's own reads. Report a vulnerability through a private GitHub
 security advisory on this repository.

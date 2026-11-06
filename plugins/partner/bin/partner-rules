@@ -51,7 +51,10 @@ PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
     "flock": (frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}), 1),
 }
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
-OPAQUE = frozenset("sh bash zsh dash fish eval xargs sudo doas su make just task npx".split())
+OPAQUE = frozenset(
+    "sh bash zsh dash ksh fish eval source . xargs sudo doas su make just task npx ssh mosh".split()
+)
+SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
     "mise": frozenset({"run", "exec", "x", "r"}),
     "npm": frozenset({"run", "run-script", "exec", "x"}),
@@ -61,7 +64,46 @@ OPAQUE_SUBCOMMANDS = {
     "cargo": frozenset({"xtask"}),
     "uv": frozenset({"run"}),
     "uvx": frozenset({""}),
+    "kubectl": frozenset({"exec"}),
 }
+# entry wrappers: the command they run is visible once their own options are parsed
+SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
+DISTROBOX_VALUE_OPTIONS = frozenset({"-n", "--name", "-a", "--additional-flags"})
+DISTROBOX_FLAGS = frozenset(
+    {"-r", "--root", "-T", "--no-tty", "-nw", "--no-workdir", "-v", "--verbose", "-d", "--dry-run"}
+)
+TOOLBOX_VALUE_OPTIONS = frozenset(
+    {"-c", "--container", "-d", "--distro", "-r", "--release", "--preserve-fds"}
+)
+EXEC_VALUE_OPTIONS = frozenset(
+    {"-e", "--env", "--env-file", "-u", "--user", "-w", "--workdir", "--detach-keys"}
+)
+EXEC_FLAGS = frozenset(
+    {"-i", "-t", "-d", "-it", "-ti", "-dit", "-idt", "--interactive", "--tty", "--detach", "--privileged"}
+)
+COMPOSE_VALUE_OPTIONS = frozenset(
+    {
+        "-f",
+        "--file",
+        "-p",
+        "--project-name",
+        "--profile",
+        "--env-file",
+        "--project-directory",
+        "--ansi",
+        "--progress",
+    }
+)
+COMPOSE_FLAGS = frozenset({"--compatibility", "--dry-run"})
+COMPOSE_RUN_VALUE_OPTIONS = frozenset(
+    "-e --env -u --user -w --workdir --entrypoint -v --volume -l --label --name -p --publish --index".split()
+)
+COMPOSE_RUN_FLAGS = frozenset(
+    "-T --no-TTY -d --detach --rm --no-deps --service-ports --privileged --build --remove-orphans "
+    "-i --interactive -t --tty -it --quiet-pull --use-aliases".split()
+)
+NOTHING_HIDDEN: list[str] = []  # a wrapper form that runs nothing of its own (interactive, or not a wrapper)
+MAX_EXPANSION = 4  # nesting depth of runners and wrappers resolved before the rest stays opaque
 INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
 # mise tasks are resolved from the config (closest folder first, local files first)
 MISE_CONFIGS = (
@@ -205,8 +247,10 @@ def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]
 
 def split_segments(command: str) -> list[list[str]]:
     """Split a shell command into argv-like segments at shell operators."""
-    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
+    joined = command.replace("\\\n", " ").replace("\n", " ; ")
+    lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
     segments: list[list[str]] = [[]]
     for token in lexer:
         if token in SEPARATORS:
@@ -330,11 +374,184 @@ def is_opaque(plain: list[str]) -> bool:
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
     if head in OPAQUE_SUBCOMMANDS:
-        sub = plain[1] if len(plain) > 1 else ""
+        verb = strip_global_options(plain)
+        sub = verb[1] if len(verb) > 1 else ""
         return sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]
     if head in INTERPRETERS:
         return any(token in INLINE_CODE_FLAGS for token in plain[1:])
+    if head in WRAPPER_PARSERS:  # opaque until expand_segments resolves the inner command
+        return WRAPPER_PARSERS[head](plain) != NOTHING_HIDDEN
     return False
+
+
+def split_options(
+    tokens: list[str], value_options: frozenset[str], flags: frozenset[str]
+) -> list[str] | None:
+    """Drop a wrapper's leading options; None on an option it does not know (the inner command
+    could then start anywhere, so the wrapper stays opaque)."""
+    rest = list(tokens)
+    while rest and rest[0].startswith("-") and rest[0] != "--":
+        head = rest[0]
+        name = head.split("=", 1)[0]
+        if name in value_options:
+            rest = rest[1:] if "=" in head else rest[2:]
+        elif name in flags:
+            rest = rest[1:]
+        else:
+            return None
+    return rest
+
+
+def inner_distrobox(plain: list[str]) -> list[str] | None:
+    """``distrobox enter [options] [box] -- <cmd>`` (and ``distrobox-enter``, and the old ``-e``)."""
+    if plain[0] == "distrobox-enter":
+        tokens = plain[1:]
+    elif len(plain) > 1 and plain[1] == "enter":
+        tokens = plain[2:]
+    else:
+        return NOTHING_HIDDEN
+    inner: list[str] | None = None
+    if "--" in tokens:
+        split = tokens.index("--")
+        inner, tokens = tokens[split + 1 :], tokens[:split]
+    while tokens:
+        head = tokens[0]
+        name = head.split("=", 1)[0]
+        if name in ("-e", "--exec"):
+            if "=" in head:
+                return [head.split("=", 1)[1]]
+            return [tokens[1]] if len(tokens) > 1 else None
+        if name in DISTROBOX_VALUE_OPTIONS:
+            tokens = tokens[1:] if "=" in head else tokens[2:]
+        elif name in DISTROBOX_FLAGS:
+            tokens = tokens[1:]
+        elif head.startswith("-"):
+            return None
+        else:
+            tokens = tokens[1:]  # the box name
+    return [shlex.join(inner)] if inner else NOTHING_HIDDEN
+
+
+def inner_toolbox(plain: list[str]) -> list[str] | None:
+    """``toolbox run [-c box] <cmd>``; ``toolbox enter`` is interactive."""
+    if len(plain) < 2 or plain[1] != "run":
+        return NOTHING_HIDDEN
+    rest = split_options(plain[2:], TOOLBOX_VALUE_OPTIONS, frozenset())
+    return [shlex.join(rest)] if rest else None
+
+
+def inner_compose(tokens: list[str]) -> list[str] | None:
+    rest = split_options(tokens, COMPOSE_VALUE_OPTIONS, COMPOSE_FLAGS)
+    if rest is None:
+        return None
+    if rest[:1] not in (["exec"], ["run"]):
+        return NOTHING_HIDDEN
+    rest = split_options(rest[1:], COMPOSE_RUN_VALUE_OPTIONS, COMPOSE_RUN_FLAGS)
+    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+
+
+def inner_container(plain: list[str]) -> list[str] | None:
+    """``docker|podman exec [options] <container> <cmd>`` and ``docker compose exec|run``."""
+    plain = strip_global_options(plain)
+    tokens = plain[1:]
+    if plain[0] == "docker-compose":
+        return inner_compose(tokens)
+    if tokens[:1] == ["compose"]:
+        return inner_compose(tokens[1:])
+    if tokens[:1] != ["exec"]:
+        return NOTHING_HIDDEN
+    rest = split_options(tokens[1:], EXEC_VALUE_OPTIONS, EXEC_FLAGS)
+    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+
+
+def option_value(tokens: list[str], names: tuple[str, ...]) -> list[str] | None | bool:
+    """The value of the first of ``names`` in ``tokens`` (``--run x`` or ``--run=x``) as a one-command
+    list; None when the option is there without a value; False when it is absent."""
+    for index, token in enumerate(tokens):
+        name, _, value = token.partition("=")
+        if name in names:
+            if value:
+                return [value]
+            return [tokens[index + 1]] if index + 1 < len(tokens) else None
+    return False
+
+
+def inner_nix(plain: list[str]) -> list[str] | None:
+    """``nix develop|shell … -c <cmd>``, ``nix-shell … --run '<string>'``; ``nix run`` stays opaque."""
+    if plain[0] == "nix-shell":
+        found = option_value(plain[1:], ("--run", "--command"))
+        return NOTHING_HIDDEN if found is False else found
+    sub = plain[1] if len(plain) > 1 else ""
+    if sub == "run":
+        return None
+    if sub not in ("develop", "shell"):
+        return NOTHING_HIDDEN
+    for flag in ("-c", "--command"):
+        if flag in plain:
+            inner = plain[plain.index(flag) + 1 :]
+            return [shlex.join(inner)] if inner else None
+    return NOTHING_HIDDEN
+
+
+def inner_flatpak(plain: list[str]) -> list[str] | None:
+    """``flatpak run --command=<cmd> <app> <args>``; running the app itself hides nothing."""
+    if len(plain) < 2 or plain[1] != "run":
+        return NOTHING_HIDDEN
+    command: str | None = None
+    rest = plain[2:]
+    while rest and rest[0].startswith("-"):
+        name, _, value = rest[0].partition("=")
+        if name == "--command":
+            if value:
+                command = value
+            elif len(rest) > 1:
+                command, rest = rest[1], rest[1:]
+            else:
+                return None
+        rest = rest[1:]
+    if command is None:
+        return NOTHING_HIDDEN
+    return [shlex.join([command, *rest[1:]])]
+
+
+def inner_chroot(plain: list[str]) -> list[str] | None:
+    rest = plain[1:]
+    while rest and rest[0].startswith("-"):  # chroot's own options all take ``=`` values
+        rest = rest[1:]
+    return [shlex.join(rest[1:])] if len(rest) > 1 else NOTHING_HIDDEN
+
+
+WRAPPER_PARSERS = {
+    "distrobox": inner_distrobox,
+    "distrobox-enter": inner_distrobox,
+    "toolbox": inner_toolbox,
+    "docker": inner_container,
+    "podman": inner_container,
+    "docker-compose": inner_container,
+    "nix": inner_nix,
+    "nix-shell": inner_nix,
+    "flatpak": inner_flatpak,
+    "chroot": inner_chroot,
+}
+
+
+def expand_shell(plain: list[str]) -> list[str] | None:
+    """``bash -c '<string>'`` (also ``-lc``, ``-ec`` …) becomes the string; a script file, stdin or an
+    interactive shell stays opaque."""
+    rest = plain[1:]
+    while rest:
+        token = rest[0]
+        if token in SHELL_VALUE_OPTIONS:
+            rest = rest[2:]
+        elif token.startswith("--"):
+            rest = rest[1:]
+        elif len(token) > 1 and token[0] in "-+" and "c" in token[1:]:
+            return [rest[1]] if len(rest) > 1 else None
+        elif len(token) > 1 and token[0] in "-+":
+            rest = rest[1:]
+        else:
+            return None
+    return None
 
 
 def mise_task_lines(spec: object) -> list[str] | None:
@@ -374,10 +591,10 @@ def mise_task_commands(task: str, cwd: str | None) -> list[str] | None:
     return None
 
 
-def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
+def expand_mise(plain: list[str], cwd: str | None) -> list[str] | None:
     """The commands behind a mise invocation: ``mise run <task>`` (or the ``mise <task>`` shorthand)
     from the mise config, ``mise exec … -- <cmd>`` from argv. None when they cannot be known."""
-    if len(plain) < 2 or plain[0] != "mise":
+    if len(plain) < 2:
         return None
     sub, args = plain[1], plain[2:]
     if sub in ("exec", "x"):
@@ -398,22 +615,42 @@ def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
     extra = args[1:] if args[:1] == ["--"] else args
     if extra:
         commands[-1] = f"{commands[-1]} {shlex.join(extra)}"
-    if any(has_substitution(command) for command in commands):
+    return commands
+
+
+def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a runner, a shell ``-c`` string or an entry wrapper; None when unknown."""
+    if not plain:
+        return None
+    head = plain[0]
+    if head == "mise":
+        commands = expand_mise(plain, cwd)
+    elif head in SHELLS:
+        commands = expand_shell(plain)
+    elif head in WRAPPER_PARSERS:
+        commands = WRAPPER_PARSERS[head](plain)
+    else:
+        return None
+    if commands and any(has_substitution(command) for command in commands):
         return None
     return commands
 
 
-def expand_segments(segments: list[list[str]], cwd: str | None) -> list[tuple[list[str], str]]:
-    """Replace each resolvable runner segment by the commands it runs, tagged with their origin."""
+def expand_segments(
+    segments: list[list[str]], cwd: str | None, depth: int = 0
+) -> list[tuple[list[str], str]]:
+    """Replace each resolvable runner or wrapper segment by the commands it runs, recursively up to
+    MAX_EXPANSION levels, tagged with the outermost origin."""
     out: list[tuple[list[str], str]] = []
     for segment in segments:
         plain = strip_wrappers(segment)
-        commands = expand_runner(plain, cwd) if is_opaque(plain) else None
-        if commands is None:
+        commands = expand_runner(plain, cwd) if depth < MAX_EXPANSION and is_opaque(plain) else None
+        if not commands:
             out.append((segment, ""))
             continue
         origin = " ".join(plain)[:MAX_ORIGIN]
-        out.extend((sub, origin) for command in commands for sub in split_segments(command))
+        inner = [sub for command in commands for sub in split_segments(command)]
+        out.extend((tokens, origin) for tokens, _ in expand_segments(inner, cwd, depth + 1))
     return out
 
 

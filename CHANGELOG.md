@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   command substitution stays opaque; a `mise` global flag or unknown subcommand now asks.
 - `install.sh --refresh [DIR]`: uninstall and reinstall at project scope, the only way a
   same-version edit reaches an installed copy (`claude plugin update` keeps the cache).
+- The gate looks through entry wrappers and judges the command behind them: `distrobox enter …
+  -- <cmd>` (and `-e`), `toolbox run`, `docker|podman exec`, `docker compose exec|run`,
+  `nix develop -c`, `nix-shell --run`, `flatpak run --command=`, `chroot`, and a shell's `-c`
+  string, nested up to four levels; an option a wrapper's table does not know keeps it opaque.
+  Remote execution now asks: `ssh`, `mosh`, `kubectl exec`, `gcloud … ssh`, `gh codespace ssh`;
+  so do `source` and `.`.
 
 ### Changed
 
@@ -23,6 +29,9 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - The brief's hard cap could overshoot its limit by one character.
+- A backslash line continuation split a command into two segments, so `git push \` followed by
+  `--force` on the next line only asked. A `#` inside a word (`nix develop .#dev`) no longer
+  truncates the command.
 
 ## [0.1.0] - 2026-11-06
 

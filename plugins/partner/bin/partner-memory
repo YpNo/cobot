@@ -37,9 +37,12 @@ from _partner_common import (  # noqa: E402
 )
 
 DEFAULT_BUDGET = 6000
-CONTEXT_CAP = 2500
+CONTEXT_CAP = 2500  # the least CONTEXT.md gets in the brief
+CONTEXT_MAX = 4000  # the most, when a short journal leaves room
 ENTRY_CAP = 1200
 FINDINGS_FLOOR = 400
+SECTION_MARKER_RESERVE = 120
+BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
@@ -127,17 +130,45 @@ def read_lines(path: Path) -> list[str]:
 # ---------------------------------------------------------------- brief
 
 
-def context_head(text: str) -> str:
+def context_head(text: str, limit: int = CONTEXT_CAP) -> str:
     kept: list[str] = []
     for line in text.splitlines():
         if line.startswith("## Shape") or line.startswith("## Applies"):
             break
         kept.append(line)
-    return cap("\n".join(kept).strip(), CONTEXT_CAP)
+    return cap_sections("\n".join(kept).strip(), limit)
+
+
+TRUNCATED_MARKER = "\n…(truncated)"
 
 
 def cap(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 12].rstrip() + "\n…(truncated)"
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(TRUNCATED_MARKER)].rstrip() + TRUNCATED_MARKER
+
+
+def cap_sections(text: str, limit: int) -> str:
+    """Cap on ``## `` boundaries: whole sections are dropped from the end and named, so the owner
+    can see what the brief no longer carries and reorder CONTEXT.md if it matters."""
+    if len(text) <= limit:
+        return text
+    sections = [section for section in re.split(r"(?m)^(?=## )", text) if section]
+    kept: list[str] = []
+    dropped: list[str] = []
+    used = 0
+    for section in sections:
+        if not dropped and used + len(section) <= limit - SECTION_MARKER_RESERVE:
+            kept.append(section)
+            used += len(section)
+        else:
+            dropped.append(section.splitlines()[0].lstrip("# ").strip() if section.startswith("## ") else "preamble")
+    if not kept:
+        return cap(text, limit)
+    names = ", ".join(dropped)
+    if len(names) > SECTION_MARKER_RESERVE - 30:
+        names = names[: SECTION_MARKER_RESERVE - 31] + "…"
+    return "".join(kept).rstrip() + f"\n…(truncated) sections dropped: {names}"
 
 
 def trim_entry(entry: str) -> str:
@@ -169,13 +200,8 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
         trusted, reason = mem.trust()
         if not trusted:
             return f"partner memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Run /partner:onboard."
-    blocks: list[str] = []
-    context = context_head(mem.read("CONTEXT.md"))
-    if context:
-        blocks.append("## CONTEXT\n" + context)
     entries = mem.journal_entries()[:2]
-    if entries:
-        blocks.append("## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries))
+    journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
     findings = mem.open_findings()
     findings_block = ""
     if findings:
@@ -189,6 +215,9 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     if (mem.dir / "ARCHITECTURE.md").is_file():
         tail.append("ARCHITECTURE.md present (read on demand)")
     reserve = min(FINDINGS_FLOOR, len(findings_block)) + sum(len(t) + 1 for t in tail)
+    room = budget - reserve - len(journal_block) - BLOCK_SEPARATORS
+    context = context_head(mem.read("CONTEXT.md"), max(CONTEXT_CAP, min(CONTEXT_MAX, room)))
+    blocks = [block for block in ("## CONTEXT\n" + context if context else "", journal_block) if block]
     text = cap("\n\n".join(blocks), max(budget - reserve, 200))
     parts = [text]
     if findings_block:

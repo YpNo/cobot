@@ -379,3 +379,48 @@ def test_session_cli(session, capsys, monkeypatch):
     out = json.loads(capsys.readouterr().out)
     assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert session.main([]) == 2
+
+
+def test_brief_longContextDropsWholeSectionsAndNamesThem(memory, repo):
+    filler = "\n".join(f"- line {i}" for i in range(200))
+    context = (
+        f"# x\n\nprofile: cli\n\n## Stack\n{filler}\n\n## Commands\n{filler}\n\n## Where things are\n- a: b\n"
+    )
+    seed(repo, context=context)
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "## Stack" in brief and "## Commands" not in brief
+    assert "…(truncated) sections dropped: Commands, Where things are" in brief
+
+
+def test_capSections_firstSectionTooBig_fallsBackToHardCap(memory):
+    text = "## A\n" + "x" * 3000
+    capped = memory.cap_sections(text, 2500)
+    assert capped.endswith("…(truncated)") and len(capped) <= 2500
+
+
+def test_capSections_shortTextUnchanged(memory):
+    assert memory.cap_sections("## A\nshort", 2500) == "## A\nshort"
+
+
+LONG_CONTEXT = (
+    "# x\n\nprofile: cli\n\n## Stack\n"
+    + "\n".join(f"- line {i}" for i in range(150))
+    + "\n\n## Commands\n"
+    + "\n".join(f"- line {i}" for i in range(150))
+    + "\n\n## Where things are\n- a: b\n"
+)
+
+
+def test_brief_contextGrowsIntoRoomLeftByShortJournal(memory, repo):
+    assert len(LONG_CONTEXT) > memory.CONTEXT_CAP
+    seed(repo, context=LONG_CONTEXT)
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "## Where things are" in brief and "truncated" not in brief
+
+
+def test_brief_contextFallsBackToFloorWhenJournalIsLong(memory, repo):
+    entry = "\n".join(f"- did {i}" for i in range(150))
+    journal = f"# Journal\n\n## 2026-01-02 — two\n{entry}\n\n## 2026-01-01 — one\n{entry}\n"
+    seed(repo, journal=journal, context=LONG_CONTEXT)
+    brief = memory.build_brief(memory.Memory(), 5000, trust_check=False)
+    assert "sections dropped" in brief and len(brief) <= 5000 + 600

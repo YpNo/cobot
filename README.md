@@ -2,34 +2,43 @@
 
 ## Overview
 
-A Claude Code plugin marketplace that turns the main thread into a governed orchestrator: a
-conceptor that writes one spec, a fresh-context challenger, per-language builders, experts as
-skills, committed memory, and a rules gate that decides every outward action with `never`, `ask`
-or `allow`. Built for small personal and open-source repositories where efficiency matters more
-than ceremony. The design is in [docs/02-design.md](docs/02-design.md); decisions are in
-[docs/adr](docs/adr).
+A Claude Code plugin marketplace that turns the main thread into a governed orchestrator. One
+plugin, `partner`, brings a conceptor that writes one spec, a fresh-context challenger,
+per-language builders, experts as skills, committed memory per repository, and a rules gate that
+decides every outward action with `never`, `ask` or `allow`. Built for small personal and
+open-source repositories where efficiency matters more than ceremony. Design:
+[docs/02-design.md](docs/02-design.md); decisions: [docs/adr](docs/adr); release plan in the
+design, section 15.
 
-Release 0 (this version) ships the repository bootstrap: manifests, the challenger agent, the
-rules gate in its built-in-rules form, the installer and CI. Skills, builders and memory arrive in
-release 1.
+Release 1 (0.1.0) is the dogfood release: everything below works from a checkout through
+`install.sh --dev` or `--project`. Release 1.1 adds Python and TypeScript builders, `ship`,
+`contribute`, `security-sweep`, the learner agent and journal compaction.
 
 ## Architecture
 
-One plugin, `partner`, under `plugins/`. Agents exist only for isolation (`challenger`,
-`consultant`, builders); knowledge is a skill. Enforcement is a `PreToolUse` hook
-(`hooks/gate.sh` → `bin/partner-rules`) that never widens permissions and blocks on any failure.
-Memory lives in `.agent/` of each repository. See design sections 3 to 7 and ADR-0001.
+| Layer | What | Where |
+|---|---|---|
+| Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/partner/protocol.md` |
+| Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/partner-rules`, `rules/default.rules` |
+| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree | `bin/partner-memory`, `bin/partner-session` |
+| Agents | `challenger` (red team), `consultant` (read-only experts), `builder`, `rust-builder`, `go-builder` | `agents/` |
+| Workflow skills | `/partner:onboard`, `/partner:spec`, `/partner:build`, `/partner:wrap`, `/partner:rules` | `skills/` |
+| Knowledge skills | `lang-rust`, `lang-go`, `lang-terraform`, `lang-fallback`, `expert-gha` (path-gated), `consult-gha` (forked audit) | `skills/` |
+
+Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
+`partner-memory`. Builders never commit. See ADR-0001 to ADR-0003.
 
 ## Prerequisites
 
 - Claude Code 2.1.285 or newer (`claude --version`).
-- Python 3.12 or newer on PATH as `python3` (the gate is standard library only).
-- POSIX `sh`. For development: `ruff`, `pytest`, `pytest-cov`, `shellcheck`.
+- Python 3.12 or newer on PATH as `python3`; the scripts use the standard library only.
+- POSIX `sh`, `git`. For development: `uv` (runs pinned `ruff`, `pytest`, `shellcheck`), `npx` for markdownlint.
 
 ## Installation
 
-Three paths; none touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills` or
-`~/.claude/settings.json` (ADR-0003).
+None of these touch `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills` or
+`~/.claude/settings.json` (ADR-0003). The legacy scaffold can stay until the switch described in
+[docs/03-switch-plan.md](docs/03-switch-plan.md).
 
 ```bash
 ./install.sh --dev
@@ -49,62 +58,97 @@ the plugin at project scope in that repository. Use `--local` in a repository yo
 ```
 
 Reports Claude Code, the marketplace, installed scopes, the legacy scaffold and name overlaps.
-`--uninstall [scope]` reverses an install. `--user` is reserved for the switch described in
-[docs/03-switch-plan.md](docs/03-switch-plan.md).
+`--uninstall [scope]` reverses an install. `--user` is reserved for the switch.
 
 ## Configuration
 
-| Variable | Type | Default | Effect |
+| Setting | Type | Default | Effect |
 |---|---|---|---|
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where `--check` looks for the legacy scaffold |
-| `PARTNER_GATE_LOG` | path | unset | when set, the gate appends one JSON line per judged command (spikes and debugging only) |
+| `~/.claude/partner.rules` | rule file | absent | owner layer: `allow` lines silence a default `ask`; `never` and `ask` tighten |
+| `.agent/partner.rules` | rule file | absent | project layer: `never` and `ask` only |
+| `~/.claude/partner/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
+| `~/.claude/partner/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
+| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live |
+| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `agentic-partner/repos/<host>/<owner>/<repo>` |
+| `PARTNER_RULES_OWNER`, `PARTNER_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
+| `PARTNER_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
 
-Rule files and layers arrive in release 1.
+Rule syntax, one per line: `decision Tool(pattern) [@agent]`, for example
+`ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`, `ask mcp__*__create*`,
+`allow Bash(cargo test*)`. Precedence: `never` in any layer wins; an `allow` from the owner layer
+(or an agent-scoped one from the default layer) silences the gate; `ask` prompts; otherwise
+Claude Code's own permissions decide. The hard wall is a `permissions.deny` block the owner applies
+from `/partner:rules sync`, rendered in plain and `rtk` forms.
 
 ## Usage
 
-With the plugin loaded, the gate judges every Bash command: `git push` asks, any force push is
-denied, everything else is left to Claude Code's own permissions. Dry-run a command:
+Start a session with the plugin loaded in a repository. The brief tells you whether the
+repository is trusted. Then:
+
+- `/partner:onboard` once per repository: trust, fingerprint, verified commands, memory files.
+- Tiny and small work: ask directly; the orchestrator names the size and skips the ceremony.
+- Medium and large work: `/partner:spec <what>` writes and challenges the spec,
+  `/partner:build <slug>` implements with proof, `/partner:wrap` converges, runs the full checks,
+  fans out reviews and journals with a verified stamp.
+- `/partner:rules check "git push --force"` dry-runs the gate; `explain` names every matching rule;
+  `sync` renders the settings block for you to apply.
+- `/partner:consult-gha` audits the workflows of the current repository.
+
+Memory commands the orchestrator uses, also available by hand:
 
 ```bash
-plugins/partner/bin/partner-rules check "cargo test && git push --force"
+plugins/partner/bin/partner-memory check
 ```
 
-The `partner:challenger` agent red-teams a spec or plan and returns `SOUND` or ranked objections.
+```bash
+plugins/partner/bin/partner-memory findings add "ci.yml" "checkout is on a floating tag"
+```
 
 ## Testing
 
 ```bash
-pytest --cov=plugins/partner/bin --cov-fail-under=85
+uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/partner/bin --cov-fail-under=85
 ```
 
 ```bash
-shellcheck install.sh plugins/partner/hooks/gate.sh
+uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
 ```
 
 ```bash
-claude plugin validate plugins/partner --strict
+uvx --from shellcheck-py shellcheck install.sh plugins/partner/hooks/*.sh scripts/*.sh
 ```
+
+```bash
+claude plugin validate plugins/partner --strict && python3 scripts/check-plugin.py
+```
+
+Live spikes that need a logged-in CLI: `sh scripts/spike-coexistence.sh` and
+`sh scripts/spike-r1.sh`. Evals are paid sessions: `cd plugins/partner && claude plugin eval . --runs 1
+--allow-tools Write Edit`; the `gate-asks` case also needs `--allow-tools Bash`, which requires the
+sandbox backend (`bubblewrap` and `socat` on Linux).
 
 ## CI/CD
 
-`ci.yml` runs on every push and pull request: ruff, shellcheck, plugin and marketplace validation,
-pytest with the coverage gate, markdownlint and zizmor. Every action is pinned to a commit SHA
-and the workflow token is read-only. Releases are tagged by hand; `release.yml` arrives in
-release 1.
+`ci.yml` runs on every push and pull request: ruff, shellcheck, the plugin contract check,
+plugin and marketplace validation, pytest with the 85 % coverage gate, markdownlint and zizmor.
+The eval job runs only on manual dispatch with the `evals` input, since each run is a paid Claude
+session. `release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `marketplace.json`
+and the changelog agree, then creates the GitHub release from the changelog section. Every action
+is pinned to a commit SHA and tokens are read-only except the release job.
 
 ## Security
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined
-obfuscation. The hard guarantee is a `permissions.deny` block the owner installs from the rendered
-rules (release 1). Hooks run as the user. Report a vulnerability through a private GitHub security
-advisory on this repository.
+obfuscation. Shell interpreters, task runners and command substitution are opaque and ask.
+Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
+protection is advisory for the model's own reads. Report a vulnerability through a private GitHub
+security advisory on this repository.
 
 ## Contributing
 
-Branches `feat/`, `fix/`, `docs/`, `chore/`, `security/`; Conventional Commits; one concern per
-pull request; tests with every behaviour change. The design and ADRs are the source of truth for
-scope.
+Branches `feat/`, `fix/`, `docs/`, `chore/`, `security/`; Conventional Commits without
+attribution trailers; one concern per pull request; tests with every behaviour change; the design
+and ADRs are the source of truth for scope.
 
 ## Changelog
 

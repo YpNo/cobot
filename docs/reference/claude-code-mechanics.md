@@ -101,3 +101,22 @@ eval exit code 2 for partial runs.
   saw it (one log line only). R1 re-tests `deny` with a harmless probe rule
   (`never Bash(echo partner-deny-probe*)`) so the model does call the tool. Whether hooks fire for
   a subagent's Bash is still open (`agent` was null: main thread).
+- R1 spike results (owner's terminal, 2026-11-06, `scripts/spike-r1.sh`): **D** a plugin hook's
+  `permissionDecision: deny` blocks a Bash call in the main thread (the model had no reason to
+  refuse `echo`). **E** the hook fires for a subagent's Bash too; the hook input carries
+  `agent_type` as the **namespaced** name (`partner:builder`), so agent scopes must match with or
+  without the `partner:` prefix. **F** a skill with `context: fork` and `agent: partner:consultant`
+  runs in that agent (`agent_type` = `partner:consultant` in the log). In `-p` mode a Bash call the
+  gate leaves silent is still denied by Claude Code's own permissions, so headless consults are
+  read-only through Read/Grep only; interactive sessions prompt.
+- `claude plugin eval`: an `llm` grader does not accept `target` (loader error "Unrecognized
+  key(s) in object: 'target'"); `regex` graders do. A single invalid case aborts the whole run
+  (exit 1) before any case executes.
+- `claude plugin eval` with `--allow-tools Bash` needs the OS sandbox backend: on Linux
+  `bubblewrap` and `socat` (`apt install bubblewrap socat`), otherwise every run is refused with
+  "sandbox required but unavailable" and scores as failed at zero cost. Cases that only need
+  `Write`/`Edit` run without it. The `gate-asks` case therefore needs the backend on the machine
+  that runs it (CI's ubuntu runner has to install it too).
+- Eval judges (`llm`, default haiku) failed two runs whose final message plainly met the rubric
+  ("I sized this as tiny"). Prefer `regex`, `tool_used`, `tool_order` and `file_exists` graders;
+  keep `llm` for what cannot be matched. Traces are deleted after a run unless `--keep-temp`.

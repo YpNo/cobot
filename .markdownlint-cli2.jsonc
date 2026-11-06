@@ -1,4 +1,10 @@
 {
-  "config": { "MD013": false, "MD033": false, "MD041": false, "MD060": false },
-  "ignores": ["node_modules", "docs/reference/**", "docs/design-inputs/**"]
+  "config": {
+    "MD013": false,
+    "MD033": false,
+    "MD041": false,
+    "MD060": false,
+    "MD024": { "siblings_only": true }
+  },
+  "ignores": ["node_modules", "docs/reference/**", "docs/design-inputs/**", ".agent/**", "plugins/partner/evals/**"]
 }

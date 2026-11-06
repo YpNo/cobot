@@ -11,7 +11,7 @@
       "name": "partner",
       "source": "./plugins/partner",
       "description": "Core partner: rules gate, conceptor, challenger, builders, experts, committed memory.",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "category": "productivity",
       "tags": [
         "orchestration",

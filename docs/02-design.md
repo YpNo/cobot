@@ -67,9 +67,10 @@ agentic-partner/
       consult-gha/  SKILL.md                                           context: fork, agent: partner:consultant
       <any lang-*/expert-*>/references/<topic>.md                      dated lines: status · source · claim (§8)
       (R1.1: ship, contribute + UPSTREAM.md, security-sweep, learn, lang-python, lang-typescript)
-    hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse, WorktreeCreate
+    hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
+    hooks/session.sh protocol.md           SessionStart shim and the ≤ 3k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
-    bin/partner-rules  bin/partner-memory  bin/partner-session        Python 3 stdlib, no deps
+    bin/partner-rules  bin/partner-memory  bin/partner-session  bin/_partner_common.py   Python 3 stdlib, no deps
                                            (partner-memory: brief · learn · compact · check)
     rules/default.rules
     settings/permissions.example.json      the hard-wall block the owner installs via `rules sync`
@@ -418,7 +419,7 @@ legacy settings' `allow`. The switch itself is `docs/03-switch-plan.md`, with a 
 | Release | Content | Exit criterion |
 |---|---|---|
 | R0 | **repository bootstrap, nothing global**: marketplace.json, plugin.json, `install.sh --dev\|--project\|--check`, README install section, CI skeleton; the legacy scaffold is left untouched (ADR-0003) | `claude plugin validate --strict` passes; a `--plugin-dir` session lists `partner:*` beside the legacy set; coexistence spikes answered |
-| R1 | gate + shim, onboard / spec / build / wrap (findings, proof lines, verified stamp), `partner-memory brief\|learn\|compact\|check`, references with status lines, challenger / consultant / builder, rust and go builders, lang-{rust,go,terraform,fallback}, expert-gha + consult-gha, 4 evals, pytest, ci.yml, release.yml; dogfood through `install.sh --project` on cartridge-os (Rust, service rigour) and `--scope local` on headscale (foreign Go) | day-one spikes pass; four evals green; a week of real use journaled |
+| R1 | gate + shim, onboard / spec / build / wrap (findings, proof lines, verified stamp), `partner-memory brief\|learn\|check` (`compact` R1.1), references with status lines, challenger / consultant / builder, rust and go builders, lang-{rust,go,terraform,fallback}, expert-gha + consult-gha, 4 evals, pytest, ci.yml, release.yml; dogfood through `install.sh --project` on cartridge-os (Rust, service rigour) and `--scope local` on headscale (foreign Go) | day-one spikes pass; four evals green; a week of real use journaled |
 | R1.1 | ship, contribute + UPSTREAM.md, security-sweep (`context: fork`), compaction, lang-python + lang-typescript with their builders (dogfood dreame-vacuum, headplane), terraform-builder (one module), `learner` + `/partner:learn` + `learn --promote` + consult `knowledge_delta`, `accepted-risks.md`, 4 more evals | eight evals green; the switch plan's preconditions met |
 | Switch | owner-triggered, not a release: `docs/03-switch-plan.md` (backup, user-scope install, unlink, CLAUDE.md cut, rules sync, workstation-starter PR) | a fresh session lists `partner:*` only; rollback tested once |
 | R2 | `partner-gcp` (GCP expert skill, `gcd-universe` rewritten for provider 8.x), `deep-review` workflow, `SubagentStop` report check (a report must carry command + exit code), `partner-usage`, verified-stamp gate rule for `git push`, contribute flow hardened from headscale use | GCP module work done end to end |

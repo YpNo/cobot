@@ -22,3 +22,21 @@ design, not proposals.
 | 14 | Token economy | Keep rtk and use it smartly; add other savings techniques, none at the cost of quality. Design §10. |
 | 15 | Legacy scaffold | **Do not touch it now.** Build the partner first, ship install methods in this repo, switch at a moment the owner picks. See ADR-0003 and docs/03-switch-plan.md. |
 | 16 | crissp | Not used; reviewed for ideas. Ten taken, listed in docs/design-inputs/crissp-review.md. |
+
+## Third review — 2026-11-07 (pending the owner's confirmation)
+
+Ideas raised after the cartridge-os dogfood, challenged in
+[design-inputs/owner-ideas-02.md](design-inputs/owner-ideas-02.md). Each row becomes firm when
+the owner confirms it; the "Enforced by" column names where it will live.
+
+| # | Topic | Proposed rule | Enforced by |
+|---|---|---|---|
+| 17 | CI triggers | Trigger matrix: PR runs changed-area tests with dependency-aware selection; merge runs the full suite and builds once; release verifies the commit's CI and never reruns tests; one aggregator job is the only required check. | `expert-gha`, later `expert-cicd`; `ship` |
+| 18 | Attribution | No attribution footer and no AI named as author in commits or PR bodies; not a word ban. | memory (in force), `contribute`, default rules `never` on the argv-visible forms |
+| 19 | Backend architecture | Hexagonal by default for the `service` profile; plain layering for `cli`, `library`, `embedded`; host architecture always wins in contributions. | `spec` principles check, ADR template, `lang-*` shapes |
+| 20 | PR granularity | One spec = one branch = one PR; one task = one commit. Small PRs only for security fixes and upstream work. | `spec`, `build`, `wrap`, `contribute` |
+| 21 | Dependency currency | Cached check at onboard, at session start when stale (7 days) or the lockfile changed, and always before a PR; report, never upgrade unasked. | future `partner-deps`, `onboard`, `wrap` |
+| 22 | New dependencies | Adding one is a decision: `ask` on `cargo add`, `npm install <pkg>`, `pnpm add`, `yarn add`, `go get`, `uv add`, `pip install`, `poetry add`; the spec names and justifies each. | default rules, `spec`, builder reports |
+| 23 | Knowledge freshness | Staleness thresholds on dated knowledge lines (versions 30 days, idiom 90 days) surfaced in the brief; refresh by `/partner:learn` and a weekly refresh workflow opening a PR; options and recommendation, never an automatic tool swap. | `partner-memory`, learner agent, `knowledge-refresh.yml` |
+| 24 | More stacks | `lang-typescript` + `ts-builder` first, then thin `fw-react`, `fw-next`, `fw-vue`; `lang-shell` promoted from the fallback when server-automation is onboarded. | release 1.1 and after |
+| 25 | More experts | Order: `expert-cicd` + GitLab CI (`glab`), Gitea (`tea`), `expert-api` (OpenAPI and web protocols), Home Assistant (`hass-cli`), IoT protocols and electronics with evidence grades, Jira and Confluence through the Atlassian MCP (writes ask), MCP builder reused after challenge. CLIs preferred over MCP where both exist, because the gate judges argv. | learner first (23), then one expert per release slice |

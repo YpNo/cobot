@@ -1,0 +1,381 @@
+"""partner-memory: init, trust, brief, journal, findings, learn, check; partner-session payload."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+
+import pytest
+
+LONG_PROOF = "Proof: " + "x" * 3000
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
+    monkeypatch.delenv("PARTNER_RULES_PROJECT_DIR", raising=False)
+    monkeypatch.delenv("PARTNER_RULES_OWNER", raising=False)
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@x"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "t"], check=True)
+    monkeypatch.chdir(root)
+    return root
+
+
+def commit(root):
+    (root / "a").write_text("a")
+    subprocess.run(["git", "-C", str(root), "add", "a"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"], check=True)
+
+
+def remote(root, name, url):
+    subprocess.run(["git", "-C", str(root), "remote", "add", name, url], check=True)
+
+
+def config(name):
+    return os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "partner", name)
+
+
+def write_config(name, text):
+    path = config(name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        handle.write(text)
+
+
+# ---------------------------------------------------------------- init and trust
+
+
+def test_init_writesTemplatesOnce(memory, repo):
+    mem = memory.Memory()
+    out = memory.cmd_init(mem, {"profile": "cli"}, set())
+    assert out.count("wrote") == 3
+    assert "profile: cli" in (repo / ".agent" / "CONTEXT.md").read_text()
+    assert "# Journal" in (repo / ".agent" / "JOURNAL.md").read_text()
+    assert memory.cmd_init(mem, {}, set()).count("kept") == 3
+
+
+def test_trust_noRemoteNoCommit_untrusted(memory, repo):
+    trusted, reason = memory.Memory().trust()
+    assert not trusted and "no remote and no commit" in reason
+
+
+def test_trust_identityCoversEveryRemote(memory, repo):
+    remote(repo, "origin", "git@github.com:YpNo/thing.git")
+    write_config("identities", "github.com/ypno\n")
+    assert memory.Memory().trust()[0]
+    remote(repo, "upstream", "https://github.com/juanfont/thing")
+    trusted, reason = memory.Memory().trust()
+    assert not trusted and "no identity matches every remote" in reason
+    write_config("identities", "github.com/ypno\ngithub.com/juanfont\n")
+    assert memory.Memory().trust()[0]
+
+
+def test_trust_rootCommitListedOutsideRepo(memory, repo):
+    commit(repo)
+    assert not memory.Memory().trust()[0]
+    (repo / ".agent").mkdir()
+    (repo / ".agent" / ".trusted").write_text("planted")  # a clone can ship this; it must not count
+    assert not memory.Memory().trust()[0]
+    mem = memory.Memory()
+    assert "root commit added" in memory.add_trusted_root(mem)
+    assert "already present" in memory.add_trusted_root(mem)
+    trusted, reason = mem.trust()
+    assert trusted and "trusted" in reason
+
+
+def test_init_foreign_symlinksAndExcludes(memory, repo):
+    remote(repo, "origin", "ssh://git@gitea.example.com:2222/Other/proj.git")
+    mem = memory.Memory()
+    out = memory.cmd_init(mem, {}, {"foreign"})
+    assert "foreign mode" in out
+    assert (repo / ".agent").is_symlink()
+    expected = os.path.join(
+        os.environ["XDG_DATA_HOME"], "agentic-partner", "repos", "gitea.example.com", "other", "proj"
+    )
+    assert os.path.realpath(repo / ".agent") == os.path.realpath(expected)
+    assert ".agent" in (repo / ".git" / "info" / "exclude").read_text()
+    assert memory.Memory().trust() == (True, "foreign mode, memory outside the tree")
+    assert "kept" in memory.cmd_init(memory.Memory(), {}, {"foreign"})
+
+
+def test_init_foreign_refusesWithoutOriginOrOverExistingDir(memory, repo):
+    assert "needs an origin" in memory.cmd_init(memory.Memory(), {}, {"foreign"})
+    remote(repo, "origin", "git@github.com:a/b.git")
+    (repo / ".agent").mkdir()
+    assert "not a symlink" in memory.cmd_init(memory.Memory(), {}, {"foreign"})
+
+
+def test_trust_symlinkToWrongPlace_untrusted(memory, repo, tmp_path):
+    remote(repo, "origin", "git@github.com:a/b.git")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (repo / ".agent").symlink_to(elsewhere)
+    trusted, reason = memory.Memory().trust()
+    assert not trusted and "does not resolve" in reason
+
+
+def test_init_addIdentity(memory, repo):
+    assert "no origin" in memory.add_identity(memory.Memory())
+    remote(repo, "origin", "https://github.com/YpNo/x")
+    assert "identity added: github.com/ypno" in memory.cmd_init(memory.Memory(), {}, {"add-identity"})
+    assert "already present" in memory.add_identity(memory.Memory())
+    commit(repo)
+    assert "root commit added" in memory.cmd_init(memory.Memory(), {}, {"trust-root"})
+    assert "no commit yet" not in memory.add_trusted_root(memory.Memory())
+
+
+# ---------------------------------------------------------------- brief
+
+
+def seed(repo, journal=None, context="# x\n\nprofile: cli\ngoal: g\n\n## Shape\n- hidden\n"):
+    agent = repo / ".agent"
+    agent.mkdir(exist_ok=True)
+    (agent / "CONTEXT.md").write_text(context)
+    (agent / "JOURNAL.md").write_text(
+        journal or "# Journal\n\n## 2026-01-01 — one\nChanged: a\nWhy: b\nProof: c\nOpen: —\nNext: n1\n"
+    )
+    return agent
+
+
+def test_brief_untrusted_isOneLine(memory, repo):
+    seed(repo)
+    brief = memory.build_brief(memory.Memory(), 6000)
+    assert brief.startswith("partner memory: UNTRUSTED")
+    assert "profile" not in brief
+
+
+def test_brief_contentAndShapeHidden(memory, repo):
+    seed(repo)
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "profile: cli" in brief and "hidden" not in brief
+    assert "## JOURNAL (latest)" in brief and "n1" in brief
+
+
+def test_brief_picksLatestTwoEntriesInLegacyOrder(memory, repo):
+    journal = (
+        "# J\n\n## 2026-03-01 — newest\nChanged: c3\nWhy: w\nProof: p\n\n"
+        "## 2026-02-01 — mid\nChanged: c2\n\n## 2026-01-01 — old\nChanged: c1\n"
+    )
+    seed(repo, journal)
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "c3" in brief and "c2" in brief and "c1" not in brief
+    assert brief.index("newest") < brief.index("mid")
+
+
+def test_brief_trimsLongEntryKeepingOpenAndNext(memory, repo):
+    journal = f"# J\n\n## 2026-01-01 — big\nChanged: c\nWhy: w\n{LONG_PROOF}\nOpen: o-line\nNext: n-line\n"
+    seed(repo, journal)
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "o-line" in brief and "n-line" in brief and "(entry truncated)" in brief
+    assert len(brief) < 2500
+
+
+def test_brief_findingsFloorAndTail(memory, repo):
+    agent = seed(repo, journal="# J\n\n## 2026-01-01 — e\n" + "Changed: " + "y" * 7000 + "\n")
+    rows = "".join(f"| F-{i:02d} | s{i} | obs{i} | |\n" for i in range(1, 6))
+    (agent / "FINDINGS.md").write_text(
+        "# F\n| # | Seen | Observation | Goes to |\n|---|---|---|---|\n"
+        + rows
+        + "| F-06 | s | o | closed — x |\n"
+    )
+    (agent / "knowledge").mkdir()
+    (agent / "knowledge" / "gha.md").write_text("# k\n")
+    (agent / "specs").mkdir()
+    (agent / "specs" / "r1.md").write_text("# s\n")
+    (agent / "ARCHITECTURE.md").write_text("# a\n")
+    brief = memory.build_brief(memory.Memory(), 3000, trust_check=False)
+    assert "## FINDINGS open: 5" in brief and "F-05" in brief and "F-01" not in brief
+    assert "knowledge: gha" in brief and "specs: r1" in brief and "ARCHITECTURE.md present" in brief
+    assert "(entry truncated)" in brief
+    assert len(brief) <= 3000 + 600
+
+
+def test_brief_longContextIsCapped(memory, repo):
+    seed(repo, context="# x\n\nprofile: cli\n" + "\n".join(f"- constraint {i}" for i in range(400)))
+    brief = memory.build_brief(memory.Memory(), 1500, trust_check=False)
+    assert "(truncated)" in brief and len(brief) <= 1500 + 200
+
+
+def test_brief_emptyMemory(memory, repo):
+    assert memory.build_brief(memory.Memory(), 6000, trust_check=False) == ""
+
+
+# ---------------------------------------------------------------- journal and findings
+
+
+def test_journalAdd_validatesAndAppends(memory, repo):
+    seed(repo)
+    mem = memory.Memory()
+    assert "must start with" in memory.cmd_journal_add(mem, "no heading")
+    assert "missing fields Proof:" in memory.cmd_journal_add(mem, "## 2026-02-02 — t\nChanged: a\nWhy: b\n")
+    out = memory.cmd_journal_add(mem, "## 2026-02-02 — t\nChanged: a\nWhy: b\nProof: c\n")
+    assert "appended" in out
+    assert mem.journal_entries()[0][0] == "2026-02-02"
+    (repo / ".agent" / "JOURNAL.md").unlink()
+    memory.cmd_journal_add(mem, "## 2026-02-03 — t\nChanged: a\nWhy: b\nProof: c\n")
+    assert (repo / ".agent" / "JOURNAL.md").read_text().startswith("# Journal")
+
+
+def test_findings_addListClose(memory, repo):
+    mem = memory.Memory()
+    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+    assert memory.cmd_findings_add(mem, "ci.yml", "pipe | in text\nnewline", "") == "findings: F-01 added"
+    assert memory.cmd_findings_add(mem, "x", "y", "E2") == "findings: F-02 added"
+    listing = memory.cmd_findings_list(mem, False)
+    assert "pipe / in text newline" in listing and "F-02 · x · y · E2" in listing
+    assert memory.cmd_findings_list(mem, True).count("F-") == 1
+    assert memory.cmd_findings_close(mem, "F-01", "closed — dup") == "findings: F-01 -> closed — dup"
+    assert memory.cmd_findings_close(mem, "F-09", "x") == "findings: F-09 not found"
+    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+
+
+# ---------------------------------------------------------------- learn
+
+
+def delta(entries, topic="GitHub Actions", **extra):
+    return json.dumps({"topic": topic, "entries": entries, **extra})
+
+
+def entry(claim, status="verified", source="https://x", scope="project", checked="2026-11-06"):
+    return {"claim": claim, "status": status, "source": source, "scope": scope, "checked": checked}
+
+
+def test_learn_filtersAndWrites(memory, repo):
+    mem = memory.Memory()
+    raw = delta(
+        [
+            entry("checkout v7.0.1 is current"),
+            entry("Checkout v7.0.1 is current!"),  # duplicate after normalisation
+            entry("guess", status="assumed", source=""),
+            entry("no source here", source=""),
+            entry("general fact", scope="general"),
+            {"claim": "", "status": "verified"},
+            {"claim": "bad status", "status": "maybe"},
+        ],
+        unverified=["zizmor on reusable inputs"],
+    )
+    out = memory.cmd_learn(mem, raw, dry_run=True, keep_assumed=False)
+    assert "2 new line(s)" in out and "  written:" not in out
+    assert "duplicate in delta" in out and "assumed, not written" in out and "no source" in out
+    assert "malformed" in out and "? unverified: zizmor" in out
+    out = memory.cmd_learn(mem, raw, dry_run=False, keep_assumed=True)
+    path = repo / ".agent" / "knowledge" / "github-actions.md"
+    assert path.is_file() and "written" in out
+    text = path.read_text()
+    assert text.startswith("# knowledge: github-actions")
+    assert "- [verified 2026-11-06 · src: https://x] checkout v7.0.1 is current" in text
+    assert "general fact (general)" in text and "[assumed 2026-11-06 · src: unsourced] guess" in text
+    again = memory.cmd_learn(mem, raw, dry_run=False, keep_assumed=False)
+    assert "0 new line(s)" in again and "already known" in again
+
+
+def test_learn_refusals(memory, repo):
+    mem = memory.Memory()
+    assert "not JSON" in memory.cmd_learn(mem, "{", False, False)
+    assert "needs a topic" in memory.cmd_learn(mem, json.dumps({"entries": []}), False, False)
+    secret = delta([entry("token = ghp_abcdefghijklmnopqrstuvwxyz0123456789")])
+    assert "secret-like" in memory.cmd_learn(mem, secret, False, False)
+    assert not (repo / ".agent" / "knowledge").exists()
+
+
+def test_learn_capAtEightyLines(memory, repo):
+    mem = memory.Memory()
+    first = delta([entry(f"fact number {i}") for i in range(78)])
+    assert "78 new line(s)" in memory.cmd_learn(mem, first, False, False)
+    second = delta([entry(f"late fact {i}") for i in range(5)])
+    out = memory.cmd_learn(mem, second, False, False)
+    assert "2 new line(s)" in out and out.count("over the 80-line cap") == 3
+    lines = (repo / ".agent" / "knowledge" / "github-actions.md").read_text().splitlines()
+    assert sum(1 for line in lines if line.startswith("- [")) == 80
+
+
+# ---------------------------------------------------------------- check and CLI
+
+
+def test_check_reportsAndWarns(memory, repo):
+    agent = seed(repo, journal="# J\n\n## 2026-02-01 — b\nChanged: x\n\n## 2026-01-01 — a\nChanged: y\n")
+    (agent / "CONTEXT.md").write_text("\n".join(["l"] * 130))
+    (agent / "JOURNAL.md").write_text((agent / "JOURNAL.md").read_text() + "\n" * 400)
+    out = memory.cmd_check(memory.Memory())
+    assert "mode: committed" in out and "trust: untrusted" in out
+    assert "journal: newest on top" in out
+    assert "warning: CONTEXT.md has 130 lines" in out and "JOURNAL.md over 400 lines" in out
+    assert "brief:" in out
+
+
+def test_journalOrder_variants(memory, repo):
+    seed(repo, journal="# J\n")
+    assert memory.journal_order(memory.Memory()) == "no entries"
+    seed(repo, journal="# J\n## 2026-01-01 — a\n")
+    assert memory.journal_order(memory.Memory()) == "single entry"
+    seed(repo, journal="# J\n## 2026-01-01 — a\n## 2026-02-01 — b\n")
+    assert memory.journal_order(memory.Memory()) == "newest at bottom"
+    seed(repo, journal="# J\n## 2026-02-01 — a\n## 2026-01-01 — b\n## 2026-03-01 — c\n")
+    assert memory.journal_order(memory.Memory()) == "mixed order"
+
+
+def test_cli_allCommands(memory, repo, capsys, monkeypatch):
+    assert memory.main(["path"]) == 0 and str(repo / ".agent") in capsys.readouterr().out
+    assert memory.main(["init", "--profile", "script"]) == 0
+    capsys.readouterr()
+    assert memory.main(["trust"]) == 0 and capsys.readouterr().out.startswith("untrusted")
+    assert memory.main(["check"]) == 0
+    assert memory.main(["brief", "--budget", "500", "--no-trust-check"]) == 0
+    assert "profile: script" in capsys.readouterr().out
+    monkeypatch.setattr(
+        "sys.stdin",
+        type("S", (), {"read": staticmethod(lambda: "## 2026-05-05 — t\nChanged: a\nWhy: b\nProof: c\n")})(),
+    )
+    assert memory.main(["journal", "add"]) == 0 and "appended" in capsys.readouterr().out
+    assert memory.main(["findings", "add", "seen", "obs", "--goes-to", "T1"]) == 0
+    assert memory.main(["findings", "list", "--open"]) == 0
+    assert memory.main(["findings", "close", "F-01", "done"]) == 0
+    monkeypatch.setattr("sys.stdin", type("S", (), {"read": staticmethod(lambda: delta([entry("c")]))})())
+    assert memory.main(["learn", "--dry-run"]) == 0 and "1 new line" in capsys.readouterr().out
+    assert memory.main(["bogus"]) == 2
+    assert memory.main([]) == 2
+
+
+# ---------------------------------------------------------------- session
+
+
+def test_session_payloadHasProtocolRulesAndBrief(session, repo):
+    seed(repo)
+    context = session.build_payload(json.dumps({"cwd": str(repo), "source": "startup"}))
+    assert context.startswith("# partner protocol")
+    assert "rules: " in context and "never=" in context
+    assert "UNTRUSTED" in context
+    assert len(context) <= session.TOTAL_CAP
+
+
+def test_session_trustedRepoGetsBrief(session, memory, repo):
+    seed(repo)
+    remote(repo, "origin", "git@github.com:YpNo/x.git")
+    write_config("identities", "github.com/ypno\n")
+    context = session.build_payload(json.dumps({"cwd": str(repo)}))
+    assert "## CONTEXT" in context and "profile: cli" in context
+
+
+def test_session_errorStillPrintsProtocol(session, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(session, "run_tool", boom)
+    context = session.build_payload("")
+    assert context.startswith("# partner protocol") and "brief unavailable (RuntimeError: down)" in context
+
+
+def test_session_cli(session, capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", type("S", (), {"read": staticmethod(lambda: "{}")})())
+    assert session.main(["start"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert session.main([]) == 2

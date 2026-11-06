@@ -1,0 +1,475 @@
+#!/usr/bin/env python3
+"""partner-memory: the committed memory of a repository (.agent/), read and written for the orchestrator.
+
+Commands
+  path                             the resolved .agent directory (worktree-aware)
+  init [--profile P] [--foreign] [--add-identity] [--trust-root]
+                                   create CONTEXT, JOURNAL, FINDINGS from the templates; never overwrites
+  trust                            trusted: <reason> | untrusted: <reason>
+  check                            mode, trust, files, journal order, brief size
+  brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
+  journal add                      append the entry read on stdin (## YYYY-MM-DD — title, then the fields)
+  findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
+  learn [--dry-run] [--keep-assumed]      apply a knowledge delta (JSON on stdin) to .agent/knowledge/<topic>.md
+
+All writes go to the project layer; promotion into the plugin is release 1.1.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+from _partner_common import (  # noqa: E402
+    data_dir,
+    host_owner_repo,
+    memory_dir,
+    partner_config_dir,
+    plugin_root,
+    remotes,
+    repo_root,
+    root_commits,
+)
+
+DEFAULT_BUDGET = 6000
+CONTEXT_CAP = 2500
+ENTRY_CAP = 1200
+FINDINGS_FLOOR = 400
+KNOWLEDGE_CAP = 80
+ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
+FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
+STATUSES = ("verified", "reported", "assumed")
+SECRET_RE = re.compile(
+    r"(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY"
+    r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
+)
+FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
+
+
+class Memory:
+    def __init__(self, cwd: str | None = None) -> None:
+        self.root = repo_root(cwd)
+        self.dir = memory_dir(cwd)
+
+    # ---------------------------------------------------------------- trust
+
+    def external_path(self) -> Path | None:
+        origin = remotes(self.root).get("origin")
+        parts = host_owner_repo(origin) if origin else None
+        return data_dir() / parts[0] / parts[1] / parts[2] if parts else None
+
+    def trust(self) -> tuple[bool, str]:
+        if self.dir.is_symlink():
+            expected = self.external_path()
+            if expected and self.dir.resolve() == expected.resolve():
+                return True, "foreign mode, memory outside the tree"
+            return False, f".agent is a symlink that does not resolve to the external memory for origin ({expected})"
+        remote_map = remotes(self.root)
+        identities = read_lines(partner_config_dir() / "identities")
+        if remote_map:
+            owners = {f"{h}/{o}" for url in remote_map.values() if (p := host_owner_repo(url)) for h, o, _ in [p]}
+            if owners and owners <= {line.lower() for line in identities}:
+                return True, f"every remote owner is an identity ({', '.join(sorted(owners))})"
+        roots = set(root_commits(self.root))
+        trusted = {line.split()[0] for line in read_lines(partner_config_dir() / "trusted") if line.split()}
+        if roots and roots & trusted:
+            return True, "root commit listed in ~/.claude/partner/trusted"
+        if not remote_map and not roots:
+            return False, "no remote and no commit: onboard with --trust-root once the first commit exists"
+        return False, "no identity matches every remote and the root commit is not trusted"
+
+    # ---------------------------------------------------------------- files
+
+    def read(self, name: str) -> str:
+        path = self.dir / name
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    def journal_entries(self) -> list[tuple[str, str]]:
+        """(date, text) per entry, newest first; ties keep the later position first."""
+        text = self.read("JOURNAL.md")
+        starts = [m.start() for m in ENTRY_RE.finditer(text)]
+        entries = []
+        for i, start in enumerate(starts):
+            end = starts[i + 1] if i + 1 < len(starts) else len(text)
+            chunk = text[start:end].strip()
+            entries.append((chunk[3:13], chunk))
+        indexed = list(enumerate(entries))
+        indexed.sort(key=lambda item: (item[1][0], item[0]), reverse=True)
+        return [entry for _, entry in indexed]
+
+    def findings(self) -> list[tuple[str, str, str, str]]:
+        rows = [m.groups() for line in self.read("FINDINGS.md").splitlines() if (m := FINDING_RE.match(line))]
+        return [tuple(cell.strip() for cell in row) for row in rows]
+
+    def open_findings(self) -> list[tuple[str, str, str, str]]:
+        return [f for f in self.findings() if f[3].strip().lower() in ("", "open")]
+
+    def knowledge_topics(self) -> list[str]:
+        folder = self.dir / "knowledge"
+        return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+    def specs(self) -> list[str]:
+        folder = self.dir / "specs"
+        return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+
+def read_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")]
+
+
+# ---------------------------------------------------------------- brief
+
+
+def context_head(text: str) -> str:
+    kept: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## Shape") or line.startswith("## Applies"):
+            break
+        kept.append(line)
+    return cap("\n".join(kept).strip(), CONTEXT_CAP)
+
+
+def cap(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 12].rstrip() + "\n…(truncated)"
+
+
+def trim_entry(entry: str) -> str:
+    """Keep the heading, then Open and Next, then the rest, inside ENTRY_CAP."""
+    if len(entry) <= ENTRY_CAP:
+        return entry
+    lines = entry.splitlines()
+    heading, body = lines[0], lines[1:]
+
+    def rank(line: str) -> int:
+        for i, field in enumerate(FIELD_PRIORITY):
+            if line.startswith(f"{field}:"):
+                return i
+        return len(FIELD_PRIORITY)
+
+    ordered = sorted(body, key=rank)
+    out, used = [heading], len(heading)
+    for line in ordered:
+        if used + len(line) + 1 > ENTRY_CAP:
+            out.append("…(entry truncated)")
+            break
+        out.append(line)
+        used += len(line) + 1
+    return "\n".join(out)
+
+
+def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
+    if trust_check:
+        trusted, reason = mem.trust()
+        if not trusted:
+            return f"partner memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Run /partner:onboard."
+    blocks: list[str] = []
+    context = context_head(mem.read("CONTEXT.md"))
+    if context:
+        blocks.append("## CONTEXT\n" + context)
+    entries = mem.journal_entries()[:2]
+    if entries:
+        blocks.append("## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries))
+    findings = mem.open_findings()
+    findings_block = ""
+    if findings:
+        rows = "\n".join(f"| {a} | {b} | {c} | {d} |" for a, b, c, d in findings[-3:])
+        findings_block = f"## FINDINGS open: {len(findings)}\n{rows}"
+    tail = []
+    if mem.knowledge_topics():
+        tail.append("knowledge: " + ", ".join(mem.knowledge_topics()))
+    if mem.specs():
+        tail.append("specs: " + ", ".join(mem.specs()))
+    if (mem.dir / "ARCHITECTURE.md").is_file():
+        tail.append("ARCHITECTURE.md present (read on demand)")
+    reserve = min(FINDINGS_FLOOR, len(findings_block)) + sum(len(t) + 1 for t in tail)
+    text = cap("\n\n".join(blocks), max(budget - reserve, 200))
+    parts = [text]
+    if findings_block:
+        parts.append(cap(findings_block, max(budget - len(text), FINDINGS_FLOOR)))
+    parts.extend(tail)
+    return "\n\n".join(p for p in parts if p)
+
+
+# ---------------------------------------------------------------- writes
+
+
+def template(name: str, profile: str, repo_name: str) -> str:
+    text = (plugin_root() / "skills" / "onboard" / "templates" / name).read_text(encoding="utf-8")
+    return text.replace("{{PROFILE}}", profile).replace("{{NAME}}", repo_name).replace("{{DATE}}", date.today().isoformat())
+
+
+def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
+    lines = []
+    if "foreign" in flags:
+        external = mem.external_path()
+        if external is None:
+            return "init: --foreign needs an origin remote to derive the external path"
+        external.mkdir(parents=True, exist_ok=True)
+        if mem.dir.exists() and not mem.dir.is_symlink():
+            return f"init: {mem.dir} exists and is not a symlink; move it aside first"
+        if not mem.dir.is_symlink():
+            mem.dir.symlink_to(external, target_is_directory=True)
+        exclude = mem.root / ".git" / "info" / "exclude"
+        if exclude.parent.is_dir() and ".agent" not in read_lines(exclude):
+            with exclude.open("a", encoding="utf-8") as handle:
+                handle.write(".agent\n")
+        lines.append(f"foreign mode: {mem.dir} -> {external}; .agent excluded from git")
+    mem.dir.mkdir(parents=True, exist_ok=True)
+    profile = options.get("profile", "library")
+    for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md"):
+        target = mem.dir / name
+        if target.exists():
+            lines.append(f"kept {target}")
+        else:
+            target.write_text(template(name, profile, mem.root.name), encoding="utf-8")
+            lines.append(f"wrote {target}")
+    if "add-identity" in flags:
+        lines.append(add_identity(mem))
+    if "trust-root" in flags:
+        lines.append(add_trusted_root(mem))
+    return "\n".join(lines)
+
+
+def append_unique(path: Path, line: str) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if line in read_lines(path):
+        return False
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    return True
+
+
+def add_identity(mem: Memory) -> str:
+    origin = remotes(mem.root).get("origin")
+    parts = host_owner_repo(origin) if origin else None
+    if not parts:
+        return "identity: no origin remote to take the owner from"
+    line = f"{parts[0]}/{parts[1]}"
+    added = append_unique(partner_config_dir() / "identities", line)
+    return f"identity {'added' if added else 'already present'}: {line}"
+
+
+def add_trusted_root(mem: Memory) -> str:
+    roots = root_commits(mem.root)
+    if not roots:
+        return "trust-root: no commit yet"
+    added = append_unique(partner_config_dir() / "trusted", f"{roots[0]} {mem.root.name}")
+    return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
+
+
+def cmd_journal_add(mem: Memory, entry: str) -> str:
+    entry = entry.strip()
+    if not re.match(r"^## \d{4}-\d{2}-\d{2} — .+", entry):
+        return "journal: the entry must start with '## YYYY-MM-DD — title'"
+    missing = [f for f in ("Changed:", "Why:", "Proof:") if f not in entry]
+    if missing:
+        return f"journal: missing fields {', '.join(missing)}"
+    path = mem.dir / "JOURNAL.md"
+    text = path.read_text(encoding="utf-8") if path.is_file() else "# Journal\n"
+    path.write_text(text.rstrip("\n") + "\n\n" + entry + "\n", encoding="utf-8")
+    return f"journal: appended to {path}"
+
+
+def next_finding_number(mem: Memory) -> int:
+    numbers = [int(f[0][2:]) for f in mem.findings()]
+    return max(numbers, default=0) + 1
+
+
+def cmd_findings_add(mem: Memory, seen: str, observation: str, goes_to: str) -> str:
+    path = mem.dir / "FINDINGS.md"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(template("FINDINGS.md", "", mem.root.name), encoding="utf-8")
+    number = f"F-{next_finding_number(mem):02d}"
+    clean = [s.replace("|", "/").replace("\n", " ").strip() for s in (seen, observation, goes_to)]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"| {number} | {clean[0]} | {clean[1]} | {clean[2]} |\n")
+    return f"findings: {number} added"
+
+
+def cmd_findings_list(mem: Memory, only_open: bool) -> str:
+    rows = mem.open_findings() if only_open else mem.findings()
+    if not rows:
+        return "findings: none" + (" open" if only_open else "")
+    return "\n".join(f"{a} · {b} · {c} · {d or 'open'}" for a, b, c, d in rows)
+
+
+def cmd_findings_close(mem: Memory, number: str, reason: str) -> str:
+    path = mem.dir / "FINDINGS.md"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    for i, line in enumerate(lines):
+        match = FINDING_RE.match(line)
+        if match and match.group(1) == number:
+            lines[i] = f"| {number} | {match.group(2)} | {match.group(3)} | {reason.replace('|', '/')} |"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return f"findings: {number} -> {reason}"
+    return f"findings: {number} not found"
+
+
+def claim_key(text: str) -> str:
+    """Normalised claim for de-duplication; the ``(general)`` tag is not part of the claim."""
+    text = re.sub(r"\s*\(general\)\s*$", "", text.strip())
+    return re.sub(r"\W+", " ", text.lower()).strip()
+
+
+def knowledge_line(entry: dict) -> str:
+    source = str(entry.get("source", "")).strip() or "unsourced"
+    scope = " (general)" if entry.get("scope") == "general" else ""
+    return f"- [{entry['status']} {entry.get('checked') or date.today().isoformat()} · src: {source}] {entry['claim'].strip()}{scope}"
+
+
+def filter_delta(delta: dict, keep_assumed: bool) -> tuple[list[dict], list[str]]:
+    kept, skipped = [], []
+    seen: set[str] = set()
+    for entry in delta.get("entries", []):
+        claim = str(entry.get("claim", "")).strip()
+        status = str(entry.get("status", "")).strip()
+        key = claim_key(claim)
+        if not claim or status not in STATUSES:
+            skipped.append(f"malformed: {claim[:50] or '<empty>'}")
+        elif status == "assumed" and not keep_assumed:
+            skipped.append(f"assumed, not written: {claim[:50]}")
+        elif key in seen:
+            skipped.append(f"duplicate in delta: {claim[:50]}")
+        elif status != "assumed" and not str(entry.get("source", "")).strip():
+            skipped.append(f"no source: {claim[:50]}")
+        else:
+            seen.add(key)
+            kept.append({**entry, "claim": claim, "status": status})
+    return kept, skipped
+
+
+def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool) -> str:
+    try:
+        delta = json.loads(raw)
+    except json.JSONDecodeError as error:
+        return f"learn: delta is not JSON ({error})"
+    topic = re.sub(r"[^a-z0-9-]+", "-", str(delta.get("topic", "")).lower()).strip("-")
+    if not topic:
+        return "learn: delta needs a topic"
+    if SECRET_RE.search(raw):
+        return "learn: refused, the delta contains a secret-like string"
+    kept, skipped = filter_delta(delta, keep_assumed)
+    path = mem.dir / "knowledge" / f"{topic}.md"
+    existing = path.read_text(encoding="utf-8").splitlines() if path.is_file() else [f"# knowledge: {topic}", ""]
+    present = {claim_key(line.split("] ", 1)[-1]) for line in existing if line.startswith("- [")}
+    new_lines = []
+    for entry in kept:
+        key = claim_key(entry["claim"])
+        if key in present:
+            skipped.append(f"already known: {entry['claim'][:50]}")
+        else:
+            new_lines.append(knowledge_line(entry))
+    room = KNOWLEDGE_CAP - sum(1 for line in existing if line.startswith("- ["))
+    if len(new_lines) > room:
+        skipped.extend(f"over the {KNOWLEDGE_CAP}-line cap, consolidate first: {line[:50]}" for line in new_lines[room:])
+        new_lines = new_lines[:max(room, 0)]
+    report = [f"learn: topic {topic}, {len(new_lines)} new line(s), {len(skipped)} skipped"]
+    report.extend(f"  + {line}" for line in new_lines)
+    report.extend(f"  - {reason}" for reason in skipped)
+    for item in delta.get("unverified", []):
+        report.append(f"  ? unverified: {item}")
+    if new_lines and not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join([*existing, *new_lines]).rstrip("\n") + "\n", encoding="utf-8")
+        report.append(f"  written: {path}")
+    return "\n".join(report)
+
+
+def journal_order(mem: Memory) -> str:
+    dates = [d for d, _ in sorted(((e[0], i) for i, e in enumerate(mem.journal_entries())), key=lambda x: x[1])]
+    raw = [m.group(1) for m in ENTRY_RE.finditer(mem.read("JOURNAL.md"))]
+    if len(raw) < 2:
+        return "single entry" if raw else "no entries"
+    if raw == sorted(raw):
+        return "newest at bottom"
+    if raw == sorted(raw, reverse=True):
+        return "newest on top (legacy order, read correctly)"
+    return "mixed order" if dates else "mixed order"
+
+
+def cmd_check(mem: Memory) -> str:
+    trusted, reason = mem.trust()
+    mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
+    lines = [f"memory: {mem.dir}", f"mode: {mode}", f"trust: {'trusted' if trusted else 'untrusted'} ({reason})"]
+    for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "ARCHITECTURE.md", "partner.rules"):
+        path = mem.dir / name
+        if path.is_file():
+            count = len(path.read_text(encoding="utf-8").splitlines())
+            lines.append(f"{name}: {count} lines")
+    lines.append(f"journal: {journal_order(mem)}")
+    lines.append(f"findings: {len(mem.open_findings())} open / {len(mem.findings())} total")
+    lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
+    brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
+    lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
+    context_lines = len(mem.read("CONTEXT.md").splitlines())
+    if context_lines > 120:
+        lines.append(f"warning: CONTEXT.md has {context_lines} lines (> 120), trim the Shape section")
+    if len(mem.read("JOURNAL.md").splitlines()) > 400:
+        lines.append("warning: JOURNAL.md over 400 lines; compaction arrives in release 1.1")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- CLI
+
+
+def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    flags: set[str] = set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--profile", "--budget", "--goes-to") and i + 1 < len(argv):
+            options[arg[2:]] = argv[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--"):
+            flags.add(arg[2:])
+        else:
+            positional.append(arg)
+        i += 1
+    return positional, options, flags
+
+
+def main(argv: list[str]) -> int:
+    positional, options, flags = parse(argv)
+    mem = Memory()
+    command = positional[0] if positional else ""
+    sub = positional[1] if len(positional) > 1 else ""
+    if command == "path":
+        print(mem.dir)
+    elif command == "init":
+        print(cmd_init(mem, options, flags))
+    elif command == "trust":
+        trusted, reason = mem.trust()
+        print(f"{'trusted' if trusted else 'untrusted'}: {reason}")
+    elif command == "check":
+        print(cmd_check(mem))
+    elif command == "brief":
+        print(build_brief(mem, int(options.get("budget", DEFAULT_BUDGET)), trust_check="no-trust-check" not in flags))
+    elif command == "journal" and sub == "add":
+        print(cmd_journal_add(mem, sys.stdin.read()))
+    elif command == "findings" and sub == "add" and len(positional) >= 4:
+        print(cmd_findings_add(mem, positional[2], positional[3], options.get("goes-to", "")))
+    elif command == "findings" and sub == "list":
+        print(cmd_findings_list(mem, "open" in flags))
+    elif command == "findings" and sub == "close" and len(positional) >= 4:
+        print(cmd_findings_close(mem, positional[2], positional[3]))
+    elif command == "learn":
+        print(cmd_learn(mem, sys.stdin.read(), "dry-run" in flags, "keep-assumed" in flags))
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

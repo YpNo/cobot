@@ -1,0 +1,37 @@
+# {{NAME}} — context
+
+profile: {{PROFILE}}          # spike | script | cli | library | service | infra
+goal: <one line: what this repository is for>
+owner: <who decides> · <visibility> · <license>
+
+## Stack
+
+- <language and version> · <framework> · <package manager>
+- <test runner> · <linter> · <formatter> · <type checker>
+
+## Environment
+
+- <runtime versions that matter, how they are installed>
+- <anything odd about this machine or CI>
+
+## Verified commands
+
+| purpose | command | verified |
+|---|---|---|
+| unit tests | `<command>` | {{DATE}} |
+| lint | `<command>` | {{DATE}} |
+| build | `<command>` | {{DATE}} |
+
+## Constraints
+
+- <what must never happen here>
+- <conventions the owner insists on>
+
+## Applies / does not apply
+
+- applies: <parts of the owner's standards that fit this repo>
+- does not apply: <parts that do not, with the reason>
+
+## Shape
+
+- <≤ 20 lines: the main components and how they talk>

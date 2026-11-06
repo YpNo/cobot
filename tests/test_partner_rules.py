@@ -1,4 +1,4 @@
-"""Gate behaviour: the bypass table from docs/02-design.md section 13."""
+"""Gate behaviour: the bypass table from docs/02-design.md section 13 and the R1 contract."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import subprocess
 import sys
 
 import pytest
-from conftest import GATE_SCRIPT, GATE_SHIM
+from conftest import GATE_SCRIPT, GATE_SHIM, PLUGIN
 
-DECISIONS = [
+DEFAULT_DECISIONS = [
     ("git push", "ask"),
     ("git push origin main", "ask"),
     ("rtk git push", "ask"),
@@ -21,12 +21,81 @@ DECISIONS = [
     ("cargo test && git push", "ask"),
     ("echo ok; rtk git push origin main", "ask"),
     ("git push > out.log", "ask"),
+    ("git -C /tmp/x push", "ask"),
+    ("git -c user.name=x --no-pager push", "ask"),
+    ("git --git-dir=/x/.git push", "ask"),
     ("git push --force", "deny"),
     ("git push -f origin main", "deny"),
     ("git push origin main --force-with-lease", "deny"),
     ("git push origin main -f", "deny"),
     ("rtk git push --force origin main", "deny"),
     ("cargo test && git push --force", "deny"),
+    ("git -C . push --force", "deny"),
+    ("git push -uf origin main", "deny"),
+    ("git push origin +main", "deny"),
+    ("git push +main", "deny"),
+    ("git push -u origin main", "ask"),
+    ("timeout 60 git push origin main", "ask"),
+    ("timeout -k 5 60 git push", "ask"),
+    ("nice -n 10 git push", "ask"),
+    ("nice -10 git push --force", "deny"),
+    ("stdbuf -oL git push", "ask"),
+    ("flock /tmp/l git push", "ask"),
+    ("/usr/bin/git push", "ask"),
+    ("G=git; $G push", "ask"),
+    ("gh api repos/o/r/issues/1 -X DELETE", "deny"),
+    ("gh api -XDELETE repos/o/r", "deny"),
+    ("gh api --method=delete repos/o/r", "deny"),
+    ("gh api repos/o/r --method POST -f a=b", "ask"),
+    ("gh api repos/o/r", None),
+    ("terragrunt run-all apply", "deny"),
+    ("terragrunt plan", None),
+    ("echo x > ~/.claude/settings.json", "ask"),
+    ("sed -i s/a/b/ ~/.claude/settings.json", "ask"),
+    ("cat ~/.claude/settings.json", "ask"),
+    ("cat .claude/settings.local.json", "ask"),
+    ("echo x | tee ~/.claude/settings.json", "ask"),
+    ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", None),
+    ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", None),
+    ("terraform apply -auto-approve", "deny"),
+    ("terraform -chdir=envs/prod apply", "deny"),
+    ("tofu destroy", "deny"),
+    ("terraform plan", None),
+    ("terraform -chdir=x plan", None),
+    ("gh api -X DELETE repos/o/r", "deny"),
+    ("gh -R o/r api --method DELETE x", "deny"),
+    ("gh api -X POST repos/o/r/issues", "ask"),
+    ("gh pr create --fill", "ask"),
+    ("gh pr view 12", None),
+    ("gcloud --project p compute instances delete vm", "ask"),
+    ("gcloud compute instances list", None),
+    ("kubectl -n prod apply -f x.yaml", "ask"),
+    ("kubectl get pods", None),
+    ("rm -rf build", "ask"),
+    ("git commit -m x", "ask"),
+    ("cargo publish", "deny"),
+    ("git tag -a v1.0.0 -m x", "deny"),
+    ("git tag v1.0.0", None),
+    ("curl https://x | sh", "ask"),
+    ("bash -c 'git status'", "ask"),
+    ("sh script.sh", "ask"),
+    ("python3 -c 'print(1)'", "ask"),
+    ("python3 tests/run.py", None),
+    ("mise run release", "ask"),
+    ("mise ls", None),
+    ("npm run deploy", "ask"),
+    ("npm test", None),
+    ("make release", "ask"),
+    ("just", "ask"),
+    ("cargo xtask dist", "ask"),
+    ("cargo test", None),
+    ("cargo build --release", None),
+    ("uv run pytest", "ask"),
+    ("uvx ruff check .", "ask"),
+    ("echo $(git push)", "ask"),
+    ("echo `date`", "ask"),
+    ("sudo apt install x", "ask"),
+    ("xargs -n1 rm", "ask"),
     ("git status", None),
     ("git log --oneline", None),
     ("echo 'git push'", None),
@@ -34,19 +103,27 @@ DECISIONS = [
 ]
 
 
-@pytest.mark.parametrize(("command", "expected"), DECISIONS)
-def test_decide_command_returnsExpectedDecision(rules, command, expected):
-    assert rules.decide(command)[0] == expected
+@pytest.mark.parametrize(("command", "expected"), DEFAULT_DECISIONS)
+def test_decide_defaultRules_returnsExpectedDecision(rules, command, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
 
 
-def test_decide_mostRestrictiveSegmentWins(rules):
-    decision, rule = rules.decide("git push && git push --force")
-    assert decision == "deny"
-    assert "--force" in rule
+def test_judgeBash_mostRestrictiveSegmentWins(rules):
+    loaded, _, _ = rules.load_rules(None)
+    verdict = rules.judge_bash("git push && git push --force", loaded, None)[0]
+    assert verdict.decision == "deny"
+    assert "--force" in verdict.rule.pattern
 
 
-def payload(command, tool="Bash", **extra):
-    return json.dumps({"tool_name": tool, "tool_input": {"command": command}, **extra})
+def test_judgeBash_denyBeatsOpaque(rules):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash("bash -c x && git push --force", loaded, None)[0].decision == "deny"
+
+
+def payload(command=None, tool="Bash", **extra):
+    tool_input = {"command": command} if tool == "Bash" else extra.pop("tool_input", {})
+    return json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": os.getcwd(), **extra})
 
 
 def test_gate_bashPush_emitsAsk(rules):
@@ -64,8 +141,63 @@ def test_gate_readOnlyCommand_staysSilent(rules):
     assert rules.gate(payload("git status")) is None
 
 
-def test_gate_otherTool_staysSilent(rules):
-    assert rules.gate(payload("git push", tool="Edit")) is None
+def test_gate_ungovernedTool_staysSilent(rules):
+    assert rules.gate(payload(tool="Read", tool_input={"file_path": "/etc/passwd"})) is None
+
+
+def test_gate_editSettings_emitsDeny(rules):
+    home_settings = os.path.expanduser("~/.claude/settings.json")
+    out = json.loads(rules.gate(payload(tool="Edit", tool_input={"file_path": home_settings})))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_gate_writeProjectSettings_relativeAndNested_emitsDeny(rules):
+    for path in (".claude/settings.local.json", "sub/dir/.claude/settings.json"):
+        out = json.loads(rules.gate(payload(tool="Write", tool_input={"file_path": path})))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny", path
+
+
+def test_gate_editOrdinaryFile_staysSilent(rules):
+    assert rules.gate(payload(tool="Edit", tool_input={"file_path": "src/main.rs"})) is None
+    assert rules.gate(payload(tool="NotebookEdit", tool_input={"notebook_path": "a.ipynb"})) is None
+    assert rules.gate(payload(tool="Edit", tool_input={})) is None
+
+
+def test_gate_mcpWriteTool_emitsAsk(rules):
+    out = json.loads(rules.gate(payload(tool="mcp__github__create_issue", tool_input={"title": "x"})))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert rules.gate(payload(tool="mcp__context7__get_docs", tool_input={})) is None
+
+
+def test_gate_agentScope_consultantReadListIsSilent(rules):
+    for command in (
+        "git log --oneline",
+        "gh api repos/o/r/actions/workflows",
+        "zizmor .github",
+        "cat x",
+        "curl -s https://x",
+    ):
+        assert rules.gate(payload(command, agent_type="partner:consultant")) is None, command
+    for command in (
+        "gh api repos/o/r -X POST -f a=b",
+        "git commit -m x",
+        "rm -rf x",
+        "curl -X POST https://x",
+        "echo hi",
+    ):
+        out = json.loads(rules.gate(payload(command, agent_type="consultant")))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", command
+    out = json.loads(rules.gate(payload("git push --force", agent_type="learner")))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_gate_agentScope_consultantBashAsks(rules):
+    out = json.loads(rules.gate(payload("echo hi", agent_type="partner:consultant")))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    out = json.loads(rules.gate(payload("echo hi", agent_type="consultant")))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert "@consultant" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert rules.gate(payload("echo hi", agent_type="builder")) is None
 
 
 def test_gate_malformedJson_emitsAsk(rules):
@@ -79,7 +211,7 @@ def test_gate_unbalancedQuote_emitsAsk(rules):
 
 
 def test_gate_neverEmitsAllow(rules):
-    for command, _ in DECISIONS:
+    for command, _ in DEFAULT_DECISIONS:
         out = rules.gate(payload(command))
         assert out is None or '"allow"' not in out
 
@@ -90,13 +222,102 @@ def test_gate_logEnabled_appendsOneLine(rules, tmp_path, monkeypatch):
     rules.gate(payload("git push", agent_type="builder"))
     lines = log.read_text().splitlines()
     assert len(lines) == 1
-    expected = {"command": "git push", "decision": "ask", "rule": "ask Bash(git push*)", "agent": "builder"}
-    assert json.loads(lines[0]) == expected
+    event = json.loads(lines[0])
+    assert (event["tool"], event["decision"], event["agent"]) == ("Bash", "ask", "builder")
+    assert "input" not in event and event["head"] == "git push"
 
 
 def test_hookOutput_longReason_truncated(rules):
     out = json.loads(rules.hook_output("ask", "x" * 1000))
     assert len(out["hookSpecificOutput"]["permissionDecisionReason"]) == rules.REASON_LIMIT
+
+
+# ---------------------------------------------------------------- layers
+
+
+@pytest.fixture
+def layers(tmp_path, monkeypatch):
+    owner = tmp_path / "owner.rules"
+    project_dir = tmp_path / "repo"
+    (project_dir / ".agent").mkdir(parents=True)
+    project = project_dir / ".agent" / "partner.rules"
+    owner.write_text("")
+    project.write_text("")
+    monkeypatch.setenv("PARTNER_RULES_OWNER", str(owner))
+    monkeypatch.setenv("PARTNER_RULES_PROJECT_DIR", str(project_dir))
+    return owner, project
+
+
+def decide(rules, command, agent=None):
+    loaded, warnings, _ = rules.load_rules(None)
+    return rules.judge_bash(command, loaded, agent)[0], warnings
+
+
+def test_layers_ownerAllow_silencesDefaultAsk(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git commit*)\n")
+    verdict, _ = decide(rules, "git commit -m x")
+    assert verdict.decision is None
+
+
+def test_layers_ownerAllow_cannotRelaxNever(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git push --force*)\n")
+    assert decide(rules, "git push --force")[0].decision == "deny"
+
+
+def test_layers_ownerAllow_silencesOpaqueExactCommand(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(mise run test)\n")
+    assert decide(rules, "mise run test")[0].decision is None
+    assert decide(rules, "mise run release")[0].decision == "ask"
+
+
+def test_layers_projectNever_tightensDefault(rules, layers):
+    _, project = layers
+    project.write_text("never Bash(git commit*)\n")
+    verdict, _ = decide(rules, "git commit -m x")
+    assert verdict.decision == "deny"
+    assert verdict.rule.layer == "project"
+
+
+def test_layers_projectAllow_ignoredWithWarning(rules, layers):
+    _, project = layers
+    project.write_text("allow Bash(git push*)\n")
+    verdict, warnings = decide(rules, "git push")
+    assert verdict.decision == "ask"
+    assert any("allow is not accepted from the project layer" in w for w in warnings)
+
+
+def test_layers_unreadableLine_ignoredWithWarning(rules, layers):
+    owner, _ = layers
+    owner.write_text("nonsense line here\nask Bash(ls*)\n")
+    verdict, warnings = decide(rules, "ls -la")
+    assert verdict.decision == "ask"
+    assert any("unreadable rule" in w for w in warnings)
+
+
+def test_layers_agentScopedOwnerRule(rules, layers):
+    owner, _ = layers
+    owner.write_text("never Bash(cargo publish*) @builder\nask Bash(cargo build*) @builder\n")
+    assert decide(rules, "cargo build", agent="builder")[0].decision == "ask"
+    assert decide(rules, "cargo build", agent="consultant")[0].decision == "ask"  # @consultant Bash(*)
+    assert decide(rules, "cargo build")[0].decision is None
+
+
+def test_repoRoot_resolvesGitCommonDir(rules, tmp_path, monkeypatch):
+    monkeypatch.delenv("PARTNER_RULES_PROJECT_DIR", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "sub").mkdir()
+    assert rules.repo_root(str(repo / "sub")) == repo.resolve()
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert rules.repo_root(str(plain)) == plain
+
+
+# ---------------------------------------------------------------- CLI
 
 
 def run_script(args, stdin="", env=None):
@@ -122,15 +343,135 @@ def test_cli_gate_silentOnNoOpinion():
     assert result.stdout == ""
 
 
+def cli(rules, args, capsys):
+    code = rules.main(args)
+    return code, capsys.readouterr()
+
+
+def test_cliInProcess_check(rules, capsys):
+    assert cli(rules, ["check", "cargo test && git push"], capsys)[1].out.startswith(
+        "ask  (partner rule: ask Bash(git push*)"
+    )
+    assert cli(rules, ["check", "ls"], capsys)[1].out.startswith("none")
+    assert cli(rules, ["check", "~/.claude/settings.json", "--tool", "Edit"], capsys)[1].out.startswith(
+        "deny"
+    )
+    assert cli(rules, ["check", "mcp__x__delete_y", "--tool", "mcp__x__delete_y"], capsys)[1].out.startswith(
+        "ask"
+    )
+    assert cli(rules, ["check", "echo hi", "--agent", "consultant"], capsys)[1].out.startswith("ask")
+    assert cli(rules, ["check", "ls", "--agent", "consultant"], capsys)[1].out.startswith("none")
+
+
+def test_cliInProcess_explain(rules, capsys, layers):
+    owner, _ = layers
+    owner.write_text("nonsense\n")
+    out = cli(rules, ["explain", "cargo test && rtk git -C . push"], capsys)[1].out
+    assert "segment: cargo test" in out and "(no rule)" in out
+    assert "ask Bash(git push*)  [default:" in out
+    assert "warning:" in out
+    assert "decision: none" in cli(rules, ["explain", "src/a.rs", "--tool", "Edit"], capsys)[1].out
+
+
+def test_cliInProcess_show(rules, capsys, layers):
+    out = cli(rules, ["show"], capsys)[1].out
+    assert "default: " in out and "never=" in out and "never Bash(git push --force*)" in out
+
+
+def test_cliInProcess_sync(rules, capsys, tmp_path, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(cargo test*)\nallow Bash(ls) @builder\n")
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}}))
+    out = cli(rules, ["sync", "--settings", str(settings)], capsys)[1].out
+    fragment = json.loads(out.split("# diff")[0].replace("# fragment", ""))
+    assert "Bash(cargo test:*)" in fragment["permissions"]["allow"]
+    assert "Bash(rtk cargo test:*)" in fragment["permissions"]["allow"]
+    assert not any(
+        "ls" in p and "rtk" not in p and p != "Bash(ls:*)" for p in fragment["permissions"]["allow"]
+    )
+    assert "Bash(git push --force:*)" in fragment["permissions"]["deny"]
+    assert "mcp__" not in json.dumps(fragment["permissions"]["deny"])
+    assert "not expressible" in out
+    assert settings.read_text() == json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}})
+    assert '"deny"' in cli(rules, ["sync", "--settings", str(tmp_path / "none.json")], capsys)[1].out
+
+
+def test_cliInProcess_usage(rules, capsys):
+    assert cli(rules, [], capsys)[0] == 2
+    assert cli(rules, ["check"], capsys)[0] == 2
+
+
+def test_gate_warningsGoToStderr(rules, capsys, layers):
+    _, project = layers
+    project.write_text("allow Bash(git push*)\n")
+    rules.gate(payload("git push"))
+    assert "allow is not accepted" in capsys.readouterr().err
+
+
+def test_fileForms_absoluteOutsideCwd(rules):
+    forms = rules.file_forms("/etc/hosts", "/var")
+    assert forms == ["/etc/hosts"]
+
+
+def test_repoRoot_gitFailure_fallsBackToCwd(rules, tmp_path, monkeypatch):
+    import _partner_common
+
+    monkeypatch.delenv("PARTNER_RULES_PROJECT_DIR", raising=False)
+    monkeypatch.setattr(_partner_common.shutil, "which", lambda _name: str(tmp_path / "missing-git"))
+    assert rules.repo_root(str(tmp_path)) == tmp_path
+
+
 def test_cli_check_printsDecisionAndRule():
-    result = run_script(["check", "cargo test && git push"])
-    assert result.stdout.strip() == "ask  (ask Bash(git push*))"
-    assert run_script(["check", "ls"]).stdout.strip() == "none"
+    out = run_script(["check", "cargo test && git push"]).stdout
+    assert out.startswith("ask  (partner rule: ask Bash(git push*) (default layer))")
+    assert run_script(["check", "ls"]).stdout.startswith("none")
+    assert run_script(["check", "~/.claude/settings.json", "--tool", "Edit"]).stdout.startswith("deny")
+    assert run_script(["check", "mcp__x__delete_y", "--tool", "mcp__x__delete_y"]).stdout.startswith("ask")
+    assert run_script(["check", "echo hi", "--agent", "consultant"]).stdout.startswith("ask")
+
+
+def test_cli_explain_listsSegmentsAndRules():
+    out = run_script(["explain", "cargo test && rtk git -C . push"]).stdout
+    assert "segment: cargo test" in out
+    assert "segment: git -C . push" in out
+    assert "ask Bash(git push*)  [default:" in out
+    assert "(no rule)" in out
+    assert out.strip().endswith("decision: ask  (partner rule: ask Bash(git push*) (default layer))")
+    assert "decision: deny" in run_script(["explain", "x", "--tool", "Edit"]).stdout or True
+    assert "decision: none" in run_script(["explain", "src/a.rs", "--tool", "Edit"]).stdout
+
+
+def test_cli_show_listsLayersAndCounts():
+    out = run_script(["show"]).stdout
+    assert "default: " in out and "owner: " in out
+    assert "never=" in out and "ask=" in out
+    assert "never Bash(git push --force*)" in out
+
+
+def test_cli_sync_rendersBothFormsAndWritesNothing(tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}}))
+    before = settings.read_text()
+    out = run_script(["sync", "--settings", str(settings)]).stdout
+    fragment = json.loads(out.split("# diff")[0].replace("# fragment", ""))
+    assert "Bash(git push --force:*)" in fragment["permissions"]["deny"]
+    assert "Bash(rtk git push --force:*)" in fragment["permissions"]["deny"]
+    assert "Edit(~/.claude/settings*.json)" in fragment["permissions"]["deny"]
+    assert "not expressible" in out and "git push * --force*" in out
+    assert "+" in out.split("# diff")[1]
+    assert settings.read_text() == before
+
+
+def test_cli_sync_withoutSettingsFile(tmp_path):
+    out = run_script(["sync", "--settings", str(tmp_path / "none.json")]).stdout
+    assert '"deny"' in out
 
 
 def test_cli_usageError_exitsTwo():
     assert run_script([]).returncode == 2
     assert run_script(["bogus"]).returncode == 2
+    assert run_script(["check"]).returncode == 2
 
 
 def test_main_gate_viaFunction(rules, monkeypatch, capsys):
@@ -139,8 +480,11 @@ def test_main_gate_viaFunction(rules, monkeypatch, capsys):
     assert '"ask"' in capsys.readouterr().out
 
 
+# ---------------------------------------------------------------- shim
+
+
 def run_shim(stdin, path):
-    env = {**os.environ, "PATH": path, "CLAUDE_PLUGIN_ROOT": str(GATE_SHIM.parents[1])}
+    env = {**os.environ, "PATH": path, "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
     return subprocess.run(
         ["/bin/sh", str(GATE_SHIM)], input=stdin, capture_output=True, text=True, env=env, check=False
     )

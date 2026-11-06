@@ -1,0 +1,188 @@
+# agentic-partner default rules (layer: default). Owner layer: ~/.claude/partner.rules.
+# Project layer: .agent/partner.rules (never / ask only). Syntax: decision Tool(pattern) [@agent]
+# never: denied in every layer, cannot be relaxed. ask: the gate asks unless an owner allow matches.
+
+# outward and irreversible: never
+never Bash(git push --force*)
+never Bash(git push -f*)
+never Bash(git push * --force*)
+never Bash(git push * -f)
+never Bash(git push * -f *)
+never Bash(git push * --force-with-lease*)
+never Bash(git push +*)
+never Bash(git push * +*)
+never Bash(terragrunt apply*)
+never Bash(terragrunt destroy*)
+never Bash(terragrunt * apply*)
+never Bash(terragrunt * destroy*)
+never Bash(terraform apply*)
+never Bash(terraform destroy*)
+never Bash(tofu apply*)
+never Bash(tofu destroy*)
+never Bash(cargo publish*)
+never Bash(npm publish*)
+never Bash(pnpm publish*)
+never Bash(uv publish*)
+never Bash(gh release create*)
+never Bash(git tag -a v*)
+never Bash(gh api -X DELETE*)
+never Bash(gh api --method DELETE*)
+never Edit(~/.claude/settings*.json)
+never Write(~/.claude/settings*.json)
+never Edit(.claude/settings*.json)
+never Write(.claude/settings*.json)
+
+# outward or destructive: ask
+ask Bash(git push*)
+ask Bash(gh pr create*)
+ask Bash(gh pr merge*)
+ask Bash(gh pr comment*)
+ask Bash(gh pr review*)
+ask Bash(gh issue create*)
+ask Bash(gh issue comment*)
+ask Bash(gh api -X POST*)
+ask Bash(gh api -X PUT*)
+ask Bash(gh api -X PATCH*)
+ask Bash(gh api --method POST*)
+ask Bash(gh api --method PUT*)
+ask Bash(gh api --method PATCH*)
+ask Bash(ansible-playbook*)
+ask Bash(kubectl apply*)
+ask Bash(kubectl delete*)
+ask Bash(gcloud * create*)
+ask Bash(gcloud * delete*)
+ask Bash(gcloud * update*)
+ask Bash(rm -rf*)
+ask Bash(rm -fr*)
+ask Bash(git reset --hard*)
+ask Bash(git clean*)
+ask Bash(git rebase*)
+ask Bash(git commit*)
+ask Bash(docker run*)
+ask Bash(podman run*)
+ask mcp__*__create*
+ask mcp__*__update*
+ask mcp__*__delete*
+ask mcp__*__merge*
+ask mcp__*__push*
+
+# agent scopes: consultant and learner are read-only. Everything asks except this read list
+# (an agent-scoped allow in this layer silences the gate; never rules above still win).
+ask Bash(*) @consultant
+ask Bash(*) @learner
+allow Bash(git status*) @consultant
+allow Bash(git log*) @consultant
+allow Bash(git show*) @consultant
+allow Bash(git diff*) @consultant
+allow Bash(git blame*) @consultant
+allow Bash(git remote -v) @consultant
+allow Bash(git rev-parse*) @consultant
+allow Bash(git ls-files*) @consultant
+allow Bash(git branch*) @consultant
+allow Bash(git tag --list*) @consultant
+allow Bash(gh pr view*) @consultant
+allow Bash(gh pr checks*) @consultant
+allow Bash(gh pr diff*) @consultant
+allow Bash(gh pr list*) @consultant
+allow Bash(gh issue view*) @consultant
+allow Bash(gh issue list*) @consultant
+allow Bash(gh run view*) @consultant
+allow Bash(gh run list*) @consultant
+allow Bash(gh release view*) @consultant
+allow Bash(gh release list*) @consultant
+allow Bash(gh api repos/*) @consultant
+allow Bash(gh api users/*) @consultant
+allow Bash(gh api orgs/*) @consultant
+allow Bash(zizmor*) @consultant
+allow Bash(cargo tree*) @consultant
+allow Bash(cargo metadata*) @consultant
+allow Bash(cargo --version) @consultant
+allow Bash(rustc --version) @consultant
+allow Bash(go list*) @consultant
+allow Bash(go version) @consultant
+allow Bash(go env*) @consultant
+allow Bash(terraform version) @consultant
+allow Bash(terraform providers*) @consultant
+allow Bash(tofu version) @consultant
+allow Bash(python3 --version) @consultant
+allow Bash(node --version) @consultant
+allow Bash(ls*) @consultant
+allow Bash(cat*) @consultant
+allow Bash(head*) @consultant
+allow Bash(tail*) @consultant
+allow Bash(wc*) @consultant
+allow Bash(file*) @consultant
+allow Bash(stat*) @consultant
+allow Bash(du*) @consultant
+allow Bash(tree*) @consultant
+allow Bash(jq*) @consultant
+allow Bash(yq*) @consultant
+allow Bash(sort*) @consultant
+allow Bash(uniq*) @consultant
+allow Bash(grep*) @consultant
+allow Bash(rg*) @consultant
+allow Bash(fd*) @consultant
+allow Bash(which*) @consultant
+allow Bash(find*) @consultant
+allow Bash(diff*) @consultant
+allow Bash(sha256sum*) @consultant
+allow Bash(curl -s*) @consultant
+allow Bash(curl --silent*) @consultant
+allow Bash(git status*) @learner
+allow Bash(git log*) @learner
+allow Bash(git show*) @learner
+allow Bash(git diff*) @learner
+allow Bash(git blame*) @learner
+allow Bash(git remote -v) @learner
+allow Bash(git rev-parse*) @learner
+allow Bash(git ls-files*) @learner
+allow Bash(git branch*) @learner
+allow Bash(git tag --list*) @learner
+allow Bash(gh pr view*) @learner
+allow Bash(gh pr checks*) @learner
+allow Bash(gh pr diff*) @learner
+allow Bash(gh pr list*) @learner
+allow Bash(gh issue view*) @learner
+allow Bash(gh issue list*) @learner
+allow Bash(gh run view*) @learner
+allow Bash(gh run list*) @learner
+allow Bash(gh release view*) @learner
+allow Bash(gh release list*) @learner
+allow Bash(gh api repos/*) @learner
+allow Bash(gh api users/*) @learner
+allow Bash(gh api orgs/*) @learner
+allow Bash(zizmor*) @learner
+allow Bash(cargo tree*) @learner
+allow Bash(cargo metadata*) @learner
+allow Bash(cargo --version) @learner
+allow Bash(rustc --version) @learner
+allow Bash(go list*) @learner
+allow Bash(go version) @learner
+allow Bash(go env*) @learner
+allow Bash(terraform version) @learner
+allow Bash(terraform providers*) @learner
+allow Bash(tofu version) @learner
+allow Bash(python3 --version) @learner
+allow Bash(node --version) @learner
+allow Bash(ls*) @learner
+allow Bash(cat*) @learner
+allow Bash(head*) @learner
+allow Bash(tail*) @learner
+allow Bash(wc*) @learner
+allow Bash(file*) @learner
+allow Bash(stat*) @learner
+allow Bash(du*) @learner
+allow Bash(tree*) @learner
+allow Bash(jq*) @learner
+allow Bash(yq*) @learner
+allow Bash(sort*) @learner
+allow Bash(uniq*) @learner
+allow Bash(grep*) @learner
+allow Bash(rg*) @learner
+allow Bash(fd*) @learner
+allow Bash(which*) @learner
+allow Bash(find*) @learner
+allow Bash(diff*) @learner
+allow Bash(sha256sum*) @learner
+allow Bash(curl -s*) @learner
+allow Bash(curl --silent*) @learner

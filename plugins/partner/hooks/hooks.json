@@ -1,14 +1,26 @@
 {
-  "description": "Rules gate: judges every command before it runs; never widens permissions; blocks on any failure.",
+  "description": "Rules gate on every governed call (never widens, blocks on failure) and the SessionStart brief (protocol, rule counts, trusted memory).",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/gate.sh\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/session.sh\"",
+            "timeout": 30
           }
         ]
       }

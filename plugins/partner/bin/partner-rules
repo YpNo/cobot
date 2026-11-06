@@ -1,40 +1,179 @@
 #!/usr/bin/env python3
-"""partner-rules: the rules gate.
+"""partner-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md).
 
-Release 0 subset: built-in rules, Bash only, fnmatch over normalised segments.
-Release 1 adds rule files and layers, (binary, subcommand) matching, opaque
-task runners and the ``show`` / ``explain`` / ``sync`` commands (docs/02-design.md, section 6).
+Commands
+  gate                       read a PreToolUse payload on stdin; print a decision or nothing
+  check  "<cmd>" [--tool T] [--agent A]   dry run: decision, rule, layer
+  explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
+  show                       the merged rule set with provenance
+  sync   [--settings PATH]   permissions fragment and diff against settings.json; writes nothing
 
-Contract: the gate never emits ``allow``; an internal error ends in ``ask``;
-silence means "no opinion", and Claude Code's own permission system decides.
+Contract: the gate never emits ``allow``; any internal error ends in ``ask``;
+silence means "no opinion" and Claude Code's own permission system decides.
+Precedence: ``never`` in any layer wins; else an ``allow`` silences the gate
+when it comes from the owner layer, or from the default layer with an agent
+scope (read-only command lists for the consultant and learner); else ``ask``
+from any layer; else silence. The project layer holds ``never`` and ``ask`` only.
 """
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import json
 import os
+import re
 import shlex
 import sys
-from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
-ASK = "ask"
-DENY = "deny"
-SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<"})
-WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin"})
-DECISION_RANK = {None: 0, ASK: 1, DENY: 2}
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+from _partner_common import config_dir, plugin_root, repo_root  # noqa: E402
+
+ASK, DENY = "ask", "deny"
+DECISION_OF = {"never": DENY, "ask": ASK, "allow": "allow"}
+RANK = {None: 0, "allow": 0, ASK: 1, DENY: 2}
 REASON_LIMIT = 200
+SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
+WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
+# prefix commands that run another command: options taking a value, then positional operands to skip
+PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
+    "timeout": (frozenset({"-k", "-s", "--kill-after", "--signal"}), 1),
+    "nice": (frozenset({"-n", "--adjustment"}), 0),
+    "ionice": (frozenset({"-c", "-n", "-p", "--class", "--classdata"}), 0),
+    "stdbuf": (frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
+    "flock": (frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}), 1),
+}
+HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+OPAQUE = frozenset("sh bash zsh dash fish eval xargs sudo doas su make just task npx".split())
+OPAQUE_SUBCOMMANDS = {
+    "mise": frozenset({"run", "exec", "x", "r"}),
+    "npm": frozenset({"run", "run-script", "exec", "x"}),
+    "pnpm": frozenset({"run", "exec", "dlx"}),
+    "yarn": frozenset({"run", "exec", "dlx"}),
+    "bun": frozenset({"run", "x"}),
+    "cargo": frozenset({"xtask"}),
+    "uv": frozenset({"run"}),
+    "uvx": frozenset({""}),
+}
+INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
+INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
+# global options of known binaries: options that take a value, and flags without a value
+GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "git": (
+        frozenset({"-C", "-c", "--git-dir", "--work-tree", "--exec-path", "--namespace"}),
+        frozenset({"--no-pager", "-p", "--paginate", "-P", "--bare"}),
+    ),
+    "terraform": (frozenset({"-chdir"}), frozenset()),
+    "tofu": (frozenset({"-chdir"}), frozenset()),
+    "gh": (frozenset({"-R", "--repo", "--hostname"}), frozenset()),
+    "kubectl": (
+        frozenset({"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user"}),
+        frozenset(),
+    ),
+    "gcloud": (
+        frozenset(
+            {
+                "--project",
+                "--account",
+                "--configuration",
+                "--verbosity",
+                "--format",
+                "--impersonate-service-account",
+            }
+        ),
+        frozenset({"-q", "--quiet"}),
+    ),
+    "docker": (
+        frozenset({"-H", "--host", "--context", "--config", "-l", "--log-level"}),
+        frozenset({"-D", "--debug"}),
+    ),
+    "podman": (frozenset({"--url", "--connection", "-c", "--log-level", "--root"}), frozenset()),
+}
+FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#.*)?$")
+MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#.*)?$")
+LAYERS = ("default", "owner", "project")
 
-# (decision, pattern); the pattern is matched with fnmatch over the normalised segment.
-BUILTIN_RULES: tuple[tuple[str, str], ...] = (
-    ("never", "git push --force*"),
-    ("never", "git push -f*"),
-    ("never", "git push * --force*"),
-    ("never", "git push * -f"),
-    ("never", "git push * -f *"),
-    ("ask", "git push*"),
-)
-DECISION_OF = {"never": DENY, "ask": ASK}
+
+@dataclass(frozen=True)
+class Rule:
+    decision: str  # never | ask | allow
+    tool: str  # Bash | Edit | ... | mcp
+    pattern: str
+    agent: str | None
+    layer: str
+    line: int
+
+    def text(self) -> str:
+        scope = f" @{self.agent}" if self.agent else ""
+        body = self.pattern if self.tool == "mcp" else f"{self.tool}({self.pattern})"
+        return f"{self.decision} {body}{scope}"
+
+
+@dataclass(frozen=True)
+class Verdict:
+    decision: str | None
+    rule: Rule | None
+    note: str = ""
+
+    def reason(self) -> str:
+        if self.rule:
+            return f"partner rule: {self.rule.text()} ({self.rule.layer} layer)"
+        return f"partner gate: {self.note}"
+
+
+# ---------------------------------------------------------------- rule files
+
+
+def layer_paths(cwd: str | None) -> dict[str, Path]:
+    owner = os.environ.get("PARTNER_RULES_OWNER")
+    paths = {
+        "default": plugin_root() / "rules" / "default.rules",
+        "owner": Path(owner) if owner else config_dir() / "partner.rules",
+    }
+    paths["project"] = repo_root(cwd) / ".agent" / "partner.rules"
+    return paths
+
+
+def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    match = RULE_RE.match(stripped)
+    if match:
+        decision, tool, pattern, agent = match.groups()
+    else:
+        mcp = MCP_RULE_RE.match(stripped)
+        if not mcp:
+            warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
+            return None
+        decision, pattern, agent = mcp.groups()
+        tool = "mcp"
+    if layer == "project" and decision == "allow":
+        warnings.append(
+            f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
+        )
+        return None
+    return Rule(decision, tool, pattern, agent, layer, number)
+
+
+def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
+    rules: list[Rule] = []
+    warnings: list[str] = []
+    paths = layer_paths(cwd)
+    for layer, path in paths.items():
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            rule = parse_rule(line, layer, number, warnings)
+            if rule:
+                rules.append(rule)
+    return rules, warnings, paths
+
+
+# ---------------------------------------------------------------- command analysis
 
 
 def split_segments(command: str) -> list[list[str]]:
@@ -51,32 +190,258 @@ def split_segments(command: str) -> list[list[str]]:
     return [segment for segment in segments if segment]
 
 
-def normalise(segment: Iterable[str]) -> str:
-    """Drop wrappers and leading assignments so ``rtk git push`` reads ``git push``."""
-    tokens = list(segment)
-    while tokens and (tokens[0] in WRAPPERS or ("=" in tokens[0] and not tokens[0].startswith("-"))):
-        tokens.pop(0)
-    return " ".join(tokens)
+def strip_prefix_command(tokens: list[str]) -> list[str]:
+    """``timeout -k 5 60 git push`` becomes ``git push``."""
+    with_value, positional = PREFIX_COMMANDS[tokens[0]]
+    rest = tokens[1:]
+    while rest and rest[0].startswith("-"):
+        name = rest[0].split("=", 1)[0]
+        rest = rest[2:] if name in with_value and "=" not in rest[0] else rest[1:]
+    return rest[positional:]
 
 
-def judge_segment(normalised: str) -> tuple[str | None, str | None]:
-    """Return the most restrictive (decision, rule) matching one segment."""
-    best: tuple[str | None, str | None] = (None, None)
-    for keyword, pattern in BUILTIN_RULES:
-        decision = DECISION_OF[keyword]
-        if fnmatch.fnmatchcase(normalised, pattern) and DECISION_RANK[decision] > DECISION_RANK[best[0]]:
-            best = (decision, f"{keyword} Bash({pattern})")
-    return best
+def strip_wrappers(tokens: list[str]) -> list[str]:
+    """Drop wrappers, assignments and prefix commands; basename the binary."""
+    tokens = list(tokens)
+    while tokens:
+        head = tokens[0]
+        if head in WRAPPERS or ("=" in head and not head.startswith("-")):
+            tokens.pop(0)
+        elif head in PREFIX_COMMANDS:
+            tokens = strip_prefix_command(tokens)
+        else:
+            break
+    if tokens and "/" in tokens[0] and not tokens[0].startswith("$"):
+        tokens[0] = os.path.basename(tokens[0])
+    return tokens
 
 
-def decide(command: str) -> tuple[str | None, str | None]:
-    """Judge a whole command: the most restrictive segment wins."""
-    best: tuple[str | None, str | None] = (None, None)
-    for segment in split_segments(command):
-        decision, rule = judge_segment(normalise(segment))
-        if DECISION_RANK[decision] > DECISION_RANK[best[0]]:
-            best = (decision, rule)
-    return best
+def strip_heredocs(command: str) -> str:
+    """Remove here-document bodies: their text is data, not commands."""
+    out: list[str] = []
+    skip_until: str | None = None
+    for line in command.split("\n"):
+        if skip_until is not None:
+            if line.strip() == skip_until:
+                skip_until = None
+            continue
+        match = HEREDOC_RE.search(line)
+        if match:
+            skip_until = match.group(2)
+            line = line[: match.start()]
+        out.append(line)
+    return "\n".join(out)
+
+
+def expand_push_flags(tokens: list[str]) -> list[str]:
+    """``git push -uf`` becomes ``git push -u -f`` so the force rules see it."""
+    if tokens[:2] != ["git", "push"]:
+        return tokens
+    out = tokens[:2]
+    for token in tokens[2:]:
+        if re.fullmatch(r"-[a-zA-Z]{2,}", token):
+            out.extend(f"-{flag}" for flag in token[1:])
+        else:
+            out.append(token)
+    return out
+
+
+def canonical_gh_api(tokens: list[str]) -> list[str]:
+    """``gh api repos/x -X DELETE`` and ``gh api -XDELETE repos/x`` become ``gh api -X DELETE repos/x``."""
+    if tokens[:2] != ["gh", "api"]:
+        return tokens
+    rest: list[str] = []
+    method = None
+    i = 2
+    while i < len(tokens):
+        token = tokens[i]
+        if token in ("-X", "--method") and i + 1 < len(tokens):
+            method, i = tokens[i + 1].upper(), i + 2
+            continue
+        if token.startswith("-X") and len(token) > 2:
+            method = token[2:].upper()
+        elif token.startswith("--method="):
+            method = token.split("=", 1)[1].upper()
+        else:
+            rest.append(token)
+        i += 1
+    return ["gh", "api", "-X", method, *rest] if method else tokens
+
+
+def strip_global_options(tokens: list[str]) -> list[str]:
+    """``git -C x -c k=v push`` becomes ``git push`` for the verb form."""
+    if not tokens or tokens[0] not in GLOBAL_OPTIONS:
+        return tokens
+    with_value, flags = GLOBAL_OPTIONS[tokens[0]]
+    out = [tokens[0]]
+    rest = tokens[1:]
+    while rest:
+        head = rest[0]
+        name = head.split("=", 1)[0]
+        if head.startswith("-") and name in with_value:
+            rest = rest[1:] if "=" in head else rest[2:]
+        elif head.startswith("-") and name in flags:
+            rest = rest[1:]
+        else:
+            break
+    return out + rest
+
+
+def has_substitution(command: str) -> bool:
+    return "$(" in command or "`" in command or "<(" in command or ">(" in command
+
+
+def is_opaque(plain: list[str]) -> bool:
+    """A runner or interpreter whose real command is hidden from argv matching."""
+    if not plain:
+        return False
+    head = plain[0]
+    if head in OPAQUE or head.startswith("$"):
+        return True
+    if head in OPAQUE_SUBCOMMANDS:
+        sub = plain[1] if len(plain) > 1 else ""
+        return sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]
+    if head in INTERPRETERS:
+        return any(token in INLINE_CODE_FLAGS for token in plain[1:])
+    return False
+
+
+def candidates(tokens: list[str]) -> list[str]:
+    plain = strip_wrappers(tokens)
+    verb = canonical_gh_api(expand_push_flags(strip_global_options(plain)))
+    forms = [" ".join(plain)]
+    if verb != plain:
+        forms.append(" ".join(verb))
+    return forms
+
+
+def agent_matches(scope: str, agent: str | None) -> bool:
+    """``@consultant`` matches ``consultant`` and ``partner:consultant``."""
+    if not agent:
+        return False
+    return scope in (agent, agent.split(":")[-1]) or agent in (scope, scope.split(":")[-1])
+
+
+def applies(rule: Rule, tool: str, agent: str | None) -> bool:
+    if rule.agent and not agent_matches(rule.agent, agent):
+        return False
+    if rule.tool == "mcp":
+        return tool.startswith("mcp__")
+    return rule.tool == tool
+
+
+def matches_bash(rule: Rule, forms: list[str]) -> bool:
+    """never/ask match any form; allow matches only the canonical (last) form, so a method moved
+    to the front of ``gh api`` cannot hide behind a read-only prefix pattern."""
+    candidates_for_rule = forms[-1:] if rule.decision == "allow" else forms
+    return any(fnmatch.fnmatchcase(form, rule.pattern) for form in candidates_for_rule)
+
+
+def allow_counts(rule: Rule) -> bool:
+    """An allow silences the gate from the owner layer, or from the default layer when agent-scoped."""
+    return rule.decision == "allow" and (
+        rule.layer == "owner" or (rule.layer == "default" and bool(rule.agent))
+    )
+
+
+def resolve(matched: list[Rule], note: str = "") -> Verdict:
+    """Apply the precedence: never > allow (owner, or default with an agent scope) > ask > silence."""
+    nevers = [r for r in matched if r.decision == "never"]
+    if nevers:
+        return Verdict(DENY, nevers[0])
+    if any(allow_counts(r) for r in matched):
+        return Verdict(None, None, "allow rule")
+    asks = [r for r in matched if r.decision == "ask"]
+    if asks:
+        return Verdict(ASK, asks[0])
+    return Verdict(None, None, note)
+
+
+def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: list[Rule]) -> str | None:
+    """A shell token that names a file protected by a ``never`` Edit/Write rule."""
+    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
+    for segment in segments:
+        for token in segment:
+            if ("/" in token or token.startswith("~")) and not token.startswith("-"):
+                if any(matches_file(r, file_forms(token, cwd)) for r in protected):
+                    return token
+    return None
+
+
+def judge_bash(
+    command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
+) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
+    """Judge every segment; the most restrictive verdict wins. Also return the trace."""
+    bash_rules = [r for r in rules if applies(r, "Bash", agent)]
+    command = strip_heredocs(command)
+    opaque_all = has_substitution(command)
+    best = Verdict(None, None, "no rule matched")
+    trace: list[tuple[str, list[Rule]]] = []
+    segments = split_segments(command)
+    touched = protected_file_touched(segments, cwd, rules)
+    if touched:
+        best = Verdict(ASK, None, f"shell access to a protected file '{touched[:60]}'")
+    for segment in segments:
+        forms = candidates(segment)
+        matched = [r for r in bash_rules if matches_bash(r, forms)]
+        verdict = resolve(matched, "no rule matched")
+        if (opaque_all or is_opaque(strip_wrappers(segment))) and verdict.decision != DENY:
+            allowed = any(allow_counts(r) for r in matched)
+            verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{forms[0][:60]}'")
+        trace.append((forms[0], matched))
+        if RANK[verdict.decision] > RANK[best.decision] or (
+            verdict.decision == best.decision and best.rule is None
+        ):
+            best = verdict
+    return best, trace
+
+
+def file_forms(path: str, cwd: str | None) -> list[str]:
+    base = Path(cwd or os.getcwd())
+    absolute = (
+        (base / os.path.expanduser(path)).resolve()
+        if not os.path.isabs(os.path.expanduser(path))
+        else Path(os.path.expanduser(path))
+    )
+    forms = [str(absolute)]
+    try:
+        forms.append(str(absolute.relative_to(base)))
+    except ValueError:
+        pass
+    return forms
+
+
+def matches_file(rule: Rule, forms: list[str]) -> bool:
+    pattern = os.path.expanduser(rule.pattern)
+    for form in forms:
+        if fnmatch.fnmatchcase(form, pattern) or fnmatch.fnmatchcase(form, f"*/{pattern}"):
+            return True
+    return False
+
+
+def judge_file(tool: str, path: str, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
+    forms = file_forms(path, cwd)
+    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms)]
+    return resolve(matched, "no rule matched")
+
+
+def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
+    matched = [r for r in rules if applies(r, tool, agent) and fnmatch.fnmatchcase(tool, r.pattern)]
+    return resolve(matched, "no rule matched")
+
+
+def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
+    if tool == "Bash":
+        return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
+    if tool in FILE_TOOLS:
+        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        return judge_file(tool, str(path), cwd, rules, agent) if path else Verdict(None, None, "no path")
+    if tool.startswith("mcp__"):
+        return judge_mcp(tool, rules, agent)
+    return Verdict(None, None, "tool not governed")
+
+
+# ---------------------------------------------------------------- commands
 
 
 def hook_output(decision: str, reason: str) -> str:
@@ -91,8 +456,7 @@ def hook_output(decision: str, reason: str) -> str:
     )
 
 
-def log_event(payload: dict[str, object]) -> None:
-    """Append one JSON line when PARTNER_GATE_LOG names a file (used by the spikes)."""
+def log_event(payload: dict) -> None:
     path = os.environ.get("PARTNER_GATE_LOG")
     if path:
         with open(path, "a", encoding="utf-8") as handle:
@@ -100,34 +464,161 @@ def log_event(payload: dict[str, object]) -> None:
 
 
 def gate(stdin: str) -> str | None:
-    """Judge a PreToolUse payload; return the JSON to print, or None for silence."""
     try:
         payload = json.loads(stdin)
-        if payload.get("tool_name") != "Bash":
-            return None
-        command = str(payload.get("tool_input", {}).get("command", ""))
-        decision, rule = decide(command)
+        tool = str(payload.get("tool_name", ""))
+        cwd = payload.get("cwd")
+        agent = payload.get("agent_type") or payload.get("agent_name")
+        rules, warnings, _ = load_rules(cwd)
+        for warning in warnings:
+            print(f"partner gate: {warning}", file=sys.stderr)
+        verdict = judge(tool, payload.get("tool_input") or {}, cwd, rules, agent)
+        tool_input = payload.get("tool_input") or {}
+        head = str(
+            tool_input.get("command") or tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        )
         log_event(
-            {"command": command, "decision": decision, "rule": rule, "agent": payload.get("agent_type")}
+            {
+                "tool": tool,
+                "head": head[:120],
+                "decision": verdict.decision,
+                "reason": verdict.reason(),
+                "agent": agent,
+            }
         )
     except Exception as error:  # noqa: BLE001 - any failure must end in "ask"
-        return hook_output(ASK, f"partner gate could not judge the command ({type(error).__name__}: {error})")
-    if decision is None:
+        return hook_output(ASK, f"partner gate could not judge the call ({type(error).__name__}: {error})")
+    if verdict.decision is None:
         return None
-    return hook_output(decision, f"partner rule: {rule} (built-in layer)")
+    return hook_output(verdict.decision, verdict.reason())
+
+
+def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    i = 0
+    while i < len(argv):
+        if argv[i].startswith("--") and i + 1 < len(argv):
+            options[argv[i][2:]] = argv[i + 1]
+            i += 2
+        else:
+            positional.append(argv[i])
+            i += 1
+    return positional, options
+
+
+def tool_input_for(tool: str, target: str) -> dict:
+    if tool == "Bash":
+        return {"command": target}
+    if tool in FILE_TOOLS:
+        return {"file_path": target}
+    return {}
+
+
+def cmd_check(target: str, options: dict[str, str]) -> str:
+    tool = options.get("tool", "Bash")
+    rules, _, _ = load_rules(None)
+    verdict = judge(tool, tool_input_for(tool, target), None, rules, options.get("agent"))
+    return f"{verdict.decision or 'none'}  ({verdict.reason()})"
+
+
+def cmd_explain(target: str, options: dict[str, str]) -> str:
+    tool = options.get("tool", "Bash")
+    rules, warnings, _ = load_rules(None)
+    agent = options.get("agent")
+    lines = [f"tool: {tool}" + (f"  agent: {agent}" if agent else "")]
+    if tool == "Bash":
+        verdict, trace = judge_bash(target, rules, agent)
+        for form, matched in trace:
+            lines.append(f"segment: {form}")
+            lines.extend(f"  {r.text()}  [{r.layer}:{r.line}]" for r in matched)
+            if not matched:
+                lines.append("  (no rule)")
+    else:
+        verdict = judge(tool, tool_input_for(tool, target), None, rules, agent)
+    lines.append(f"decision: {verdict.decision or 'none'}  ({verdict.reason()})")
+    lines.extend(f"warning: {w}" for w in warnings)
+    return "\n".join(lines)
+
+
+def cmd_show() -> str:
+    rules, warnings, paths = load_rules(None)
+    lines = [f"{layer}: {path}{'' if path.is_file() else '  (absent)'}" for layer, path in paths.items()]
+    counts = {d: sum(r.decision == d for r in rules) for d in ("never", "ask", "allow")}
+    lines.append(
+        f"rules: {len(rules)}  never={counts['never']}  ask={counts['ask']}  allow={counts['allow']}"
+    )
+    lines.extend(f"{r.text():60} [{r.layer}:{r.line}]" for r in rules)
+    lines.extend(f"warning: {w}" for w in warnings)
+    return "\n".join(lines)
+
+
+def permission_patterns(rule: Rule) -> list[str]:
+    """Claude Code permission syntax: prefix patterns only; both plain and rtk forms for Bash."""
+    if rule.tool == "mcp":
+        return [rule.pattern]
+    if rule.tool != "Bash":
+        return [f"{rule.tool}({rule.pattern})"]
+    if "*" in rule.pattern[:-1]:
+        return []  # a wildcard inside the pattern has no prefix form; the hook covers it
+    prefix = rule.pattern[:-1] if rule.pattern.endswith("*") else rule.pattern
+    suffix = ":*" if rule.pattern.endswith("*") else ""
+    return [f"Bash({prefix}{suffix})", f"Bash(rtk {prefix}{suffix})"]
+
+
+def cmd_sync(options: dict[str, str]) -> str:
+    rules, _, _ = load_rules(None)
+    deny = sorted({p for r in rules if r.decision == "never" and not r.agent for p in permission_patterns(r)})
+    allow = sorted(
+        {
+            p
+            for r in rules
+            if r.decision == "allow" and r.layer == "owner" and not r.agent
+            for p in permission_patterns(r)
+        }
+    )
+    skipped = [r.text() for r in rules if r.decision == "never" and not permission_patterns(r)]
+    fragment = {"permissions": {"deny": deny, "allow": allow}}
+    settings_path = Path(options.get("settings") or config_dir() / "settings.json")
+    current = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
+    merged = json.loads(json.dumps(current))
+    perms = merged.setdefault("permissions", {})
+    for key in ("deny", "allow"):
+        perms[key] = sorted(set(perms.get(key, [])) | set(fragment["permissions"][key]))
+    diff = difflib.unified_diff(
+        json.dumps(current, indent=2).splitlines(),
+        json.dumps(merged, indent=2).splitlines(),
+        fromfile=str(settings_path),
+        tofile=f"{settings_path} (with partner rules)",
+        lineterm="",
+    )
+    out = ["# fragment", json.dumps(fragment, indent=2), "# diff (nothing written; apply by hand)", *diff]
+    if skipped:
+        out.append("# not expressible as permission rules (the hook enforces them): " + "; ".join(skipped))
+    return "\n".join(out)
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) >= 1 and argv[0] == "gate":
+    positional, options = parse_options(argv)
+    command = positional[0] if positional else ""
+    if command == "gate":
         output = gate(sys.stdin.read())
         if output:
             print(output)
         return 0
-    if len(argv) == 2 and argv[0] == "check":
-        decision, rule = decide(argv[1])
-        print(f"{decision or 'none'}" + (f"  ({rule})" if rule else ""))
+    if command == "check" and len(positional) == 2:
+        print(cmd_check(positional[1], options))
         return 0
-    print("usage: partner-rules gate < hook.json | partner-rules check '<command>'", file=sys.stderr)
+    if command == "explain" and len(positional) == 2:
+        print(cmd_explain(positional[1], options))
+        return 0
+    if command == "show":
+        print(cmd_show())
+        return 0
+    if command == "sync":
+        print(cmd_sync(options))
+        return 0
+    print(__doc__.strip(), file=sys.stderr)
     return 2
 
 

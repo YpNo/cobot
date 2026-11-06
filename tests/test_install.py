@@ -140,3 +140,18 @@ def test_install_sourceGithub_registersFromGithub(home, tmp_path):
     result = run_install(["--project", str(tmp_path), "--source", "github"], home, fake_claude=False)
     assert "registering marketplace from YpNo/agentic-partner" in result.stdout
     assert os.path.isdir(tmp_path)
+
+
+def test_install_refresh_uninstallsThenInstallsAtProjectScope(home, tmp_path):
+    target = tmp_path / "repo"
+    target.mkdir()
+    result = run_install(["--refresh", str(target)], home)
+    assert result.returncode == 0
+    assert "uninstall" in result.stdout.lower()
+    assert "installing partner@agentic-partner at scope project" in result.stdout
+    assert str(target) in result.stdout
+
+
+def test_install_usage_listsRefresh(home):
+    result = run_install(["--help"], home)
+    assert "--refresh [DIR]" in result.stdout and "--uninstall [SCOPE]" in result.stdout

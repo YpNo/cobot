@@ -52,6 +52,9 @@ Prints a session-only alias using `claude --plugin-dir`; nothing is written.
 
 Registers the marketplace (from this checkout, or from GitHub with `--source github`) and installs
 the plugin at project scope in that repository. Use `--local` in a repository you do not own.
+The install is a copy pinned to the plugin version: after editing this checkout, run
+`./install.sh --refresh /path/to/repo` (uninstall and reinstall), because `claude plugin update`
+only acts on a version change.
 
 ```bash
 ./install.sh --check
@@ -139,7 +142,8 @@ is pinned to a commit SHA and tokens are read-only except the release job.
 ## Security
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined
-obfuscation. Shell interpreters, task runners and command substitution are opaque and ask.
+obfuscation. Shell interpreters, task runners and command substitution are opaque and ask; `mise`
+tasks are the exception, resolved from the mise config and judged command by command.
 Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
 protection is advisory for the model's own reads. Report a vulnerability through a private GitHub
 security advisory on this repository.

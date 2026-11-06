@@ -18,3 +18,12 @@ Proof: pytest 173 passed, coverage 99.06 % (exit 0); ruff check and format clean
 Open: gate-asks eval needs bubblewrap and socat on the machine; brief caps not measured on a 1 000-line journal (F-01); three knowledge lines remain reported (F-02); a consultant compound command asked in spike F, segment not identified yet; learn --promote, compact and consult knowledge_delta application are R1.1.
 Next: dogfood through install.sh --project on cartridge-os and --local on headscale; R1.1 per docs/02-design.md section 15.
 verified: 508fb6c+working-tree · pytest --cov · ruff check · ruff format --check · shellcheck · check-plugin · claude plugin validate --strict ×2 · markdownlint-cli2
+
+## 2026-11-06 — dogfood on cartridge-os
+
+Changed: `install.sh --project` run on cartridge-os (identity github.com/ypno enrolled, FINDINGS.md created there, .claude/settings.json written); the gate resolves mise tasks to the commands they run; the brief caps CONTEXT by section, names what it dropped and grows to 4 000 when the journal is short; `install.sh --refresh`.
+Why: cartridge-os runs everything through mise tasks, so the opaque rule asked on every test and lint run; its 3.4k CONTEXT lost "Runtime constraints" and "Where things are" to the 2 500 cap; `claude plugin update` reports a same-version edit as current and keeps the stale cache.
+Proof: 212 passed, coverage 99.16 %; ruff, shellcheck, markdownlint, check-plugin, `claude plugin validate --strict` ×2 clean; through the refreshed cache from cartridge-os: additionalContext 7 561 chars with every CONTEXT section, `mise run lint` and `mise run test-focused -- -p hal` silent, `mise run sd-linux` asks (command substitution), `git push --force` denied.
+Open: live `claude -p` probes through the installed plugin blocked by the terminal CLI's expired OAuth (F-03); cartridge-os holds two untracked files for the owner to commit; the consultant segment that asked in spike F is still unidentified.
+Next: owner runs `claude login`, then the two probes; release 1.1.
+verified: b101dad+working-tree

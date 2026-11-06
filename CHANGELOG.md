@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `partner-rules` resolves mise tasks: `mise run <task>`, the `mise <task>` shorthand and
+  `mise exec … -- <cmd>` are judged as the commands behind them, and reasons and `explain` name
+  the origin (`via mise run deploy`). A task with `depends`, `file`, `shell`, `dir`, templating or
+  command substitution stays opaque; a `mise` global flag or unknown subcommand now asks.
+- `install.sh --refresh [DIR]`: uninstall and reinstall at project scope, the only way a
+  same-version edit reaches an installed copy (`claude plugin update` keeps the cache).
+
+### Changed
+
+- The brief caps CONTEXT.md on section boundaries and names the dropped sections, and the cap
+  grows into the room a short journal leaves (2 500 to 4 000 characters).
+
+### Fixed
+
+- The brief's hard cap could overshoot its limit by one character.
+
 ## [0.1.0] - 2026-11-06
 
 Release 1: the governed orchestrator, dogfood-ready through `install.sh --dev` and `--project`.

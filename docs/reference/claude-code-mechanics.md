@@ -120,3 +120,11 @@ eval exit code 2 for partial runs.
 - Eval judges (`llm`, default haiku) failed two runs whose final message plainly met the rubric
   ("I sized this as tiny"). Prefer `regex`, `tool_used`, `tool_order` and `file_exists` graders;
   keep `llm` for what cannot be matched. Traces are deleted after a run unless `--keep-temp`.
+
+## Found while dogfooding on cartridge-os (2026-11-06, Claude Code 2.1.285)
+
+- `claude plugin marketplace add <directory>` records the marketplace in `~/.claude/plugins/known_marketplaces.json` and in the user `settings.json` (`extraKnownMarketplaces`); a project-scope install then writes only `enabledPlugins` into the project's `.claude/settings.json`.
+- An install copies the plugin to `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` and records `gitCommitSha` and `projectPath` in `installed_plugins.json`. `${CLAUDE_PLUGIN_ROOT}` is that versioned path, and hooks run from it.
+- `claude plugin update` compares version strings only: a same-version edit in a directory marketplace reports "already at the latest version" and the cache stays stale. `uninstall` leaves the cache directory in place; the next `install` overwrites it from the checkout (`install.sh --refresh`).
+- `claude plugin list` shows a project-scope plugin as enabled only when run from inside that project.
+- `claude -p` in a terminal can fail with "OAuth session expired and could not be refreshed" while the desktop app's own session works; `claude login` in that terminal is the fix.

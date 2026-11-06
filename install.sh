@@ -2,6 +2,7 @@
 # agentic-partner installer. POSIX sh. Writes nothing outside the chosen scope.
 #   --dev                 print the session-only alias (claude --plugin-dir); writes nothing
 #   --project [DIR]       register the marketplace and install at project scope in DIR (default: .)
+#   --refresh [DIR]       uninstall and reinstall at project scope: the cache only refreshes on a version change
 #   --local [DIR]         same, at local scope (foreign repositories: never committed)
 #   --user                install at user scope (reserved for the switch, docs/03-switch-plan.md)
 #   --check               report Claude Code, marketplace, installed scopes and the legacy scaffold
@@ -19,7 +20,7 @@ CLAUDE_DIR=${CLAUDE_CONFIG_DIR:-$HOME_DIR/.claude}
 LEGACY_DIR=$HOME_DIR/.agents
 source_kind=path
 
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
 
 need_claude() {
   command -v claude >/dev/null 2>&1 || { echo "install: claude not found on PATH" >&2; exit 1; }
@@ -52,6 +53,14 @@ cmd_install() {
   ensure_marketplace
   echo "installing $PLUGIN@$MARKETPLACE at scope $scope in $dir"
   (cd "$dir" && claude plugin install "$PLUGIN@$MARKETPLACE" --scope "$scope")
+}
+
+cmd_refresh() {
+  dir=${1:-.}
+  need_claude
+  (cd "$dir" && claude plugin uninstall "$PLUGIN@$MARKETPLACE" --scope project) \
+    || echo "refresh: nothing to uninstall at project scope in $dir"
+  cmd_install project "$dir"
 }
 
 cmd_uninstall() {
@@ -117,7 +126,7 @@ action=""; arg=""
 while [ $# -gt 0 ]; do
   case $1 in
     --dev|--check|--user) action=$1 ;;
-    --project|--local|--uninstall) action=$1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then arg=$2; shift; fi ;;
+    --project|--local|--refresh|--uninstall) action=$1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then arg=$2; shift; fi ;;
     --source) [ $# -gt 1 ] || { usage; exit 2; }; source_kind=$2; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "install: unknown option $1" >&2; usage; exit 2 ;;
@@ -129,6 +138,7 @@ case $action in
   --dev) cmd_dev ;;
   --project) cmd_install project "$arg" ;;
   --local) cmd_install local "$arg" ;;
+  --refresh) cmd_refresh "$arg" ;;
   --user) cmd_install user "$REPO_DIR" ;;
   --check) cmd_check ;;
   --uninstall) cmd_uninstall "$arg" ;;

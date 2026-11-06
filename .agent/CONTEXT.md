@@ -23,6 +23,7 @@ owner: YpNo (Michael Lopez) · public · MIT
 | plugin validation | `claude plugin validate plugins/partner --strict && claude plugin validate . --strict` | 2026-11-06 |
 | gate dry run | `plugins/partner/bin/partner-rules check "<cmd>"` | 2026-11-06 |
 | plugin contract (sizes, descriptions, agent budget, knowledge lines) | `python3 scripts/check-plugin.py` | 2026-11-06 |
+| reinstall into a dogfood repository | `./install.sh --refresh /path/to/repo` (uninstall + install; `claude plugin update` ignores same-version edits) | 2026-11-06 |
 | memory self-check | `plugins/partner/bin/partner-memory check` | 2026-11-06 |
 | evals (paid sessions, owner's terminal) | `cd plugins/partner && claude plugin eval . --runs 1 --ablation none --no-publish --allow-tools Bash Write Edit` | 2026-11-06 |
 | R1 spikes (owner's terminal) | `sh scripts/spike-r1.sh` | 2026-11-06 |

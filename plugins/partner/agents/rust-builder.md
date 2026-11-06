@@ -19,4 +19,5 @@ publish or edit `.agent/`, specs, changelog or versions; the rules gate asks or 
 work around it. After two failed attempts at the same check, stop and hand back.
 
 Report, under 500 words: `Files:` · `Checks:` (each command, exit code, output tail; nothing
-listed as passing that did not run) · `Open:` · `Noticed:`.
+listed as passing that did not run) · `Deps added:` (only what the task names, else `none`) ·
+`Open:` · `Noticed:`.

@@ -1,8 +1,11 @@
 # Owner ideas, third review — 2026-11-07
 
 Ten ideas the owner raised after the cartridge-os dogfood, each challenged, with the action the
-partner proposes. Status **pending** until the owner confirms or amends; confirmed items move to
-`docs/01-decisions.md` as firm rows and into the skill, agent or rule that enforces them.
+partner proposes. **Confirmed as written by the owner on 2026-11-07**; rows 17–25 of
+`docs/01-decisions.md` are firm. Applied the same day: rules 18 and 22 in `default.rules`, the
+PR unit and architecture choice in `spec`, task commits in `build`, the pre-PR currency check and
+the single PR in `wrap`, `Deps added:` in the builders' reports, the trigger matrix in
+`expert-gha`. The rest is scheduled in design §15.
 
 | # | Idea | Challenge | Proposed action |
 |---|---|---|---|

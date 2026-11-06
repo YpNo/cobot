@@ -22,12 +22,16 @@ verified commands, run `/code-review low` for small, then one journal line throu
    - Tasks with disjoint file sets and no mutual deps may run as parallel lanes: at most three
      Agent calls in one message with `isolation: worktree`. You integrate; builders never merge.
 3. On each report: refuse it if `Checks:` lacks a command, an exit code or output; re-run the
-   focused check yourself when in doubt. Tick the task in the spec (`[x]` or a `done` column).
+   focused check yourself when in doubt. Refuse a `Deps added:` entry the spec does not name
+   (decision 22). Tick the task in the spec (`[x]` or a `done` column).
    Items under `Noticed:` go to `partner-memory findings add`, never into the code.
+   Then commit the task on the spec's branch with a Conventional Commit message (one task = one
+   commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
+   layer allows it; never push from here.
 4. A builder that fails the same check twice hands back: decide yourself whether to fix inline,
    split the task, or stop and ask the owner. Never let a builder loop.
 5. After a task group (a lane, or three tasks): one journal entry (`Changed / Why / Proof / Open /
    Next`) through `partner-memory journal add`.
-6. Never commit, push or open anything outward from here; propose it. The gate will ask anyway.
+6. Never push, tag or open anything outward from here; the PR belongs to `/partner:wrap`.
 
 When every task is ticked, say so and hand over to `/partner:wrap`.

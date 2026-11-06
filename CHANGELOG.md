@@ -20,6 +20,14 @@ All notable changes to this project are documented here. The format follows
   string, nested up to four levels; an option a wrapper's table does not know keeps it opaque.
   Remote execution now asks: `ssh`, `mosh`, `kubectl exec`, `gcloud … ssh`, `gh codespace ssh`;
   so do `source` and `.`.
+- Default rules from the owner's third review: `never` on a commit carrying `Co-Authored-By` or a
+  PR body carrying `Generated with` (authorship, not a word ban); `ask` on dependency-adding
+  commands (`cargo add`, `npm install <pkg>`, `pnpm add`, `yarn add`, `bun add`, `go get`,
+  `uv add`, `pip install`, `poetry add`); bare installs from a lockfile stay silent.
+- `spec` sizes a change as one branch and one PR with one commit per task, writes the
+  architecture choice (hexagonal by profile) and justifies every new dependency; `build` commits
+  each finished task and refuses an unnamed dependency; `wrap` runs the pre-PR currency check and
+  opens one PR; builders report `Deps added:`; `expert-gha` carries the CI trigger matrix.
 
 ### Changed
 

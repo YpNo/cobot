@@ -11,6 +11,10 @@ argument-hint: [spec slug]
 2. **Full run.** Run the complete verified command set from CONTEXT.md (tests with coverage, lint,
    format check, type check, security scan, plugin or schema validation, whatever the table lists).
    Keep the output tails; do not condense failures (`rtk proxy` if needed).
+   Then the **pre-PR currency check** (decision 21): the ecosystem's outdated and advisory
+   commands from the matching `lang-*` skill (`cargo outdated` and `cargo deny check advisories`,
+   `go list -m -u all` and `govulncheck`, `npm outdated` and `npm audit`, `uv pip list --outdated`
+   and `pip-audit`, `terraform providers lock` dry run). Report the gap; upgrade nothing unasked.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
    the diff touches inputs, auth, secrets, shell or infra, and the relevant `consult-*` skills
    (workflows changed → `consult-gha`). Fold what is cheap and safe; everything else is journaled
@@ -24,5 +28,7 @@ argument-hint: [spec slug]
    `## YYYY-MM-DD — <title>` then `Changed:` `Why:` `Proof:` (commands, exit codes, tails)
    `Open:` `Next:` and the stamp `verified: <HEAD sha> · <commands run>`. The stamp is what
    `contribute` and `ship` will require before proposing a push.
-7. **Hand over.** List what the owner may now do (commit message proposal, push, PR), each as a
-   command the owner runs or approves. Nothing outward happens here.
+7. **Hand over.** The spec's branch becomes **one PR** (decision 20): check the commit log for an
+   attribution footer or an AI named as author (decision 18) before proposing it, then list what
+   the owner may now do (push, `gh pr create` with the body you drafted), each as a command the
+   owner runs or approves. Nothing outward happens here.

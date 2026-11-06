@@ -26,5 +26,6 @@ Report, under 500 words:
 - `Files:` paths created or changed, one line each.
 - `Checks:` every command you ran as proof, each with its exit code and the last lines of output.
   A check you did not run is not listed as passing.
+- `Deps added:` every new dependency, or `none`. Add only what the task names (decision 22).
 - `Open:` what is incomplete or uncertain.
 - `Noticed:` observations outside the task, for the findings file.

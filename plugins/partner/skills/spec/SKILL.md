@@ -17,7 +17,15 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    expanded, the same sections in the same order): goal,
    principles check, stories with acceptance commands, plan, tasks table (`risk` for unsafe or
    `no_std` Rust, concurrency, crypto, auth, Terraform state, migrations; `lane` when file sets are
-   disjoint; `deps`), trade-offs.
+   disjoint; `deps`), trade-offs. The spec is the unit of delivery: **one spec = one branch = one
+   PR**, each task one commit (decision 20), so size it as a coherent topic, not a single task.
+   In the principles check, write the **architecture choice** with options and a recommendation:
+   hexagonal (domain, ports, adapters, in-memory doubles) by default for the `service` profile or
+   when two external adapters or a test substitute are needed; plain layering for `cli`, `library`
+   and `embedded`; a host project's architecture always wins in a contribution (decision 19).
+   List **every new dependency** with its justification and the alternative in the standard
+   library or an existing dependency; builders may not add one the spec does not name
+   (decision 22).
 4. **Clarify.** At most five questions, only for what is expensive to undo. Ask them in one
    `AskUserQuestion` call; every question carries options and your recommended default. Write the
    answers into the spec. Everything else: decide, write the decision down, move on.

@@ -43,3 +43,11 @@ Why: cartridge-os's documented form `distrobox enter rust -- bash -c "cd $PWD &&
 Proof: 292 passed, Total coverage: 99.09%; ruff, shellcheck, markdownlint, check-plugin, `claude plugin validate --strict` clean; live from cartridge-os through the refreshed install: the distrobox form reached Claude Code's own permission prompt with the gate silent, `ssh box git push --force` was stopped by the gate as opaque.
 Open: the consultant segment that asked in spike F is still unidentified; cartridge-os's CONTEXT could drop the redundant `cd $PWD` (distrobox keeps the working directory).
 Next: `install.sh --local` on headscale; release 1.1.
+
+## 2026-11-07 — third owner review confirmed, decisions 17–25 applied
+
+Changed: default rules `never` on attribution footers in commits and PR bodies and `ask` on dependency-adding commands; `spec` sizes one spec = one branch = one PR with one commit per task, writes the architecture choice (hexagonal by profile) and justifies every dependency; `build` commits each task and refuses an unnamed dependency; `wrap` runs the pre-PR currency check and opens one PR after an authorship check; builders report `Deps added:`; `expert-gha` carries the trigger matrix; release plan reordered (learner, staleness, `partner-deps` first in R1.1; frameworks and experts in R2/R3).
+Why: the owner confirmed all ten challenged ideas as written (docs/design-inputs/owner-ideas-02.md).
+Proof: 313 passed, coverage 99.09 %; ruff, shellcheck, markdownlint, check-plugin, `claude plugin validate --strict` clean; cartridge-os install refreshed from this tree.
+Open: decisions 21, 23 and the new stacks and experts are scheduled, not built; the consultant segment from spike F is still unidentified.
+Next: `install.sh --local` on headscale, then release 1.1 starting with the learner.

@@ -98,6 +98,25 @@ copy a row, or resolve `gh api repos/<r>/commits/<tag> --jq .sha` and add the ro
 - [verified 2026-11-06 · src: https://docs.github.com/actions/using-workflows/triggering-a-workflow] events from `GITHUB_TOKEN` create no new runs, except `workflow_dispatch` and `repository_dispatch`.
 - [verified 2026-11-06 · src: https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md] `gh` 2.103.2 is on ubuntu-24.04 runners.
 
+## Trigger matrix
+
+Each pipeline runs only what its moment needs (decision 17). The suite is never thinned; the
+triggers are.
+
+| Moment | Runs | Does not run |
+|---|---|---|
+| Pull request | lint, format, type check; tests of the **changed areas** with dependency-aware selection (`cargo test -p <crate>` plus its dependents from `cargo metadata`, `go list -deps`, nx or turbo `affected`); security scan; `concurrency` with `cancel-in-progress` | the full matrix, the build artifact |
+| Merge to `main` | the full suite once, the artifact built once and attested | a second lint pass |
+| Release (tag) | verify the tag's commit passed `main` (`gh run list --commit <sha> --status success`), rebuild or reuse the artifact reproducibly, sign, publish | **tests** |
+| Weekly | full matrix, dependency audit and outdated report, knowledge refresh | — |
+
+Rules: one aggregator job `ci-ok` (`needs:` everything, `if: always()`) fails when a needed job
+failed and passes when one was legitimately skipped, and is the **only required check** in
+branch protection. Change detection through GitHub's own `paths:` or `dorny/paths-filter` pinned
+by SHA; never `tj-actions/changed-files` (compromised March 2025). A path filter is a trigger
+aid, not a test selector: the dependency graph decides which tests a change needs. One PR per
+spec (decision 20) already cuts the number of runs; this matrix cuts what each run does.
+
 ## Cost and speed
 
 - `paths:` / `paths-ignore:` on push and PR for docs-only changes — but see pitfall 1.

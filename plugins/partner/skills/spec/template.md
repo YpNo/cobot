@@ -10,6 +10,10 @@ size: {{SIZE}} · profile: {{PROFILE}} · owner: {{OWNER}} · date: {{DATE}}
 
 <proportionality, rules before autonomy, knowledge is a skill, proof not promises: one line each where relevant>
 
+- Architecture: <hexagonal | plain layering | host project's> because <criterion: profile, adapters, test substitutes, or contribution>
+- New dependencies: <none | name — why, and what the standard library or an existing dependency lacks>
+- Delivery: one branch `<type>/<slug>`, one PR; tasks below are the commits
+
 ## Stories and acceptance
 
 1. As <who>, <what>. Accept: <observable check, with the command that proves it>.

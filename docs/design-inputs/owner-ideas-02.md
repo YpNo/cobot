@@ -20,6 +20,20 @@ the single PR in `wrap`, `Deps added:` in the builders' reports, the trigger mat
 | I-9 | More experts and MCP servers: GitLab cloud and self-hosted, GitLab CI, Jira, Confluence, Gitea, hardware engineer (IT and home automation), Home Assistant, MCP builder, API/OpenAPI, modern web protocols, electronics and IoT protocols. | Two different kinds. **Integration** experts (GitLab, Gitea, Jira, Confluence, Home Assistant) need a tool: prefer an official CLI (`glab`, `tea`, `hass-cli` or the REST API over `curl`) where one exists, because CLI argv passes through the rules gate while an MCP call is matched by tool name only (`mcp__*__create|update|delete` asks, reads pass). Atlassian's remote MCP is acceptable for Jira and Confluence reads; writes ask. **Knowledge** experts (API/OpenAPI, web protocols, IoT protocols, electronics) are skills with dated references. "Hardware engineer" is too broad for one expert and its claims are bench-measured: cartridge-os already grades hardware facts by evidence, and the learning rule "validate, don't guess" must apply with the same grades. GitLab CI is a sibling of `expert-gha`: extract the shared pipeline design (I-1 trigger matrix) into an `expert-cicd` core. The MCP builder exists as a public Anthropic skill: reuse after challenge, per decision 0. | Split and order by use: (1) `expert-cicd` core + `expert-gitlab-ci`, with `glab`; (2) Gitea through `tea` and its API, since a Gitea repository exists locally; (3) `expert-api` (OpenAPI design-first, spectral, codegen, versioning, HTTP/2 and 3, WebSocket, SSE, gRPC-web, OAuth2 and OIDC) absorbing "modern web protocols"; (4) `expert-home-assistant` (HA, ESPHome, MQTT, Zigbee, Z-Wave, Matter, Thread) with `hass-cli`; (5) `expert-iot-protocols` and `expert-electronics` (UART, SPI, I2C, power budgets, capture kits) with evidence grades; (6) Jira and Confluence through the Atlassian MCP, reads silent and writes asking; (7) MCP builder skill, reviewed. Each one is built with the learner (I-7) and gets a `consult-*` fork where an audit form makes sense. Open question for the owner: which of these are work contexts, where data may not leave the organisation and self-hosted GitLab or Jira apply. |
 | I-10 | (Implied by the above) The roster grows from six knowledge skills to about twenty. | Every expert costs tokens when it loads and maintenance when its facts age. Path-gating keeps load cost proportional, but maintenance scales linearly with the count. | Sequence: learner + refresh pipeline (I-7) and the dependency check (I-5) first, then the TypeScript stack (I-8), then integration experts in the order of I-9. Measure usage (crissp idea) and retire a skill that never loads in a quarter. |
 
+## Addendum, 2026-11-07: containers, Kubernetes, service mesh
+
+The owner added Docker, Podman, Kubernetes, and service meshes (Istio, Cloud Service Mesh on
+GCP). Challenge: one "platform" expert would be too broad and would age at three different
+speeds (Dockerfile practice is slow, Kubernetes ships three minors a year, Istio one every three
+months). Three experts, each behind the learner's refresh cycle. Images belong to release
+engineering, so `expert-containers` arrives with `ship`; Kubernetes arrives with the GCP expert
+because the owner's clusters are GKE; the mesh comes after the cluster expert it depends on.
+Cloud Service Mesh is Istio with a managed control plane, so it is a section of the mesh expert,
+not a fourth one. Gate rules land now: mutating `kubectl` verbs, `helm install|upgrade|
+uninstall|rollback|push|repo add`, `istioctl install|upgrade|uninstall|x`, `gcloud container
+fleet mesh`, and image `push`, `prune`, `rm`, `rmi`, `login` ask; `docker build`, `helm
+template|lint`, `kustomize build`, `istioctl analyze` and every read stay silent. Decision 26.
+
 ## What is already in force
 
 - I-2 since R0: no `Co-Authored-By`, no "Generated with Claude Code"; the partner's own commits

@@ -138,6 +138,23 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
         frozenset({"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user"}),
         frozenset(),
     ),
+    "helm": (
+        frozenset(
+            {
+                "-n",
+                "--namespace",
+                "--kube-context",
+                "--kubeconfig",
+                "--registry-config",
+                "--repository-config",
+            }
+        ),
+        frozenset({"--debug"}),
+    ),
+    "istioctl": (
+        frozenset({"-n", "--namespace", "-i", "--istioNamespace", "-c", "--kubeconfig", "--context"}),
+        frozenset(),
+    ),
     "gcloud": (
         frozenset(
             {

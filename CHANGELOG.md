@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format follows
   PR body carrying `Generated with` (authorship, not a word ban); `ask` on dependency-adding
   commands (`cargo add`, `npm install <pkg>`, `pnpm add`, `yarn add`, `bun add`, `go get`,
   `uv add`, `pip install`, `poetry add`); bare installs from a lockfile stay silent.
+- Cluster, mesh and image rules: mutating `kubectl` verbs (`create`, `patch`, `scale`, `rollout
+  restart|undo`, `drain`, `label`, `set`, `port-forward`, …), `helm install|upgrade|uninstall|
+  rollback|push|repo add`, `istioctl install|upgrade|uninstall|x`, `gcloud container fleet mesh`,
+  and `docker|podman push|login|system prune|rm|rmi` ask; `helm` and `istioctl` global options
+  are stripped before matching.
 - `spec` sizes a change as one branch and one PR with one commit per task, writes the
   architecture choice (hexagonal by profile) and justifies every new dependency; `build` commits
   each finished task and refuses an unnamed dependency; `wrap` runs the pre-PR currency check and

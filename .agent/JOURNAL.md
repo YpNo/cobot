@@ -51,3 +51,11 @@ Why: the owner confirmed all ten challenged ideas as written (docs/design-inputs
 Proof: 313 passed, coverage 99.09 %; ruff, shellcheck, markdownlint, check-plugin, `claude plugin validate --strict` clean; cartridge-os install refreshed from this tree.
 Open: decisions 21, 23 and the new stacks and experts are scheduled, not built; the consultant segment from spike F is still unidentified.
 Next: `install.sh --local` on headscale, then release 1.1 starting with the learner.
+
+## 2026-11-07 — decision 26: containers, Kubernetes, service mesh
+
+Changed: default rules ask on mutating `kubectl`, `helm`, `istioctl`, `gcloud container fleet mesh` and image push/prune/login; helm and istioctl global options stripped; decision 26 and the release slots for `expert-containers` (R1.1 with ship), `expert-kubernetes` (R2 with GCP) and `expert-service-mesh` (R2/R3).
+Why: the owner added Docker, Podman, Kubernetes and service meshes; three experts ageing at different speeds, each behind the learner's refresh.
+Proof: 342 passed, coverage 99.09 %; ruff, markdownlint, check-plugin, `claude plugin validate --strict` clean; cartridge-os install refreshed.
+Open: experts scheduled, not built.
+Next: `install.sh --local` on headscale, or release 1.1.

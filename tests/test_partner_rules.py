@@ -509,3 +509,132 @@ def test_shim_pythonFails_exitsTwo(tmp_path):
     result = run_shim(payload("git push"), f"{tmp_path}:{os.environ['PATH']}")
     assert result.returncode == 2
     assert "blocking" in result.stderr
+
+
+# ---------------------------------------------------------------- mise task resolution
+
+MISE_TOML = """
+[tasks]
+test = "cargo test --workspace"
+deploy = "git push origin main"
+
+[tasks.lint]
+run = ["cargo fmt --all --check", "cargo clippy -- -D warnings"]
+
+[tasks.nuke]
+run = "git push --force origin main"
+
+[tasks.script]
+run = "sh deploy.sh"
+
+[tasks.tpl]
+run = "echo {{arg(name='x')}}"
+
+[tasks.dep]
+depends = ["lint"]
+run = "cargo test"
+
+[tasks.multi]
+run = \"\"\"
+# comment
+cargo build
+cargo test
+\"\"\"
+
+[tasks.sub]
+run = "echo $(git push)"
+"""
+
+
+@pytest.fixture
+def mise_repo(tmp_path):
+    (tmp_path / "mise.toml").write_text(MISE_TOML)
+    (tmp_path / "crates" / "x").mkdir(parents=True)
+    return tmp_path
+
+
+def judge_in(rules, command, cwd):
+    loaded, _, _ = rules.load_rules(None)
+    return rules.judge_bash(command, loaded, None, str(cwd))
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("mise run test", None),
+        ("mise test", None),
+        ("mise r lint", None),
+        ("rtk mise run lint", None),
+        ("mise run test -- -p crate", None),
+        ("mise run multi", None),
+        ("mise run deploy", "ask"),
+        ("mise run nuke", "deny"),
+        ("mise run script", "ask"),
+        ("mise run tpl", "ask"),
+        ("mise run dep", "ask"),
+        ("mise run missing", "ask"),
+        ("mise run", "ask"),
+        ("mise run lint ::: test", "ask"),
+        ("mise run sub", "ask"),
+        ("mise -C . run test", "ask"),
+        ("mise exec -- cargo test", None),
+        ("mise x rust@1.80 -- git push --force", "deny"),
+        ("mise exec cargo test", "ask"),
+        ("mise exec --", "ask"),
+        ("mise ls", None),
+        ("mise install", None),
+    ],
+)
+def test_miseTask_resolvedFromConfig(rules, mise_repo, command, decision):
+    assert judge_in(rules, command, mise_repo)[0].decision == decision
+
+
+def test_miseTask_fromNestedCwd_findsParentConfig(rules, mise_repo):
+    assert judge_in(rules, "mise run deploy", mise_repo / "crates" / "x")[0].decision == "ask"
+
+
+def test_miseTask_reasonAndTraceNameOrigin(rules, mise_repo):
+    verdict, trace = judge_in(rules, "mise run deploy", mise_repo)
+    assert verdict.reason() == "partner rule: ask Bash(git push*) (default layer) via mise run deploy"
+    assert trace[0][0] == "git push origin main  <- mise run deploy"
+
+
+def test_miseTask_opaqueInnerCommand_reasonNamesOrigin(rules, mise_repo):
+    verdict, _ = judge_in(rules, "mise run script", mise_repo)
+    assert verdict.reason() == "partner gate: opaque command 'sh deploy.sh' via mise run script"
+
+
+def test_miseTask_localConfigOverrides(rules, mise_repo):
+    (mise_repo / "mise.local.toml").write_text('[tasks]\ntest = "git push"\n')
+    assert judge_in(rules, "mise run test", mise_repo)[0].decision == "ask"
+
+
+def test_miseTask_brokenConfig_staysOpaque(rules, mise_repo):
+    (mise_repo / "mise.toml").write_text("[tasks\n")
+    assert judge_in(rules, "mise run test", mise_repo)[0].decision == "ask"
+
+
+def test_miseTask_protectedFileInsideTask_asks(rules, mise_repo):
+    (mise_repo / "mise.toml").write_text('[tasks]\npeek = "cat ~/.claude/settings.json"\n')
+    verdict, _ = judge_in(rules, "mise run peek", mise_repo)
+    assert verdict.decision == "ask" and "protected file" in verdict.reason()
+
+
+def test_miseTask_withoutConfig_staysOpaque(rules, tmp_path):
+    assert judge_in(rules, "mise run test", tmp_path)[0].decision == "ask"
+
+
+def test_miseTask_explainShowsExpansion(rules, mise_repo, monkeypatch):
+    monkeypatch.chdir(mise_repo)
+    out = rules.cmd_explain("mise run lint", {})
+    assert "segment: cargo fmt --all --check  <- mise run lint" in out and "decision: none" in out
+
+
+def test_miseTask_nonStringRun_staysOpaque(rules, mise_repo):
+    (mise_repo / "mise.toml").write_text("[tasks.odd]\nrun = 5\n")
+    assert judge_in(rules, "mise run odd", mise_repo)[0].decision == "ask"
+
+
+def test_miseTask_withoutTomllib_staysOpaque(rules, mise_repo, monkeypatch):
+    monkeypatch.setattr(rules, "tomllib", None)
+    assert judge_in(rules, "mise run test", mise_repo)[0].decision == "ask"

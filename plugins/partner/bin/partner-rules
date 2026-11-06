@@ -25,8 +25,13 @@ import os
 import re
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks stay opaque
+    tomllib = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _partner_common import config_dir, plugin_root, repo_root  # noqa: E402
@@ -58,6 +63,25 @@ OPAQUE_SUBCOMMANDS = {
     "uvx": frozenset({""}),
 }
 INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
+# mise tasks are resolved from the config (closest folder first, local files first)
+MISE_CONFIGS = (
+    "mise.local.toml",
+    ".mise.local.toml",
+    "mise.toml",
+    ".mise.toml",
+    ".config/mise/config.toml",
+    "mise/config.toml",
+    ".mise/config.toml",
+)
+MISE_BUILTINS = frozenset(
+    "activate alias bin-paths cache completion config current deactivate direnv doctor en env exec fmt "
+    "generate implode install latest link ls ls-remote outdated plugins prune registry reshim run "
+    "self-update set settings shell sync tasks test-tool tool trust uninstall unset unuse upgrade use "
+    "version watch where which x r i up ln rm cfg e s w a b g t".split()
+)
+# a task with one of these keys runs more than its ``run`` lines say
+UNRESOLVED_TASK_KEYS = frozenset({"depends", "depends_post", "wait_for", "file", "shell", "dir"})
+MAX_ORIGIN = 40
 INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
 # global options of known binaries: options that take a value, and flags without a value
 GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -117,11 +141,14 @@ class Verdict:
     decision: str | None
     rule: Rule | None
     note: str = ""
+    via: str = ""  # the runner invocation this verdict was resolved from, e.g. ``mise run deploy``
 
     def reason(self) -> str:
         if self.rule:
-            return f"partner rule: {self.rule.text()} ({self.rule.layer} layer)"
-        return f"partner gate: {self.note}"
+            text = f"partner rule: {self.rule.text()} ({self.rule.layer} layer)"
+        else:
+            text = f"partner gate: {self.note}"
+        return f"{text} via {self.via}" if self.via else text
 
 
 # ---------------------------------------------------------------- rule files
@@ -298,12 +325,96 @@ def is_opaque(plain: list[str]) -> bool:
     head = plain[0]
     if head in OPAQUE or head.startswith("$"):
         return True
+    if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
+        sub = plain[1] if len(plain) > 1 else ""
+        hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
+        return bool(sub) and hidden
     if head in OPAQUE_SUBCOMMANDS:
         sub = plain[1] if len(plain) > 1 else ""
         return sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]
     if head in INTERPRETERS:
         return any(token in INLINE_CODE_FLAGS for token in plain[1:])
     return False
+
+
+def mise_task_lines(spec: object) -> list[str] | None:
+    """The ``run`` lines of one task spec, or None when the spec hides what runs."""
+    if isinstance(spec, str):
+        run: object = spec
+    elif isinstance(spec, dict) and not UNRESOLVED_TASK_KEYS & spec.keys():
+        run = spec.get("run")
+    else:
+        return None
+    items = [run] if isinstance(run, str) else run
+    if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
+        return None
+    lines = [line.strip() for item in items for line in item.splitlines()]
+    lines = [line for line in lines if line and not line.startswith("#")]
+    if not lines or any("{{" in line for line in lines):
+        return None
+    return lines
+
+
+def mise_task_commands(task: str, cwd: str | None) -> list[str] | None:
+    """The commands a mise task runs, from the closest config that defines it; None when unknown."""
+    if tomllib is None or not task or task.startswith("-"):
+        return None
+    start = Path(cwd or os.getcwd()).resolve()
+    for folder in (start, *start.parents):
+        for name in MISE_CONFIGS:
+            path = folder / name
+            if not path.is_file():
+                continue
+            try:
+                tasks = tomllib.loads(path.read_text(encoding="utf-8")).get("tasks", {})
+            except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
+                return None
+            if isinstance(tasks, dict) and task in tasks:
+                return mise_task_lines(tasks[task])
+    return None
+
+
+def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a mise invocation: ``mise run <task>`` (or the ``mise <task>`` shorthand)
+    from the mise config, ``mise exec … -- <cmd>`` from argv. None when they cannot be known."""
+    if len(plain) < 2 or plain[0] != "mise":
+        return None
+    sub, args = plain[1], plain[2:]
+    if sub in ("exec", "x"):
+        return [shlex.join(args[args.index("--") + 1 :])] if "--" in args and args[-1] != "--" else None
+    if sub in ("run", "r"):
+        if not args:
+            return None
+        task, args = args[0], args[1:]
+    elif sub in MISE_BUILTINS or sub.startswith("-"):
+        return None
+    else:
+        task = sub
+    if ":::" in args:
+        return None
+    commands = mise_task_commands(task, cwd)
+    if commands is None:
+        return None
+    extra = args[1:] if args[:1] == ["--"] else args
+    if extra:
+        commands[-1] = f"{commands[-1]} {shlex.join(extra)}"
+    if any(has_substitution(command) for command in commands):
+        return None
+    return commands
+
+
+def expand_segments(segments: list[list[str]], cwd: str | None) -> list[tuple[list[str], str]]:
+    """Replace each resolvable runner segment by the commands it runs, tagged with their origin."""
+    out: list[tuple[list[str], str]] = []
+    for segment in segments:
+        plain = strip_wrappers(segment)
+        commands = expand_runner(plain, cwd) if is_opaque(plain) else None
+        if commands is None:
+            out.append((segment, ""))
+            continue
+        origin = " ".join(plain)[:MAX_ORIGIN]
+        out.extend((sub, origin) for command in commands for sub in split_segments(command))
+    return out
 
 
 def candidates(tokens: list[str]) -> list[str]:
@@ -377,18 +488,20 @@ def judge_bash(
     opaque_all = has_substitution(command)
     best = Verdict(None, None, "no rule matched")
     trace: list[tuple[str, list[Rule]]] = []
-    segments = split_segments(command)
-    touched = protected_file_touched(segments, cwd, rules)
+    segments = expand_segments(split_segments(command), cwd)
+    touched = protected_file_touched([segment for segment, _ in segments], cwd, rules)
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{touched[:60]}'")
-    for segment in segments:
+    for segment, origin in segments:
         forms = candidates(segment)
         matched = [r for r in bash_rules if matches_bash(r, forms)]
         verdict = resolve(matched, "no rule matched")
         if (opaque_all or is_opaque(strip_wrappers(segment))) and verdict.decision != DENY:
             allowed = any(allow_counts(r) for r in matched)
             verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{forms[0][:60]}'")
-        trace.append((forms[0], matched))
+        if origin:
+            verdict = replace(verdict, via=origin)
+        trace.append((forms[0] + (f"  <- {origin}" if origin else ""), matched))
         if RANK[verdict.decision] > RANK[best.decision] or (
             verdict.decision == best.decision and best.rule is None
         ):

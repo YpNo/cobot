@@ -182,6 +182,10 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   npm pnpm yarn cargo xtask`, `eval`, `xargs`, `$(…)`, backticks) and decides `ask`, except when
   the owner layer allows that exact command line (then the gate stays silent and the permission
   system decides);
+- resolves **mise tasks** before judging: `mise run <task>`, the `mise <task>` shorthand and
+  `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
+  first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a
+  task with `depends`, `file`, `shell`, `dir`, templating or command substitution stays opaque;
 - emits `hookSpecificOutput.permissionDecision: deny` (reason = rule + layer, quoted and truncated)
   or `ask`; **it never emits `allow`**, so the plugin can only narrow what Claude Code permits;
 - resolves the project layer through `git rev-parse --git-common-dir`, so worktrees share it;

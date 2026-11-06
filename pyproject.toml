@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-include = ["plugins/partner/bin/partner-rules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+per-file-ignores = { "tests/*" = ["S101", "S603", "S607"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

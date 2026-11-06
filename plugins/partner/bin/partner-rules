@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""partner-rules: the rules gate.
+
+Release 0 subset: built-in rules, Bash only, fnmatch over normalised segments.
+Release 1 adds rule files and layers, (binary, subcommand) matching, opaque
+task runners and the ``show`` / ``explain`` / ``sync`` commands (docs/02-design.md, section 6).
+
+Contract: the gate never emits ``allow``; an internal error ends in ``ask``;
+silence means "no opinion", and Claude Code's own permission system decides.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import shlex
+import sys
+from collections.abc import Iterable
+
+ASK = "ask"
+DENY = "deny"
+SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<"})
+WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin"})
+DECISION_RANK = {None: 0, ASK: 1, DENY: 2}
+REASON_LIMIT = 200
+
+# (decision, pattern); the pattern is matched with fnmatch over the normalised segment.
+BUILTIN_RULES: tuple[tuple[str, str], ...] = (
+    ("never", "git push --force*"),
+    ("never", "git push -f*"),
+    ("never", "git push * --force*"),
+    ("never", "git push * -f"),
+    ("never", "git push * -f *"),
+    ("ask", "git push*"),
+)
+DECISION_OF = {"never": DENY, "ask": ASK}
+
+
+def split_segments(command: str) -> list[list[str]]:
+    """Split a shell command into argv-like segments at shell operators."""
+    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    segments: list[list[str]] = [[]]
+    for token in lexer:
+        if token in SEPARATORS:
+            if segments[-1]:
+                segments.append([])
+        else:
+            segments[-1].append(token)
+    return [segment for segment in segments if segment]
+
+
+def normalise(segment: Iterable[str]) -> str:
+    """Drop wrappers and leading assignments so ``rtk git push`` reads ``git push``."""
+    tokens = list(segment)
+    while tokens and (tokens[0] in WRAPPERS or ("=" in tokens[0] and not tokens[0].startswith("-"))):
+        tokens.pop(0)
+    return " ".join(tokens)
+
+
+def judge_segment(normalised: str) -> tuple[str | None, str | None]:
+    """Return the most restrictive (decision, rule) matching one segment."""
+    best: tuple[str | None, str | None] = (None, None)
+    for keyword, pattern in BUILTIN_RULES:
+        decision = DECISION_OF[keyword]
+        if fnmatch.fnmatchcase(normalised, pattern) and DECISION_RANK[decision] > DECISION_RANK[best[0]]:
+            best = (decision, f"{keyword} Bash({pattern})")
+    return best
+
+
+def decide(command: str) -> tuple[str | None, str | None]:
+    """Judge a whole command: the most restrictive segment wins."""
+    best: tuple[str | None, str | None] = (None, None)
+    for segment in split_segments(command):
+        decision, rule = judge_segment(normalise(segment))
+        if DECISION_RANK[decision] > DECISION_RANK[best[0]]:
+            best = (decision, rule)
+    return best
+
+
+def hook_output(decision: str, reason: str) -> str:
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": decision,
+                "permissionDecisionReason": reason[:REASON_LIMIT],
+            }
+        }
+    )
+
+
+def log_event(payload: dict[str, object]) -> None:
+    """Append one JSON line when PARTNER_GATE_LOG names a file (used by the spikes)."""
+    path = os.environ.get("PARTNER_GATE_LOG")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+
+
+def gate(stdin: str) -> str | None:
+    """Judge a PreToolUse payload; return the JSON to print, or None for silence."""
+    try:
+        payload = json.loads(stdin)
+        if payload.get("tool_name") != "Bash":
+            return None
+        command = str(payload.get("tool_input", {}).get("command", ""))
+        decision, rule = decide(command)
+        log_event(
+            {"command": command, "decision": decision, "rule": rule, "agent": payload.get("agent_type")}
+        )
+    except Exception as error:  # noqa: BLE001 - any failure must end in "ask"
+        return hook_output(ASK, f"partner gate could not judge the command ({type(error).__name__}: {error})")
+    if decision is None:
+        return None
+    return hook_output(decision, f"partner rule: {rule} (built-in layer)")
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) >= 1 and argv[0] == "gate":
+        output = gate(sys.stdin.read())
+        if output:
+            print(output)
+        return 0
+    if len(argv) == 2 and argv[0] == "check":
+        decision, rule = decide(argv[1])
+        print(f"{decision or 'none'}" + (f"  ({rule})" if rule else ""))
+        return 0
+    print("usage: partner-rules gate < hook.json | partner-rules check '<command>'", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

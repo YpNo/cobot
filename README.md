@@ -169,6 +169,15 @@ per skill for the owner to review. Its secrets live in the `knowledge-refresh` e
 only `GITHUB_TOKEN` the PR gets no CI run (the checks ran in the job), a fine-grained PAT in
 `KNOWLEDGE_REFRESH_TOKEN` restores it.
 
+The repository settings those workflows rely on are code: `scripts/github-settings.sh --check`
+prints wanted against current and `--apply` sets what differs (delete branch on merge, no squash,
+SHA-pinned actions required, read-only default token, Dependabot alerts and security PRs, the
+`evals` and `knowledge-refresh` environments deployable from `main` only, and the `main` ruleset
+with `ci-ok` as the one required check where the plan allows rulesets). Secrets are never
+handled by the script: it prints the `gh secret set` commands, one `ANTHROPIC_API_KEY` per
+environment and none at repository level. `.github/dependabot.yml` groups the weekly action
+updates into one PR.
+
 ## Security
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined

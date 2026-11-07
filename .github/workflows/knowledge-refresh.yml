@@ -66,8 +66,8 @@ jobs:
     if: needs.select.outputs.skills != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # the secrets (API key, optional PAT) are only exposed inside this environment; create it in
-    # the repository settings, with a required reviewer if the owner wants to gate each run
+    # the secrets (API key, optional PAT) are only exposed inside this environment;
+    # scripts/github-settings.sh creates it, deployable from main only
     environment: knowledge-refresh
     permissions:
       contents: write # push the learn/<skill> branch

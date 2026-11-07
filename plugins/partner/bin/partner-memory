@@ -15,6 +15,12 @@ Commands
                                    also carry the general entries (or a topic's pending general lines) into the
                                    agentic-partner checkout: a learn/<topic> branch in a worktree, or in place
   knowledge [--stale] [--json] [--brief] [SKILL]   dated knowledge lines per skill: age, stale, reported
+  compact [--keep N] [--summary TEXT] [--dry-run] [--force]
+                                   once JOURNAL.md passes 400 lines, fold every entry but the last N (10) into one
+                                   dated entry (a model summary when given, else a digest); the raw text goes to
+                                   .agent/JOURNAL-archive.md
+  risks add RULE FILE SYMBOL --why TEXT [--by WHO] [--days N]   accept a sweep finding for at most 90 days
+  risks list                       accepted risks with their expiry state
 
 Project entries go to .agent/; general entries reach the plugin only through --promote (an ask action).
 """
@@ -66,6 +72,10 @@ KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
+JOURNAL_COMPACT_LINES = 400
+COMPACT_KEEP = 10
+RISK_RE = re.compile(r"^\| *(R-\d+) *\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$")
+RISK_MAX_DAYS = 90
 
 
 class Memory:
@@ -491,6 +501,98 @@ def cmd_knowledge(mem: Memory, skill: str, stale_only: bool, as_json: bool, brie
     return report(items, date.today(), stale_only=stale_only, as_json=as_json)
 
 
+def digest(entry: str) -> list[str]:
+    """One or more digest lines for an entry: compacted entries keep their bullets, others give
+    date, title and the first sentence of ``Changed:``."""
+    heading, _, body = entry.partition("\n")
+    date_text, title = heading[3:13], heading[13:].lstrip(" —-").strip()
+    if title.startswith("compacted "):
+        return [line for line in body.splitlines() if line.startswith(("- ", "  open: "))]
+    changed = next((line.partition(":")[2].strip() for line in body.splitlines() if line.startswith("Changed:")), "")
+    first = re.split(r"(?<=[.;])\s", changed, maxsplit=1)[0].strip()
+    lines = [f"- {date_text} {title}: {first}" if first else f"- {date_text} {title}"]
+    open_items = next((line.partition(":")[2].strip() for line in body.splitlines() if line.startswith("Open:")), "")
+    if open_items and open_items not in ("—", "-", "none", "nothing"):
+        lines.append(f"  open: {open_items[:300]}")
+    return lines
+
+
+def positional_entries(text: str) -> list[str]:
+    starts = [m.start() for m in ENTRY_RE.finditer(text)]
+    return [text[start : starts[i + 1] if i + 1 < len(starts) else len(text)].rstrip() for i, start in enumerate(starts)]
+
+
+def cmd_compact(mem: Memory, keep: int, summary: str, dry_run: bool, force: bool) -> str:
+    path = mem.dir / "JOURNAL.md"
+    text = mem.read("JOURNAL.md")
+    total = len(text.splitlines())
+    if total <= JOURNAL_COMPACT_LINES and not force:
+        return f"compact: JOURNAL.md has {total} lines (threshold {JOURNAL_COMPACT_LINES}); nothing to do"
+    order = journal_order(mem)
+    if order.startswith("mixed"):
+        return "compact: the journal mixes both orders; normalise it first"
+    entries = positional_entries(text)
+    if len(entries) <= keep:
+        return f"compact: {len(entries)} entries, keeping {keep}; nothing to fold"
+    newest_bottom = order.startswith("newest at bottom") or order == "single entry"
+    folded = entries[:-keep] if newest_bottom else entries[keep:]
+    kept = entries[-keep:] if newest_bottom else entries[:keep]
+    dates = sorted(e[3:13] for e in folded)
+    body = summary.strip() or "\n".join(line for e in folded for line in digest(e))
+    merged = f"## {dates[-1]} — compacted {dates[0]} → {dates[-1]} ({len(folded)} entries)\n{body}\nProof: raw entries in JOURNAL-archive.md and in git history before {dates[-1]}."
+    head = text[: ENTRY_RE.search(text).start()].rstrip("\n") if ENTRY_RE.search(text) else "# Journal"
+    new_entries = [*kept, merged] if not newest_bottom else [merged, *kept]
+    new_text = head + "\n\n" + "\n\n".join(new_entries) + "\n"
+    report = [f"compact: folding {len(folded)} of {len(entries)} entries ({dates[0]} → {dates[-1]}), keeping {keep}; {total} -> {len(new_text.splitlines())} lines"]
+    report.append(f"  summary: {'provided' if summary.strip() else 'mechanical digest'}")
+    if dry_run:
+        report.append("  dry run, nothing written")
+        return "\n".join(report)
+    archive = mem.dir / "JOURNAL-archive.md"
+    previous = archive.read_text(encoding="utf-8") if archive.is_file() else "# Journal archive (raw entries folded by partner-memory compact)\n"
+    archive.write_text(previous.rstrip("\n") + "\n\n" + "\n\n".join(folded) + "\n", encoding="utf-8")
+    path.write_text(new_text, encoding="utf-8")
+    report.append(f"  written: {path}; archive: {archive}")
+    return "\n".join(report)
+
+
+def accepted_risks(mem: Memory) -> list[tuple[str, ...]]:
+    """(id, rule, file, symbol, why, by, accepted, expires) per row of .agent/accepted-risks.md."""
+    rows = []
+    for line in mem.read("accepted-risks.md").splitlines():
+        match = RISK_RE.match(line)
+        if match:
+            rows.append(tuple(cell.strip() for cell in match.groups()))
+    return rows
+
+
+def cmd_risks_add(mem: Memory, rule: str, file: str, symbol: str, why: str, by: str, days: int) -> str:
+    if not why.strip():
+        return "risks: --why is required (the reason the owner accepts it)"
+    days = max(1, min(days, RISK_MAX_DAYS))
+    path = mem.dir / "accepted-risks.md"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            (plugin_root() / "skills" / "security-sweep" / "templates" / "accepted-risks.md").read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    number = f"R-{max((int(r[0][2:]) for r in accepted_risks(mem)), default=0) + 1:02d}"
+    today = date.today()
+    expires = date.fromordinal(today.toordinal() + days).isoformat()
+    cells = [c.replace("|", "/").replace("\n", " ").strip() for c in (rule, file, symbol, why, by or "owner")]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"| {number} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} | {cells[4]} | {today.isoformat()} | {expires} |\n")
+    return f"risks: {number} accepted until {expires} ({cells[0]} · {cells[1]} · {cells[2]})"
+
+
+def cmd_risks_list(mem: Memory) -> str:
+    rows = accepted_risks(mem)
+    if not rows:
+        return "risks: none accepted"
+    today = date.today().isoformat()
+    return "\n".join(f"{rid} · {rule} · {file} · {symbol} · expires {expires} ({'expired' if expires < today else 'ok'}) · {why}" for rid, rule, file, symbol, why, _by, _acc, expires in rows)
+
+
 def journal_order(mem: Memory) -> str:
     dates = [d for d, _ in sorted(((e[0], i) for i, e in enumerate(mem.journal_entries())), key=lambda x: x[1])]
     raw = [m.group(1) for m in ENTRY_RE.finditer(mem.read("JOURNAL.md"))]
@@ -520,8 +622,12 @@ def cmd_check(mem: Memory) -> str:
     context_lines = len(mem.read("CONTEXT.md").splitlines())
     if context_lines > 120:
         lines.append(f"warning: CONTEXT.md has {context_lines} lines (> 120), trim the Shape section")
-    if len(mem.read("JOURNAL.md").splitlines()) > 400:
-        lines.append("warning: JOURNAL.md over 400 lines; compaction arrives in release 1.1")
+    if len(mem.read("JOURNAL.md").splitlines()) > JOURNAL_COMPACT_LINES:
+        lines.append(f"warning: JOURNAL.md over {JOURNAL_COMPACT_LINES} lines; run partner-memory compact")
+    risks = accepted_risks(mem)
+    if risks:
+        expired = [f"{row[0]} ({row[-1]})" for row in risks if row[-1] < date.today().isoformat()]
+        lines.append(f"accepted risks: {len(risks)}" + (f"; expired: {', '.join(expired)}" if expired else ""))
     return "\n".join(lines)
 
 
@@ -535,7 +641,7 @@ def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--profile", "--budget", "--goes-to", "--source") and i + 1 < len(argv):
+        if arg in ("--profile", "--budget", "--goes-to", "--source", "--keep", "--summary", "--why", "--by", "--days") and i + 1 < len(argv):
             options[arg[2:]] = argv[i + 1]
             i += 2
             continue
@@ -585,6 +691,12 @@ def main(argv: list[str]) -> int:
         )
     elif command == "knowledge":
         print(cmd_knowledge(mem, sub, "stale" in flags, "json" in flags, "brief" in flags))
+    elif command == "risks" and sub == "add" and len(positional) >= 5:
+        print(cmd_risks_add(mem, positional[2], positional[3], positional[4], options.get("why", ""), options.get("by", ""), int(options.get("days", RISK_MAX_DAYS))))
+    elif command == "risks" and sub == "list":
+        print(cmd_risks_list(mem))
+    elif command == "compact":
+        print(cmd_compact(mem, int(options.get("keep", COMPACT_KEEP)), options.get("summary", ""), "dry-run" in flags, "force" in flags))
     else:
         print(__doc__.strip(), file=sys.stderr)
         return 2

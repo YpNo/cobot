@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import date
 
 import pytest
 
@@ -466,3 +467,151 @@ def test_brief_contextFallsBackToFloorWhenJournalIsLong(memory, repo):
     seed(repo, journal=journal, context=LONG_CONTEXT)
     brief = memory.build_brief(memory.Memory(), 5000, trust_check=False)
     assert "sections dropped" in brief and len(brief) <= 5000 + 600
+
+
+# ---------------------------------------------------------------- compact and accepted risks
+
+
+def long_journal(repo, newest_bottom=True, entries=14):
+    body = []
+    for i in range(entries):
+        day = f"2026-01-{i + 1:02d}"
+        filler = "\n".join(f"detail line {j}" for j in range(30))
+        body.append(
+            f"## {day} — entry {i}\nChanged: did thing {i}. Then more.\nWhy: w\nProof: p\n{filler}\nverified: sha{i} · cmd\n"  # noqa: E501
+        )
+    if not newest_bottom:
+        body.reverse()
+    seed(repo, journal="# Journal\n\nintro line\n\n" + "\n".join(body))
+    return repo / ".agent" / "JOURNAL.md"
+
+
+def test_compact_foldsOldEntriesKeepsTenAndArchives(memory, repo):
+    path = long_journal(repo)
+    mem = memory.Memory()
+    dry = memory.cmd_compact(mem, 10, "", dry_run=True, force=False)
+    assert "folding 4 of 14 entries (2026-01-01 → 2026-01-04), keeping 10" in dry and "dry run" in dry
+    assert len(path.read_text().splitlines()) > 400 and not (repo / ".agent" / "JOURNAL-archive.md").exists()
+    out = memory.cmd_compact(mem, 10, "", dry_run=False, force=False)
+    text = path.read_text()
+    assert "written:" in out and text.startswith(
+        "# Journal\n\nintro line\n\n## 2026-01-04 — compacted 2026-01-01 → 2026-01-04 (4 entries)\n"
+    )
+    assert "- 2026-01-01 entry 0: did thing 0." in text and "- 2026-01-04 entry 3: did thing 3." in text
+    assert (
+        "## 2026-01-05 — entry 4" in text and "verified: sha13 · cmd" in text and "verified: sha0" not in text
+    )
+    assert memory.journal_order(mem) == "newest at bottom"
+    archive = (repo / ".agent" / "JOURNAL-archive.md").read_text()
+    assert (
+        archive.startswith("# Journal archive")
+        and "verified: sha0 · cmd" in archive
+        and "detail line 29" in archive
+    )
+    assert mem.journal_entries()[0][0] == "2026-01-14"
+    again = memory.cmd_compact(mem, 8, "", False, True)
+    assert "folding 3 of 11" in again
+    text = path.read_text()
+    assert (
+        text.count("compacted") == 1
+        and "- 2026-01-01 entry 0: did thing 0." in text
+        and "- 2026-01-06 entry 5" in text
+    )
+
+
+def test_compact_legacyOrderSummaryAndRefusals(memory, repo):
+    path = long_journal(repo, newest_bottom=False)
+    mem = memory.Memory()
+    out = memory.cmd_compact(mem, 10, "The first four days set up the crate.", False, True)
+    assert "summary: provided" in out
+    text = path.read_text()
+    assert text.index("## 2026-01-14 — entry 13") < text.index(
+        "## 2026-01-04 — compacted 2026-01-01 → 2026-01-04 (4 entries)\nThe first four days set up the crate."
+    )
+    assert memory.journal_order(mem) == "newest on top (legacy order, read correctly)"
+    seed(
+        repo,
+        journal="# J\n## 2026-02-01 — a\nChanged: x\n## 2026-01-01 — b\nChanged: y\n## 2026-03-01 — c\nChanged: z\n",  # noqa: E501
+    )
+    assert "mixes both orders" in memory.cmd_compact(mem, 10, "", False, True)
+    seed(repo, journal="# J\n## 2026-02-01 — a\nChanged: x\n")
+    assert "nothing to fold" in memory.cmd_compact(mem, 10, "", False, True)
+    assert "nothing to do" in memory.cmd_compact(mem, 10, "", False, False)
+
+
+def test_digest_variants(memory):
+    assert memory.digest("## 2026-01-01 — t\nChanged: a; b\n") == ["- 2026-01-01 t: a;"]
+    assert memory.digest("## 2026-01-01 — t\nWhy: only\n") == ["- 2026-01-01 t"]
+    assert memory.digest("## 2026-01-02 — compacted x → y (2 entries)\n- one\n- two\nProof: p\n") == [
+        "- one",
+        "- two",
+    ]
+
+
+def test_check_acceptedRisksAndCompactWarning(memory, repo):
+    agent = seed(repo)
+    (agent / "accepted-risks.md").write_text(
+        "# Accepted risks\n\n| # | rule | file | symbol | why accepted | by | accepted | expires |\n|---|---|---|---|---|---|---|---|\n"  # noqa: E501
+        "| R-01 | PY-SUBPROC-01 | tool.py | run_tool | input is a constant | YpNo | 2026-01-01 | 2026-02-01 |\n"  # noqa: E501
+        "| R-02 | GO-TLS-02 | main.go | dial | internal only | YpNo | 2026-11-01 | 2099-01-01 |\n"
+    )
+    out = memory.cmd_check(memory.Memory())
+    assert "accepted risks: 2; expired: R-01 (2026-02-01)" in out
+    assert [r[0] for r in memory.accepted_risks(memory.Memory())] == ["R-01", "R-02"]
+    listing = memory.cmd_risks_list(memory.Memory())
+    assert (
+        "R-01 · PY-SUBPROC-01 · tool.py · run_tool · expires 2026-02-01 (expired) · input is a constant"
+        in listing
+    )
+    assert "R-02 · GO-TLS-02 · main.go · dial · expires 2099-01-01 (ok)" in listing
+    added = memory.cmd_risks_add(
+        memory.Memory(), "TS-EVAL-01", "app/x.ts", "render|pipe", "sanitised upstream", "", 120
+    )
+    assert added.startswith("risks: R-03 accepted until ") and "TS-EVAL-01 · app/x.ts · render/pipe" in added
+    row = memory.accepted_risks(memory.Memory())[-1]
+    assert row[5] == "owner" and (date.fromisoformat(row[7]) - date.fromisoformat(row[6])).days == 90
+    assert memory.cmd_risks_add(memory.Memory(), "r", "f", "s", "", "", 10).startswith(
+        "risks: --why is required"
+    )
+    long_journal(repo)
+    assert "run partner-memory compact" in memory.cmd_check(memory.Memory())
+
+
+def test_risks_add_createsFileFromTemplate(memory, repo, capsys):
+    (repo / ".agent").mkdir()
+    assert memory.cmd_risks_list(memory.Memory()) == "risks: none accepted"
+    out = memory.cmd_risks_add(memory.Memory(), "SH-CURL-01", "install.sh", "main", "pinned sha", "YpNo", 30)
+    assert out.startswith("risks: R-01")
+    text = (repo / ".agent" / "accepted-risks.md").read_text()
+    assert (
+        text.startswith("# Accepted risks")
+        and "| R-01 | SH-CURL-01 | install.sh | main | pinned sha | YpNo |" in text
+    )
+    assert memory.main(["risks", "add", "GO-X", "a.go", "f", "--why", "w", "--days", "5"]) == 0
+    assert "R-02" in capsys.readouterr().out
+    assert memory.main(["risks", "list"]) == 0 and "R-02 · GO-X" in capsys.readouterr().out
+
+
+def test_compact_keepsTheBriefAndOpenItems(memory, repo):
+    long_journal(repo)
+    path = repo / ".agent" / "JOURNAL.md"
+    path.write_text(
+        path.read_text().replace(
+            "## 2026-01-02 — entry 1\nChanged: did thing 1. Then more.\nWhy: w\n",
+            "## 2026-01-02 — entry 1\nChanged: did thing 1. Then more.\nWhy: w\nOpen: F-07 still open\n",
+        )
+    )
+    mem = memory.Memory()
+    before = memory.build_brief(mem, 6000, trust_check=False)
+    memory.cmd_compact(mem, 10, "", False, False)
+    assert memory.build_brief(mem, 6000, trust_check=False) == before
+    text = path.read_text()
+    assert "- 2026-01-02 entry 1: did thing 1.\n  open: F-07 still open" in text
+    memory.cmd_compact(mem, 8, "", False, True)
+    assert "  open: F-07 still open" in path.read_text()
+
+
+def test_cli_compact(memory, repo, capsys):
+    long_journal(repo)
+    assert memory.main(["compact", "--keep", "12", "--dry-run", "--force"]) == 0
+    assert "folding 2 of 14" in capsys.readouterr().out

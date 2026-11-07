@@ -615,3 +615,11 @@ def test_cli_compact(memory, repo, capsys):
     long_journal(repo)
     assert memory.main(["compact", "--keep", "12", "--dry-run", "--force"]) == 0
     assert "folding 2 of 14" in capsys.readouterr().out
+
+
+def test_check_oldRulesFile_warnsToRename(memory, repo):
+    mem = memory.Memory()
+    memory.cmd_init(mem, {"profile": "cli"}, set())
+    (mem.dir / "partner.rules").write_text("ask Bash(x*)\n")
+    out = memory.cmd_check(mem)
+    assert "partner.rules is not read since the rename" in out and "rename it to cobot.rules" in out

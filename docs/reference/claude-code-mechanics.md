@@ -61,6 +61,13 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   25 KB loaded). Agents may have their own memory via `memory:`.
 - `AGENTS.md` is read when no CLAUDE.md exists (v2.1.277+).
 
+- A folder carries one marketplace name: `marketplace add <path>` for a folder already
+  registered under another name answers "Marketplace '<old>' already on disk — declared in user
+  settings" and registers nothing, so a rename must `marketplace remove <old>` first.
+  `marketplace remove` clears `known_marketplaces.json` and the `extraKnownMarketplaces` record
+  in `~/.claude/settings.json` itself; `plugins/cache/<old>/` stays behind (observed 2026-11-07,
+  2.1.285).
+
 ## Evals
 - `evals/<case>/prompt.md` (frontmatter `name`, `runs`, `max_turns`, `model`, …) +
   `evals/<case>/graders/<g>.md` (`type: regex|tool_used|tool_order|file_exists|llm|baseline`,

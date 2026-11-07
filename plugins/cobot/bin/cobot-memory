@@ -37,10 +37,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _cobot_common import (  # noqa: E402
     SECRET_RE,
+    cobot_config_dir,
+    config_dir,
     data_dir,
     host_owner_repo,
     memory_dir,
-    cobot_config_dir,
     plugin_root,
     remotes,
     repo_root,
@@ -73,6 +74,7 @@ ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 JOURNAL_COMPACT_LINES = 400
+OLD_RULES_NAME = "partner.rules"  # the name before ADR-0004; still reported by check
 COMPACT_KEEP = 10
 RISK_RE = re.compile(r"^\| *(R-\d+) *\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$")
 RISK_MAX_DAYS = 90
@@ -628,6 +630,9 @@ def cmd_check(mem: Memory) -> str:
     if risks:
         expired = [f"{row[0]} ({row[-1]})" for row in risks if row[-1] < date.today().isoformat()]
         lines.append(f"accepted risks: {len(risks)}" + (f"; expired: {', '.join(expired)}" if expired else ""))
+    for old in (mem.dir / OLD_RULES_NAME, config_dir() / OLD_RULES_NAME):
+        if old.is_file():
+            lines.append(f"warning: {old} is not read since the rename (ADR-0004); rename it to cobot.rules")
     return "\n".join(lines)
 
 

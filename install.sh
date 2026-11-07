@@ -18,6 +18,14 @@ GITHUB_SOURCE=YpNo/cobot
 HOME_DIR=${HOME:-/root}
 CLAUDE_DIR=${CLAUDE_CONFIG_DIR:-$HOME_DIR/.claude}
 LEGACY_DIR=$HOME_DIR/.agents
+# the name before 2026-11-07 (ADR-0004): state and registrations are migrated once, never deleted
+OLD_MARKETPLACE=agentic-partner
+OLD_PLUGIN=partner
+DATA_BASE=${XDG_DATA_HOME:-$HOME_DIR/.local/share}
+OLD_DATA=$DATA_BASE/$OLD_MARKETPLACE
+NEW_DATA=$DATA_BASE/$MARKETPLACE
+OLD_CONF=$CLAUDE_DIR/$OLD_PLUGIN
+NEW_CONF=$CLAUDE_DIR/$PLUGIN
 source_kind=path
 
 usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
@@ -41,6 +49,68 @@ ensure_marketplace() {
   fi
 }
 
+present() { [ -e "$1" ] || [ -L "$1" ]; }
+
+migrate_dir() { # MODE OLD NEW: rename OLD to NEW when NEW is absent in any form; MODE check only reports
+  present "$2" || return 0
+  if present "$3"; then echo "migrate: $2 and $3 both exist; nothing moved, merge by hand"; return 0; fi
+  if [ "$1" = check ]; then echo "  would move $2 -> $3"; else mv "$2" "$3" && echo "migrate: moved $2 -> $3"; fi
+}
+
+relink_agent() { # MODE DIR: a .agent symlink the plugin created into the old data directory follows it
+  link=$2/.agent
+  [ -L "$link" ] || return 0
+  target=$(readlink "$link")
+  case $target in "$OLD_DATA"/*) ;; *) return 0 ;; esac
+  new=$NEW_DATA${target#"$OLD_DATA"}
+  if [ "$1" = check ]; then echo "  would re-point $link -> $new"; else rm "$link" && ln -s "$new" "$link" && echo "migrate: re-pointed $link -> $new"; fi
+}
+
+report_old_rules() { # DIR: the owner's rule files are reported, never moved
+  for f in "$CLAUDE_DIR/$OLD_PLUGIN.rules" "$1/.agent/$OLD_PLUGIN.rules"; do
+    present "$f" && echo "migrate: $f is yours: rename it to $PLUGIN.rules by hand (the gate reads $PLUGIN.rules)"
+  done
+  return 0
+}
+
+migrate_state() { # MODE DIR
+  migrate_dir "$1" "$OLD_DATA" "$NEW_DATA"
+  migrate_dir "$1" "$OLD_CONF" "$NEW_CONF"
+  relink_agent "$1" "$2"
+  report_old_rules "$2"
+}
+
+uninstall_old() { # SCOPE DIR: the old plugin id at this scope, when installed
+  if (cd "$2" && claude plugin uninstall "$OLD_PLUGIN@$OLD_MARKETPLACE" --scope "$1" 2>/dev/null); then
+    echo "migrate: uninstalled $OLD_PLUGIN@$OLD_MARKETPLACE at scope $1 in $2"
+  fi
+  return 0
+}
+
+old_marketplace_path() { # the folder the old marketplace was registered from, when it was a folder
+  claude plugin marketplace list 2>/dev/null | sed -n "/$OLD_MARKETPLACE/{n;s/.*Folder (\(.*\)).*/\1/p;}"
+}
+
+retire_old_marketplace() { # before the new marketplace registers: a folder carries one marketplace name only
+  claude plugin marketplace list 2>/dev/null | grep -q "$OLD_MARKETPLACE" || return 0
+  remaining=$(claude plugin list 2>/dev/null | grep -c "$OLD_PLUGIN@$OLD_MARKETPLACE" || true)
+  if [ "$remaining" -gt 0 ]; then
+    if [ "$(old_marketplace_path)" != "$REPO_DIR" ]; then
+      echo "migrate: marketplace $OLD_MARKETPLACE kept: $remaining install(s) of $OLD_PLUGIN@$OLD_MARKETPLACE remain; refresh them first"
+      claude plugin list 2>/dev/null | grep -A3 "$OLD_PLUGIN@$OLD_MARKETPLACE"
+      return 0
+    fi
+    echo "migrate: $remaining install(s) of $OLD_PLUGIN@$OLD_MARKETPLACE remain but share this folder with $MARKETPLACE; refresh them next:"
+    claude plugin list 2>/dev/null | grep -A3 "$OLD_PLUGIN@$OLD_MARKETPLACE"
+  fi
+  claude plugin marketplace remove "$OLD_MARKETPLACE" && echo "migrate: removed marketplace $OLD_MARKETPLACE"
+  present "$CLAUDE_DIR/plugins/cache/$OLD_MARKETPLACE" && echo "migrate: $CLAUDE_DIR/plugins/cache/$OLD_MARKETPLACE remains; remove it by hand"
+  if [ -f "$CLAUDE_DIR/settings.json" ] && grep -q "\"$OLD_MARKETPLACE\"" "$CLAUDE_DIR/settings.json"; then
+    echo "migrate: $CLAUDE_DIR/settings.json still has extraKnownMarketplaces.$OLD_MARKETPLACE: delete that key by hand"
+  fi
+  return 0
+}
+
 cmd_dev() {
   echo "alias claude-cobot='claude --plugin-dir \"$PLUGIN_DIR\"'"
   echo "# session only: nothing is written. Verify with:"
@@ -50,6 +120,9 @@ cmd_dev() {
 cmd_install() {
   scope=$1; dir=${2:-.}
   need_claude
+  migrate_state run "$dir"
+  uninstall_old "$scope" "$dir"
+  retire_old_marketplace
   ensure_marketplace
   echo "installing $PLUGIN@$MARKETPLACE at scope $scope in $dir"
   (cd "$dir" && claude plugin install "$PLUGIN@$MARKETPLACE" --scope "$scope")
@@ -60,6 +133,9 @@ cmd_refresh() {
   need_claude
   for scope in project local; do
     if (cd "$dir" && claude plugin uninstall "$PLUGIN@$MARKETPLACE" --scope "$scope" 2>/dev/null); then
+      cmd_install "$scope" "$dir"; refreshed=1
+    elif (cd "$dir" && claude plugin uninstall "$OLD_PLUGIN@$OLD_MARKETPLACE" --scope "$scope" 2>/dev/null); then
+      echo "migrate: uninstalled $OLD_PLUGIN@$OLD_MARKETPLACE at scope $scope in $dir"
       cmd_install "$scope" "$dir"; refreshed=1
     fi
   done
@@ -125,6 +201,9 @@ cmd_check() {
   echo "== Name overlaps"
   overlaps=$(report_overlaps)
   if [ -n "$overlaps" ]; then echo "$overlaps"; else echo "  none"; fi
+  echo "== Migration from $OLD_MARKETPLACE"
+  pending=$(migrate_state check .)
+  if [ -n "$pending" ]; then echo "$pending"; else echo "  nothing to migrate"; fi
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }

@@ -82,9 +82,11 @@ their day; their file names change only where they are `partner`-named, which no
    are printed and the removal waits for their refresh. Whether `marketplace remove` deletes
    `~/.claude/plugins/cache/agentic-partner` is verified in the dogfood run and recorded in the
    mechanics reference; the script reports a cache directory that remains and never removes it.
-   `~/.claude/settings.json` keeps an `extraKnownMarketplaces.agentic-partner` record that only
-   the owner may edit (`never Edit/Write(~/.claude/settings*.json)`): the migration prints the
-   exact key to delete and task 4 lists it. `cobot-memory check` warns when an old-named rules
+   A folder carries one marketplace name, so the old marketplace is removed before the new one
+   registers when both come from this checkout (observed: `marketplace add` otherwise registers
+   nothing); `marketplace remove` clears `known_marketplaces.json` and the
+   `extraKnownMarketplaces` record in `~/.claude/settings.json` itself, a file the rules forbid
+   the cobot to edit, so the script only reports a record that remains. `cobot-memory check` warns when an old-named rules
    file sits beside the new one. Tests in `test_install.py` with the fake home, `XDG_DATA_HOME`
    and `CLAUDE_CONFIG_DIR` set, and the fake `claude` listing one or two installs.
 3. **Proof.** Full suite and coverage, ruff, shellcheck, markdownlint, `check-plugin`, strict
@@ -94,8 +96,7 @@ their day; their file names change only where they are `partner`-named, which no
    session with the new prefix; `cobot-memory brief` reads headscale's external memory at its
    new path.
 4. **Owner.** `gh repo rename cobot`, `git remote set-url origin git@github.com:YpNo/cobot.git`,
-   push, PR; delete the `extraKnownMarketplaces.agentic-partner` key from `~/.claude/settings.json`
-   after the last refresh (the migration prints it); commit cartridge-os's rewritten
+   push, PR; commit cartridge-os's rewritten
    `.claude/settings.json` in that repository; repository description "cobot: a governed technical AI assistant for architects,
    developers and operators" and topics; `scripts/github-settings.sh --check` (it reads the
    remote, so nothing else changes). The auto-memory file of the orchestrator's own project

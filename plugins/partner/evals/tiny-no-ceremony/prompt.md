@@ -4,7 +4,7 @@ description: A one-file documentation change must be done directly, with no spec
 tags: [protocol, size]
 runs: 3
 max_turns: 8
-allowed_tools: [Read, Glob, Grep, Skill, Agent]
+allowed_tools: [Read, Glob, Grep, Skill, Agent, Write, Edit]
 ---
 
 Create a file named NOTES.md in the current directory containing exactly one line: `hello from the partner`.

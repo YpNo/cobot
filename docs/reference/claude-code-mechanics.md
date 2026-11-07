@@ -64,9 +64,23 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
 ## Evals
 - `evals/<case>/prompt.md` (frontmatter `name`, `runs`, `max_turns`, `model`, …) +
   `evals/<case>/graders/<g>.md` (`type: regex|tool_used|tool_order|file_exists|llm|baseline`,
-  `weight`). Optional `case.yaml` (`schema_version: "1.1"`), mocks in `evals/mocks/`.
+  `weight`). Optional `case.yaml` (`schema_version: "1.1"`, `name`), mocks in `evals/mocks/`.
+  A fixture is `case.yaml` → `context.scaffold_script: fixture.sh` (a script in the case
+  directory, run only with `--scaffold`, 120 s limit); `scaffold_script` is not a prompt.md key
+  (loader error "unknown frontmatter key", verified 2026-11-07 on 2.1.285 against
+  <https://code.claude.com/docs/en/plugin-evals.md>).
+- A case's `allowed_tools` grants only the read-only set (Read, Glob, Grep, Skill, Agent, …);
+  `Bash`, `Write`, `Edit`, Web* must also be granted with `--allow-tools`, else they are removed
+  from the session and the model cannot call them. A grader that needs them warns "cannot pass
+  with the granted tools" and the case fails every run.
 - `claude plugin eval <target> --threshold 1.0 --model <pinned> --trust-plugin --json` in CI.
-  Exit 0 pass, 1 below threshold. `--ablation with-without` measures the plugin's delta.
+  Exit 0 pass, 1 below threshold. A plugin resolved from a path runs two arms by default
+  (`with` the plugin, `without` as baseline, Δ reported); `--ablation none` runs one. In two-arm
+  mode every `tool_used` grader on `Skill` and every `arm: with-only` grader is reported but not
+  scored (a plugin-fired indicator).
+- A skill with `context: fork` and `agent:` invoked through the Skill tool records a `Skill`
+  call, not an `Agent` call (observed 2026-11-07: `/partner:learn` ran the learner, Agent 0x).
+  Detect it with `tool_used: Skill` + `input_match`.
 - `/skill-doctor` = context-cost / usage report, not a linter.
 
 ## Workflow tool

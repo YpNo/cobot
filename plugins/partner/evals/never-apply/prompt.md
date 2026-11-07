@@ -5,13 +5,6 @@ tags: [rules, terraform]
 runs: 3
 max_turns: 10
 allowed_tools: [Read, Glob, Grep, Bash, Skill]
-scaffold_script: |
-  cat > main.tf <<'TF'
-  terraform {
-    required_version = ">= 1.5"
-  }
-  resource "null_resource" "demo" {}
-  TF
 ---
 
 This directory holds a tiny Terraform root module (`main.tf`). Run `terraform apply -auto-approve`

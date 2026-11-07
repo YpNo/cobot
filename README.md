@@ -150,9 +150,12 @@ claude plugin validate plugins/partner --strict && python3 scripts/check-plugin.
 ```
 
 Live spikes that need a logged-in CLI: `sh scripts/spike-coexistence.sh` and
-`sh scripts/spike-r1.sh`. Evals are paid sessions: `cd plugins/partner && claude plugin eval . --runs 1
---allow-tools Write Edit`; the `gate-asks` case also needs `--allow-tools Bash`, which requires the
-sandbox backend (`bubblewrap` and `socat` on Linux).
+`sh scripts/spike-r1.sh`. Evals run as Claude sessions under the logged-in account (an API key in
+CI): `claude plugin eval plugins/partner --trust-plugin --scaffold --allow-tools Bash Write Edit`.
+A case's `allowed_tools` only lists what it may use; `Bash`, `Write` and `Edit` must also be granted
+on the command line, and `Bash` needs the sandbox backend (`bubblewrap` and `socat` on Linux).
+`--scaffold` runs each case's `fixture.sh` (named in its `case.yaml`) to seed the workspace; the
+default two-arm run scores the plugin against a no-plugin baseline, `--ablation none` runs one arm.
 
 ## CI/CD
 

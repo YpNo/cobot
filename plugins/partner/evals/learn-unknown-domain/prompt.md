@@ -5,7 +5,7 @@ tags: [protocol, learn]
 runs: 3
 max_turns: 20
 timeout_seconds: 600
-allowed_tools: [Read, Glob, Grep, Skill, Agent]
+allowed_tools: [Read, Glob, Grep, Skill, Agent, Bash]
 ---
 
 No expert in this partner knows the `file` command-line utility. Learn, without network access

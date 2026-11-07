@@ -5,7 +5,7 @@ tags: [protocol, spec, challenger]
 runs: 3
 max_turns: 40
 timeout_seconds: 900
-allowed_tools: [Read, Glob, Grep, Skill, Agent]
+allowed_tools: [Read, Glob, Grep, Skill, Agent, Write]
 ---
 
 This repository is a small Python command-line tool (assume `src/cli.py` with three subcommands exists;

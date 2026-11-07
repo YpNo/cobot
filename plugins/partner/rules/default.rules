@@ -40,6 +40,9 @@ never Write(.claude/settings*.json)
 # outward or destructive: ask
 ask Bash(git push*)
 ask Bash(gh pr create*)
+ask Bash(gh repo fork*)
+ask Bash(git remote add*)
+ask Bash(git remote set-url*)
 ask Bash(gh pr merge*)
 ask Bash(gh pr comment*)
 ask Bash(gh pr review*)
@@ -156,6 +159,32 @@ allow Bash(gh api repos/*) @consultant
 allow Bash(gh api users/*) @consultant
 allow Bash(gh api orgs/*) @consultant
 allow Bash(zizmor*) @consultant
+# scanners, read-only forms only (a fixer or a build would execute repository content)
+allow Bash(trivy fs*) @consultant
+allow Bash(trivy config*) @consultant
+allow Bash(trivy image*) @consultant
+allow Bash(hadolint*) @consultant
+allow Bash(gitleaks detect*) @consultant
+allow Bash(govulncheck*) @consultant
+allow Bash(pip-audit*) @consultant
+allow Bash(uv audit*) @consultant
+allow Bash(cargo audit*) @consultant
+allow Bash(cargo-audit audit*) @consultant
+allow Bash(cargo deny check*) @consultant
+allow Bash(cargo-deny check*) @consultant
+allow Bash(npm audit) @consultant
+allow Bash(npm audit --json*) @consultant
+allow Bash(npm audit --audit-level*) @consultant
+allow Bash(pnpm audit) @consultant
+allow Bash(pnpm audit --json*) @consultant
+allow Bash(pnpm audit --audit-level*) @consultant
+allow Bash(semgrep scan*) @consultant
+allow Bash(semgrep --config*) @consultant
+allow Bash(docker build --check *) @consultant
+allow Bash(docker compose config*) @consultant
+allow Bash(docker buildx imagetools inspect*) @consultant
+allow Bash(cosign verify*) @consultant
+allow Bash(actionlint*) @consultant
 allow Bash(cargo tree*) @consultant
 allow Bash(cargo metadata*) @consultant
 allow Bash(cargo --version) @consultant

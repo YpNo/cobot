@@ -104,6 +104,47 @@ COMPOSE_RUN_FLAGS = frozenset(
     "-i --interactive -t --tty -it --quiet-pull --use-aliases".split()
 )
 NOTHING_HIDDEN: list[str] = []  # a wrapper form that runs nothing of its own (interactive, or not a wrapper)
+# project launchers: `uv run <cmd>` and `pnpm|npm|yarn exec <bin>` name their command in argv;
+# `pnpm|npm|yarn|bun run <script>` (and the pnpm/yarn shorthand, npm's test/start aliases) read
+# it from package.json. uvx, npx, dlx and bunx download code and stay opaque.
+UV_RUN_VALUE_OPTIONS = frozenset(
+    "-p --python --with --with-requirements --with-editable --directory --project --package --group "
+    "--only-group --extra --env-file --index --default-index --find-links -c --constraint -b "
+    "--build-constraint --exclude-newer --cache-dir --config-file --color --resolution --prerelease "
+    "--link-mode --python-preference --index-strategy --keyring-provider --compile-bytecode".split()
+)
+UV_RUN_FLAGS = frozenset(
+    "--no-project --locked --frozen --isolated --no-sync --no-dev --dev --all-extras --no-all-extras "
+    "--no-editable --exact --offline --refresh --no-cache -q --quiet -v --verbose --native-tls "
+    "--managed-python --no-managed-python --no-progress --all-groups --no-default-groups --no-config "
+    "--active --no-active --no-build --no-binary --gui-script --no-env-file".split()
+)
+SCRIPT_RUN_FLAGS = frozenset("-s --silent -q --quiet --if-present --ignore-scripts --no-bail --bail".split())
+SCRIPT_SELECT_FLAGS = frozenset(
+    "-r --recursive --filter -F --parallel --stream --sequential -w --workspace --workspaces "
+    "--workspace-root --aggregate-output --resume-from --include-workspace-root --fail-if-no-match".split()
+)
+NPM_SCRIPT_ALIASES = {
+    "test": "test",
+    "t": "test",
+    "tst": "test",
+    "start": "start",
+    "stop": "stop",
+    "restart": "restart",
+}
+PNPM_BUILTINS = frozenset(
+    "add install i update up upgrade remove rm uninstall un link ln unlink import rebuild rb prune fetch "
+    "dedupe outdated audit licenses list ls why patch patch-commit patch-remove publish pack root bin env "
+    "store config setup self-update init dlx create exec run test start restart stop server recursive "
+    "approve-builds ignored-builds cat-file cat-index find-hash doctor help completion deploy".split()
+)
+YARN_BUILTINS = frozenset(
+    "add bin cache check config create dedupe exec explain generate-lock-entry global help import info "
+    "init install licenses link list login logout node outdated owner pack patch patch-commit plugin "
+    "policies publish rebuild remove run search set stage tag team test unlink unplug up upgrade "
+    "upgrade-interactive version versions why workspace workspaces dlx constraints npm".split()
+)
+SCRIPT_SHORTHAND = {"pnpm": PNPM_BUILTINS, "yarn": YARN_BUILTINS}
 MAX_EXPANSION = 4  # nesting depth of runners and wrappers resolved before the rest stays opaque
 INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
 # mise tasks are resolved from the config (closest folder first, local files first)
@@ -407,7 +448,11 @@ def is_opaque(plain: list[str]) -> bool:
     if head in OPAQUE_SUBCOMMANDS:
         verb = strip_global_options(plain)
         sub = verb[1] if len(verb) > 1 else ""
-        return sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]
+        if sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]:
+            return True
+        if head in SCRIPT_SHORTHAND:  # `pnpm typecheck` runs the package.json script
+            return bool(sub) and not sub.startswith("-") and sub not in SCRIPT_SHORTHAND[head]
+        return head == "npm" and sub in NPM_SCRIPT_ALIASES
     if head in INTERPRETERS:
         return any(token in INLINE_CODE_FLAGS for token in plain[1:])
     if head in WRAPPER_PARSERS:  # opaque until expand_segments resolves the inner command
@@ -722,6 +767,93 @@ def expand_make(plain: list[str], cwd: str | None) -> list[str] | None:
     return commands
 
 
+def expand_uv(plain: list[str]) -> list[str] | None:
+    """The command behind ``uv run [options] <cmd>``: argv after uv's own options; ``-m`` and a
+    ``.py`` file become ``python …``. None on an option the table does not know."""
+    if len(plain) < 3 or plain[1] != "run":
+        return None
+    args, index, module, script = plain[2:], 0, False, False
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            index += 1
+            break
+        if not arg.startswith("-"):
+            break
+        name, has_value, _ = arg.partition("=")
+        if name in ("-m", "--module"):
+            module = True
+        elif name in ("-s", "--script"):
+            script = True
+        elif name in UV_RUN_VALUE_OPTIONS:
+            index += 0 if has_value else 1
+        elif name not in UV_RUN_FLAGS or has_value:
+            return None
+        index += 1
+    rest = args[index:]
+    if not rest or index > len(args):
+        return None
+    if module:
+        return [shlex.join(["python", "-m", *rest])]
+    if script or rest[0].endswith((".py", ".pyw")):
+        return [shlex.join(["python", *rest])]
+    return [shlex.join(rest)]
+
+
+def package_scripts(cwd: str | None) -> dict[str, str] | None:
+    path = Path(cwd or os.getcwd()) / "package.json"
+    try:
+        scripts = json.loads(path.read_text(encoding="utf-8")).get("scripts")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return (
+        scripts if isinstance(scripts, dict) and all(isinstance(v, str) for v in scripts.values()) else None
+    )
+
+
+def expand_node(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a package-manager launcher: ``exec <bin>`` from argv; ``run <script>``,
+    the pnpm/yarn shorthand and npm's test/start aliases from package.json, with the script's
+    ``pre``/``post`` hooks. None when the runner's own flags would change which scripts run."""
+    head, args = plain[0], plain[1:]
+    if not args:
+        return None
+    sub, rest = args[0], args[1:]
+    if sub in ("exec", "x") and head != "bun":
+        if "--" in rest:
+            rest = rest[rest.index("--") + 1 :]
+        return [shlex.join(rest)] if rest and not rest[0].startswith("-") else None
+    if sub in ("run", "run-script"):
+        while rest and rest[0].startswith("-"):
+            if rest[0] not in SCRIPT_RUN_FLAGS:
+                return None
+            rest = rest[1:]
+        if not rest:
+            return None
+        name, extra = rest[0], rest[1:]
+    elif head == "npm" and sub in NPM_SCRIPT_ALIASES:
+        name, extra = NPM_SCRIPT_ALIASES[sub], rest
+    elif head in SCRIPT_SHORTHAND and sub not in SCRIPT_SHORTHAND[head] and not sub.startswith("-"):
+        name, extra = sub, rest
+    else:
+        return None
+    if name.startswith("/") or any(
+        arg in SCRIPT_SELECT_FLAGS or arg.startswith(("--filter=", "-F=")) for arg in extra
+    ):
+        return None  # a regex of scripts, or a flag that changes which scripts run
+    scripts = package_scripts(cwd)
+    if scripts is None or name not in scripts:
+        return None
+    commands = []
+    for key in (f"pre{name}", name, f"post{name}"):
+        if key in scripts:
+            text = scripts[key]
+            if key == name and extra:
+                text = f"{text} {shlex.join(arg for arg in extra if arg != '--')}"
+            commands.append(text)
+    return commands
+
+
 def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
     """The commands behind a runner, a shell ``-c`` string or an entry wrapper; None when unknown."""
     if not plain:
@@ -731,6 +863,10 @@ def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
         commands = expand_mise(plain, cwd)
     elif head in MAKE_NAMES:
         commands = expand_make(plain, cwd)
+    elif head == "uv":
+        commands = expand_uv(plain)
+    elif head in ("npm", "pnpm", "yarn", "bun"):
+        commands = expand_node(plain, cwd)
     elif head in SHELLS:
         commands = expand_shell(plain)
     elif head in WRAPPER_PARSERS:

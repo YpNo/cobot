@@ -202,13 +202,13 @@ DEFAULT_DECISIONS = [
     ("mise run release", "ask"),
     ("mise ls", None),
     ("npm run deploy", "ask"),
-    ("npm test", None),
+    ("npm test", "ask"),  # no package.json here: the script is unknown
     ("make release", "ask"),
     ("just", "ask"),
     ("cargo xtask dist", "ask"),
     ("cargo test", None),
     ("cargo build --release", None),
-    ("uv run pytest", "ask"),
+    ("uv run pytest", None),
     ("uvx ruff check .", "ask"),
     ("echo $(git push)", "ask"),
     ("echo `date`", "ask"),
@@ -822,6 +822,96 @@ def test_makeTarget_noMakefileOrUnreadable_staysOpaque(rules, tmp_path):
     assert judge_in(rules, "make test", tmp_path)[0].decision == "ask"
 
 
+PACKAGE_JSON = {
+    "name": "demo",
+    "scripts": {
+        "pretypecheck": "cn build -q --content 'app/**/*.ts' -o app/cn.ts",
+        "typecheck": "react-router typegen && tsc",
+        "lint": "oxlint",
+        "test": "vitest run",
+        "test:unit": "vitest run --project unit",
+        "dev": "pnpm run --stream /^dev:/",
+        "deploy": "git push origin main",
+        "danger": "rm -rf dist && git push --force origin main",
+        "nested": "pnpm run lint && pnpm test:unit",
+    },
+}
+
+
+@pytest.fixture
+def node_repo(tmp_path):
+    (tmp_path / "package.json").write_text(json.dumps(PACKAGE_JSON))
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("pnpm run typecheck", None),
+        ("pnpm typecheck", None),
+        ("pnpm run lint --fix", None),
+        ("pnpm run --silent lint", None),
+        ("pnpm test:unit", None),
+        ("pnpm test", None),
+        ("npm test", None),
+        ("npm t -- --run", None),
+        ("npm run test:unit -- -t name", None),
+        ("yarn lint", None),
+        ("yarn run lint", None),
+        ("bun run lint", None),
+        ("pnpm run nested", None),
+        ("npm run deploy", "ask"),
+        ("pnpm run deploy", "ask"),
+        ("pnpm deploy", None),
+        ("pnpm run danger", "deny"),
+        ("yarn danger", "deny"),
+        ("pnpm run dev", "ask"),
+        ("pnpm run nonesuch", "ask"),
+        ("pnpm run -r lint", "ask"),
+        ("pnpm run lint --filter app", "ask"),
+        ("pnpm run", "ask"),
+        ("pnpm exec vitest run tests/unit/x.test.ts -t name", None),
+        ("pnpm exec oxlint", None),
+        ("npm exec -- vitest run", None),
+        ("npm exec vitest", None),
+        ("npm exec", "ask"),
+        ("pnpm exec -- git push", "ask"),
+        ("pnpm dlx create-vite", "ask"),
+        ("npx only-allow pnpm", "ask"),
+        ("bunx x", None),
+        ("pnpm install --frozen-lockfile", None),
+        ("pnpm add left-pad", "ask"),
+        ("uv run pytest -q", None),
+        ("uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest -q", None),
+        ("uv run -m pytest", None),
+        ("uv run script.py --flag", None),
+        ("uv run --script tool.py", None),
+        ("uv run --locked -- pytest", None),
+        ("uv run --bogus pytest", "ask"),
+        ("uv run", "ask"),
+        ("uv run --python", "ask"),
+        ("uv run git push", "ask"),
+        ("uv run bash -c 'git push'", "ask"),
+        ("uvx ruff check .", "ask"),
+        ("uv add numpy", "ask"),
+    ],
+)
+def test_launchers_resolvedFromArgvAndPackageJson(rules, node_repo, command, decision):
+    assert judge_in(rules, command, node_repo)[0].decision == decision, command
+
+
+def test_launchers_reasonNamesTheOrigin(rules, node_repo):
+    verdict, trace = judge_in(rules, "npm run deploy", node_repo)
+    assert verdict.reason() == "partner rule: ask Bash(git push*) (default layer) via npm run deploy"
+    assert trace[-1][0] == "git push origin main  <- npm run deploy"
+    verdict, _ = judge_in(rules, "uv run git push", node_repo)
+    assert verdict.reason() == "partner rule: ask Bash(git push*) (default layer) via uv run git push"
+    (node_repo / "package.json").write_text("{not json")
+    assert judge_in(rules, "pnpm run lint", node_repo)[0].decision == "ask"
+    (node_repo / "package.json").write_text(json.dumps({"scripts": {"lint": ["not", "a", "string"]}}))
+    assert judge_in(rules, "pnpm run lint", node_repo)[0].decision == "ask"
+
+
 def test_miseTask_fromNestedCwd_findsParentConfig(rules, mise_repo):
     assert judge_in(rules, "mise run deploy", mise_repo / "crates" / "x")[0].decision == "ask"
 
@@ -929,3 +1019,36 @@ def test_wrapper_nestingBeyondLimit_staysOpaque(rules):
 )
 def test_wrapper_edges(rules, command, decision):
     assert decide(rules, command)[0].decision == decision
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh repo fork juanfont/headscale --clone=false",
+        "git remote add upstream https://github.com/juanfont/headscale",
+        "git remote set-url origin git@github.com:YpNo/x.git",
+    ],
+)
+def test_gate_contributeRemotesAsk(rules, command):
+    assert decide(rules, command)[0].decision == "ask"
+
+
+@pytest.mark.parametrize(
+    ("command", "silent"),
+    [
+        ("trivy fs --scanners vuln,secret,misconfig .", True),
+        ("hadolint Dockerfile", True),
+        ("gitleaks detect --no-git --report-format json", True),
+        ("npm audit --json", True),
+        ("pnpm audit --audit-level=high", True),
+        ("cargo deny check advisories", True),
+        ("docker build --check .", True),
+        ("docker compose config -q", True),
+        ("npm audit fix", False),
+        ("docker build .", False),
+        ("trivy fs . && git push", False),
+    ],
+)
+def test_gate_consultantScannersReadOnlyForms(rules, command, silent):
+    out = rules.gate(payload(command, agent_type="partner:consultant"))
+    assert (out is None) is silent, command

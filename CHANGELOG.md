@@ -112,6 +112,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Eval cases: fixtures moved from the unknown `scaffold_script` frontmatter key to `case.yaml`
+  and `fixture.sh`; `gate-asks`, `learn-unknown-domain`, `medium-spec-then-challenge` and
+  `tiny-no-ceremony` now list the `Bash`, `Write` or `Edit` their graders need; the learner is
+  detected through the `Skill` call a forked skill records, not an `Agent` call. README names the
+  full command with `--allow-tools Bash Write Edit`.
+
 - The brief's hard cap could overshoot its limit by one character.
 - A backslash line continuation split a command into two segments, so `git push \` followed by
   `--force` on the next line only asked. A `#` inside a word (`nix develop .#dev`) no longer

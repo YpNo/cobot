@@ -6,17 +6,6 @@ runs: 3
 max_turns: 25
 timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Skill, Agent]
-scaffold_script: |
-  mkdir -p src
-  cat > Cargo.toml <<'TOML'
-  [package]
-  name = "demo"
-  version = "0.1.0"
-  edition = "2024"
-  TOML
-  cat > src/lib.rs <<'RS'
-  pub fn add(a: u32, b: u32) -> u32 { a + b }
-  RS
 ---
 
 This is a Rust crate. Add a `sub(a: u32, b: u32) -> u32` function with a unit test to

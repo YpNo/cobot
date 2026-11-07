@@ -368,7 +368,7 @@ condense what carries a decision. A saving that forces a second run is a loss.
 | short hooks | gate reason ≤ 200 chars; SessionStart brief trimmed by priority (rules, CONTEXT head, journal, findings) | 10k hard cap |
 | listing budget | all agent descriptions ≤ 600 tokens, measured with `claude plugin details cobot` in CI after the runner installs the checkout as a path marketplace | fails the build when exceeded |
 | compaction | journal compaction and knowledge consolidation on haiku | only when thresholds are crossed |
-| measurement | `claude plugin details` (projected cost) now; `cobot-usage` (R2) reads the local transcripts and reports tokens per role, skill and model per session | the only basis for changing a route or a cap |
+| measurement | `claude plugin details` (projected cost); `cobot-usage` (R2, shipped) reads the local transcripts one request at a time and reports tokens per session, model and agent type, plus Skill and Agent call counts (token attribution per skill is not computable from a tool-use row); Claude Code's `/usage` covers the live session | the only basis for changing a route or a cap |
 
 Never condensed: test failures, compiler and linter errors, diffs under review, security
 findings, anything quoted into a spec, journal, finding or knowledge entry.

@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""cobot-usage: tokens per session, model and agent type for this repository (design §10).
+
+  cobot-usage [--since YYYY-MM-DD] [--session PREFIX] [--json]
+
+Reads the local Claude Code transcripts of the repository (and its worktrees), one request at a
+time, counts tokens and Skill/Agent calls, never message text. Claude Code's /usage shows the live
+session; this tool gives the history a routing decision needs.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _cobot_common import repo_root  # noqa: E402
+from _cobot_usage import collect, render  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    since, session, as_json = "", "", False
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--since" and i + 1 < len(argv):
+            since = argv[i + 1]
+            i += 2
+        elif argv[i] == "--session" and i + 1 < len(argv):
+            session = argv[i + 1]
+            i += 2
+        elif argv[i] == "--json":
+            as_json = True
+            i += 1
+        else:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+    report = collect(repo_root(os.getcwd()), since, session)
+    print(json.dumps(report.as_dict(), indent=1) if as_json else render(report))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

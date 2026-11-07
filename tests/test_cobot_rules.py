@@ -1052,3 +1052,102 @@ def test_gate_contributeRemotesAsk(rules, command):
 def test_gate_consultantScannersReadOnlyForms(rules, command, silent):
     out = rules.gate(payload(command, agent_type="cobot:consultant"))
     assert (out is None) is silent, command
+
+
+# ---------------------------------------------------------------- builder report check (R2, PostToolUse on Agent)
+
+REPORT_SHIM = PLUGIN / "hooks" / "report.sh"
+GOOD_REPORT = """Files:
+- src/lib.rs
+Checks:
+- `cargo test -q` → exit 0
+  test result: ok. 3 passed
+- `cargo clippy -q` → exit 0
+Deps added: none
+Open: nothing
+"""
+PROMISE_REPORT = """Files:
+- src/lib.rs
+Checks: ran the tests, all green.
+Deps added: none
+"""
+
+
+def agent_payload(subagent: str, content, status: str = "completed") -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": subagent, "prompt": "T1"},
+            "tool_response": {"status": status, "content": content},
+        }
+    )
+
+
+def test_report_builderWithExitCodes_allows(rules):
+    assert rules.report(agent_payload("cobot:rust-builder", GOOD_REPORT)) is None
+
+
+def test_report_checksNoneWithReason_allows(rules):
+    text = "Files:\n- README.md\nChecks: none — docs-only task, nothing to run\nOpen: nothing\n"
+    assert rules.report(agent_payload("cobot:builder", text)) is None
+
+
+def test_report_promiseWithoutExitCode_blocks(rules):
+    out = json.loads(rules.report(agent_payload("cobot:python-builder", PROMISE_REPORT)))
+    assert out["decision"] == "block"
+    assert "exit <n>" in out["reason"] and "Checks: none" in out["reason"]
+
+
+def test_report_noChecksSection_blocks(rules):
+    out = json.loads(rules.report(agent_payload("cobot:go-builder", "Files:\n- a.go\nOpen: nothing\n")))
+    assert out["decision"] == "block"
+
+
+def test_report_contentAsBlocks_isRead(rules):
+    blocks = [{"type": "text", "text": GOOD_REPORT}]
+    assert rules.report(agent_payload("cobot:typescript-builder", blocks)) is None
+    blocks = [{"type": "text", "text": PROMISE_REPORT}]
+    assert json.loads(rules.report(agent_payload("cobot:typescript-builder", blocks)))["decision"] == "block"
+
+
+def test_report_nonBuilderAgent_isIgnored(rules):
+    assert rules.report(agent_payload("cobot:consultant", PROMISE_REPORT)) is None
+    assert rules.report(agent_payload("general-purpose", PROMISE_REPORT)) is None
+    assert rules.report(agent_payload("", PROMISE_REPORT)) is None
+
+
+def test_report_asyncLaunch_isIgnored(rules):
+    assert rules.report(agent_payload("cobot:builder", "", status="async_launched")) is None
+
+
+def test_report_otherToolOrMalformed_allows(rules, capsys):
+    other = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": "x"})
+    assert rules.report(other) is None
+    assert rules.report("not json") is None
+    assert "allowing" in capsys.readouterr().err
+
+
+def test_check_report_exitMarkerForms(rules):
+    for marker in ("exit 0", "exit code 1", "exit: 2", "-> 0", "→ 3"):
+        ok, _ = rules.check_report(f"Checks:\n- `make test` {marker}\n")
+        assert ok, marker
+    ok, why = rules.check_report("Checks:\n- make test exit 0\n")
+    assert not ok and "command" in why
+
+
+def test_report_shim_blocksAndNeverFails(tmp_path):
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM)],
+        input=agent_payload("cobot:builder", PROMISE_REPORT),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert run.returncode == 0 and json.loads(run.stdout)["decision"] == "block"
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM)], input="garbage", capture_output=True, text=True, env=env
+    )
+    assert run.returncode == 0 and run.stdout == "" and "allowing" in run.stderr

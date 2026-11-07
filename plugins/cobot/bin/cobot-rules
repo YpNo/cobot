@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md).
+"""cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md) and the builder report check.
 
 Commands
   gate                       read a PreToolUse payload on stdin; print a decision or nothing
@@ -1036,6 +1036,80 @@ def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent
 # ---------------------------------------------------------------- commands
 
 
+BUILDER_TYPE_RE = re.compile(r"^cobot:(builder|[a-z0-9-]+-builder)$")
+CHECKS_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Checks`?:\s*(.*)$")
+REPORT_SECTION_RE = re.compile(r"^\s*[-*]?\s*`?(Files|Deps added|Open|Noticed)`?:")
+EXIT_MARKER_RE = re.compile(r"(?:\bexit(?: code)?\s*:?\s*\d+|(?:→|->)\s*\d+)")
+COMMAND_RE = re.compile(r"`[^`\n]+`")
+CHECKS_NONE_RE = re.compile(r"^none\s*[—–-]+\s*\S")
+REPORT_BLOCK_REASON = (
+    "builder report lacks command and exit code under Checks:; re-run the task and require each check as "
+    "`<command>` → exit <n> with its output tail, or `Checks: none — <reason>`"
+)
+
+
+def checks_block(report: str) -> tuple[str, list[str]] | None:
+    """The text after the Checks: header and the lines of its block, or None when absent."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = CHECKS_HEADER_RE.match(line)
+        if not match:
+            continue
+        block: list[str] = []
+        for following in lines[index + 1 :]:
+            if REPORT_SECTION_RE.match(following):
+                break
+            block.append(following)
+        return match.group(1).strip(), block
+    return None
+
+
+def check_report(report: str) -> tuple[bool, str]:
+    """A builder report passes with `Checks: none — <reason>` or with a command carrying an exit marker."""
+    found = checks_block(report)
+    if found is None:
+        return False, "no Checks: section"
+    head, block = found
+    if CHECKS_NONE_RE.match(head):
+        return True, "checks: none, reason given"
+    text = "\n".join([head, *block])
+    if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
+        return True, "command and exit code present"
+    return False, "Checks: without a `command` and an exit marker"
+
+
+def response_text(response: object) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        return response_text(response.get("content", ""))
+    if isinstance(response, list):
+        return "\n".join(str(block.get("text", "")) for block in response if isinstance(block, dict))
+    return ""
+
+
+def report(stdin: str) -> str | None:
+    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything odd)."""
+    try:
+        payload = json.loads(stdin)
+        if payload.get("tool_name") != "Agent":
+            return None
+        subagent = str((payload.get("tool_input") or {}).get("subagent_type", ""))
+        if not BUILDER_TYPE_RE.match(subagent):
+            return None
+        response = payload.get("tool_response")
+        if isinstance(response, dict) and response.get("status") == "async_launched":
+            return None
+        ok, why = check_report(response_text(response))
+        log_event({"tool": "Agent", "head": subagent, "decision": None if ok else "block", "reason": why})
+    except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
+        print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
+        return None
+    if ok:
+        return None
+    return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+
+
 def hook_output(decision: str, reason: str) -> str:
     return json.dumps(
         {
@@ -1195,6 +1269,11 @@ def main(argv: list[str]) -> int:
     command = positional[0] if positional else ""
     if command == "gate":
         output = gate(sys.stdin.read())
+        if output:
+            print(output)
+        return 0
+    if command == "report":
+        output = report(sys.stdin.read())
         if output:
             print(output)
         return 0

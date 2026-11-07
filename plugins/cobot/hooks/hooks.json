@@ -1,5 +1,5 @@
 {
-  "description": "Rules gate on every governed call (never widens, blocks on failure) and the SessionStart brief (protocol, rule counts, trusted memory).",
+  "description": "Rules gate on every governed call (never widens, blocks on failure), the builder report check after each Agent call (blocks a report without command and exit code), and the SessionStart brief (protocol, rule counts, trusted memory).",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,18 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/gate.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/report.sh\"",
             "timeout": 10
           }
         ]

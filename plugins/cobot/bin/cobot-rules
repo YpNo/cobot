@@ -377,17 +377,32 @@ def strip_heredocs(command: str) -> str:
     return "\n".join(out)
 
 
+PUSH_VALUE_OPTIONS = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
+
+
 def expand_push_flags(tokens: list[str]) -> list[str]:
-    """``git push -uf`` becomes ``git push -u -f`` so the force rules see it."""
+    """``git push -uf origin x`` becomes ``git push origin x -u -f``: combined flags split, options
+    hoisted after the remote and refspecs so ``git push <remote>*`` rules see the remote first."""
     if tokens[:2] != ["git", "push"]:
         return tokens
-    out = tokens[:2]
-    for token in tokens[2:]:
+    positionals: list[str] = []
+    options: list[str] = []
+    rest = tokens[2:]
+    i = 0
+    while i < len(rest):
+        token = rest[i]
+        if token in PUSH_VALUE_OPTIONS and i + 1 < len(rest):
+            options.extend([token, rest[i + 1]])
+            i += 2
+            continue
         if re.fullmatch(r"-[a-zA-Z]{2,}", token):
-            out.extend(f"-{flag}" for flag in token[1:])
+            options.extend(f"-{flag}" for flag in token[1:])
+        elif len(token) > 1 and token[0] == "-":
+            options.append(token)
         else:
-            out.append(token)
-    return out
+            positionals.append(token)
+        i += 1
+    return [*tokens[:2], *positionals, *options]
 
 
 def canonical_gh_api(tokens: list[str]) -> list[str]:

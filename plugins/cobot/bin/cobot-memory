@@ -267,6 +267,31 @@ def template(name: str, profile: str, repo_name: str) -> str:
     return text.replace("{{PROFILE}}", profile).replace("{{NAME}}", repo_name).replace("{{DATE}}", date.today().isoformat())
 
 
+def never_push_rules(remote_map: dict[str, str]) -> list[str]:
+    """Project-layer lines denying a push to every remote except origin, by name and by URL stem."""
+    rules: list[str] = []
+    for name, url in sorted(remote_map.items()):
+        if name == "origin":
+            continue
+        rules.append(f"never Bash(git push {name}*)")
+        stem = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git")
+        if stem and stem != name:
+            rules.append(f"never Bash(git push *{stem}*)")
+    return rules
+
+
+def write_never_push_rules(mem: Memory, external: Path) -> list[str]:
+    """Append the never-push lines to the external memory's cobot.rules; report what was added."""
+    rules = never_push_rules(remotes(mem.root))
+    if not rules:
+        return []
+    path = external / "cobot.rules"
+    if not path.exists():
+        path.write_text("# cobot project rules (foreign mode): remotes other than origin are never push targets\n")
+    added = [rule for rule in rules if append_unique(path, rule)]
+    return [f"rules: {rule} ({path})" for rule in added]
+
+
 def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
     lines = []
     if "foreign" in flags:
@@ -283,6 +308,7 @@ def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
             with exclude.open("a", encoding="utf-8") as handle:
                 handle.write(".agent\n")
         lines.append(f"foreign mode: {mem.dir} -> {external}; .agent excluded from git")
+        lines.extend(write_never_push_rules(mem, external))
     mem.dir.mkdir(parents=True, exist_ok=True)
     profile = options.get("profile", "library")
     for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md"):

@@ -684,3 +684,51 @@ def test_stamp_untrustedMemory_missingWithoutReadingJournal(memory, repo):
     (mem.dir).mkdir(exist_ok=True)
     (mem.dir / "JOURNAL.md").write_text("verified: 0000000 · <script>evil</script>\n")
     assert memory.cmd_stamp(mem) == "missing — untrusted memory"
+
+
+# ---------------------------------------------------------------- never-push rules at foreign init (R2)
+
+
+def test_never_push_rules_everyRemoteExceptOrigin(memory):
+    rules = memory.never_push_rules(
+        {
+            "origin": "https://github.com/YpNo/headscale.git",
+            "ghsa": "git@github.com:juanfont/headscale-ghsa-8598-8grw-c4hv.git",
+            "upstream": "https://github.com/juanfont/headscale",
+        }
+    )
+    assert rules == [
+        "never Bash(git push ghsa*)",
+        "never Bash(git push *headscale-ghsa-8598-8grw-c4hv*)",
+        "never Bash(git push upstream*)",
+        "never Bash(git push *headscale*)",
+    ]
+
+
+def test_init_foreign_writesNeverPushRules_gateDeniesBothForms(memory, rules, repo):
+    remote(repo, "origin", "https://github.com/other/proj.git")
+    remote(repo, "ghsa", "git@github.com:other/proj-ghsa-1234.git")
+    commit(repo)
+    out = memory.cmd_init(memory.Memory(), {}, {"foreign"})
+    assert "rules: never Bash(git push ghsa*)" in out
+    external = memory.Memory().external_path()
+    text = (external / "cobot.rules").read_text()
+    assert "never Bash(git push *proj-ghsa-1234*)" in text
+    assert "kept" in memory.cmd_init(memory.Memory(), {}, {"foreign"})  # idempotent: no second copy
+    assert text == (external / "cobot.rules").read_text()
+    for command in ("git push -u ghsa fix", "git push git@github.com:other/proj-ghsa-1234.git HEAD:fix"):
+        verdict = json.loads(
+            rules.gate(
+                json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo)})
+            )
+        )
+        assert verdict["hookSpecificOutput"]["permissionDecision"] == "deny", command
+        assert "project layer" in verdict["hookSpecificOutput"]["permissionDecisionReason"]
+    origin = json.loads(
+        rules.gate(
+            json.dumps(
+                {"tool_name": "Bash", "tool_input": {"command": "git push -u origin fix"}, "cwd": str(repo)}
+            )
+        )
+    )
+    assert origin["hookSpecificOutput"]["permissionDecision"] == "ask"

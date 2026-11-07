@@ -16,7 +16,9 @@ maintainers' size.
    (the same sections in the same order if the variable is not expanded) and fill it from
    `CONTRIBUTING.md`, `AI_POLICY.md` or its equivalent, `.github/PULL_REQUEST_TEMPLATE*`, the DCO
    or CLA note, the project's agent instructions and `git log` (commit style, sign-offs, branch
-   the maintainers merge into). Memory is outside the tree, so this file never reaches upstream.
+   the maintainers merge into). Record every remote other than `origin` under `never push to:`;
+   `onboard --foreign` already wrote a `never Bash(git push <remote>*)` line for each into the
+   project rules. Memory is outside the tree, so this file never reaches upstream.
    If the policy forbids autonomous contributions, stop here and say so: the owner contributes,
    the cobot only prepares.
 2. **Proof on HEAD.** Run `cobot-memory stamp`. `ok <sha>` means the last wrap covers HEAD

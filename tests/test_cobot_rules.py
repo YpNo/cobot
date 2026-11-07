@@ -1175,3 +1175,34 @@ def test_gate_forcePush_noStampSuffix(rules, tmp_path):
 def test_stamp_suffix_unreadable_isEmpty(rules, monkeypatch):
     monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
     assert rules.stamp_suffix("/") == ""
+
+
+# ---------------------------------------------------------------- push option hoisting (R2)
+
+
+def test_expand_push_flags_hoistsOptionsAfterRemote(rules):
+    assert rules.expand_push_flags(["git", "push", "-u", "ghsa", "fix"]) == [
+        "git",
+        "push",
+        "ghsa",
+        "fix",
+        "-u",
+    ]
+    assert rules.expand_push_flags(["git", "push", "-uf", "origin"]) == ["git", "push", "origin", "-u", "-f"]
+    assert rules.expand_push_flags(["git", "push", "-o", "ci.skip", "ghsa", "HEAD"]) == [
+        "git", "push", "ghsa", "HEAD", "-o", "ci.skip",
+    ]  # fmt: skip
+    assert rules.expand_push_flags(["git", "push", "--force", "origin", "main"]) == [
+        "git", "push", "origin", "main", "--force",
+    ]  # fmt: skip
+    assert rules.expand_push_flags(["git", "status"]) == ["git", "status"]
+
+
+def test_gate_forcePushAnyOrder_stillDenied(rules):
+    for command in (
+        "git push -f origin main",
+        "git push origin -f main",
+        "git push --force-with-lease origin",
+    ):
+        out = json.loads(rules.gate(payload(command)))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny", command

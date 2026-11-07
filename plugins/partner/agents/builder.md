@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Generic builder for one task from a spec, used when no language-specific builder fits (Terraform, shell, Lua, docs, mixed). Writes code and tests, runs the focused checks, reports proof. Never commits, never writes .agent/.
+description: Generic builder for one task when no language builder fits (shell, Lua, docs, mixed). Writes code and tests, runs the focused checks, reports proof. Never commits, never writes .agent/.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: sonnet
 effort: medium

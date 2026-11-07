@@ -118,6 +118,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Eval graders agree with the protocol (F-12): `profile-caps-size` grades the reply with
+  three regexes (`small`, the profile cap, a first step) instead of a haiku judge that failed
+  answers meeting the protocol and wanted a sentence the protocol never asks for;
+  `tiny-no-ceremony` looks for the size line in the trace, where "before acting" puts it, with a
+  pattern the injected protocol text cannot satisfy; the protocol and `/cobot:learn` have the
+  orchestrator quote a learner's delta verbatim, and `/cobot:spec` prints the challenger verdict
+  word at hand-over, so the `learn-unknown-domain` and `medium-spec-then-challenge` regexes
+  grade what the skills ask for.
 - Eval cases: fixtures moved from the unknown `scaffold_script` frontmatter key to `case.yaml`
   and `fixture.sh`; `gate-asks`, `learn-unknown-domain`, `medium-spec-then-challenge` and
   `tiny-no-ceremony` now list the `Bash`, `Write` or `Edit` their graders need; the learner is

@@ -88,6 +88,14 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
 - A skill with `context: fork` and `agent:` invoked through the Skill tool records a `Skill`
   call, not an `Agent` call (observed 2026-11-07: `/cobot:learn` ran the learner, Agent 0x).
   Detect it with `tool_used: Skill` + `input_match`.
+- A `regex` grader's `target: trace` sees every line of the session JSON, including the
+  `hook_response` line that carries the SessionStart payload (so the protocol text is in the
+  trace: a pattern that only looks for a word the protocol uses passes vacuously) and every
+  assistant message, not only the last. Non-ASCII is not escaped; quotes are `\"`. `flags: i`.
+  With `--keep-temp` the trace is `/tmp/claude-eval-<id>/out/trace.jsonl` (the kept directory
+  is read-only, `home/` and `tmp/` sealed). Verified 2026-11-07 on 2.1.311.
+- An `llm` judge (haiku by default) votes 2 of 3 on prose; it failed three answers that met a
+  five-clause rubric (profile-caps-size, 2026-11-07). Prefer one regex per required fact.
 - `/skill-doctor` = context-cost / usage report, not a linter.
 
 ## Workflow tool

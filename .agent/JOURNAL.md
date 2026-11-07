@@ -66,3 +66,10 @@ Why: the design's second dogfood target; a foreign Go repository exercises the t
 Proof: pytest 352 passed, coverage 99.10 %; ruff, shellcheck, markdownlint, check-plugin and plugin validate --strict clean; live claude -p from headscale showed the UNTRUSTED brief line and the five partner: agents through the local-scope install; go build ./... and go test ./hscontrol/util/ pass on headscale; nix, golangci-lint, buf, prek absent on this machine.
 Open: F-06 make resolution; headscale lint never ran here (needs nix); its five .mcp.json servers unapproved.
 Next: R1.1, learner first.
+
+## 2026-11-07 — make targets resolved from the Makefile (F-06)
+Changed: new bin/_partner_make.py reads a Makefile without running make (plain variables, define bodies through call, MAKE, @-target, prerequisites that are targets, VAR=value overrides, .DEFAULT_GOAL); partner-rules gains parse_make_argv (-C, -f, -j, flags, --eval opaque) and expand_make, wired into expand_runner like mise; design §6, README, rules skill, CHANGELOG updated; F-06 closed.
+Why: the owner chose to resolve make before R1.1; headscale and most Go and C projects run everything through make, and an opaque make hid both the harmless (go test) and the real (rm -rf, git push) from the gate. make is read, never run: a $(shell …) in a Makefile would otherwise execute at gate time in any checkout.
+Proof: pytest 414 passed, coverage 98.96 %; ruff, shellcheck, markdownlint, check-plugin, plugin validate --strict clean; on headscale make test, lint, fmt, dev-server judge silent, make clean asks via rm -rf, make build and make (default all) stay opaque, make generate asks via make client (command substitution); live claude -p from headscale: make test passed the gate silently and Claude Code's own permission asked (This command requires approval, no partner text); both installs refreshed, cache identical.
+Open: a computed prerequisite list is read as files (accepted gap, design §6); make -C into a folder without a Makefile stays opaque; nested make under -C stays opaque.
+Next: R1.1, learner first.

@@ -34,6 +34,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
     tomllib = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _partner_make  # noqa: E402
 from _partner_common import config_dir, plugin_root, repo_root  # noqa: E402
 
 ASK, DENY = "ask", "deny"
@@ -52,7 +53,7 @@ PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
 }
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 OPAQUE = frozenset(
-    "sh bash zsh dash ksh fish eval source . xargs sudo doas su make just task npx ssh mosh".split()
+    "sh bash zsh dash ksh fish eval source . xargs sudo doas su make gmake just task npx ssh mosh".split()
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -124,6 +125,19 @@ MISE_BUILTINS = frozenset(
 # a task with one of these keys runs more than its ``run`` lines say
 UNRESOLVED_TASK_KEYS = frozenset({"depends", "depends_post", "wait_for", "file", "shell", "dir"})
 MAX_ORIGIN = 40
+# make: options that take a value, flags without one; -E/--eval injects makefile text and stays opaque
+MAKE_VALUE_OPTIONS = frozenset(
+    "-C --directory -f --file --makefile -I --include-dir -o --old-file --assume-old -W --what-if "
+    "--new-file --assume-new -l --load-average --max-load -O --output-sync".split()
+)
+MAKE_FLAGS = frozenset(
+    "-b -m -B --always-make -d --debug -e --environment-overrides -i --ignore-errors -k --keep-going "
+    "-L --check-symlink-times -n --just-print --dry-run --recon -p --print-data-base -q --question "
+    "-r --no-builtin-rules -R --no-builtin-variables -s --silent --quiet -S --no-keep-going --stop "
+    "-t --touch --trace -v --version -w --print-directory --no-print-directory "
+    "--warn-undefined-variables -h --help -j --jobs".split()
+)
+MAKE_NAMES = frozenset({"make", "gmake"})
 INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
 # global options of known binaries: options that take a value, and flags without a value
 GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -635,6 +649,79 @@ def expand_mise(plain: list[str], cwd: str | None) -> list[str] | None:
     return commands
 
 
+def parse_make_argv(args: list[str]) -> tuple[str | None, str | None, list[str], dict[str, str]] | None:
+    """(directory, makefile, goals, variable overrides) of a make command line; None when an option
+    the table does not know, a second -C or -f, or --eval would change what runs."""
+    directory: str | None = None
+    makefile: str | None = None
+    goals: list[str] = []
+    overrides: dict[str, str] = {}
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg == "--":
+            goals.extend(args[index:])
+            break
+        if arg.startswith("-") and len(arg) > 1:
+            name, has_value, value = arg.partition("=")
+            if name in MAKE_VALUE_OPTIONS or (name[:2] in MAKE_VALUE_OPTIONS and not name.startswith("--")):
+                if name not in MAKE_VALUE_OPTIONS:
+                    name, value = name[:2], arg[2:]
+                elif not has_value:
+                    if index >= len(args):
+                        return None
+                    value = args[index]
+                    index += 1
+                if name in ("-C", "--directory"):
+                    if directory is not None:
+                        return None
+                    directory = value
+                elif name in ("-f", "--file", "--makefile"):
+                    if makefile is not None or value == "-":
+                        return None
+                    makefile = value
+                continue
+            if name in ("-j", "--jobs"):
+                if not has_value and index < len(args) and args[index].isdigit():
+                    index += 1
+                continue
+            if name in MAKE_FLAGS and not has_value:
+                continue
+            if arg[:2] == "-j" and arg[2:].isdigit():
+                continue
+            if not arg.startswith("--") and all(f"-{char}" in MAKE_FLAGS for char in arg[1:]):
+                continue
+            return None
+        if "=" in arg and not arg.startswith("="):
+            name, _, value = arg.partition("=")
+            overrides[name.rstrip(":?+!")] = value
+            continue
+        goals.append(arg)
+    return directory, makefile, goals, overrides
+
+
+def expand_make(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The recipe lines behind ``make [options] [VAR=value] [goals]``, read from the Makefile
+    (``_partner_make``); None when they cannot be known. A nested make inside a ``-C`` directory
+    stays opaque: its own Makefile would be read from the wrong folder."""
+    parsed = parse_make_argv(plain[1:])
+    if parsed is None:
+        return None
+    directory, makefile, goals, overrides = parsed
+    folder = Path(cwd or os.getcwd())
+    if directory:
+        folder = folder / os.path.expanduser(directory)
+    commands = _partner_make.resolve(folder, makefile, goals, overrides)
+    if commands is None:
+        return None
+    if directory:
+        heads = [strip_wrappers(segment)[:1] for command in commands for segment in split_segments(command)]
+        if any(head and head[0] in MAKE_NAMES for head in heads):
+            return None
+    return commands
+
+
 def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
     """The commands behind a runner, a shell ``-c`` string or an entry wrapper; None when unknown."""
     if not plain:
@@ -642,6 +729,8 @@ def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
     head = plain[0]
     if head == "mise":
         commands = expand_mise(plain, cwd)
+    elif head in MAKE_NAMES:
+        commands = expand_make(plain, cwd)
     elif head in SHELLS:
         commands = expand_shell(plain)
     elif head in WRAPPER_PARSERS:

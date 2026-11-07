@@ -178,7 +178,7 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
 - matches on **(binary, subcommand)** after stripping global options: `git -C x push`, `git -c k=v
   push`, `terraform -chdir=envs/prod apply`, `env git push`, `( git push )` all resolve to their
   verb;
-- treats interpreters and task runners as **opaque** (`sh bash zsh python node make just mise task
+- treats interpreters and task runners as **opaque** (`sh bash zsh python node just mise task
   npm pnpm yarn cargo xtask`, `eval`, `xargs`, `$(…)`, backticks) and decides `ask`, except when
   the owner layer allows that exact command line (then the gate stays silent and the permission
   system decides);
@@ -186,6 +186,16 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
   first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a
   task with `depends`, `file`, `shell`, `dir`, templating or command substitution stays opaque;
+- resolves **make targets** the same way, by reading the Makefile (`GNUmakefile`, `makefile`,
+  `Makefile`, or `-f`; `-C` changes the folder), never by running make: plain variables, `define`
+  bodies through `$(call)`, `$(MAKE)`, `$@`, prerequisites that are targets, `VAR=value` on the
+  command line and `.DEFAULT_GOAL` are followed, so `make clean` is judged as its `rm -rf …` and
+  `make release` as its `git push`; a Makefile with `include`, pattern or suffix rules,
+  `.SECONDEXPANSION` or `$(eval)`, a target under a conditional or with a target-specific variable,
+  a recipe needing a function (`$(shell …)`), an unknown variable or `$<`-style automatic variable,
+  a nested make under `-C`, or an option the table does not know keeps the command opaque. One
+  accepted gap: a prerequisite list that does not expand (`test: $(GO_SOURCES)`) is read as the
+  file list it is; a computed prerequisite naming a recipe target would escape;
 - looks through **entry wrappers** the same way: `distrobox enter … -- <cmd>`, `toolbox run`,
   `docker|podman exec`, `docker compose exec|run`, `nix develop -c`, `nix-shell --run`,
   `flatpak run --command=`, `chroot`, and a shell's `-c '<string>'`, each parsed with its own option

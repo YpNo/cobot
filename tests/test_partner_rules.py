@@ -707,6 +707,103 @@ def test_miseTask_resolvedFromConfig(rules, mise_repo, command, decision):
     assert judge_in(rules, command, mise_repo)[0].decision == decision
 
 
+MAKEFILE = """
+GO ?= go
+VERSION ?= $(shell git describe --always)
+GO_SOURCES := $(shell find . -name '*.go')
+ifeq ($(GOOS),linux)
+\tPIE_FLAGS = -buildmode=pie
+endif
+define check_tool
+\t@command -v $(1) >/dev/null 2>&1 || { echo "missing $(1)"; exit 1; }
+endef
+.PHONY: all check-deps build test lint generate client release force nonesuch-runs-nothing
+all: lint test build
+check-deps:
+\t$(call check_tool,go)
+build: check-deps $(GO_SOURCES)
+\t$(GO) build $(PIE_FLAGS) -ldflags "-X main.version=$(VERSION)" ./cmd/x
+test: check-deps $(GO_SOURCES) go.mod
+\t@echo "Running tests..."
+\tCGO_ENABLED=1 $(GO) test -race ./...
+lint: check-deps
+\tgolangci-lint run --timeout 10m
+generate:
+\tgo generate ./...
+\t$(MAKE) client
+client:
+\t@tmp=$$(mktemp); go run ./cmd/gen "$$tmp"
+release:
+\tgit push origin v1.0.0
+force:
+\tgit push --force origin main
+nested:
+\t$(MAKE) test
+"""
+
+
+@pytest.fixture
+def make_repo(tmp_path):
+    (tmp_path / "Makefile").write_text(MAKEFILE)
+    (tmp_path / "other.mk").write_text("check:\n\tcargo test --workspace\n")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "Makefile").write_text("test:\n\tcargo test\nagain:\n\t$(MAKE) test\n")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("make test", None),
+        ("make -j4 -k --no-print-directory test", None),
+        ("make -j 8 -s test lint", None),
+        ("make -n test", None),
+        ("gmake test", None),
+        ("make GO=gotip test", None),
+        ("make -f other.mk check", None),
+        ("make --file=other.mk check", None),
+        ("make -C sub test", None),
+        ("make --directory sub test", None),
+        ("make -C sub again", "ask"),
+        ("make", "ask"),
+        ("make build", "ask"),
+        ("make generate", "ask"),
+        ("make client", "ask"),
+        ("make nested", None),
+        ("make release", "ask"),
+        ("make force", "deny"),
+        ("make lint release", "ask"),
+        ("make nonesuch-runs-nothing", "ask"),
+        ("make --eval='x:' test", "ask"),
+        ("make -E 'x:' test", "ask"),
+        ("make --unknown-flag test", "ask"),
+        ("make -f - test", "ask"),
+        ("make -f a.mk -f b.mk test", "ask"),
+        ("make -C sub -C sub test", "ask"),
+        ("make -C", "ask"),
+        ("make test && git push", "ask"),
+        ("CGO_ENABLED=0 make test", None),
+        ("nix develop -c make test", None),
+    ],
+)
+def test_makeTarget_resolvedFromMakefile(rules, make_repo, command, decision):
+    assert judge_in(rules, command, make_repo)[0].decision == decision
+
+
+def test_makeTarget_reasonAndTraceNameOrigin(rules, make_repo):
+    verdict, trace = judge_in(rules, "make release", make_repo)
+    assert verdict.reason() == "partner rule: ask Bash(git push*) (default layer) via make release"
+    assert trace[-1][0] == "git push origin v1.0.0  <- make release"
+    verdict, _ = judge_in(rules, "make client", make_repo)
+    assert verdict.reason() == "partner gate: opaque command 'make client'"
+
+
+def test_makeTarget_noMakefileOrUnreadable_staysOpaque(rules, tmp_path):
+    assert judge_in(rules, "make test", tmp_path)[0].decision == "ask"
+    (tmp_path / "Makefile").write_text("include deps.mk\ntest:\n\tgo test ./...\n")
+    assert judge_in(rules, "make test", tmp_path)[0].decision == "ask"
+
+
 def test_miseTask_fromNestedCwd_findsParentConfig(rules, mise_repo):
     assert judge_in(rules, "mise run deploy", mise_repo / "crates" / "x")[0].decision == "ask"
 

@@ -32,6 +32,14 @@ All notable changes to this project are documented here. The format follows
 - Release and pin rules from the headscale dogfood: `goreleaser release` asks (it publishes
   unless `--snapshot` or `--skip=publish`; the owner layer may allow the snapshot form), and so
   do `nix flake update` and `nix flake lock` (they move dependency pins, decision 22).
+- The gate resolves `make` targets by reading the Makefile (`_partner_make`): recipe lines are
+  judged on their own with the origin in the reason (`ask Bash(rm -rf*) via make clean`), plain
+  variables, `define` bodies through `$(call)`, `$(MAKE)`, `$@`, target prerequisites, command-line
+  `VAR=value` and `.DEFAULT_GOAL` are followed; `-C`, `-f`, `-j`, `-k`, `-n` and the other flags are
+  understood. `include`, pattern or suffix rules, `.SECONDEXPANSION`, `$(eval)`, targets under a
+  conditional or with a target-specific variable, recipes that need a function or an unknown
+  variable, a nested make under `-C`, `--eval` and unknown options keep the command opaque. make
+  is never run: `$(shell …)` in a Makefile would otherwise execute at gate time.
 - `partner-memory journal add [ENTRY]` and `learn [JSON]` take their payload as an argument as
   well as on stdin, and never wait on a terminal.
 - `install.sh --refresh` reinstalls at whichever scope the plugin was installed in the directory,

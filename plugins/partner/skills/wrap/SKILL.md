@@ -11,10 +11,11 @@ argument-hint: [spec slug]
 2. **Full run.** Run the complete verified command set from CONTEXT.md (tests with coverage, lint,
    format check, type check, security scan, plugin or schema validation, whatever the table lists).
    Keep the output tails; do not condense failures (`rtk proxy` if needed).
-   Then the **pre-PR currency check** (decision 21): the ecosystem's outdated and advisory
-   commands from the matching `lang-*` skill (`cargo outdated` and `cargo deny check advisories`,
-   `go list -m -u all` and `govulncheck`, `npm outdated` and `npm audit`, `uv pip list --outdated`
-   and `pip-audit`, `terraform providers lock` dry run). Report the gap; upgrade nothing unasked.
+   Then the **pre-PR currency check** (decision 21): `partner-deps check --fresh` runs the
+   ecosystems' own outdated and advisory tools (cargo, go, npm or pnpm, uv or poetry, the
+   Terraform registry) and names the tools that are missing. Report the gap in the journal;
+   upgrade nothing unasked. A `knowledge_delta` in any review or consult report goes through
+   `partner-memory learn --dry-run`, then `learn`; general entries wait for `learn --promote`.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
    the diff touches inputs, auth, secrets, shell or infra, and the relevant `consult-*` skills
    (workflows changed → `consult-gha`). Fold what is cheap and safe; everything else is journaled

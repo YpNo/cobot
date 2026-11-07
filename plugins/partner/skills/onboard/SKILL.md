@@ -25,7 +25,10 @@ argument-hint: [--foreign]
    linter, formatter, type checker, CI. For each candidate command: run it, keep the exit code,
    and record only commands that ran, with today's date, in CONTEXT.md's verified table. The
    matching `lang-*` skill supplies the idiomatic commands; `lang-fallback` the procedure for
-   anything else.
+   anything else. Then run `partner-deps check` (decision 21): it asks the ecosystems' own
+   tools how far the lockfiles are behind and whether advisories exist, caches the answer for
+   seven days, and reports; it upgrades nothing. Put the one-line result in the journal entry
+   and the gaps worth a decision under Open.
 5. **CONTEXT.md.** Fill profile, goal, stack, environment, verified commands, constraints,
    applies / does not apply, and a Shape section of at most twenty lines. Stay under 120 lines.
    In a foreign repository, read `CONTRIBUTING.md`, `AI_POLICY.md` (or the equivalent), the DCO

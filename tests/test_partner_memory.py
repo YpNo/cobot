@@ -381,6 +381,31 @@ def test_session_trustedRepoGetsBrief(session, memory, repo):
     assert "## CONTEXT" in context and "profile: cli" in context
 
 
+def test_session_payloadCarriesKnowledgeAndDepsLines(session, repo):
+    seed(repo)
+    context = session.build_payload(json.dumps({"cwd": str(repo), "source": "startup"}))
+    assert "\nknowledge: " in context and "\ndeps: " in context
+    assert "deps: no lockfile" in context
+    (repo / "go.mod").write_text("module x\n")
+    context = session.build_payload(json.dumps({"cwd": str(repo)}))
+    assert "deps: not checked; run partner-deps check" in context
+
+
+def test_session_sharedDeadline_andTimeoutLine(session, monkeypatch):
+    clock = session.Clock(seconds=0.6)
+    assert 0.5 <= clock.left() <= 0.6
+    import subprocess as sp
+
+    def slow(*_args, **kwargs):
+        raise sp.TimeoutExpired(cmd="x", timeout=kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(session.subprocess, "run", slow)
+    assert session.run_tool("partner-deps", ["brief"], None, clock) == "partner-deps brief: timed out"
+    lines = session.status_lines(None, clock).splitlines()
+    assert lines[0].startswith("partner-memory knowledge: timed out")
+    assert lines[1].startswith("partner-deps brief: timed out")
+
+
 def test_session_errorStillPrintsProtocol(session, monkeypatch):
     def boom(*_args, **_kwargs):
         raise RuntimeError("down")

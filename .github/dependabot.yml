@@ -1,0 +1,17 @@
+# Weekly update PRs for the SHA-pinned actions in .github/workflows, grouped into one PR.
+# Everything else this repository runs is pinned inline (uvx, npx, npm install) and is checked by
+# `partner-deps check` and the knowledge refresh, not by Dependabot.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7 # a week before a new action release is proposed
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"

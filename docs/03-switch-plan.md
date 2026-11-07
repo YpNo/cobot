@@ -5,7 +5,7 @@ its own; every step is `ask` or manual. Estimated time: 20 minutes plus the work
 
 ## Preconditions
 
-- Seven evals green on `main`; a week of journaled use on two repositories.
+- Eight evals green on `main`; a week of journaled use on two repositories.
 - `install.sh --check` reports no open conflict other than the known legacy listing.
 - No session with uncommitted work on this machine (the switch changes what every new session
   loads).

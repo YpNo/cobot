@@ -4,6 +4,7 @@
 Commands
   path                             the resolved .agent directory (worktree-aware)
   init [--profile P] [--foreign] [--add-identity] [--trust-root]
+  stamp                       ok <sha> | missing — <reason>: is HEAD covered by the last verified stamp
                                    create CONTEXT, JOURNAL, FINDINGS from the templates; never overwrites
   trust                            trusted: <reason> | untrusted: <reason>
   check                            mode, trust, files, journal order, brief size
@@ -40,6 +41,7 @@ from _cobot_common import (  # noqa: E402
     cobot_config_dir,
     config_dir,
     data_dir,
+    git,
     host_owner_repo,
     memory_dir,
     plugin_root,
@@ -71,6 +73,8 @@ SECTION_MARKER_RESERVE = 120
 BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
+STAMP_RE = re.compile(r"^verified: ([0-9a-f]{7,40})(\+working-tree)?( · .*)?$", re.M)
+DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 JOURNAL_COMPACT_LINES = 400
@@ -607,6 +611,34 @@ def journal_order(mem: Memory) -> str:
     return "mixed order" if dates else "mixed order"
 
 
+def cmd_stamp(mem: Memory) -> str:
+    """`ok <sha>` when HEAD is covered by the journal's last verified stamp, else `missing — <phrase>`.
+
+    Output is hex and fixed phrases only: the journal of an untrusted clone is repository content.
+    """
+    trusted, _ = mem.trust()
+    if not trusted:
+        return "missing — untrusted memory"
+    matches = STAMP_RE.findall(mem.read("JOURNAL.md"))
+    if not matches:
+        return "missing — no stamp"
+    sha, dirty, _ = matches[-1]
+    if dirty:
+        return "missing — dirty-tree stamp; commit, then wrap"
+    stamp = git(["rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], mem.root)
+    head = git(["rev-parse", "HEAD"], mem.root)
+    if not stamp or not head:
+        return "missing — stamp commit unknown"
+    if stamp == head:
+        return f"ok {head[:7]}"
+    if mem.dir.is_symlink():
+        return "missing — HEAD moved since the stamp"
+    changed = git(["diff", "--name-only", stamp, head], mem.root)
+    if changed is not None and all(path.startswith(DOC_ONLY_PREFIXES) for path in changed.splitlines() if path):
+        return f"ok {head[:7]}"
+    return "missing — HEAD moved since the stamp"
+
+
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
@@ -667,6 +699,8 @@ def main(argv: list[str]) -> int:
         print(mem.dir)
     elif command == "init":
         print(cmd_init(mem, options, flags))
+    elif command == "stamp":
+        print(cmd_stamp(mem))
     elif command == "trust":
         trusted, reason = mem.trust()
         print(f"{'trusted' if trusted else 'untrusted'}: {reason}")

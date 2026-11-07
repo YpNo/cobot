@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -1129,6 +1130,31 @@ def log_event(payload: dict) -> None:
             handle.write(json.dumps(payload) + "\n")
 
 
+PUSH_RE = re.compile(r"(?:^|[;&|]\s*|\s)(?:rtk\s+)?git\s+push\b")
+STAMP_SUFFIX_LIMIT = 72
+
+
+def stamp_suffix(cwd: str | None) -> str:
+    """` · stamp: <line>` from cobot-memory for a git push that asks; empty when it cannot be read."""
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "stamp"],
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - a missing suffix must never block the push verdict
+        return ""
+    line = out.stdout.strip().splitlines()[0] if out.returncode == 0 and out.stdout.strip() else ""
+    if not line:
+        return ""
+    if line.startswith("missing"):
+        line += "; run /cobot:wrap"
+    return f" · stamp: {line}"[:STAMP_SUFFIX_LIMIT]
+
+
 def gate(stdin: str) -> str | None:
     try:
         payload = json.loads(stdin)
@@ -1156,7 +1182,10 @@ def gate(stdin: str) -> str | None:
         return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     if verdict.decision is None:
         return None
-    return hook_output(verdict.decision, verdict.reason())
+    reason = verdict.reason()
+    if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head):
+        reason += stamp_suffix(cwd)
+    return hook_output(verdict.decision, reason)
 
 
 def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:

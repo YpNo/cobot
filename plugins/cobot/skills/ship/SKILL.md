@@ -55,7 +55,8 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    workflow follow `expert-containers`: buildx with provenance and SBOM, `docker/metadata-action`
    tags, GHCR login with `packages: write`, keyless cosign on the digest, Trivy as a gate on
    CRITICAL and HIGH with `--ignore-unfixed`.
-6. **Prove.** Run every command the workflows run, locally, from the verified table; a command
+6. **Prove.** `cobot-memory stamp` must answer `ok`: the pipeline describes a tree the last wrap
+   verified. Then run every command the workflows run, locally, from the verified table; a command
    that fails locally does not ship. Run `zizmor --offline` and `actionlint` when present. Then
    fork `consult-gha` (and `consult-containers` when an image workflow was written) on the
    result and fold the findings.

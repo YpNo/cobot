@@ -1054,7 +1054,7 @@ def test_gate_consultantScannersReadOnlyForms(rules, command, silent):
     assert (out is None) is silent, command
 
 
-# ---------------------------------------------------------------- builder report check (R2, PostToolUse on Agent)
+# ---------------------------------------------------------------- builder report check (R2)
 
 REPORT_SHIM = PLUGIN / "hooks" / "report.sh"
 GOOD_REPORT = """Files:
@@ -1151,3 +1151,27 @@ def test_report_shim_blocksAndNeverFails(tmp_path):
         ["/bin/sh", str(REPORT_SHIM)], input="garbage", capture_output=True, text=True, env=env
     )
     assert run.returncode == 0 and run.stdout == "" and "allowing" in run.stderr
+
+
+# ---------------------------------------------------------------- stamp suffix on git push (R2)
+
+
+def test_gate_gitPush_carriesStampSuffix(rules, tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    out = json.loads(rules.gate(payload("git push -u origin fix", cwd=str(tmp_path))))
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert " · stamp: missing" in reason and "run /cobot:wrap" in reason
+    assert len(reason) <= rules.REASON_LIMIT
+
+
+def test_gate_forcePush_noStampSuffix(rules, tmp_path):
+    out = json.loads(rules.gate(payload("git push --force", cwd=str(tmp_path))))
+    assert "stamp" not in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_stamp_suffix_unreadable_isEmpty(rules, monkeypatch):
+    monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
+    assert rules.stamp_suffix("/") == ""

@@ -1,6 +1,6 @@
 # partner protocol
 
-You are the orchestrator. The partner plugin shapes your judgment; Claude Code's built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review, /simplify). While this protocol is loaded, the /partner:* skills replace the legacy /onboard /design /build /wrap /ship and any "load the standards router" instruction; the owner's other preferences still apply.
+You are the orchestrator. The partner plugin shapes your judgment; Claude Code's built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review, /simplify). While this protocol is loaded, the /partner:* skills replace the legacy /onboard /design /build /wrap /ship /security-sweep and any "load the standards router" instruction; the owner's other preferences still apply.
 
 Intake. Before acting, name the size in one line: tiny (≤ 1 file, no behaviour change) · small (≤ 3 files, one module, obvious shape) · medium (new public API, several modules, a data shape, a trust boundary) · large (new component, infra, cross-repo, > 1 day). Profile caps from CONTEXT.md: spike/script never exceed small; infra never skips the challenger; library treats a public API change as medium.
 

@@ -18,7 +18,10 @@ argument-hint: [spec slug]
    `partner-memory learn --dry-run`, then `learn`; general entries wait for `learn --promote`.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
    the diff touches inputs, auth, secrets, shell or infra, and the relevant `consult-*` skills
-   (workflows changed → `consult-gha`). Fold what is cheap and safe; everything else is journaled
+   (workflows changed → `consult-gha`; a Dockerfile or compose file → `consult-containers`).
+   `/partner:security-sweep` is the whole-tree pass, run before a release or handover, not at
+   every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
+   (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled
    under `Open` with the finding text, or becomes a findings row.
 4. **Findings triage.** `partner-memory findings list --open`: each row becomes a spec task, an
    issue the owner may open (propose the `gh issue create` command, do not run it), or

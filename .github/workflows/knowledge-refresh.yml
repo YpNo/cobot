@@ -93,10 +93,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SKILL: ${{ matrix.skill }}
         run: |
-          claude -p --plugin-dir plugins/partner --model claude-sonnet-5-5 \
+          # the prompt comes before --allowedTools: that flag is variadic and swallows what follows it
+          claude -p "/partner:learn $SKILL" --plugin-dir plugins/partner --model claude-sonnet-5-5 \
             --max-budget-usd "$BUDGET_USD" --max-turns 40 --output-format json \
             --allowedTools "WebFetch" "WebSearch" "Read" "Grep" "Glob" "Bash(gh api repos/*)" "Bash(cat *)" "Bash(ls *)" \
-            "/partner:learn $SKILL" > learner.json
+            > learner.json
           python3 - <<'PY'
           import json, re
           result = json.load(open("learner.json"))

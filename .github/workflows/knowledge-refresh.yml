@@ -1,0 +1,153 @@
+name: Knowledge refresh
+
+# Decision 23: the stalest knowledge skills are re-verified by the learner once a week and the
+# delta arrives as a pull request for the owner. The learner runs read-only; `learn --promote
+# --in-place` runs in a shell step because an `ask` is a refusal in print mode. A push made
+# with GITHUB_TOKEN starts no CI run, so the plugin checks run here and the PR body says so;
+# set the KNOWLEDGE_REFRESH_TOKEN secret (fine-grained PAT, contents + pull requests) to get CI.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      skill:
+        description: "One skill to refresh (empty = the two stalest)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knowledge-refresh
+  cancel-in-progress: false
+
+env:
+  MAX_SKILLS: "2"
+  BUDGET_USD: "3"
+
+jobs:
+  select:
+    name: Pick stale skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skills: ${{ steps.pick.outputs.skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Pick the stalest skills without an open learn branch
+        id: pick
+        env:
+          REQUESTED: ${{ inputs.skill }}
+        run: |
+          taken=$(git ls-remote --heads origin 'learn/*' | sed 's#.*refs/heads/learn/##')
+          python3 - "$REQUESTED" "$MAX_SKILLS" "$taken" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, subprocess, sys
+          requested, cap, taken = sys.argv[1].strip(), int(sys.argv[2]), set(sys.argv[3].split())
+          rows = json.loads(subprocess.run(
+              ["python3", "-I", "plugins/partner/bin/partner-memory", "knowledge", "--stale", "--json"],
+              capture_output=True, text=True, check=True).stdout)
+          rows = [r for r in rows if not r["skill"].startswith("knowledge/") and (r["stale"] or r["reported"])]
+          rows.sort(key=lambda r: (-r["stale"], -r["reported"], r["skill"]))
+          picked = [requested] if requested else [r["skill"] for r in rows if r["skill"] not in taken][:cap]
+          print("skills=" + json.dumps(picked))
+          PY
+          echo "picked: $(tail -1 "$GITHUB_OUTPUT")"
+
+  learn:
+    name: Learn and open the PR
+    needs: select
+    if: needs.select.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # the secrets (API key, optional PAT) are only exposed inside this environment; create it in
+    # the repository settings, with a required reviewer if the owner wants to gate each run
+    environment: knowledge-refresh
+    permissions:
+      contents: write # push the learn/<skill> branch
+      pull-requests: write # open the pull request
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        skill: ${{ fromJSON(needs.select.outputs.skills) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install Claude Code and the checks
+        run: |
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.318
+          python -m pip install --quiet ruff==0.17.4
+      - name: Run the learner (read-only, budget-capped)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SKILL: ${{ matrix.skill }}
+        run: |
+          claude -p --plugin-dir plugins/partner --model claude-sonnet-5-5 \
+            --max-budget-usd "$BUDGET_USD" --max-turns 40 --output-format json \
+            --allowedTools "WebFetch" "WebSearch" "Read" "Grep" "Glob" "Bash(gh api repos/*)" "Bash(cat *)" "Bash(ls *)" \
+            "/partner:learn $SKILL" > learner.json
+          python3 - <<'PY'
+          import json, re
+          result = json.load(open("learner.json"))
+          text = result.get("result", "") if isinstance(result, dict) else ""
+          fences = re.findall(r"```json\s*(\{.*?\})\s*```", text, re.S)
+          if len(fences) != 1:
+              raise SystemExit(f"expected one json fence in the learner's report, found {len(fences)}")
+          delta = json.loads(fences[0])
+          open("delta.json", "w").write(json.dumps(delta))
+          print(f"delta: topic {delta.get('topic')}, {len(delta.get('entries', []))} entries, "
+                f"{len(delta.get('unverified', []))} unverified")
+          PY
+      - name: Apply the delta in place
+        id: apply
+        run: |
+          python3 -I plugins/partner/bin/partner-memory learn --promote --in-place --source . "$(cat delta.json)" | tee promote.log
+          if git diff --quiet -- plugins/partner/skills; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Plugin checks on the result
+        if: steps.apply.outputs.changed == 'true'
+        run: |
+          python3 scripts/check-plugin.py plugins/partner
+          claude plugin validate plugins/partner --strict
+          npx --yes markdownlint-cli2@0.21.0 "plugins/partner/skills/**/*.md"
+      - name: Open the pull request
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.KNOWLEDGE_REFRESH_TOKEN || github.token }}
+          SKILL: ${{ matrix.skill }}
+          HAS_PAT: ${{ secrets.KNOWLEDGE_REFRESH_TOKEN != '' }}
+        run: |
+          branch="learn/$SKILL"
+          git config user.name "knowledge-refresh"
+          git config user.email "knowledge-refresh@users.noreply.github.com"
+          git switch -c "$branch"
+          git add plugins/partner/skills
+          git commit -q -m "docs(knowledge): refresh $SKILL from primary sources"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -u origin "$branch"
+          {
+            echo "Weekly knowledge refresh for \`$SKILL\` (decision 23)."
+            echo
+            echo "Every line below carries its status, source and check date; re-dated lines kept their claim, superseded lines name what they replaced. Review before merging: options and recommendation, never an automatic tool swap."
+            echo
+            echo '```text'
+            cat promote.log
+            echo '```'
+            echo
+            if [ "$HAS_PAT" = "true" ]; then echo "CI runs on this PR."; else echo "Pushed with GITHUB_TOKEN, so CI does not run here; check-plugin, plugin validate and markdownlint passed in the refresh job."; fi
+          } > body.md
+          gh pr create --head "$branch" --base main --title "docs(knowledge): refresh $SKILL" --body-file body.md

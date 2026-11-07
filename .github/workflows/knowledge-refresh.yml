@@ -51,7 +51,7 @@ jobs:
           import json, subprocess, sys
           requested, cap, taken = sys.argv[1].strip(), int(sys.argv[2]), set(sys.argv[3].split())
           rows = json.loads(subprocess.run(
-              ["python3", "-I", "plugins/partner/bin/partner-memory", "knowledge", "--stale", "--json"],
+              ["python3", "-I", "plugins/cobot/bin/cobot-memory", "knowledge", "--stale", "--json"],
               capture_output=True, text=True, check=True).stdout)
           rows = [r for r in rows if not r["skill"].startswith("knowledge/") and (r["stale"] or r["reported"])]
           rows.sort(key=lambda r: (-r["stale"], -r["reported"], r["skill"]))
@@ -94,7 +94,7 @@ jobs:
           SKILL: ${{ matrix.skill }}
         run: |
           # the prompt comes before --allowedTools: that flag is variadic and swallows what follows it
-          claude -p "/partner:learn $SKILL" --plugin-dir plugins/partner --model claude-sonnet-5-5 \
+          claude -p "/cobot:learn $SKILL" --plugin-dir plugins/cobot --model claude-sonnet-5-5 \
             --max-budget-usd "$BUDGET_USD" --max-turns 40 --output-format json \
             --allowedTools "WebFetch" "WebSearch" "Read" "Grep" "Glob" "Bash(gh api repos/*)" "Bash(cat *)" "Bash(ls *)" \
             > learner.json
@@ -113,8 +113,8 @@ jobs:
       - name: Apply the delta in place
         id: apply
         run: |
-          python3 -I plugins/partner/bin/partner-memory learn --promote --in-place --source . "$(cat delta.json)" | tee promote.log
-          if git diff --quiet -- plugins/partner/skills; then
+          python3 -I plugins/cobot/bin/cobot-memory learn --promote --in-place --source . "$(cat delta.json)" | tee promote.log
+          if git diff --quiet -- plugins/cobot/skills; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -122,9 +122,9 @@ jobs:
       - name: Plugin checks on the result
         if: steps.apply.outputs.changed == 'true'
         run: |
-          python3 scripts/check-plugin.py plugins/partner
-          claude plugin validate plugins/partner --strict
-          npx --yes markdownlint-cli2@0.21.0 "plugins/partner/skills/**/*.md"
+          python3 scripts/check-plugin.py plugins/cobot
+          claude plugin validate plugins/cobot --strict
+          npx --yes markdownlint-cli2@0.21.0 "plugins/cobot/skills/**/*.md"
       - name: Open the pull request
         if: steps.apply.outputs.changed == 'true'
         env:
@@ -136,7 +136,7 @@ jobs:
           git config user.name "knowledge-refresh"
           git config user.email "knowledge-refresh@users.noreply.github.com"
           git switch -c "$branch"
-          git add plugins/partner/skills
+          git add plugins/cobot/skills
           git commit -q -m "docs(knowledge): refresh $SKILL from primary sources"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push -u origin "$branch"

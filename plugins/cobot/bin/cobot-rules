@@ -1,0 +1,1218 @@
+#!/usr/bin/env python3
+"""cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md).
+
+Commands
+  gate                       read a PreToolUse payload on stdin; print a decision or nothing
+  check  "<cmd>" [--tool T] [--agent A]   dry run: decision, rule, layer
+  explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
+  show                       the merged rule set with provenance
+  sync   [--settings PATH]   permissions fragment and diff against settings.json; writes nothing
+
+Contract: the gate never emits ``allow``; any internal error ends in ``ask``;
+silence means "no opinion" and Claude Code's own permission system decides.
+Precedence: ``never`` in any layer wins; else an ``allow`` silences the gate
+when it comes from the owner layer, or from the default layer with an agent
+scope (read-only command lists for the consultant and learner); else ``ask``
+from any layer; else silence. The project layer holds ``never`` and ``ask`` only.
+"""
+
+from __future__ import annotations
+
+import difflib
+import fnmatch
+import json
+import os
+import re
+import shlex
+import sys
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks stay opaque
+    tomllib = None
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _cobot_make  # noqa: E402
+from _cobot_common import config_dir, plugin_root, repo_root  # noqa: E402
+
+ASK, DENY = "ask", "deny"
+DECISION_OF = {"never": DENY, "ask": ASK, "allow": "allow"}
+RANK = {None: 0, "allow": 0, ASK: 1, DENY: 2}
+REASON_LIMIT = 200
+SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
+WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
+# prefix commands that run another command: options taking a value, then positional operands to skip
+PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
+    "timeout": (frozenset({"-k", "-s", "--kill-after", "--signal"}), 1),
+    "nice": (frozenset({"-n", "--adjustment"}), 0),
+    "ionice": (frozenset({"-c", "-n", "-p", "--class", "--classdata"}), 0),
+    "stdbuf": (frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
+    "flock": (frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}), 1),
+}
+HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+OPAQUE = frozenset(
+    "sh bash zsh dash ksh fish eval source . xargs sudo doas su make gmake just task npx ssh mosh".split()
+)
+SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
+OPAQUE_SUBCOMMANDS = {
+    "mise": frozenset({"run", "exec", "x", "r"}),
+    "npm": frozenset({"run", "run-script", "exec", "x"}),
+    "pnpm": frozenset({"run", "exec", "dlx"}),
+    "yarn": frozenset({"run", "exec", "dlx"}),
+    "bun": frozenset({"run", "x"}),
+    "cargo": frozenset({"xtask"}),
+    "uv": frozenset({"run"}),
+    "uvx": frozenset({""}),
+    "kubectl": frozenset({"exec"}),
+}
+# entry wrappers: the command they run is visible once their own options are parsed
+SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
+DISTROBOX_VALUE_OPTIONS = frozenset({"-n", "--name", "-a", "--additional-flags"})
+DISTROBOX_FLAGS = frozenset(
+    {"-r", "--root", "-T", "--no-tty", "-nw", "--no-workdir", "-v", "--verbose", "-d", "--dry-run"}
+)
+TOOLBOX_VALUE_OPTIONS = frozenset(
+    {"-c", "--container", "-d", "--distro", "-r", "--release", "--preserve-fds"}
+)
+EXEC_VALUE_OPTIONS = frozenset(
+    {"-e", "--env", "--env-file", "-u", "--user", "-w", "--workdir", "--detach-keys"}
+)
+EXEC_FLAGS = frozenset(
+    {"-i", "-t", "-d", "-it", "-ti", "-dit", "-idt", "--interactive", "--tty", "--detach", "--privileged"}
+)
+COMPOSE_VALUE_OPTIONS = frozenset(
+    {
+        "-f",
+        "--file",
+        "-p",
+        "--project-name",
+        "--profile",
+        "--env-file",
+        "--project-directory",
+        "--ansi",
+        "--progress",
+    }
+)
+COMPOSE_FLAGS = frozenset({"--compatibility", "--dry-run"})
+COMPOSE_RUN_VALUE_OPTIONS = frozenset(
+    "-e --env -u --user -w --workdir --entrypoint -v --volume -l --label --name -p --publish --index".split()
+)
+COMPOSE_RUN_FLAGS = frozenset(
+    "-T --no-TTY -d --detach --rm --no-deps --service-ports --privileged --build --remove-orphans "
+    "-i --interactive -t --tty -it --quiet-pull --use-aliases".split()
+)
+NOTHING_HIDDEN: list[str] = []  # a wrapper form that runs nothing of its own (interactive, or not a wrapper)
+# project launchers: `uv run <cmd>` and `pnpm|npm|yarn exec <bin>` name their command in argv;
+# `pnpm|npm|yarn|bun run <script>` (and the pnpm/yarn shorthand, npm's test/start aliases) read
+# it from package.json. uvx, npx, dlx and bunx download code and stay opaque.
+UV_RUN_VALUE_OPTIONS = frozenset(
+    "-p --python --with --with-requirements --with-editable --directory --project --package --group "
+    "--only-group --extra --env-file --index --default-index --find-links -c --constraint -b "
+    "--build-constraint --exclude-newer --cache-dir --config-file --color --resolution --prerelease "
+    "--link-mode --python-preference --index-strategy --keyring-provider --compile-bytecode".split()
+)
+UV_RUN_FLAGS = frozenset(
+    "--no-project --locked --frozen --isolated --no-sync --no-dev --dev --all-extras --no-all-extras "
+    "--no-editable --exact --offline --refresh --no-cache -q --quiet -v --verbose --native-tls "
+    "--managed-python --no-managed-python --no-progress --all-groups --no-default-groups --no-config "
+    "--active --no-active --no-build --no-binary --gui-script --no-env-file".split()
+)
+SCRIPT_RUN_FLAGS = frozenset("-s --silent -q --quiet --if-present --ignore-scripts --no-bail --bail".split())
+SCRIPT_SELECT_FLAGS = frozenset(
+    "-r --recursive --filter -F --parallel --stream --sequential -w --workspace --workspaces "
+    "--workspace-root --aggregate-output --resume-from --include-workspace-root --fail-if-no-match".split()
+)
+NPM_SCRIPT_ALIASES = {
+    "test": "test",
+    "t": "test",
+    "tst": "test",
+    "start": "start",
+    "stop": "stop",
+    "restart": "restart",
+}
+PNPM_BUILTINS = frozenset(
+    "add install i update up upgrade remove rm uninstall un link ln unlink import rebuild rb prune fetch "
+    "dedupe outdated audit licenses list ls why patch patch-commit patch-remove publish pack root bin env "
+    "store config setup self-update init dlx create exec run test start restart stop server recursive "
+    "approve-builds ignored-builds cat-file cat-index find-hash doctor help completion deploy".split()
+)
+YARN_BUILTINS = frozenset(
+    "add bin cache check config create dedupe exec explain generate-lock-entry global help import info "
+    "init install licenses link list login logout node outdated owner pack patch patch-commit plugin "
+    "policies publish rebuild remove run search set stage tag team test unlink unplug up upgrade "
+    "upgrade-interactive version versions why workspace workspaces dlx constraints npm".split()
+)
+SCRIPT_SHORTHAND = {"pnpm": PNPM_BUILTINS, "yarn": YARN_BUILTINS}
+MAX_EXPANSION = 4  # nesting depth of runners and wrappers resolved before the rest stays opaque
+INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
+# mise tasks are resolved from the config (closest folder first, local files first)
+MISE_CONFIGS = (
+    "mise.local.toml",
+    ".mise.local.toml",
+    "mise.toml",
+    ".mise.toml",
+    ".config/mise/config.toml",
+    "mise/config.toml",
+    ".mise/config.toml",
+)
+MISE_BUILTINS = frozenset(
+    "activate alias bin-paths cache completion config current deactivate direnv doctor en env exec fmt "
+    "generate implode install latest link ls ls-remote outdated plugins prune registry reshim run "
+    "self-update set settings shell sync tasks test-tool tool trust uninstall unset unuse upgrade use "
+    "version watch where which x r i up ln rm cfg e s w a b g t".split()
+)
+# a task with one of these keys runs more than its ``run`` lines say
+UNRESOLVED_TASK_KEYS = frozenset({"depends", "depends_post", "wait_for", "file", "shell", "dir"})
+MAX_ORIGIN = 40
+# make: options that take a value, flags without one; -E/--eval injects makefile text and stays opaque
+MAKE_VALUE_OPTIONS = frozenset(
+    "-C --directory -f --file --makefile -I --include-dir -o --old-file --assume-old -W --what-if "
+    "--new-file --assume-new -l --load-average --max-load -O --output-sync".split()
+)
+MAKE_FLAGS = frozenset(
+    "-b -m -B --always-make -d --debug -e --environment-overrides -i --ignore-errors -k --keep-going "
+    "-L --check-symlink-times -n --just-print --dry-run --recon -p --print-data-base -q --question "
+    "-r --no-builtin-rules -R --no-builtin-variables -s --silent --quiet -S --no-keep-going --stop "
+    "-t --touch --trace -v --version -w --print-directory --no-print-directory "
+    "--warn-undefined-variables -h --help -j --jobs".split()
+)
+MAKE_NAMES = frozenset({"make", "gmake"})
+INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
+# global options of known binaries: options that take a value, and flags without a value
+GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "git": (
+        frozenset({"-C", "-c", "--git-dir", "--work-tree", "--exec-path", "--namespace"}),
+        frozenset({"--no-pager", "-p", "--paginate", "-P", "--bare"}),
+    ),
+    "terraform": (frozenset({"-chdir"}), frozenset()),
+    "tofu": (frozenset({"-chdir"}), frozenset()),
+    "gh": (frozenset({"-R", "--repo", "--hostname"}), frozenset()),
+    "kubectl": (
+        frozenset({"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user"}),
+        frozenset(),
+    ),
+    "helm": (
+        frozenset(
+            {
+                "-n",
+                "--namespace",
+                "--kube-context",
+                "--kubeconfig",
+                "--registry-config",
+                "--repository-config",
+            }
+        ),
+        frozenset({"--debug"}),
+    ),
+    "istioctl": (
+        frozenset({"-n", "--namespace", "-i", "--istioNamespace", "-c", "--kubeconfig", "--context"}),
+        frozenset(),
+    ),
+    "gcloud": (
+        frozenset(
+            {
+                "--project",
+                "--account",
+                "--configuration",
+                "--verbosity",
+                "--format",
+                "--impersonate-service-account",
+            }
+        ),
+        frozenset({"-q", "--quiet"}),
+    ),
+    "docker": (
+        frozenset({"-H", "--host", "--context", "--config", "-l", "--log-level"}),
+        frozenset({"-D", "--debug"}),
+    ),
+    "podman": (frozenset({"--url", "--connection", "-c", "--log-level", "--root"}), frozenset()),
+}
+FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#.*)?$")
+MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#.*)?$")
+LAYERS = ("default", "owner", "project")
+
+
+@dataclass(frozen=True)
+class Rule:
+    decision: str  # never | ask | allow
+    tool: str  # Bash | Edit | ... | mcp
+    pattern: str
+    agent: str | None
+    layer: str
+    line: int
+
+    def text(self) -> str:
+        scope = f" @{self.agent}" if self.agent else ""
+        body = self.pattern if self.tool == "mcp" else f"{self.tool}({self.pattern})"
+        return f"{self.decision} {body}{scope}"
+
+
+@dataclass(frozen=True)
+class Verdict:
+    decision: str | None
+    rule: Rule | None
+    note: str = ""
+    via: str = ""  # the runner invocation this verdict was resolved from, e.g. ``mise run deploy``
+
+    def reason(self) -> str:
+        if self.rule:
+            text = f"cobot rule: {self.rule.text()} ({self.rule.layer} layer)"
+        else:
+            text = f"cobot gate: {self.note}"
+        return f"{text} via {self.via}" if self.via else text
+
+
+# ---------------------------------------------------------------- rule files
+
+
+def layer_paths(cwd: str | None) -> dict[str, Path]:
+    owner = os.environ.get("COBOT_RULES_OWNER")
+    paths = {
+        "default": plugin_root() / "rules" / "default.rules",
+        "owner": Path(owner) if owner else config_dir() / "cobot.rules",
+    }
+    paths["project"] = repo_root(cwd) / ".agent" / "cobot.rules"
+    return paths
+
+
+def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    match = RULE_RE.match(stripped)
+    if match:
+        decision, tool, pattern, agent = match.groups()
+    else:
+        mcp = MCP_RULE_RE.match(stripped)
+        if not mcp:
+            warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
+            return None
+        decision, pattern, agent = mcp.groups()
+        tool = "mcp"
+    if layer == "project" and decision == "allow":
+        warnings.append(
+            f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
+        )
+        return None
+    return Rule(decision, tool, pattern, agent, layer, number)
+
+
+def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
+    rules: list[Rule] = []
+    warnings: list[str] = []
+    paths = layer_paths(cwd)
+    for layer, path in paths.items():
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            rule = parse_rule(line, layer, number, warnings)
+            if rule:
+                rules.append(rule)
+    return rules, warnings, paths
+
+
+# ---------------------------------------------------------------- command analysis
+
+
+def split_segments(command: str) -> list[list[str]]:
+    """Split a shell command into argv-like segments at shell operators."""
+    joined = command.replace("\\\n", " ").replace("\n", " ; ")
+    lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
+    segments: list[list[str]] = [[]]
+    for token in lexer:
+        if token in SEPARATORS:
+            if segments[-1]:
+                segments.append([])
+        else:
+            segments[-1].append(token)
+    return [segment for segment in segments if segment]
+
+
+def strip_prefix_command(tokens: list[str]) -> list[str]:
+    """``timeout -k 5 60 git push`` becomes ``git push``."""
+    with_value, positional = PREFIX_COMMANDS[tokens[0]]
+    rest = tokens[1:]
+    while rest and rest[0].startswith("-"):
+        name = rest[0].split("=", 1)[0]
+        rest = rest[2:] if name in with_value and "=" not in rest[0] else rest[1:]
+    return rest[positional:]
+
+
+def strip_wrappers(tokens: list[str]) -> list[str]:
+    """Drop wrappers, assignments and prefix commands; basename the binary."""
+    tokens = list(tokens)
+    while tokens:
+        head = tokens[0]
+        if head in WRAPPERS or ("=" in head and not head.startswith("-")):
+            tokens.pop(0)
+        elif head in PREFIX_COMMANDS:
+            tokens = strip_prefix_command(tokens)
+        else:
+            break
+    if tokens and "/" in tokens[0] and not tokens[0].startswith("$"):
+        tokens[0] = os.path.basename(tokens[0])
+    return tokens
+
+
+def strip_heredocs(command: str) -> str:
+    """Remove here-document bodies: their text is data, not commands."""
+    out: list[str] = []
+    skip_until: str | None = None
+    for line in command.split("\n"):
+        if skip_until is not None:
+            if line.strip() == skip_until:
+                skip_until = None
+            continue
+        match = HEREDOC_RE.search(line)
+        if match:
+            skip_until = match.group(2)
+            line = line[: match.start()]
+        out.append(line)
+    return "\n".join(out)
+
+
+def expand_push_flags(tokens: list[str]) -> list[str]:
+    """``git push -uf`` becomes ``git push -u -f`` so the force rules see it."""
+    if tokens[:2] != ["git", "push"]:
+        return tokens
+    out = tokens[:2]
+    for token in tokens[2:]:
+        if re.fullmatch(r"-[a-zA-Z]{2,}", token):
+            out.extend(f"-{flag}" for flag in token[1:])
+        else:
+            out.append(token)
+    return out
+
+
+def canonical_gh_api(tokens: list[str]) -> list[str]:
+    """``gh api repos/x -X DELETE`` and ``gh api -XDELETE repos/x`` become ``gh api -X DELETE repos/x``."""
+    if tokens[:2] != ["gh", "api"]:
+        return tokens
+    rest: list[str] = []
+    method = None
+    i = 2
+    while i < len(tokens):
+        token = tokens[i]
+        if token in ("-X", "--method") and i + 1 < len(tokens):
+            method, i = tokens[i + 1].upper(), i + 2
+            continue
+        if token.startswith("-X") and len(token) > 2:
+            method = token[2:].upper()
+        elif token.startswith("--method="):
+            method = token.split("=", 1)[1].upper()
+        else:
+            rest.append(token)
+        i += 1
+    return ["gh", "api", "-X", method, *rest] if method else tokens
+
+
+def strip_global_options(tokens: list[str]) -> list[str]:
+    """``git -C x -c k=v push`` becomes ``git push`` for the verb form."""
+    if not tokens or tokens[0] not in GLOBAL_OPTIONS:
+        return tokens
+    with_value, flags = GLOBAL_OPTIONS[tokens[0]]
+    out = [tokens[0]]
+    rest = tokens[1:]
+    while rest:
+        head = rest[0]
+        name = head.split("=", 1)[0]
+        if head.startswith("-") and name in with_value:
+            rest = rest[1:] if "=" in head else rest[2:]
+        elif head.startswith("-") and name in flags:
+            rest = rest[1:]
+        else:
+            break
+    return out + rest
+
+
+def has_substitution(command: str) -> bool:
+    return "$(" in command or "`" in command or "<(" in command or ">(" in command
+
+
+def is_opaque(plain: list[str]) -> bool:
+    """A runner or interpreter whose real command is hidden from argv matching."""
+    if not plain:
+        return False
+    head = plain[0]
+    if head in OPAQUE or head.startswith("$"):
+        return True
+    if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
+        sub = plain[1] if len(plain) > 1 else ""
+        hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
+        return bool(sub) and hidden
+    if head in OPAQUE_SUBCOMMANDS:
+        verb = strip_global_options(plain)
+        sub = verb[1] if len(verb) > 1 else ""
+        if sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]:
+            return True
+        if head in SCRIPT_SHORTHAND:  # `pnpm typecheck` runs the package.json script
+            return bool(sub) and not sub.startswith("-") and sub not in SCRIPT_SHORTHAND[head]
+        return head == "npm" and sub in NPM_SCRIPT_ALIASES
+    if head in INTERPRETERS:
+        return any(token in INLINE_CODE_FLAGS for token in plain[1:])
+    if head in WRAPPER_PARSERS:  # opaque until expand_segments resolves the inner command
+        return WRAPPER_PARSERS[head](plain) != NOTHING_HIDDEN
+    return False
+
+
+def split_options(
+    tokens: list[str], value_options: frozenset[str], flags: frozenset[str]
+) -> list[str] | None:
+    """Drop a wrapper's leading options; None on an option it does not know (the inner command
+    could then start anywhere, so the wrapper stays opaque)."""
+    rest = list(tokens)
+    while rest and rest[0].startswith("-") and rest[0] != "--":
+        head = rest[0]
+        name = head.split("=", 1)[0]
+        if name in value_options:
+            rest = rest[1:] if "=" in head else rest[2:]
+        elif name in flags:
+            rest = rest[1:]
+        else:
+            return None
+    return rest
+
+
+def inner_distrobox(plain: list[str]) -> list[str] | None:
+    """``distrobox enter [options] [box] -- <cmd>`` (and ``distrobox-enter``, and the old ``-e``)."""
+    if plain[0] == "distrobox-enter":
+        tokens = plain[1:]
+    elif len(plain) > 1 and plain[1] == "enter":
+        tokens = plain[2:]
+    else:
+        return NOTHING_HIDDEN
+    inner: list[str] | None = None
+    if "--" in tokens:
+        split = tokens.index("--")
+        inner, tokens = tokens[split + 1 :], tokens[:split]
+    while tokens:
+        head = tokens[0]
+        name = head.split("=", 1)[0]
+        if name in ("-e", "--exec"):
+            if "=" in head:
+                return [head.split("=", 1)[1]]
+            return [tokens[1]] if len(tokens) > 1 else None
+        if name in DISTROBOX_VALUE_OPTIONS:
+            tokens = tokens[1:] if "=" in head else tokens[2:]
+        elif name in DISTROBOX_FLAGS:
+            tokens = tokens[1:]
+        elif head.startswith("-"):
+            return None
+        else:
+            tokens = tokens[1:]  # the box name
+    return [shlex.join(inner)] if inner else NOTHING_HIDDEN
+
+
+def inner_toolbox(plain: list[str]) -> list[str] | None:
+    """``toolbox run [-c box] <cmd>``; ``toolbox enter`` is interactive."""
+    if len(plain) < 2 or plain[1] != "run":
+        return NOTHING_HIDDEN
+    rest = split_options(plain[2:], TOOLBOX_VALUE_OPTIONS, frozenset())
+    return [shlex.join(rest)] if rest else None
+
+
+def inner_compose(tokens: list[str]) -> list[str] | None:
+    rest = split_options(tokens, COMPOSE_VALUE_OPTIONS, COMPOSE_FLAGS)
+    if rest is None:
+        return None
+    if rest[:1] not in (["exec"], ["run"]):
+        return NOTHING_HIDDEN
+    rest = split_options(rest[1:], COMPOSE_RUN_VALUE_OPTIONS, COMPOSE_RUN_FLAGS)
+    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+
+
+def inner_container(plain: list[str]) -> list[str] | None:
+    """``docker|podman exec [options] <container> <cmd>`` and ``docker compose exec|run``."""
+    plain = strip_global_options(plain)
+    tokens = plain[1:]
+    if plain[0] == "docker-compose":
+        return inner_compose(tokens)
+    if tokens[:1] == ["compose"]:
+        return inner_compose(tokens[1:])
+    if tokens[:1] != ["exec"]:
+        return NOTHING_HIDDEN
+    rest = split_options(tokens[1:], EXEC_VALUE_OPTIONS, EXEC_FLAGS)
+    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+
+
+def option_value(tokens: list[str], names: tuple[str, ...]) -> list[str] | None | bool:
+    """The value of the first of ``names`` in ``tokens`` (``--run x`` or ``--run=x``) as a one-command
+    list; None when the option is there without a value; False when it is absent."""
+    for index, token in enumerate(tokens):
+        name, _, value = token.partition("=")
+        if name in names:
+            if value:
+                return [value]
+            return [tokens[index + 1]] if index + 1 < len(tokens) else None
+    return False
+
+
+def inner_nix(plain: list[str]) -> list[str] | None:
+    """``nix develop|shell … -c <cmd>``, ``nix-shell … --run '<string>'``; ``nix run`` stays opaque."""
+    if plain[0] == "nix-shell":
+        found = option_value(plain[1:], ("--run", "--command"))
+        return NOTHING_HIDDEN if found is False else found
+    sub = plain[1] if len(plain) > 1 else ""
+    if sub == "run":
+        return None
+    if sub not in ("develop", "shell"):
+        return NOTHING_HIDDEN
+    for flag in ("-c", "--command"):
+        if flag in plain:
+            inner = plain[plain.index(flag) + 1 :]
+            return [shlex.join(inner)] if inner else None
+    return NOTHING_HIDDEN
+
+
+def inner_flatpak(plain: list[str]) -> list[str] | None:
+    """``flatpak run --command=<cmd> <app> <args>``; running the app itself hides nothing."""
+    if len(plain) < 2 or plain[1] != "run":
+        return NOTHING_HIDDEN
+    command: str | None = None
+    rest = plain[2:]
+    while rest and rest[0].startswith("-"):
+        name, _, value = rest[0].partition("=")
+        if name == "--command":
+            if value:
+                command = value
+            elif len(rest) > 1:
+                command, rest = rest[1], rest[1:]
+            else:
+                return None
+        rest = rest[1:]
+    if command is None:
+        return NOTHING_HIDDEN
+    return [shlex.join([command, *rest[1:]])]
+
+
+def inner_chroot(plain: list[str]) -> list[str] | None:
+    rest = plain[1:]
+    while rest and rest[0].startswith("-"):  # chroot's own options all take ``=`` values
+        rest = rest[1:]
+    return [shlex.join(rest[1:])] if len(rest) > 1 else NOTHING_HIDDEN
+
+
+WRAPPER_PARSERS = {
+    "distrobox": inner_distrobox,
+    "distrobox-enter": inner_distrobox,
+    "toolbox": inner_toolbox,
+    "docker": inner_container,
+    "podman": inner_container,
+    "docker-compose": inner_container,
+    "nix": inner_nix,
+    "nix-shell": inner_nix,
+    "flatpak": inner_flatpak,
+    "chroot": inner_chroot,
+}
+
+
+def expand_shell(plain: list[str]) -> list[str] | None:
+    """``bash -c '<string>'`` (also ``-lc``, ``-ec`` …) becomes the string; a script file, stdin or an
+    interactive shell stays opaque."""
+    rest = plain[1:]
+    while rest:
+        token = rest[0]
+        if token in SHELL_VALUE_OPTIONS:
+            rest = rest[2:]
+        elif token.startswith("--"):
+            rest = rest[1:]
+        elif len(token) > 1 and token[0] in "-+" and "c" in token[1:]:
+            return [rest[1]] if len(rest) > 1 else None
+        elif len(token) > 1 and token[0] in "-+":
+            rest = rest[1:]
+        else:
+            return None
+    return None
+
+
+def mise_task_lines(spec: object) -> list[str] | None:
+    """The ``run`` lines of one task spec, or None when the spec hides what runs."""
+    if isinstance(spec, str):
+        run: object = spec
+    elif isinstance(spec, dict) and not UNRESOLVED_TASK_KEYS & spec.keys():
+        run = spec.get("run")
+    else:
+        return None
+    items = [run] if isinstance(run, str) else run
+    if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
+        return None
+    lines = [line.strip() for item in items for line in item.splitlines()]
+    lines = [line for line in lines if line and not line.startswith("#")]
+    if not lines or any("{{" in line for line in lines):
+        return None
+    return lines
+
+
+def mise_task_commands(task: str, cwd: str | None) -> list[str] | None:
+    """The commands a mise task runs, from the closest config that defines it; None when unknown."""
+    if tomllib is None or not task or task.startswith("-"):
+        return None
+    start = Path(cwd or os.getcwd()).resolve()
+    for folder in (start, *start.parents):
+        for name in MISE_CONFIGS:
+            path = folder / name
+            if not path.is_file():
+                continue
+            try:
+                tasks = tomllib.loads(path.read_text(encoding="utf-8")).get("tasks", {})
+            except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
+                return None
+            if isinstance(tasks, dict) and task in tasks:
+                return mise_task_lines(tasks[task])
+    return None
+
+
+def expand_mise(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a mise invocation: ``mise run <task>`` (or the ``mise <task>`` shorthand)
+    from the mise config, ``mise exec … -- <cmd>`` from argv. None when they cannot be known."""
+    if len(plain) < 2:
+        return None
+    sub, args = plain[1], plain[2:]
+    if sub in ("exec", "x"):
+        return [shlex.join(args[args.index("--") + 1 :])] if "--" in args and args[-1] != "--" else None
+    if sub in ("run", "r"):
+        if not args:
+            return None
+        task, args = args[0], args[1:]
+    elif sub in MISE_BUILTINS or sub.startswith("-"):
+        return None
+    else:
+        task = sub
+    if ":::" in args:
+        return None
+    commands = mise_task_commands(task, cwd)
+    if commands is None:
+        return None
+    extra = args[1:] if args[:1] == ["--"] else args
+    if extra:
+        commands[-1] = f"{commands[-1]} {shlex.join(extra)}"
+    return commands
+
+
+def parse_make_argv(args: list[str]) -> tuple[str | None, str | None, list[str], dict[str, str]] | None:
+    """(directory, makefile, goals, variable overrides) of a make command line; None when an option
+    the table does not know, a second -C or -f, or --eval would change what runs."""
+    directory: str | None = None
+    makefile: str | None = None
+    goals: list[str] = []
+    overrides: dict[str, str] = {}
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg == "--":
+            goals.extend(args[index:])
+            break
+        if arg.startswith("-") and len(arg) > 1:
+            name, has_value, value = arg.partition("=")
+            if name in MAKE_VALUE_OPTIONS or (name[:2] in MAKE_VALUE_OPTIONS and not name.startswith("--")):
+                if name not in MAKE_VALUE_OPTIONS:
+                    name, value = name[:2], arg[2:]
+                elif not has_value:
+                    if index >= len(args):
+                        return None
+                    value = args[index]
+                    index += 1
+                if name in ("-C", "--directory"):
+                    if directory is not None:
+                        return None
+                    directory = value
+                elif name in ("-f", "--file", "--makefile"):
+                    if makefile is not None or value == "-":
+                        return None
+                    makefile = value
+                continue
+            if name in ("-j", "--jobs"):
+                if not has_value and index < len(args) and args[index].isdigit():
+                    index += 1
+                continue
+            if name in MAKE_FLAGS and not has_value:
+                continue
+            if arg[:2] == "-j" and arg[2:].isdigit():
+                continue
+            if not arg.startswith("--") and all(f"-{char}" in MAKE_FLAGS for char in arg[1:]):
+                continue
+            return None
+        if "=" in arg and not arg.startswith("="):
+            name, _, value = arg.partition("=")
+            overrides[name.rstrip(":?+!")] = value
+            continue
+        goals.append(arg)
+    return directory, makefile, goals, overrides
+
+
+def expand_make(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The recipe lines behind ``make [options] [VAR=value] [goals]``, read from the Makefile
+    (``_cobot_make``); None when they cannot be known. A nested make inside a ``-C`` directory
+    stays opaque: its own Makefile would be read from the wrong folder."""
+    parsed = parse_make_argv(plain[1:])
+    if parsed is None:
+        return None
+    directory, makefile, goals, overrides = parsed
+    folder = Path(cwd or os.getcwd())
+    if directory:
+        folder = folder / os.path.expanduser(directory)
+    commands = _cobot_make.resolve(folder, makefile, goals, overrides)
+    if commands is None:
+        return None
+    if directory:
+        heads = [strip_wrappers(segment)[:1] for command in commands for segment in split_segments(command)]
+        if any(head and head[0] in MAKE_NAMES for head in heads):
+            return None
+    return commands
+
+
+def expand_uv(plain: list[str]) -> list[str] | None:
+    """The command behind ``uv run [options] <cmd>``: argv after uv's own options; ``-m`` and a
+    ``.py`` file become ``python …``. None on an option the table does not know."""
+    if len(plain) < 3 or plain[1] != "run":
+        return None
+    args, index, module, script = plain[2:], 0, False, False
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            index += 1
+            break
+        if not arg.startswith("-"):
+            break
+        name, has_value, _ = arg.partition("=")
+        if name in ("-m", "--module"):
+            module = True
+        elif name in ("-s", "--script"):
+            script = True
+        elif name in UV_RUN_VALUE_OPTIONS:
+            index += 0 if has_value else 1
+        elif name not in UV_RUN_FLAGS or has_value:
+            return None
+        index += 1
+    rest = args[index:]
+    if not rest or index > len(args):
+        return None
+    if module:
+        return [shlex.join(["python", "-m", *rest])]
+    if script or rest[0].endswith((".py", ".pyw")):
+        return [shlex.join(["python", *rest])]
+    return [shlex.join(rest)]
+
+
+def package_scripts(cwd: str | None) -> dict[str, str] | None:
+    path = Path(cwd or os.getcwd()) / "package.json"
+    try:
+        scripts = json.loads(path.read_text(encoding="utf-8")).get("scripts")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return (
+        scripts if isinstance(scripts, dict) and all(isinstance(v, str) for v in scripts.values()) else None
+    )
+
+
+def expand_node(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a package-manager launcher: ``exec <bin>`` from argv; ``run <script>``,
+    the pnpm/yarn shorthand and npm's test/start aliases from package.json, with the script's
+    ``pre``/``post`` hooks. None when the runner's own flags would change which scripts run."""
+    head, args = plain[0], plain[1:]
+    if not args:
+        return None
+    sub, rest = args[0], args[1:]
+    if sub in ("exec", "x") and head != "bun":
+        if "--" in rest:
+            rest = rest[rest.index("--") + 1 :]
+        return [shlex.join(rest)] if rest and not rest[0].startswith("-") else None
+    if sub in ("run", "run-script"):
+        while rest and rest[0].startswith("-"):
+            if rest[0] not in SCRIPT_RUN_FLAGS:
+                return None
+            rest = rest[1:]
+        if not rest:
+            return None
+        name, extra = rest[0], rest[1:]
+    elif head == "npm" and sub in NPM_SCRIPT_ALIASES:
+        name, extra = NPM_SCRIPT_ALIASES[sub], rest
+    elif head in SCRIPT_SHORTHAND and sub not in SCRIPT_SHORTHAND[head] and not sub.startswith("-"):
+        name, extra = sub, rest
+    else:
+        return None
+    if name.startswith("/") or any(
+        arg in SCRIPT_SELECT_FLAGS or arg.startswith(("--filter=", "-F=")) for arg in extra
+    ):
+        return None  # a regex of scripts, or a flag that changes which scripts run
+    scripts = package_scripts(cwd)
+    if scripts is None or name not in scripts:
+        return None
+    commands = []
+    for key in (f"pre{name}", name, f"post{name}"):
+        if key in scripts:
+            text = scripts[key]
+            if key == name and extra:
+                text = f"{text} {shlex.join(arg for arg in extra if arg != '--')}"
+            commands.append(text)
+    return commands
+
+
+def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
+    """The commands behind a runner, a shell ``-c`` string or an entry wrapper; None when unknown."""
+    if not plain:
+        return None
+    head = plain[0]
+    if head == "mise":
+        commands = expand_mise(plain, cwd)
+    elif head in MAKE_NAMES:
+        commands = expand_make(plain, cwd)
+    elif head == "uv":
+        commands = expand_uv(plain)
+    elif head in ("npm", "pnpm", "yarn", "bun"):
+        commands = expand_node(plain, cwd)
+    elif head in SHELLS:
+        commands = expand_shell(plain)
+    elif head in WRAPPER_PARSERS:
+        commands = WRAPPER_PARSERS[head](plain)
+    else:
+        return None
+    if commands and any(has_substitution(command) for command in commands):
+        return None
+    return commands
+
+
+def expand_segments(
+    segments: list[list[str]], cwd: str | None, depth: int = 0
+) -> list[tuple[list[str], str]]:
+    """Replace each resolvable runner or wrapper segment by the commands it runs, recursively up to
+    MAX_EXPANSION levels, tagged with the outermost origin."""
+    out: list[tuple[list[str], str]] = []
+    for segment in segments:
+        plain = strip_wrappers(segment)
+        commands = expand_runner(plain, cwd) if depth < MAX_EXPANSION and is_opaque(plain) else None
+        if not commands:
+            out.append((segment, ""))
+            continue
+        origin = " ".join(plain)[:MAX_ORIGIN]
+        inner = [sub for command in commands for sub in split_segments(command)]
+        out.extend((tokens, origin) for tokens, _ in expand_segments(inner, cwd, depth + 1))
+    return out
+
+
+def candidates(tokens: list[str]) -> list[str]:
+    plain = strip_wrappers(tokens)
+    verb = canonical_gh_api(expand_push_flags(strip_global_options(plain)))
+    forms = [" ".join(plain)]
+    if verb != plain:
+        forms.append(" ".join(verb))
+    return forms
+
+
+def agent_matches(scope: str, agent: str | None) -> bool:
+    """``@consultant`` matches ``consultant`` and ``cobot:consultant``."""
+    if not agent:
+        return False
+    return scope in (agent, agent.split(":")[-1]) or agent in (scope, scope.split(":")[-1])
+
+
+def applies(rule: Rule, tool: str, agent: str | None) -> bool:
+    if rule.agent and not agent_matches(rule.agent, agent):
+        return False
+    if rule.tool == "mcp":
+        return tool.startswith("mcp__")
+    return rule.tool == tool
+
+
+def matches_bash(rule: Rule, forms: list[str]) -> bool:
+    """never/ask match any form; allow matches only the canonical (last) form, so a method moved
+    to the front of ``gh api`` cannot hide behind a read-only prefix pattern."""
+    candidates_for_rule = forms[-1:] if rule.decision == "allow" else forms
+    return any(fnmatch.fnmatchcase(form, rule.pattern) for form in candidates_for_rule)
+
+
+def allow_counts(rule: Rule) -> bool:
+    """An allow silences the gate from the owner layer, or from the default layer when agent-scoped."""
+    return rule.decision == "allow" and (
+        rule.layer == "owner" or (rule.layer == "default" and bool(rule.agent))
+    )
+
+
+def resolve(matched: list[Rule], note: str = "") -> Verdict:
+    """Apply the precedence: never > allow (owner, or default with an agent scope) > ask > silence."""
+    nevers = [r for r in matched if r.decision == "never"]
+    if nevers:
+        return Verdict(DENY, nevers[0])
+    if any(allow_counts(r) for r in matched):
+        return Verdict(None, None, "allow rule")
+    asks = [r for r in matched if r.decision == "ask"]
+    if asks:
+        return Verdict(ASK, asks[0])
+    return Verdict(None, None, note)
+
+
+def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: list[Rule]) -> str | None:
+    """A shell token that names a file protected by a ``never`` Edit/Write rule."""
+    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
+    for segment in segments:
+        for token in segment:
+            if ("/" in token or token.startswith("~")) and not token.startswith("-"):
+                if any(matches_file(r, file_forms(token, cwd)) for r in protected):
+                    return token
+    return None
+
+
+def judge_bash(
+    command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
+) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
+    """Judge every segment; the most restrictive verdict wins. Also return the trace."""
+    bash_rules = [r for r in rules if applies(r, "Bash", agent)]
+    command = strip_heredocs(command)
+    opaque_all = has_substitution(command)
+    best = Verdict(None, None, "no rule matched")
+    trace: list[tuple[str, list[Rule]]] = []
+    segments = expand_segments(split_segments(command), cwd)
+    touched = protected_file_touched([segment for segment, _ in segments], cwd, rules)
+    if touched:
+        best = Verdict(ASK, None, f"shell access to a protected file '{touched[:60]}'")
+    for segment, origin in segments:
+        forms = candidates(segment)
+        matched = [r for r in bash_rules if matches_bash(r, forms)]
+        verdict = resolve(matched, "no rule matched")
+        if (opaque_all or is_opaque(strip_wrappers(segment))) and verdict.decision != DENY:
+            allowed = any(allow_counts(r) for r in matched)
+            verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{forms[0][:60]}'")
+        if origin:
+            verdict = replace(verdict, via=origin)
+        trace.append((forms[0] + (f"  <- {origin}" if origin else ""), matched))
+        if RANK[verdict.decision] > RANK[best.decision] or (
+            verdict.decision == best.decision and best.rule is None
+        ):
+            best = verdict
+    return best, trace
+
+
+def file_forms(path: str, cwd: str | None) -> list[str]:
+    base = Path(cwd or os.getcwd())
+    absolute = (
+        (base / os.path.expanduser(path)).resolve()
+        if not os.path.isabs(os.path.expanduser(path))
+        else Path(os.path.expanduser(path))
+    )
+    forms = [str(absolute)]
+    try:
+        forms.append(str(absolute.relative_to(base)))
+    except ValueError:
+        pass
+    return forms
+
+
+def matches_file(rule: Rule, forms: list[str]) -> bool:
+    pattern = os.path.expanduser(rule.pattern)
+    for form in forms:
+        if fnmatch.fnmatchcase(form, pattern) or fnmatch.fnmatchcase(form, f"*/{pattern}"):
+            return True
+    return False
+
+
+def judge_file(tool: str, path: str, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
+    forms = file_forms(path, cwd)
+    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms)]
+    return resolve(matched, "no rule matched")
+
+
+def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
+    matched = [r for r in rules if applies(r, tool, agent) and fnmatch.fnmatchcase(tool, r.pattern)]
+    return resolve(matched, "no rule matched")
+
+
+def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
+    if tool == "Bash":
+        return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
+    if tool in FILE_TOOLS:
+        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        return judge_file(tool, str(path), cwd, rules, agent) if path else Verdict(None, None, "no path")
+    if tool.startswith("mcp__"):
+        return judge_mcp(tool, rules, agent)
+    return Verdict(None, None, "tool not governed")
+
+
+# ---------------------------------------------------------------- commands
+
+
+def hook_output(decision: str, reason: str) -> str:
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": decision,
+                "permissionDecisionReason": reason[:REASON_LIMIT],
+            }
+        }
+    )
+
+
+def log_event(payload: dict) -> None:
+    path = os.environ.get("COBOT_GATE_LOG")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload) + "\n")
+
+
+def gate(stdin: str) -> str | None:
+    try:
+        payload = json.loads(stdin)
+        tool = str(payload.get("tool_name", ""))
+        cwd = payload.get("cwd")
+        agent = payload.get("agent_type") or payload.get("agent_name")
+        rules, warnings, _ = load_rules(cwd)
+        for warning in warnings:
+            print(f"cobot gate: {warning}", file=sys.stderr)
+        verdict = judge(tool, payload.get("tool_input") or {}, cwd, rules, agent)
+        tool_input = payload.get("tool_input") or {}
+        head = str(
+            tool_input.get("command") or tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+        )
+        log_event(
+            {
+                "tool": tool,
+                "head": head[:120],
+                "decision": verdict.decision,
+                "reason": verdict.reason(),
+                "agent": agent,
+            }
+        )
+    except Exception as error:  # noqa: BLE001 - any failure must end in "ask"
+        return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
+    if verdict.decision is None:
+        return None
+    return hook_output(verdict.decision, verdict.reason())
+
+
+def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    i = 0
+    while i < len(argv):
+        if argv[i].startswith("--") and i + 1 < len(argv):
+            options[argv[i][2:]] = argv[i + 1]
+            i += 2
+        else:
+            positional.append(argv[i])
+            i += 1
+    return positional, options
+
+
+def tool_input_for(tool: str, target: str) -> dict:
+    if tool == "Bash":
+        return {"command": target}
+    if tool in FILE_TOOLS:
+        return {"file_path": target}
+    return {}
+
+
+def cmd_check(target: str, options: dict[str, str]) -> str:
+    tool = options.get("tool", "Bash")
+    rules, _, _ = load_rules(None)
+    verdict = judge(tool, tool_input_for(tool, target), None, rules, options.get("agent"))
+    return f"{verdict.decision or 'none'}  ({verdict.reason()})"
+
+
+def cmd_explain(target: str, options: dict[str, str]) -> str:
+    tool = options.get("tool", "Bash")
+    rules, warnings, _ = load_rules(None)
+    agent = options.get("agent")
+    lines = [f"tool: {tool}" + (f"  agent: {agent}" if agent else "")]
+    if tool == "Bash":
+        verdict, trace = judge_bash(target, rules, agent)
+        for form, matched in trace:
+            lines.append(f"segment: {form}")
+            lines.extend(f"  {r.text()}  [{r.layer}:{r.line}]" for r in matched)
+            if not matched:
+                lines.append("  (no rule)")
+    else:
+        verdict = judge(tool, tool_input_for(tool, target), None, rules, agent)
+    lines.append(f"decision: {verdict.decision or 'none'}  ({verdict.reason()})")
+    lines.extend(f"warning: {w}" for w in warnings)
+    return "\n".join(lines)
+
+
+def cmd_show() -> str:
+    rules, warnings, paths = load_rules(None)
+    lines = [f"{layer}: {path}{'' if path.is_file() else '  (absent)'}" for layer, path in paths.items()]
+    counts = {d: sum(r.decision == d for r in rules) for d in ("never", "ask", "allow")}
+    lines.append(
+        f"rules: {len(rules)}  never={counts['never']}  ask={counts['ask']}  allow={counts['allow']}"
+    )
+    lines.extend(f"{r.text():60} [{r.layer}:{r.line}]" for r in rules)
+    lines.extend(f"warning: {w}" for w in warnings)
+    return "\n".join(lines)
+
+
+def permission_patterns(rule: Rule) -> list[str]:
+    """Claude Code permission syntax: prefix patterns only; both plain and rtk forms for Bash."""
+    if rule.tool == "mcp":
+        return [rule.pattern]
+    if rule.tool != "Bash":
+        return [f"{rule.tool}({rule.pattern})"]
+    if "*" in rule.pattern[:-1]:
+        return []  # a wildcard inside the pattern has no prefix form; the hook covers it
+    prefix = rule.pattern[:-1] if rule.pattern.endswith("*") else rule.pattern
+    suffix = ":*" if rule.pattern.endswith("*") else ""
+    return [f"Bash({prefix}{suffix})", f"Bash(rtk {prefix}{suffix})"]
+
+
+def cmd_sync(options: dict[str, str]) -> str:
+    rules, _, _ = load_rules(None)
+    deny = sorted({p for r in rules if r.decision == "never" and not r.agent for p in permission_patterns(r)})
+    allow = sorted(
+        {
+            p
+            for r in rules
+            if r.decision == "allow" and r.layer == "owner" and not r.agent
+            for p in permission_patterns(r)
+        }
+    )
+    skipped = [r.text() for r in rules if r.decision == "never" and not permission_patterns(r)]
+    fragment = {"permissions": {"deny": deny, "allow": allow}}
+    settings_path = Path(options.get("settings") or config_dir() / "settings.json")
+    current = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
+    merged = json.loads(json.dumps(current))
+    perms = merged.setdefault("permissions", {})
+    for key in ("deny", "allow"):
+        perms[key] = sorted(set(perms.get(key, [])) | set(fragment["permissions"][key]))
+    diff = difflib.unified_diff(
+        json.dumps(current, indent=2).splitlines(),
+        json.dumps(merged, indent=2).splitlines(),
+        fromfile=str(settings_path),
+        tofile=f"{settings_path} (with cobot rules)",
+        lineterm="",
+    )
+    out = ["# fragment", json.dumps(fragment, indent=2), "# diff (nothing written; apply by hand)", *diff]
+    if skipped:
+        out.append("# not expressible as permission rules (the hook enforces them): " + "; ".join(skipped))
+    return "\n".join(out)
+
+
+def main(argv: list[str]) -> int:
+    positional, options = parse_options(argv)
+    command = positional[0] if positional else ""
+    if command == "gate":
+        output = gate(sys.stdin.read())
+        if output:
+            print(output)
+        return 0
+    if command == "check" and len(positional) == 2:
+        print(cmd_check(positional[1], options))
+        return 0
+    if command == "explain" and len(positional) == 2:
+        print(cmd_explain(positional[1], options))
+        return 0
+    if command == "show":
+        print(cmd_show())
+        return 0
+    if command == "sync":
+        print(cmd_sync(options))
+        return 0
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -38,14 +38,14 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-          shellcheck install.sh plugins/partner/hooks/*.sh scripts/*.sh
-          python3 scripts/check-plugin.py plugins/partner
+          shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh
+          python3 scripts/check-plugin.py plugins/cobot
       - name: Validate plugin and marketplace
         run: |
-          claude plugin validate plugins/partner --strict
+          claude plugin validate plugins/cobot --strict
           claude plugin validate . --strict
       - name: Test with coverage
-        run: pytest --cov=plugins/partner/bin --cov-report=term-missing --cov-fail-under=85
+        run: pytest --cov=plugins/cobot/bin --cov-report=term-missing --cov-fail-under=85
       - uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: "**/*.md"
@@ -100,7 +100,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          cd plugins/partner
+          cd plugins/cobot
           claude plugin eval . --trust-plugin --scaffold --no-publish --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \
             --allow-tools Bash Write Edit --json ../../eval-result.json

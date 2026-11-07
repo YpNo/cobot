@@ -62,7 +62,7 @@ def check(plugin: Path) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    plugin = Path(argv[0]) if argv else Path("plugins/partner")
+    plugin = Path(argv[0]) if argv else Path("plugins/cobot")
     problems = check(plugin)
     for problem in problems:
         print(f"FAIL {problem}")

@@ -61,6 +61,13 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   25 KB loaded). Agents may have their own memory via `memory:`.
 - `AGENTS.md` is read when no CLAUDE.md exists (v2.1.277+).
 
+- A folder carries one marketplace name: `marketplace add <path>` for a folder already
+  registered under another name answers "Marketplace '<old>' already on disk — declared in user
+  settings" and registers nothing, so a rename must `marketplace remove <old>` first.
+  `marketplace remove` clears `known_marketplaces.json` and the `extraKnownMarketplaces` record
+  in `~/.claude/settings.json` itself; `plugins/cache/<old>/` stays behind (observed 2026-11-07,
+  2.1.285).
+
 ## Evals
 - `evals/<case>/prompt.md` (frontmatter `name`, `runs`, `max_turns`, `model`, …) +
   `evals/<case>/graders/<g>.md` (`type: regex|tool_used|tool_order|file_exists|llm|baseline`,
@@ -79,7 +86,7 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   mode every `tool_used` grader on `Skill` and every `arm: with-only` grader is reported but not
   scored (a plugin-fired indicator).
 - A skill with `context: fork` and `agent:` invoked through the Skill tool records a `Skill`
-  call, not an `Agent` call (observed 2026-11-07: `/partner:learn` ran the learner, Agent 0x).
+  call, not an `Agent` call (observed 2026-11-07: `/cobot:learn` ran the learner, Agent 0x).
   Detect it with `tool_used: Skill` + `input_match`.
 - `/skill-doctor` = context-cost / usage report, not a linter.
 
@@ -96,8 +103,8 @@ eval exit code 2 for partial runs.
 
 ## Found while building R0 (2026-11-06, Claude Code 2.1.285)
 - `marketplace.json` `metadata.pluginRoot` is **not applied** when `claude plugin install` resolves
-  a path marketplace: the install looked for `<repo>/partner`. Write full `source` paths
-  (`./plugins/partner`) and omit `pluginRoot`.
+  a path marketplace: the install looked for `<repo>/cobot`. Write full `source` paths
+  (`./plugins/cobot`) and omit `pluginRoot`.
 - `claude plugin details <name>` only knows installed plugins; it takes no path and no `--json`.
   Measuring the token cost of a checkout in CI means registering the checkout as a path
   marketplace and installing it in the runner first.
@@ -107,20 +114,20 @@ eval exit code 2 for partial runs.
 - The owner's git has `safe.bareRepository = explicit`: scratch remotes are non-bare with
   `receive.denyCurrentBranch = updateInstead`.
 
-- Spike results (owner's terminal, 2026-11-06): **A** `--plugin-dir` lists `partner:challenger`
+- Spike results (owner's terminal, 2026-11-06): **A** `--plugin-dir` lists `cobot:challenger`
   beside the legacy `challenger`. **B** with `--allowedTools "Bash(git push:*)"` the gate's `ask`
   prevailed and the remote stayed unchanged; the gate log shows the **original** command
   (`git push origin main`), not the rtk-rewritten one, so hooks receive the pre-rewrite input.
   **C** is *not* proven: the model refused the force push before calling Bash, so the hook never
   saw it (one log line only). R1 re-tests `deny` with a harmless probe rule
-  (`never Bash(echo partner-deny-probe*)`) so the model does call the tool. Whether hooks fire for
+  (`never Bash(echo cobot-deny-probe*)`) so the model does call the tool. Whether hooks fire for
   a subagent's Bash is still open (`agent` was null: main thread).
 - R1 spike results (owner's terminal, 2026-11-06, `scripts/spike-r1.sh`): **D** a plugin hook's
   `permissionDecision: deny` blocks a Bash call in the main thread (the model had no reason to
   refuse `echo`). **E** the hook fires for a subagent's Bash too; the hook input carries
-  `agent_type` as the **namespaced** name (`partner:builder`), so agent scopes must match with or
-  without the `partner:` prefix. **F** a skill with `context: fork` and `agent: partner:consultant`
-  runs in that agent (`agent_type` = `partner:consultant` in the log). In `-p` mode a Bash call the
+  `agent_type` as the **namespaced** name (`cobot:builder`), so agent scopes must match with or
+  without the `cobot:` prefix. **F** a skill with `context: fork` and `agent: cobot:consultant`
+  runs in that agent (`agent_type` = `cobot:consultant` in the log). In `-p` mode a Bash call the
   gate leaves silent is still denied by Claude Code's own permissions, so headless consults are
   read-only through Read/Grep only; interactive sessions prompt.
 - `claude plugin eval`: an `llm` grader does not accept `target` (loader error "Unrecognized
@@ -142,13 +149,13 @@ eval exit code 2 for partial runs.
 - `claude plugin update` compares version strings only: a same-version edit in a directory marketplace reports "already at the latest version" and the cache stays stale. `uninstall` leaves the cache directory in place; the next `install` overwrites it from the checkout (`install.sh --refresh`).
 - `claude plugin list` shows a project-scope plugin as enabled only when run from inside that project.
 - `claude -p` in a terminal can fail with "OAuth session expired and could not be refreshed" while the desktop app's own session works; `claude login` in that terminal is the fix.
-- In `claude -p` (non-interactive), a PreToolUse `ask` surfaces to the model as the tool result `This command requires approval` when it comes from Claude Code's own permission system, and as the hook's `permissionDecisionReason` (`partner gate: opaque command '…'`) when the hook asked; neither runs the command. Verified from cartridge-os with the project-scope install on 2026-11-06.
+- In `claude -p` (non-interactive), a PreToolUse `ask` surfaces to the model as the tool result `This command requires approval` when it comes from Claude Code's own permission system, and as the hook's `permissionDecisionReason` (`cobot gate: opaque command '…'`) when the hook asked; neither runs the command. Verified from cartridge-os with the project-scope install on 2026-11-06.
 
 ## Found while dogfooding on headscale (2026-11-07, Claude Code 2.1.285)
 
 - `claude plugin install --scope local` writes `enabledPlugins` into the repository's `.claude/settings.local.json` and a second entry under the same plugin key in `installed_plugins.json` (`scope: local`, its own `projectPath` and `gitCommitSha`); both scopes share one cache directory per version. headscale ignores `.claude/` in its `.gitignore`, so nothing shows in `git status`.
 - From inside a repository with a local-scope install, `claude plugin list` shows both the local entry and another repository's project-scope entry; the scope line, not the position, says which applies.
-- `claude -p` from a foreign checkout delivered the partner protocol, the UNTRUSTED brief line with its reason and the five `partner:` agents through the local-scope install; a project `.mcp.json` with unapproved servers does not block the run.
+- `claude -p` from a foreign checkout delivered the cobot protocol, the UNTRUSTED brief line with its reason and the five `cobot:` agents through the local-scope install; a project `.mcp.json` with unapproved servers does not block the run.
 - The memory symlink lives in the main checkout; a git worktree of the same repository resolves `--git-common-dir` to it, so the worktree is trusted and shares the memory without a symlink of its own.
 
 ## Found while building the learner (2026-11-07, Claude Code 2.1.285)
@@ -160,8 +167,8 @@ eval exit code 2 for partial runs.
 - `--allowedTools` is variadic: every argument after it is read as a tool name, including the
   prompt, and the run fails with "Input must be provided either through stdin or as a prompt
   argument". Put the prompt right after `-p` and the tool list last.
-- `--plugin-dir plugins/partner` loads the plugin for one print run: its hooks (the gate, the
+- `--plugin-dir plugins/cobot` loads the plugin for one print run: its hooks (the gate, the
   SessionStart brief), agents and skills are all active, so a checkout can probe itself without
   an install.
-- `claude plugin validate --strict` accepts `context: fork` with `agent: partner:learner` in a
+- `claude plugin validate --strict` accepts `context: fork` with `agent: cobot:learner` in a
   skill whose agent file is in the same plugin.

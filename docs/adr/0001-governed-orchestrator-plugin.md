@@ -9,15 +9,15 @@ A home-grown scaffold (workstation-starter `ai/`, installed as `~/.agents`) gave
 phases, ten agents and per-repo memory files. It worked in six repositories but had grown a second
 planning system (spec-kit), stale language facts, four unused commands, contradictory global
 rules, and an install that silently stopped propagating edits. The owner wants one structured
-partner: Claude Code as orchestrator, dedicated experts, explicit rules before autonomy, model
-routing, and quality gates on the partner itself. See `docs/01-decisions.md` and
+cobot: Claude Code as orchestrator, dedicated experts, explicit rules before autonomy, model
+routing, and quality gates on the cobot itself. See `docs/01-decisions.md` and
 `docs/reference/legacy-audit.md`.
 
 ## Decision
 
 1. **Start from a blank slate** in a public marketplace repo. Old ideas are rewritten only after
    the audit's fixes; nothing is copied.
-2. **One plugin (`partner`) in release 1**; domain plugins (`partner-gcp`, `partner-reverse`,
+2. **One plugin (`cobot`) in release 1**; domain plugins (`cobot-gcp`, `cobot-reverse`,
    delivery extras) are created when their content exists. Split further only on measured cost.
 3. **The orchestrator is Claude Code's main thread**, shaped by a ≤ 3k-char protocol injected at
    session start. Built-ins (plan mode, task list, sessions, `/code-review`, `/security-review`,
@@ -36,7 +36,7 @@ routing, and quality gates on the partner itself. See `docs/01-decisions.md` and
    kept outside the tree, keyed by remote, for foreign repos; untrusted `.agent/` is never injected.
 8. **Model routing by role**: owner's model for orchestration, spec, challenge and risky tasks;
    Sonnet for builders and consults; Haiku for extraction and compaction.
-9. **The partner is tested like software**: plugin evals, pytest on the gate, SHA-pinned CI,
+9. **The cobot is tested like software**: plugin evals, pytest on the gate, SHA-pinned CI,
    semantic versions, a changelog.
 
 ## Alternatives considered
@@ -55,11 +55,11 @@ routing, and quality gates on the partner itself. See `docs/01-decisions.md` and
 
 **Good.** One install, one version, one place to edit. Every outward action is gated
 deterministically and visibly. Per-session cost stays around five to six thousand tokens. Adding an
-expert costs no agent budget. The partner can be evaluated and regressed in CI.
+expert costs no agent budget. The cobot can be evaluated and regressed in CI.
 
 **Costs.** The owner must apply the permission block by hand once per machine. The gate is string
 and argv matching: it stops honest and careless attempts, not determined obfuscation. Foreign-mode
-memory lives outside the repo and must be backed up. The legacy scaffold coexists with the partner until
+memory lives outside the repo and must be backed up. The legacy scaffold coexists with the cobot until
 the owner triggers the switch (ADR-0003); the extra listing cost is measured during dogfood.
 
 **Reversible.** Settings changes go through a shown diff; memory files are additive; foreign mode

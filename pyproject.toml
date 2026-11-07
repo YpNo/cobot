@@ -1,7 +1,7 @@
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-extend-include = ["plugins/partner/bin/partner-rules"]
+extend-include = ["plugins/cobot/bin/cobot-rules"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S"]

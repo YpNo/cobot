@@ -12,8 +12,8 @@ from conftest import INSTALL, PLUGIN
 FAKE_CLAUDE = """#!/bin/sh
 case "$1 $2 $3" in
   "--version  ") echo "9.9.9 (Claude Code)" ;;
-  "plugin marketplace list") echo "Configured marketplaces:"; echo "  agentic-partner" ;;
-  "plugin list ") echo "Installed plugins:"; echo "  partner@agentic-partner"; echo "    Scope: project" ;;
+  "plugin marketplace list") echo "Configured marketplaces:"; echo "  cobot" ;;
+  "plugin list ") echo "Installed plugins:"; echo "  cobot@cobot"; echo "    Scope: project" ;;
   "plugin install "*) echo "installed $3 $4 $5"; pwd ;;
   "plugin uninstall "*)
     case "$5" in local) echo "not installed at local scope" >&2; exit 1 ;; esac
@@ -35,7 +35,7 @@ def home(tmp_path):
     return tmp_path
 
 
-TOOLS = ("sh", "sed", "grep", "readlink", "basename", "dirname", "pwd", "true")
+TOOLS = ("sh", "sed", "grep", "readlink", "basename", "dirname", "pwd", "true", "mv", "rm", "ln")
 
 
 def hermetic_bin(home_dir, fake_claude):
@@ -81,7 +81,7 @@ def test_install_dev_printsAliasWritesNothing(home):
     before = sorted(p.relative_to(home) for p in home.rglob("*"))
     result = run_install(["--dev"], home)
     assert result.returncode == 0
-    assert f"alias claude-partner='claude --plugin-dir \"{PLUGIN}\"'" in result.stdout
+    assert f"alias claude-cobot='claude --plugin-dir \"{PLUGIN}\"'" in result.stdout
     assert sorted(p.relative_to(home) for p in home.rglob("*")) == before
 
 
@@ -111,7 +111,7 @@ def test_install_project_installsInDir(home, tmp_path):
     result = run_install(["--project", str(target)], home)
     assert result.returncode == 0
     assert "already registered" in result.stdout
-    assert "installed partner@agentic-partner --scope project" in result.stdout
+    assert "installed cobot@cobot --scope project" in result.stdout
     assert str(target) in result.stdout
 
 
@@ -125,7 +125,7 @@ def test_install_user_usesRepoDir(home):
 
 
 def test_install_uninstall_defaultScopeProject(home):
-    assert "uninstalled partner@agentic-partner --scope project" in run_install(["--uninstall"], home).stdout
+    assert "uninstalled cobot@cobot --scope project" in run_install(["--uninstall"], home).stdout
     assert "--scope user" in run_install(["--uninstall", "user"], home).stdout
 
 
@@ -137,10 +137,10 @@ def test_install_withoutClaude_installFails(home):
 
 def test_install_sourceGithub_registersFromGithub(home, tmp_path):
     exe = hermetic_bin(home, fake_claude=False) / "claude"
-    exe.write_text(FAKE_CLAUDE.replace('echo "  agentic-partner"', "true"))
+    exe.write_text(FAKE_CLAUDE.replace('echo "  cobot"', "true"))
     exe.chmod(0o755)
     result = run_install(["--project", str(tmp_path), "--source", "github"], home, fake_claude=False)
-    assert "registering marketplace from YpNo/agentic-partner" in result.stdout
+    assert "registering marketplace from YpNo/cobot" in result.stdout
     assert os.path.isdir(tmp_path)
 
 
@@ -149,8 +149,8 @@ def test_install_refresh_uninstallsThenInstallsAtTheInstalledScope(home, tmp_pat
     target.mkdir()
     result = run_install(["--refresh", str(target)], home)
     assert result.returncode == 0
-    assert "uninstalled partner@agentic-partner --scope project" in result.stdout
-    assert "installing partner@agentic-partner at scope project" in result.stdout
+    assert "uninstalled cobot@cobot --scope project" in result.stdout
+    assert "installing cobot@cobot at scope project" in result.stdout
     assert "at scope local" not in result.stdout and "nothing to uninstall" not in result.stdout
     assert str(target) in result.stdout
 
@@ -158,3 +158,111 @@ def test_install_refresh_uninstallsThenInstallsAtTheInstalledScope(home, tmp_pat
 def test_install_usage_listsRefresh(home):
     result = run_install(["--help"], home)
     assert "--refresh [DIR]" in result.stdout and "--uninstall [SCOPE]" in result.stdout
+
+
+# ---------------------------------------------------------------- migration from agentic-partner (ADR-0004)
+
+FAKE_CLAUDE_OLD_REMAINS = FAKE_CLAUDE.replace(
+    '"plugin marketplace list") echo "Configured marketplaces:"; echo "  cobot" ;;',
+    '"plugin marketplace list") echo "Configured marketplaces:"; echo "  cobot"; echo "  agentic-partner" ;;',
+).replace(
+    '"plugin list ") echo "Installed plugins:"; echo "  cobot@cobot"; echo "    Scope: project" ;;',
+    '"plugin list ") echo "Installed plugins:"; echo "  partner@agentic-partner"; echo "    Scope: local" ;;',
+)
+FAKE_CLAUDE_OLD_GONE = FAKE_CLAUDE_OLD_REMAINS.replace(
+    'echo "  partner@agentic-partner"; echo "    Scope: local"',
+    'echo "  cobot@cobot"; echo "    Scope: project"',
+).replace('"plugin install "*)', '"plugin marketplace remove") echo "removed $4" ;;\n  "plugin install "*)')
+
+
+@pytest.fixture
+def old_state(home):
+    data = home / "share" / "agentic-partner" / "repos" / "github.com" / "o" / "r"
+    data.mkdir(parents=True)
+    (data / "CONTEXT.md").write_text("# r\n")
+    conf = home / ".claude" / "partner"
+    conf.mkdir()
+    (conf / "identities").write_text("github.com/o\n")
+    repo = home / "work" / "r"
+    repo.mkdir(parents=True)
+    (repo / ".agent").symlink_to(data, target_is_directory=True)
+    return {"data": data, "conf": conf, "repo": repo}
+
+
+def run_migrating(args, home, fake=None):
+    exe = hermetic_bin(home, fake_claude=fake is None) / "claude"
+    if fake is not None:
+        exe.write_text(fake)
+        exe.chmod(0o755)
+    env = {
+        "PATH": str(home / "bin"),
+        "HOME": str(home),
+        "XDG_DATA_HOME": str(home / "share"),
+        "CLAUDE_CONFIG_DIR": str(home / ".claude"),
+    }
+    return subprocess.run(
+        ["/bin/sh", str(INSTALL), *args], capture_output=True, text=True, env=env, check=False
+    )
+
+
+def test_install_refresh_movesStateAndRelinksForeignAgent(home, old_state):
+    result = run_migrating(["--refresh", str(old_state["repo"])], home)
+    assert result.returncode == 0, result.stderr
+    new_data = home / "share" / "cobot" / "repos" / "github.com" / "o" / "r"
+    assert (new_data / "CONTEXT.md").is_file() and not old_state["data"].exists()
+    assert (home / ".claude" / "cobot" / "identities").is_file() and not old_state["conf"].exists()
+    assert os.readlink(old_state["repo"] / ".agent") == str(new_data)
+    assert "moved" in result.stdout and "re-pointed" in result.stdout
+
+
+def test_install_check_reportsMigrationWithoutMoving(home, old_state):
+    result = run_migrating(["--check"], home)
+    assert "would move" in result.stdout
+    assert old_state["data"].exists() and old_state["conf"].exists()
+
+
+def test_install_dev_doesNotMigrate(home, old_state):
+    result = run_migrating(["--dev"], home)
+    assert result.returncode == 0
+    assert old_state["data"].exists() and "moved" not in result.stdout
+
+
+def test_install_refresh_bothDirsPresent_movesNothing(home, old_state):
+    (home / "share" / "cobot").mkdir()
+    result = run_migrating(["--refresh", str(old_state["repo"])], home)
+    assert "both exist; nothing moved" in result.stdout
+    assert old_state["data"].exists()
+
+
+def test_install_refresh_reportsOwnerRulesFile(home, old_state):
+    (home / ".claude" / "partner.rules").write_text("ask Bash(x*)\n")
+    result = run_migrating(["--refresh", str(old_state["repo"])], home)
+    assert "partner.rules is yours" in result.stdout
+    assert (home / ".claude" / "partner.rules").is_file()
+
+
+def test_install_refresh_keepsOldMarketplaceWhileInstallsRemain(home, old_state):
+    result = run_migrating(["--refresh", str(old_state["repo"])], home, fake=FAKE_CLAUDE_OLD_REMAINS)
+    assert "marketplace agentic-partner kept: 1 install(s)" in result.stdout
+    assert "removed" not in result.stdout
+
+
+def test_install_refresh_sharedFolder_removesOldMarketplaceBeforeTheNew(home, old_state):
+    fake = FAKE_CLAUDE_OLD_REMAINS.replace(
+        'echo "  agentic-partner" ;;',
+        f'echo "  agentic-partner"; echo "    Source: Folder ({INSTALL.parent})" ;;',
+    ).replace(
+        '"plugin install "*)', '"plugin marketplace remove") echo "removed $4" ;;\n  "plugin install "*)'
+    )
+    result = run_migrating(["--refresh", str(old_state["repo"])], home, fake=fake)
+    out = result.stdout
+    assert "share this folder with cobot; refresh them next" in out
+    assert out.index("removed marketplace agentic-partner") < out.index("installing cobot@cobot")
+
+
+def test_install_refresh_removesOldMarketplaceWhenNoneRemain(home, old_state):
+    (home / ".claude" / "settings.json").write_text('{"extraKnownMarketplaces": {"agentic-partner": {}}}')
+    result = run_migrating(["--refresh", str(old_state["repo"])], home, fake=FAKE_CLAUDE_OLD_GONE)
+    assert "removed marketplace agentic-partner" in result.stdout
+    # the real CLI clears the record itself; the fake leaves the file, so the report shows
+    assert "settings.json still has extraKnownMarketplaces.agentic-partner" in result.stdout

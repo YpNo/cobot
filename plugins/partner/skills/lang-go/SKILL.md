@@ -18,7 +18,7 @@ user-invocable: false
 
 # lang-go
 
-Versions, dates and sources: `references/versions.md`. Re-verify any line older than 90 days
+Versions, dates and sources: `references/versions.md`. Re-verify a line the brief flags stale (versions after 30 days, idiom after 90)
 before relying on it; never "upgrade" a repo as a side effect — report the gap.
 
 ## Toolchain and commands

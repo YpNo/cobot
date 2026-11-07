@@ -2,7 +2,7 @@
 
 Latest stable release per action, resolved through the GitHub API on the check date
 (`gh api repos/<r>/releases/latest`, then `gh api repos/<r>/commits/<tag> --jq .sha`).
-Pin as `uses: <owner>/<repo>@<sha> # <tag>`. Re-resolve before relying on a row older than 90 days.
+Pin as `uses: <owner>/<repo>@<sha> # <tag>`. Rows are version lines: the brief flags them after 30 days; re-resolve before relying on a stale one.
 
 | action | tag | commit SHA | released | source |
 |---|---|---|---|---|

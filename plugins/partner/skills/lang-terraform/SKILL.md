@@ -23,7 +23,7 @@ user-invocable: false
 
 Versions, sources and dates: `references/versions.md`. Test example and mock patterns:
 `references/testing.md`. Quote the status (`verified <date>` or `reported`) when a version drives a
-decision; re-check any line older than 180 days before relying on it.
+decision; re-check any line the brief flags stale (versions after 30 days, idiom after 90) before relying on it.
 
 ## Toolchain and commands
 

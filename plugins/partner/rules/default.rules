@@ -100,6 +100,8 @@ ask Bash(pip3 install*)
 ask Bash(poetry add*)
 ask Bash(nix flake update*)
 ask Bash(nix flake lock*)
+# promoting learned lines into the plugin repository is the owner's decision (ADR-0002)
+ask Bash(*partner-memory learn *--promote*)
 # goreleaser release publishes unless --snapshot or --skip=publish; the owner layer may allow the snapshot form
 ask Bash(goreleaser release*)
 ask Bash(gh codespace ssh*)

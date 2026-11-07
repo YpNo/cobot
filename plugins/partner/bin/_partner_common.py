@@ -9,6 +9,10 @@ import subprocess
 from pathlib import Path
 
 REMOTE_RE = re.compile(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+SECRET_RE = re.compile(
+    r"(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY"
+    r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
+)
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 
 

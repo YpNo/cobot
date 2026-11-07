@@ -1,6 +1,6 @@
 # lang-fallback — versions and dated facts
 
-Format: `- [status date · src] claim`. Re-verify lines older than 180 days with
+Format: `- [status date · src] claim`. Version lines are flagged after 30 days, idiom after 90; re-check with
 `curl -s https://api.github.com/repos/<owner>/<repo>/releases/latest | jq -r .tag_name`.
 Maintenance is judged on the last commit, not the last release.
 

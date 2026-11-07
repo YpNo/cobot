@@ -1,6 +1,6 @@
 # lang-terraform — versions and dated facts
 
-Format: `- [status date · src] claim`. Re-verify lines older than 180 days. Refresh without MCP:
+Format: `- [status date · src] claim`. The brief flags version lines after 30 days, idiom after 90. Refresh without MCP:
 `curl -s https://api.github.com/repos/<owner>/<repo>/releases/latest | jq -r .tag_name`, the
 registry API (`/v1/providers/<ns>/<name>`, `/v1/modules/<ns>/<name>/<provider>`) and
 `https://releases.hashicorp.com/terraform/index.json`.

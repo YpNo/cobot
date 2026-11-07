@@ -11,8 +11,12 @@ Commands
   journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
   learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
+  learn --promote [--source DIR] [--in-place] [JSON|TOPIC]
+                                   also carry the general entries (or a topic's pending general lines) into the
+                                   agentic-partner checkout: a learn/<topic> branch in a worktree, or in place
+  knowledge [--stale] [--json] [--brief] [SKILL]   dated knowledge lines per skill: age, stale, reported
 
-All writes go to the project layer; promotion into the plugin is release 1.1.
+Project entries go to .agent/; general entries reach the plugin only through --promote (an ask action).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _partner_common import (  # noqa: E402
+    SECRET_RE,
     data_dir,
     host_owner_repo,
     memory_dir,
@@ -34,6 +39,20 @@ from _partner_common import (  # noqa: E402
     remotes,
     repo_root,
     root_commits,
+)
+from _partner_knowledge import (  # noqa: E402
+    STATUSES,
+    Index,
+    brief_line,
+    claim_key,
+    format_line,
+    place,
+    promote,
+    report,
+    scan_memory,
+    scan_plugin,
+    source_checkout,
+    summaries,
 )
 
 DEFAULT_BUDGET = 6000
@@ -46,11 +65,6 @@ BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
-STATUSES = ("verified", "reported", "assumed")
-SECRET_RE = re.compile(
-    r"(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY"
-    r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
-)
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 
 
@@ -354,16 +368,22 @@ def cmd_findings_close(mem: Memory, number: str, reason: str) -> str:
     return f"findings: {number} not found"
 
 
-def claim_key(text: str) -> str:
-    """Normalised claim for de-duplication; the ``(general)`` tag is not part of the claim."""
-    text = re.sub(r"\s*\(general\)\s*$", "", text.strip())
-    return re.sub(r"\W+", " ", text.lower()).strip()
-
-
 def knowledge_line(entry: dict) -> str:
-    source = str(entry.get("source", "")).strip() or "unsourced"
-    scope = " (general)" if entry.get("scope") == "general" else ""
-    return f"- [{entry['status']} {entry.get('checked') or date.today().isoformat()} · src: {source}] {entry['claim'].strip()}{scope}"
+    return format_line(entry, date.today())
+
+
+def is_general(entry: dict) -> bool:
+    return entry.get("scope") in ("general", "plugin")
+
+
+def pending_general(mem: Memory, topic: str) -> list[dict]:
+    """Lines tagged ``(general)`` in ``.agent/knowledge/<topic>.md``, as delta entries."""
+    entries = []
+    for line in scan_memory(mem.dir).get(f"knowledge/{topic}", []):
+        if line.claim.endswith("(general)"):
+            claim = re.sub(r"\s*\(general\)\s*$", "", line.claim)
+            entries.append({"claim": claim, "status": line.status, "source": line.source, "checked": line.checked.isoformat(), "scope": "general"})
+    return entries
 
 
 def filter_delta(delta: dict, keep_assumed: bool) -> tuple[list[dict], list[str]]:
@@ -387,41 +407,88 @@ def filter_delta(delta: dict, keep_assumed: bool) -> tuple[list[dict], list[str]
     return kept, skipped
 
 
-def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool) -> str:
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9-]+", "-", text.lower()).strip("-")
+
+
+def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool) -> list[str]:
+    if not entries:
+        return ["  promote: no general entry"]
+    checkout = source_checkout(source)
+    if checkout is None:
+        return ["  promote: no agentic-partner checkout known (a directory marketplace, $PARTNER_SOURCE or --source DIR)"]
+    worktrees = data_dir().parent / "promote"
+    result = promote(checkout, topic, entries, delta, date.today(), in_place, worktrees)
+    if isinstance(result, str):
+        return [f"  {result}"]
+    return [f"  {line}" for line in result.lines()]
+
+
+def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False) -> str:
     try:
         delta = json.loads(raw)
     except json.JSONDecodeError as error:
+        if promoting and raw.strip() and slug(raw.strip()) == raw.strip():
+            entries = pending_general(mem, raw.strip())
+            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place)])
         return f"learn: delta is not JSON ({error})"
-    topic = re.sub(r"[^a-z0-9-]+", "-", str(delta.get("topic", "")).lower()).strip("-")
+    if not isinstance(delta, dict):
+        return "learn: delta must be a JSON object"
+    topic = slug(str(delta.get("topic", "")))
     if not topic:
         return "learn: delta needs a topic"
     if SECRET_RE.search(raw):
         return "learn: refused, the delta contains a secret-like string"
     kept, skipped = filter_delta(delta, keep_assumed)
+    general = [entry for entry in kept if is_general(entry)]
+    if promoting:
+        kept = [entry for entry in kept if not is_general(entry)]
     path = mem.dir / "knowledge" / f"{topic}.md"
-    existing = path.read_text(encoding="utf-8").splitlines() if path.is_file() else [f"# knowledge: {topic}", ""]
-    present = {claim_key(line.split("] ", 1)[-1]) for line in existing if line.startswith("- [")}
-    new_lines = []
+    index = Index([path] if path.is_file() else [], dry=dry_run)
+    room = KNOWLEDGE_CAP - len(index.lines)
+    new_lines, changed = [], []
     for entry in kept:
-        key = claim_key(entry["claim"])
-        if key in present:
-            skipped.append(f"already known: {entry['claim'][:50]}")
+        kind, text, _file = place(entry, index, date.today(), tag_general=True)
+        if kind == "skipped":
+            skipped.append(text)
+        elif kind in ("redated", "superseded"):
+            changed.append(f"{kind}: {text}")
+        elif room <= 0:
+            skipped.append(f"over the {KNOWLEDGE_CAP}-line cap, consolidate first: {text[:50]}")
         else:
-            new_lines.append(knowledge_line(entry))
-    room = KNOWLEDGE_CAP - sum(1 for line in existing if line.startswith("- ["))
-    if len(new_lines) > room:
-        skipped.extend(f"over the {KNOWLEDGE_CAP}-line cap, consolidate first: {line[:50]}" for line in new_lines[room:])
-        new_lines = new_lines[:max(room, 0)]
-    report = [f"learn: topic {topic}, {len(new_lines)} new line(s), {len(skipped)} skipped"]
+            room -= 1
+            new_lines.append(text)
+    counts = f"learn: topic {topic}, {len(new_lines)} new line(s), {len(skipped)} skipped"
+    counts += f", {len(changed)} re-dated or superseded" if changed else ""
+    report = [counts + (f", {len(general)} general to promote" if promoting else "")]
     report.extend(f"  + {line}" for line in new_lines)
+    report.extend(f"  ~ {line}" for line in changed)
     report.extend(f"  - {reason}" for reason in skipped)
     for item in delta.get("unverified", []):
         report.append(f"  ? unverified: {item}")
-    if new_lines and not dry_run:
+    if (new_lines or changed) and not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join([*existing, *new_lines]).rstrip("\n") + "\n", encoding="utf-8")
+        head = path.read_text(encoding="utf-8").rstrip("\n") if path.is_file() else f"# knowledge: {topic}\n"
+        if new_lines:
+            path.write_text(head.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n", encoding="utf-8")
         report.append(f"  written: {path}")
+    if promoting and not dry_run:
+        report.extend(promote_entries(mem, topic, general, delta, source, in_place))
+    elif promoting:
+        report.append(f"  promote: dry run, {len(general)} general entry(ies) would be promoted")
     return "\n".join(report)
+
+
+def cmd_knowledge(mem: Memory, skill: str, stale_only: bool, as_json: bool, brief: bool) -> str:
+    groups = scan_plugin(plugin_root())
+    if mem.trust()[0]:
+        groups.update(scan_memory(mem.dir))
+    if skill:
+        groups = {name: lines for name, lines in groups.items() if name in (skill, f"knowledge/{skill}")}
+    items = summaries(groups, date.today())
+    if brief:
+        return brief_line(items, date.today())
+    return report(items, date.today(), stale_only=stale_only, as_json=as_json)
 
 
 def journal_order(mem: Memory) -> str:
@@ -468,7 +535,7 @@ def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--profile", "--budget", "--goes-to") and i + 1 < len(argv):
+        if arg in ("--profile", "--budget", "--goes-to", "--source") and i + 1 < len(argv):
             options[arg[2:]] = argv[i + 1]
             i += 2
             continue
@@ -505,7 +572,19 @@ def main(argv: list[str]) -> int:
     elif command == "findings" and sub == "close" and len(positional) >= 4:
         print(cmd_findings_close(mem, positional[2], positional[3]))
     elif command == "learn":
-        print(cmd_learn(mem, read_payload(positional[1:]), "dry-run" in flags, "keep-assumed" in flags))
+        print(
+            cmd_learn(
+                mem,
+                read_payload(positional[1:]),
+                "dry-run" in flags,
+                "keep-assumed" in flags,
+                promoting="promote" in flags,
+                source=options.get("source"),
+                in_place="in-place" in flags,
+            )
+        )
+    elif command == "knowledge":
+        print(cmd_knowledge(mem, sub, "stale" in flags, "json" in flags, "brief" in flags))
     else:
         print(__doc__.strip(), file=sys.stderr)
         return 2

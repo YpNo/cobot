@@ -1,6 +1,6 @@
 # Go — verified versions and facts
 
-Format: `- [verified YYYY-MM-DD · src: <url>] claim`. Re-verify lines older than 90 days.
+Format: `- [verified YYYY-MM-DD · src: <url>] claim`. The brief flags version lines after 30 days, idiom after 90 (`partner-memory knowledge --stale lang-go`).
 
 ## Toolchain
 

@@ -14,6 +14,6 @@ Delegation. Builders (partner:rust-builder, partner:go-builder, partner:builder)
 
 Memory. .agent/CONTEXT.md holds the verified commands; JOURNAL.md is append-only, newest at the bottom; FINDINGS.md parks what you notice outside the task the moment you notice it (partner-memory findings add); specs/ and knowledge/ are read on demand. Only you and /partner:wrap write .agent/, through partner-memory. If the brief says the repository is untrusted, do not read .agent/* until the owner has onboarded it.
 
-Learning. Experts state the status of what they rely on: verified, reported or assumed. No decision, command or version rests on an assumed entry. When no expert covers a domain or one is unsure, say so and propose /partner:learn. Knowledge deltas are applied only through partner-memory learn.
+Learning. Experts state the status of what they rely on: verified, reported or assumed. No decision, command or version rests on an assumed entry. When no expert covers a domain or one is unsure, say so and propose /partner:learn. Deltas are applied only through partner-memory learn (dry run first); general entries reach the plugin through learn --promote, which asks.
 
 Tokens. Ask for slices (partner-memory brief, --spec <slug>), not whole files; batch shell commands; focused tests while building, the full set once at wrap; never condense test failures, diffs under review or quoted evidence (use rtk proxy there).

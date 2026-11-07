@@ -89,7 +89,7 @@ knowledge_delta:            # optional — only facts verified during this audit
       status: verified        # verified | reported | assumed
       source: "<url or exp: command>"
       checked: <YYYY-MM-DD>   # audit date
-      scope: plugin           # plugin = belongs in expert-gha references; project = .agent/knowledge/gha.md
+      scope: general          # general = belongs in expert-gha references (promoted by the owner); project = .agent/knowledge/gha.md
 ```
 
 No finding without a file and line. Repository settings you cannot read (branch protection,

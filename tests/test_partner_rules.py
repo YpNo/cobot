@@ -309,6 +309,24 @@ def test_gate_agentScope_consultantReadListIsSilent(rules):
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_gate_agentScope_learnerSharesTheReadListAndStaysReadOnly(rules):
+    reads = (
+        "git log --oneline -5",
+        "gh api repos/actions/checkout/releases/latest",
+        "file --version",
+        "cat go.mod",
+    )
+    for command in reads:
+        assert rules.gate(payload(command, agent_type="partner:learner")) is None, command
+    for command in ("curl -X POST https://example.com", "go test ./...", "partner-memory learn '{}'"):
+        out = json.loads(rules.gate(payload(command, agent_type="partner:learner")))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", command
+    assert decide(rules, "partner-memory learn --promote '{}'")[0].decision == "ask"
+    nested = "plugins/partner/bin/partner-memory learn --dry-run --promote go"
+    assert decide(rules, nested)[0].decision == "ask"
+    assert decide(rules, "partner-memory learn '{}'")[0].decision is None
+
+
 def test_gate_agentScope_consultantBashAsks(rules):
     out = json.loads(rules.gate(payload("echo hi", agent_type="partner:consultant")))
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"

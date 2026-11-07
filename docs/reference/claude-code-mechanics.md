@@ -160,6 +160,13 @@ eval exit code 2 for partial runs.
   "sandbox required but unavailable" and scores as failed at zero cost. Cases that only need
   `Write`/`Edit` run without it. The `gate-asks` case therefore needs the backend on the machine
   that runs it (CI's ubuntu runner has to install it too).
+- The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
+  --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
+  held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`
+  accepts `EVAL_*` names only and the child inherits an allowlist (`PATH`, locale, proxy,
+  `ANTHROPIC_*`, `CLAUDE_CODE_*`, `EVAL_*`); `regex` graders read a workspace file with
+  `target: {source: file, path: …}`; `tool_used input_match` is a regex over the JSON-encoded
+  tool input; `--case <glob> --runs 1 --ablation none` iterates on one case.
 - Eval judges (`llm`, default haiku) failed two runs whose final message plainly met the rubric
   ("I sized this as tiny"). Prefer `regex`, `tool_used`, `tool_order` and `file_exists` graders;
   keep `llm` for what cannot be matched. Traces are deleted after a run unless `--keep-temp`.

@@ -1206,3 +1206,11 @@ def test_gate_forcePushAnyOrder_stillDenied(rules):
     ):
         out = json.loads(rules.gate(payload(command)))
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny", command
+
+
+def test_gate_mcpGenerateAndEdit_ask(rules):
+    for tool in ("mcp__stitch__generate_screen_from_text", "mcp__google-stitch__edit_screen"):
+        out = json.loads(rules.gate(payload(tool=tool, tool_input={"prompt": "x"})))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", tool
+    assert rules.gate(payload(tool="mcp__stitch__list_projects", tool_input={})) is None
+    assert rules.gate(payload(tool="mcp__stitch__get_screen", tool_input={"id": "1"})) is None

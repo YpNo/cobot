@@ -68,6 +68,28 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   in `~/.claude/settings.json` itself; `plugins/cache/<old>/` stays behind (observed 2026-11-07,
   2.1.285).
 
+## Hooks (verified 2026-11-07 against <https://code.claude.com/docs/en/hooks.md>, 2.1.311)
+- `SubagentStop` input: common fields plus `agent_id`, `agent_type`, `agent_transcript_path`
+  (`<session>/subagents/agent-<id>.jsonl`), `last_assistant_message`, `stop_hook_active`. The
+  matcher is the agent type; plugin agents match their namespaced name (`^cobot:rust-builder$`).
+  Internal agents fire it too with an empty `agent_type`, so anchor the matcher. Output
+  `{"decision": "block", "reason": "…"}` (exit 0) or exit 2 with stderr keeps the subagent
+  running with the reason as its next instruction; `stop_hook_active` true means a stop hook
+  already continued it once. For a subagent that reports through `SubagentHandback`,
+  `last_assistant_message` is closing text and the report is `tool_input.message` of that call
+  (`PreToolUse`/`PostToolUse` matcher `SubagentHandback`). 2.1.311 fixed `SubagentStop` firing
+  twice a minute per running subagent.
+- `PostToolUse` on `Agent` carries `tool_response.content` (the report), `usage`, `totalTokens`,
+  `modelsUsed` for foreground runs; it cannot block the tool, it can `block` the result with a
+  reason. Plugin hooks run inside subagents too.
+- `SubagentStart`: matcher by agent type, context-only (`hookSpecificOutput.additionalContext`),
+  cannot block.
+- Transcripts: `~/.claude/projects/<slug>/<session>.jsonl` (slug = cwd with non-alphanumerics →
+  `-`; `CLAUDE_CONFIG_DIR` moves the root), subagents under `<session>/subagents/`, retention
+  `cleanupPeriodDays` (30). The row format is documented as internal and changeable; `/usage`
+  (aliases `/cost`, `/stats`) attributes the live session's cost to skills, subagents and
+  plugins. Plugins may ship Workflow scripts under `workflows/`, namespaced `/<plugin>:<name>`.
+
 ## Evals
 - `evals/<case>/prompt.md` (frontmatter `name`, `runs`, `max_turns`, `model`, …) +
   `evals/<case>/graders/<g>.md` (`type: regex|tool_used|tool_order|file_exists|llm|baseline`,

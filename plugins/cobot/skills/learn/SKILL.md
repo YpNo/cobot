@@ -48,6 +48,9 @@ in your agent instructions, with exactly one ```json fence holding the `knowledg
 
 ## After the fork (orchestrator)
 
+- Quote first: the learner's summary and its ```json fence go into your reply verbatim, before
+  any dry run or commentary. The owner reads the delta as produced, every entry with its status
+  and source; a paraphrase of a delta is not a delta.
 - Dry run first: `cobot-memory learn --dry-run '<json>'`; read what would be written, skipped
   and re-dated.
 - Apply: `cobot-memory learn '<json>'` writes project entries to `.agent/knowledge/<topic>.md`

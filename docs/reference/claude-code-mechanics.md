@@ -129,3 +129,10 @@ eval exit code 2 for partial runs.
 - `claude plugin list` shows a project-scope plugin as enabled only when run from inside that project.
 - `claude -p` in a terminal can fail with "OAuth session expired and could not be refreshed" while the desktop app's own session works; `claude login` in that terminal is the fix.
 - In `claude -p` (non-interactive), a PreToolUse `ask` surfaces to the model as the tool result `This command requires approval` when it comes from Claude Code's own permission system, and as the hook's `permissionDecisionReason` (`partner gate: opaque command '…'`) when the hook asked; neither runs the command. Verified from cartridge-os with the project-scope install on 2026-11-06.
+
+## Found while dogfooding on headscale (2026-11-07, Claude Code 2.1.285)
+
+- `claude plugin install --scope local` writes `enabledPlugins` into the repository's `.claude/settings.local.json` and a second entry under the same plugin key in `installed_plugins.json` (`scope: local`, its own `projectPath` and `gitCommitSha`); both scopes share one cache directory per version. headscale ignores `.claude/` in its `.gitignore`, so nothing shows in `git status`.
+- From inside a repository with a local-scope install, `claude plugin list` shows both the local entry and another repository's project-scope entry; the scope line, not the position, says which applies.
+- `claude -p` from a foreign checkout delivered the partner protocol, the UNTRUSTED brief line with its reason and the five `partner:` agents through the local-scope install; a project `.mcp.json` with unapproved servers does not block the run.
+- The memory symlink lives in the main checkout; a git worktree of the same repository resolves `--git-common-dir` to it, so the worktree is trusted and shares the memory without a symlink of its own.

@@ -59,3 +59,10 @@ Why: the owner added Docker, Podman, Kubernetes and service meshes; three expert
 Proof: 342 passed, coverage 99.09 %; ruff, markdownlint, check-plugin, `claude plugin validate --strict` clean; cartridge-os install refreshed.
 Open: experts scheduled, not built.
 Next: `install.sh --local` on headscale, or release 1.1.
+
+## 2026-11-07 — dogfood headscale: local scope, foreign mode
+Changed: install.sh --local on headscale (fork of juanfont/headscale, ghsa advisory remote); trust untrusted as designed, foreign mode taken: memory under ~/.local/share/agentic-partner/repos/github.com/ypno/headscale, .agent symlink excluded from git, shared by the worktree; CONTEXT.md and journal written there. Fixes: goreleaser release and nix flake update|lock ask (F-07); journal add and learn take their payload as an argument and never wait on a terminal, install.sh --refresh covers project and local scope (F-08); the untrusted reason names the stranger remotes; onboard documents the fork path and copies maintainers' constraints such as AI_POLICY.md (F-09). F-06 (make opaque) routed to R1.1.
+Why: the design's second dogfood target; a foreign Go repository exercises the trust, foreign-mode and local-scope paths that cartridge-os could not.
+Proof: pytest 352 passed, coverage 99.10 %; ruff, shellcheck, markdownlint, check-plugin and plugin validate --strict clean; live claude -p from headscale showed the UNTRUSTED brief line and the five partner: agents through the local-scope install; go build ./... and go test ./hscontrol/util/ pass on headscale; nix, golangci-lint, buf, prek absent on this machine.
+Open: F-06 make resolution; headscale lint never ran here (needs nix); its five .mcp.json servers unapproved.
+Next: R1.1, learner first.

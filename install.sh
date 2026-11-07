@@ -2,7 +2,7 @@
 # agentic-partner installer. POSIX sh. Writes nothing outside the chosen scope.
 #   --dev                 print the session-only alias (claude --plugin-dir); writes nothing
 #   --project [DIR]       register the marketplace and install at project scope in DIR (default: .)
-#   --refresh [DIR]       uninstall and reinstall at project scope: the cache only refreshes on a version change
+#   --refresh [DIR]       uninstall and reinstall at the installed scope (project or local): the cache only refreshes on a version change
 #   --local [DIR]         same, at local scope (foreign repositories: never committed)
 #   --user                install at user scope (reserved for the switch, docs/03-switch-plan.md)
 #   --check               report Claude Code, marketplace, installed scopes and the legacy scaffold
@@ -56,11 +56,17 @@ cmd_install() {
 }
 
 cmd_refresh() {
-  dir=${1:-.}
+  dir=${1:-.}; refreshed=0
   need_claude
-  (cd "$dir" && claude plugin uninstall "$PLUGIN@$MARKETPLACE" --scope project) \
-    || echo "refresh: nothing to uninstall at project scope in $dir"
-  cmd_install project "$dir"
+  for scope in project local; do
+    if (cd "$dir" && claude plugin uninstall "$PLUGIN@$MARKETPLACE" --scope "$scope" 2>/dev/null); then
+      cmd_install "$scope" "$dir"; refreshed=1
+    fi
+  done
+  if [ "$refreshed" -eq 0 ]; then
+    echo "refresh: nothing to uninstall at project or local scope in $dir"
+    cmd_install project "$dir"
+  fi
 }
 
 cmd_uninstall() {

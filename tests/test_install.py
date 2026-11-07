@@ -15,7 +15,9 @@ case "$1 $2 $3" in
   "plugin marketplace list") echo "Configured marketplaces:"; echo "  agentic-partner" ;;
   "plugin list ") echo "Installed plugins:"; echo "  partner@agentic-partner"; echo "    Scope: project" ;;
   "plugin install "*) echo "installed $3 $4 $5"; pwd ;;
-  "plugin uninstall "*) echo "uninstalled $3 $4 $5" ;;
+  "plugin uninstall "*)
+    case "$5" in local) echo "not installed at local scope" >&2; exit 1 ;; esac
+    echo "uninstalled $3 $4 $5" ;;
   *) echo "fake claude: $*" ;;
 esac
 """
@@ -142,13 +144,14 @@ def test_install_sourceGithub_registersFromGithub(home, tmp_path):
     assert os.path.isdir(tmp_path)
 
 
-def test_install_refresh_uninstallsThenInstallsAtProjectScope(home, tmp_path):
+def test_install_refresh_uninstallsThenInstallsAtTheInstalledScope(home, tmp_path):
     target = tmp_path / "repo"
     target.mkdir()
     result = run_install(["--refresh", str(target)], home)
     assert result.returncode == 0
-    assert "uninstall" in result.stdout.lower()
+    assert "uninstalled partner@agentic-partner --scope project" in result.stdout
     assert "installing partner@agentic-partner at scope project" in result.stdout
+    assert "at scope local" not in result.stdout and "nothing to uninstall" not in result.stdout
     assert str(target) in result.stdout
 
 

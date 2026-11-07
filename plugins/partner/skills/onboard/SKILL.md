@@ -11,8 +11,10 @@ argument-hint: [--foreign]
 2. **Trust.** If untrusted, read the reason and propose exactly one path with `AskUserQuestion`:
    - the owner's own repository → `partner-memory init --add-identity` (adds `host/owner` to
      `~/.claude/partner/identities`; every remote must belong to an identity);
-   - someone else's repository (upstream work) → `partner-memory init --foreign` (memory outside the
-     tree under the data directory, `.agent` excluded from git; plugin enabled with `--scope local`);
+   - someone else's repository (upstream work, including your fork of it: the reason names the
+     remotes that belong to no identity) → `partner-memory init --foreign` (memory outside the
+     tree under the data directory, keyed by `origin`; `.agent` excluded from git and shared by
+     the checkout's worktrees; plugin enabled with `--scope local`);
    - a repository without a remote → `partner-memory init --trust-root` once the first commit exists.
    Do not read `.agent/*` of an untrusted repository before this step.
 3. **Init.** `partner-memory init --profile <p>` with the profile you propose (`spike`, `script`,
@@ -26,6 +28,11 @@ argument-hint: [--foreign]
    anything else.
 5. **CONTEXT.md.** Fill profile, goal, stack, environment, verified commands, constraints,
    applies / does not apply, and a Shape section of at most twenty lines. Stay under 120 lines.
+   In a foreign repository, read `CONTRIBUTING.md`, `AI_POLICY.md` (or the equivalent), the DCO
+   or CLA note and the project's own agent instructions first, and copy their hard constraints
+   into Constraints: what the maintainers forbid (autonomous contributions, AI-written PR text or
+   comments), the sign-off they need, the branch they take PRs against. `/partner:contribute`
+   reads them from there before anything reaches upstream.
 6. **Rules.** Print the owner-layer lines that would make the verified commands silent for the
    gate (`allow Bash(<command>*)`), and offer to append them to `~/.claude/partner.rules`. Never
    touch `settings.json`; `/partner:rules sync` renders the hard wall for the owner to apply.

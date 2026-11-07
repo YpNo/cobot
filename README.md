@@ -53,7 +53,7 @@ Prints a session-only alias using `claude --plugin-dir`; nothing is written.
 Registers the marketplace (from this checkout, or from GitHub with `--source github`) and installs
 the plugin at project scope in that repository. Use `--local` in a repository you do not own.
 The install is a copy pinned to the plugin version: after editing this checkout, run
-`./install.sh --refresh /path/to/repo` (uninstall and reinstall), because `claude plugin update`
+`./install.sh --refresh /path/to/repo` (uninstall and reinstall at the scope found there, project or local), because `claude plugin update`
 only acts on a version change.
 
 ```bash

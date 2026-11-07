@@ -74,6 +74,7 @@ def test_trust_identityCoversEveryRemote(memory, repo):
     remote(repo, "upstream", "https://github.com/juanfont/thing")
     trusted, reason = memory.Memory().trust()
     assert not trusted and "no identity matches every remote" in reason
+    assert "(upstream -> github.com/juanfont)" in reason and "origin" not in reason
     write_config("identities", "github.com/ypno\ngithub.com/juanfont\n")
     assert memory.Memory().trust()[0]
 
@@ -322,6 +323,22 @@ def test_journalOrder_variants(memory, repo):
     assert memory.journal_order(memory.Memory()) == "mixed order"
 
 
+def fake_stdin(text: str, tty: bool = False):
+    return type("S", (), {"read": staticmethod(lambda: text), "isatty": staticmethod(lambda: tty)})()
+
+
+def test_cli_journalAdd_takesTheArgumentAndNeverWaitsOnATerminal(memory, repo, capsys, monkeypatch):
+    seed(repo)
+    entry = "## 2026-05-06 — by argument\nChanged: a\nWhy: b\nProof: c\n"
+    monkeypatch.setattr("sys.stdin", fake_stdin("", tty=True))
+    assert memory.main(["journal", "add", entry]) == 0
+    assert "appended" in capsys.readouterr().out
+    assert memory.Memory().journal_entries()[0][0] == "2026-05-06"
+    assert memory.main(["journal", "add"]) == 0
+    assert "must start with" in capsys.readouterr().out
+    assert memory.main(["learn", "--dry-run", '{"topic": "x", "lines": []}']) == 0
+
+
 def test_cli_allCommands(memory, repo, capsys, monkeypatch):
     assert memory.main(["path"]) == 0 and str(repo / ".agent") in capsys.readouterr().out
     assert memory.main(["init", "--profile", "script"]) == 0
@@ -332,13 +349,13 @@ def test_cli_allCommands(memory, repo, capsys, monkeypatch):
     assert "profile: script" in capsys.readouterr().out
     monkeypatch.setattr(
         "sys.stdin",
-        type("S", (), {"read": staticmethod(lambda: "## 2026-05-05 — t\nChanged: a\nWhy: b\nProof: c\n")})(),
+        fake_stdin("## 2026-05-05 — t\nChanged: a\nWhy: b\nProof: c\n"),
     )
     assert memory.main(["journal", "add"]) == 0 and "appended" in capsys.readouterr().out
     assert memory.main(["findings", "add", "seen", "obs", "--goes-to", "T1"]) == 0
     assert memory.main(["findings", "list", "--open"]) == 0
     assert memory.main(["findings", "close", "F-01", "done"]) == 0
-    monkeypatch.setattr("sys.stdin", type("S", (), {"read": staticmethod(lambda: delta([entry("c")]))})())
+    monkeypatch.setattr("sys.stdin", fake_stdin(delta([entry("c")])))
     assert memory.main(["learn", "--dry-run"]) == 0 and "1 new line" in capsys.readouterr().out
     assert memory.main(["bogus"]) == 2
     assert memory.main([]) == 2
@@ -374,7 +391,7 @@ def test_session_errorStillPrintsProtocol(session, monkeypatch):
 
 
 def test_session_cli(session, capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", type("S", (), {"read": staticmethod(lambda: "{}")})())
+    monkeypatch.setattr("sys.stdin", fake_stdin("{}"))
     assert session.main(["start"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"

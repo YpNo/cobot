@@ -29,6 +29,17 @@ All notable changes to this project are documented here. The format follows
   rollback|push|repo add`, `istioctl install|upgrade|uninstall|x`, `gcloud container fleet mesh`,
   and `docker|podman push|login|system prune|rm|rmi` ask; `helm` and `istioctl` global options
   are stripped before matching.
+- Release and pin rules from the headscale dogfood: `goreleaser release` asks (it publishes
+  unless `--snapshot` or `--skip=publish`; the owner layer may allow the snapshot form), and so
+  do `nix flake update` and `nix flake lock` (they move dependency pins, decision 22).
+- `partner-memory journal add [ENTRY]` and `learn [JSON]` take their payload as an argument as
+  well as on stdin, and never wait on a terminal.
+- `install.sh --refresh` reinstalls at whichever scope the plugin was installed in the directory,
+  project or local, so a foreign repository's local-scope install refreshes too.
+- `onboard` names a fork of someone else's repository as the foreign path (the trust reason lists
+  the remotes that belong to no identity), and copies the maintainers' hard constraints
+  (`CONTRIBUTING.md`, `AI_POLICY.md`, DCO or CLA, the project's own agent instructions) into
+  CONTEXT.md for `/partner:contribute` to read.
 - `spec` sizes a change as one branch and one PR with one commit per task, writes the
   architecture choice (hexagonal by profile) and justifies every new dependency; `build` commits
   each finished task and refuses an unnamed dependency; `wrap` runs the pre-PR currency check and
@@ -36,6 +47,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The untrusted-repository reason names the remotes that match no identity
+  (`no identity matches every remote (ghsa -> github.com/juanfont) …`).
 - The brief caps CONTEXT.md on section boundaries and names the dropped sections, and the cap
   grows into the room a short journal leaves (2 500 to 4 000 characters).
 

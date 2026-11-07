@@ -8,9 +8,9 @@ Commands
   trust                            trusted: <reason> | untrusted: <reason>
   check                            mode, trust, files, journal order, brief size
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
-  journal add                      append the entry read on stdin (## YYYY-MM-DD — title, then the fields)
+  journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
-  learn [--dry-run] [--keep-assumed]      apply a knowledge delta (JSON on stdin) to .agent/knowledge/<topic>.md
+  learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
 
 All writes go to the project layer; promotion into the plugin is release 1.1.
 """
@@ -73,18 +73,21 @@ class Memory:
                 return True, "foreign mode, memory outside the tree"
             return False, f".agent is a symlink that does not resolve to the external memory for origin ({expected})"
         remote_map = remotes(self.root)
-        identities = read_lines(partner_config_dir() / "identities")
+        identities = {line.lower() for line in read_lines(partner_config_dir() / "identities")}
+        strangers: list[str] = []
         if remote_map:
-            owners = {f"{h}/{o}" for url in remote_map.values() if (p := host_owner_repo(url)) for h, o, _ in [p]}
-            if owners and owners <= {line.lower() for line in identities}:
-                return True, f"every remote owner is an identity ({', '.join(sorted(owners))})"
+            owners = {name: f"{p[0]}/{p[1]}" for name, url in remote_map.items() if (p := host_owner_repo(url))}
+            if owners and set(owners.values()) <= identities:
+                return True, f"every remote owner is an identity ({', '.join(sorted(set(owners.values())))})"
+            strangers = [f"{name} -> {owner}" for name, owner in sorted(owners.items()) if owner not in identities]
         roots = set(root_commits(self.root))
         trusted = {line.split()[0] for line in read_lines(partner_config_dir() / "trusted") if line.split()}
         if roots and roots & trusted:
             return True, "root commit listed in ~/.claude/partner/trusted"
         if not remote_map and not roots:
             return False, "no remote and no commit: onboard with --trust-root once the first commit exists"
-        return False, "no identity matches every remote and the root commit is not trusted"
+        detail = f" ({', '.join(strangers)})" if strangers else ""
+        return False, f"no identity matches every remote{detail} and the root commit is not trusted"
 
     # ---------------------------------------------------------------- files
 
@@ -293,6 +296,15 @@ def add_trusted_root(mem: Memory) -> str:
     return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
 
 
+def read_payload(positional: list[str]) -> str:
+    """The payload: the remaining argument when one is given, else stdin; a terminal is not waited on."""
+    if positional:
+        return positional[0]
+    if sys.stdin.isatty():
+        return ""
+    return sys.stdin.read()
+
+
 def cmd_journal_add(mem: Memory, entry: str) -> str:
     entry = entry.strip()
     if not re.match(r"^## \d{4}-\d{2}-\d{2} — .+", entry):
@@ -485,7 +497,7 @@ def main(argv: list[str]) -> int:
     elif command == "brief":
         print(build_brief(mem, int(options.get("budget", DEFAULT_BUDGET)), trust_check="no-trust-check" not in flags))
     elif command == "journal" and sub == "add":
-        print(cmd_journal_add(mem, sys.stdin.read()))
+        print(cmd_journal_add(mem, read_payload(positional[2:])))
     elif command == "findings" and sub == "add" and len(positional) >= 4:
         print(cmd_findings_add(mem, positional[2], positional[3], options.get("goes-to", "")))
     elif command == "findings" and sub == "list":
@@ -493,7 +505,7 @@ def main(argv: list[str]) -> int:
     elif command == "findings" and sub == "close" and len(positional) >= 4:
         print(cmd_findings_close(mem, positional[2], positional[3]))
     elif command == "learn":
-        print(cmd_learn(mem, sys.stdin.read(), "dry-run" in flags, "keep-assumed" in flags))
+        print(cmd_learn(mem, read_payload(positional[1:]), "dry-run" in flags, "keep-assumed" in flags))
     else:
         print(__doc__.strip(), file=sys.stderr)
         return 2

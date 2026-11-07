@@ -250,11 +250,16 @@ def claim_key(text: str) -> str:
     return re.sub(r"\W+", " ", text.lower()).strip()
 
 
+def one_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def format_line(entry: dict, today: date, tag_general: bool = True, indent: str = "") -> str:
-    source = str(entry.get("source", "")).strip() or "unsourced"
+    """The dated line; a ``]`` in the source would end the bracket early, so it becomes ``)``."""
+    source = one_line(str(entry.get("source", ""))).replace("]", ")") or "unsourced"
     scope = " (general)" if tag_general and entry.get("scope") in ("general", "plugin") else ""
     checked = entry.get("checked") or today.isoformat()
-    return f"{indent}- [{entry['status']} {checked} · src: {source}] {entry['claim'].strip()}{scope}"
+    return f"{indent}- [{entry['status']} {checked} · src: {source}] {one_line(entry['claim'])}{scope}"
 
 
 @dataclass
@@ -281,14 +286,21 @@ class Index:
             return f"supersedes '{fragment[:40]}' matches {len(hits)} lines"
         return hits[0] if hits else None
 
-    def replace(self, old: Line, text: str) -> Line:
+    def replace(self, old: Line, text: str) -> Line | None:
+        new = parse_line(old.skill, old.file, old.number, text)
+        if new is None:
+            return None
         if not self.dry:
             rows = old.file.read_text(encoding="utf-8").splitlines()
             rows[old.number - 1] = text
             old.file.write_text("\n".join(rows) + "\n", encoding="utf-8")
-        new = parse_line(old.skill, old.file, old.number, text)
         self.lines = [new if line is old else line for line in self.lines]
         return new
+
+    def add(self, file: Path, text: str) -> None:
+        line = parse_line("", file, 0, text)
+        if line:
+            self.lines.append(line)
 
 
 def newer(entry: dict, known: Line, today: date) -> bool:
@@ -464,16 +476,15 @@ def write_lines(plugin: Path, topic: str, entries: list[dict], delta: dict, toda
         else:
             room -= 1
             result.written.append(text)
-            index.lines.append(parse_line(name, folder / "references" / "learned.md", 0, text))
+            index.add(folder / "references" / "learned.md", text)
     if result.written:
         target = folder / "references" / "learned.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        head = (
-            target.read_text(encoding="utf-8").rstrip("\n")
-            if target.is_file()
-            else LEARNED_HEADER.format(skill=name)
-        )
-        target.write_text(head.rstrip("\n") + "\n" + "\n".join(result.written) + "\n", encoding="utf-8")
+        if target.is_file():
+            head = target.read_text(encoding="utf-8").rstrip("\n") + "\n"
+        else:
+            head = LEARNED_HEADER.format(skill=name).rstrip("\n") + "\n\n"  # a blank line before the list
+        target.write_text(head + "\n".join(result.written) + "\n", encoding="utf-8")
         touched.append(target)
     for file in touched:
         if file not in result.files:

@@ -302,6 +302,28 @@ def test_place_redatesSupersedesAppendsAndSkips(tmp_path):
     assert file.read_text() == before
 
 
+def test_formatLine_survivesBracketsAndNewlines(tmp_path):
+    entry = {
+        "claim": "Dependabot `groups`\n  applies to github-actions",
+        "status": "reported",
+        "source": 'https://docs.github.com/x (a community example shows patterns ["*"])',
+    }
+    text = knowledge.format_line(entry, TODAY, False)
+    line = knowledge.parse_line("s", Path("f"), 1, text)
+    assert line and line.claim == "Dependabot `groups` applies to github-actions"
+    assert line.source == 'https://docs.github.com/x (a community example shows patterns ["*"))'
+    file = tmp_path / "k.md"
+    file.write_text("# k\n" + dated(1, claim="old") + "\n")
+    index = knowledge.Index([file])
+    kind, _text, _ = knowledge.place(entry, index, TODAY, False)
+    assert kind == "new"
+    index.add(file, text)
+    assert len(index.lines) == 2 and index.by_claim(entry["claim"]) is not None
+    index.add(file, "not a dated line")
+    assert len(index.lines) == 2
+    assert index.replace(index.lines[0], "garbage") is None and dated_lines(file) == [dated(1, claim="old")]
+
+
 def test_skillName_mapping(tmp_path):
     plugin = make_plugin(tmp_path, {"lang-go": {}, "expert-gha": {}})
     assert knowledge.skill_name("go", None, plugin) == ("lang-go", True)
@@ -358,6 +380,7 @@ def test_writeLines_dedupesRedatesCapsAndSkeleton(tmp_path):
         "- [reported 2026-11-07 · src: https://go.dev] fresh fact\n"
     )
     assert "promote: lang-go, 1 new, 1 re-dated, 0 superseded" in result.lines()[0]
+    assert "claim`.\n\n- [reported" in text  # a blank line separates the header from the list (MD032)
     again = knowledge.write_lines(
         plugin,
         "go",

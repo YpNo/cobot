@@ -136,3 +136,18 @@ eval exit code 2 for partial runs.
 - From inside a repository with a local-scope install, `claude plugin list` shows both the local entry and another repository's project-scope entry; the scope line, not the position, says which applies.
 - `claude -p` from a foreign checkout delivered the partner protocol, the UNTRUSTED brief line with its reason and the five `partner:` agents through the local-scope install; a project `.mcp.json` with unapproved servers does not block the run.
 - The memory symlink lives in the main checkout; a git worktree of the same repository resolves `--git-common-dir` to it, so the worktree is trusted and shares the memory without a symlink of its own.
+
+## Found while building the learner (2026-11-07, Claude Code 2.1.285)
+
+- In `claude -p`, `WebFetch` and `WebSearch` are not granted unless `--allowedTools WebFetch
+  WebSearch` is passed: a forked agent sees "not granted" and cannot fetch. The `learner` then
+  returns an empty delta and lists the refusals, which is the designed behaviour; the
+  `knowledge-refresh.yml` workflow passes the grants.
+- `--allowedTools` is variadic: every argument after it is read as a tool name, including the
+  prompt, and the run fails with "Input must be provided either through stdin or as a prompt
+  argument". Put the prompt right after `-p` and the tool list last.
+- `--plugin-dir plugins/partner` loads the plugin for one print run: its hooks (the gate, the
+  SessionStart brief), agents and skills are all active, so a checkout can probe itself without
+  an install.
+- `claude plugin validate --strict` accepts `context: fork` with `agent: partner:learner` in a
+  skill whose agent file is in the same plugin.

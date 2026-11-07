@@ -54,7 +54,7 @@ agentic-partner/
       builder.md                           generic fallback (Terraform, Shell, Lua, other) · sonnet/medium
       rust-builder.md go-builder.md        thin: frontmatter `skills: [lang-<x>]`, model, ~15 lines
                                            (python-builder, typescript-builder, terraform-builder: R1.1)
-      (learner.md: R1.1)                   read-only + WebFetch/WebSearch, returns a knowledge delta · sonnet/high
+      learner.md                           read-only + WebFetch/WebSearch, returns a knowledge delta · sonnet/high
     skills/
       onboard/      SKILL.md + templates/CONTEXT.md JOURNAL.md FINDINGS.md  fingerprint, profile, foreign mode
       spec/         SKILL.md + template.md                             the CONCEPTOR (spec, clarify, plan, tasks)
@@ -65,21 +65,23 @@ agentic-partner/
                     SKILL.md (+ refs)                                  paths-gated, not user-invocable
       expert-gha/   SKILL.md                                           GitHub Actions idiom, paths-gated inline
       consult-gha/  SKILL.md                                           context: fork, agent: partner:consultant
+      learn/        SKILL.md + templates/expert-SKILL.md                  context: fork, agent: partner:learner; skeleton expert template
       <any lang-*/expert-*>/references/<topic>.md                      dated lines: status · source · claim (§8)
-      (R1.1: ship, contribute + UPSTREAM.md, security-sweep, learn, lang-python, lang-typescript)
+      (R1.1, next slice: ship, contribute + UPSTREAM.md, security-sweep, lang-python, lang-typescript)
     hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
     hooks/session.sh protocol.md           SessionStart shim and the ≤ 3k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
-    bin/partner-rules  bin/partner-memory  bin/partner-session  bin/_partner_common.py   Python 3 stdlib, no deps
-                                           (partner-memory: brief · learn · compact · check)
+    bin/partner-rules  bin/partner-memory  bin/partner-session  bin/partner-deps          Python 3 stdlib, no deps
+    bin/_partner_common.py _partner_make.py _partner_knowledge.py _partner_deps.py
+                                           (partner-memory: brief · learn [--promote] · knowledge · check; compact R1.1)
     rules/default.rules
     settings/permissions.example.json      the hard-wall block the owner installs via `rules sync`
     .mcp.json                              context7
-    evals/<4 cases>/prompt.md + graders/   (R1.1: +4)
+    evals/<5 cases>/prompt.md + graders/   (R1.1: +3)
     (R2: workflows/deep-review.js, SubagentStop report check)
   tests/  (pytest for bin/, fixtures for hooks)
   install.sh                               --dev | --project | --user | --check | --uninstall (§14, ADR-0003)
-  .github/workflows/ci.yml release.yml
+  .github/workflows/ci.yml release.yml knowledge-refresh.yml
   README.md CHANGELOG.md LICENSE docs/
 ```
 
@@ -293,17 +295,30 @@ unverified:
   - "whether zizmor flags expression injection in reusable-workflow inputs"
 ```
 
-The orchestrator passes it to `partner-memory learn`, which applies the filter below, deduplicates
-against the target file, refuses secret-like strings, writes, and prints the diff. No agent ever
-edits a knowledge or skill file; `general` entries become a pull request on this repository
-through `learn --promote` (an `ask` action), `project` entries land in `.agent/knowledge/`.
+The orchestrator passes it to `partner-memory learn`, which applies the filter below, refuses
+secret-like strings, re-dates a claim already present (same text, later check), replaces the
+line an entry `supersedes`, appends the rest, and prints what it did. No agent ever edits a
+knowledge or skill file; `project` entries land in `.agent/knowledge/`, `general` entries stay
+there tagged until `learn --promote` (an `ask` action) carries them into this repository: a
+`learn/<topic>` branch in a worktree under the data directory (the checkout is the directory
+marketplace Claude Code recorded, `$PARTNER_SOURCE` or `--source`), existing lines re-dated or
+superseded where they are, new ones appended to `references/learned.md`, the push and PR commands
+printed for the owner. The weekly `knowledge-refresh.yml` runs the same path `--in-place` on its
+own checkout and opens the PR.
 
 Teaching: `expert-<x>` and `lang-<x>` skills read their `references/` and the matching
 `.agent/knowledge/<x>.md`; when answering they quote the status (`verified 2026-11-06` or
 `reported`). An `assumed` entry may be shown but may not drive a decision, a command or a version.
-When no expert exists, the learner's delta also carries a skeleton `expert-<x>`: description,
-`when_to_use`, `paths`, a references file and one eval case; it is created through the same
-promote path and stays marked `reported` until it has served twice.
+When no expert exists and the owner asked for one (`/partner:learn <topic> --new-expert`), the
+delta carries a `skeleton` block (description, `when_to_use`, `paths`); promote creates
+`expert-<x>` from the template with its `references/learned.md`, and the skill says it stays
+`reported` until the owner promotes it after review. Without that block promote refuses rather
+than invent a second expert beside an existing one.
+
+Staleness (decision 23): a line whose claim states what is current — a version token with a
+currency word, or any version token in a `versions`, `actions` or `ci` reference file without a
+history word — is a *version* line, stale after 30 days; every other line is *idiom*, stale after
+90; `partner-memory knowledge --stale` lists them and the session brief carries one line.
 
 Relevance filter (what is **not** written): an entry is kept only if it (a) changed a decision,
 command or design in this session, or contradicts an existing entry; (b) cannot be derived from
@@ -395,7 +410,7 @@ others arrive with the features they test (R1.1):
 | foreign-onboard | symlink + exclude line present · nothing under the fixture repo |
 | builder-routing | `Cargo.toml` fixture → `partner:rust-builder` spawned (plugin-scoped name in the grader), not `builder` |
 | actions-pinning | `expert-github-actions` → `regex` SHA pin + `zizmor` mentioned |
-| learn-unknown-domain | a topic with no expert → `tool_used` Agent(learner) · `regex` every delta line carries a status and a source · `llm` no `assumed` entry drives the answer |
+| learn-unknown-domain | an offline question no expert covers (`file --version`, read list) → `tool_used` Agent(learner) · `regex` status and `exp:` source · `tool_used` Write/Edit = 0 · `llm` no `assumed` entry drives the answer |
 | proof-required | a builder fixture reports "tests pass" with no output → `llm` the orchestrator reruns or rejects, never journals green |
 
 Hook and script tests (pytest, fixtures as JSON): push, force push in any flag order, `rtk git
@@ -440,7 +455,7 @@ legacy settings' `allow`. The switch itself is `docs/03-switch-plan.md`, with a 
 |---|---|---|
 | R0 | **repository bootstrap, nothing global**: marketplace.json, plugin.json, `install.sh --dev\|--project\|--check`, README install section, CI skeleton; the legacy scaffold is left untouched (ADR-0003) | `claude plugin validate --strict` passes; a `--plugin-dir` session lists `partner:*` beside the legacy set; coexistence spikes answered |
 | R1 | gate + shim, onboard / spec / build / wrap (findings, proof lines, verified stamp), `partner-memory brief\|learn\|check` (`compact` R1.1), references with status lines, challenger / consultant / builder, rust and go builders, lang-{rust,go,terraform,fallback}, expert-gha + consult-gha, 4 evals, pytest, ci.yml, release.yml; dogfood through `install.sh --project` on cartridge-os (Rust, service rigour) and `--scope local` on headscale (foreign Go) | day-one spikes pass; four evals green; a week of real use journaled |
-| R1.1 | **first** `learner` + `/partner:learn` + `learn --promote` + consult `knowledge_delta`, knowledge staleness in the brief and `knowledge-refresh.yml` (weekly PR) (decision 23), `partner-deps check` with its cache wired into `onboard`, the session brief and `wrap` (decision 21); then ship (trigger matrix, decision 17) with `expert-containers` (decision 26), contribute + UPSTREAM.md (decisions 18, 20), security-sweep (`context: fork`), compaction, lang-python + lang-typescript with their builders (dogfood dreame-vacuum, headplane), terraform-builder (one module), `accepted-risks.md`, 4 more evals | eight evals green; the switch plan's preconditions met |
+| R1.1 | **slice 1, done 2026-11-07** (`.agent/specs/r1-1-learning.md`): `learner` + `/partner:learn` + `learn --promote` + consult `knowledge_delta`, knowledge staleness in the brief and `knowledge-refresh.yml` (weekly PR) (decision 23), `partner-deps check` with its cache wired into `onboard`, the session brief and `wrap` (decision 21); **slice 2**: ship (trigger matrix, decision 17) with `expert-containers` (decision 26), contribute + UPSTREAM.md (decisions 18, 20), security-sweep (`context: fork`), compaction, lang-python + lang-typescript with their builders (dogfood dreame-vacuum, headplane), terraform-builder (one module), `accepted-risks.md`, 4 more evals | eight evals green; the switch plan's preconditions met |
 | Switch | owner-triggered, not a release: `docs/03-switch-plan.md` (backup, user-scope install, unlink, CLAUDE.md cut, rules sync, workstation-starter PR) | a fresh session lists `partner:*` only; rollback tested once |
 | R2 | `partner-gcp` (GCP expert skill, `gcd-universe` rewritten for provider 8.x), `deep-review` workflow, `SubagentStop` report check (a report must carry command + exit code), `partner-usage`, verified-stamp gate rule for `git push`, contribute flow hardened from headscale use; framework skills `fw-react`, `fw-next`, `fw-vue` on `lang-typescript` and `lang-shell` promoted from the fallback (decision 24); `expert-cicd` core + `expert-gitlab-ci` with `glab`, Gitea through `tea`, `expert-api` (OpenAPI, web protocols) (decision 25, first three); `expert-kubernetes` beside `partner-gcp` (GKE), then `expert-service-mesh` (Istio, Cloud Service Mesh) (decision 26) | GCP module work done end to end |
 | R3 | `partner-reverse` (host-before-device protocol, capture/replay), `expert-home-assistant` with `hass-cli`, `expert-iot-protocols` and `expert-electronics` with evidence grades, Jira and Confluence through the Atlassian MCP (writes ask), MCP builder skill reused after challenge (decision 25, rest), `partner-delivery-extra` (ArgoCD, Crossplane, OPA), GDC/S3NS expert | — |

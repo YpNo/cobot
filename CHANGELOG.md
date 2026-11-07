@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The learner: agent `learner` (read-only, sonnet) behind `/partner:learn <skill or topic>
+  [question]`, which returns a knowledge delta whose entries carry a status, a source, a date and
+  a scope; a re-verified claim is re-dated in place, a changed fact names what it `supersedes`.
+- `partner-memory knowledge [--stale] [--json] [--brief]`: dated lines per skill with their age;
+  version lines are stale after 30 days, idiom after 90 (decision 23); the session brief carries
+  one line naming the stale skills and the `reported` count.
+- `partner-memory learn --promote [--source DIR] [--in-place]`: general entries reach the
+  agentic-partner checkout (the directory marketplace Claude Code recorded, `$PARTNER_SOURCE` or
+  `--source`) on a `learn/<topic>` branch in a worktree under the data directory, re-dating or
+  superseding existing lines and appending the rest to `references/learned.md`; a skeleton
+  `expert-<topic>` only when the delta carries a `skeleton` block; the push and PR commands are
+  printed, never run; the gate asks on `--promote`.
+- `partner-deps check|brief`: dependency currency through the ecosystems' own tools (cargo,
+  go, npm, pnpm, uv, poetry, the Terraform registry), hardened (`GOTOOLCHAIN=local`, scripts off,
+  no external cargo subcommand for the outdated list), cached for seven days per repository while
+  the lockfiles hold; `brief` reads the cache only and is in the session brief; `onboard` runs
+  the check, `wrap` runs it fresh before the PR (decision 21).
+- `knowledge-refresh.yml`: weekly, the two stalest skills are refreshed by the learner and arrive
+  as one pull request each; `learn-unknown-domain` eval.
+
 - `partner-rules` resolves mise tasks: `mise run <task>`, the `mise <task>` shorthand and
   `mise exec … -- <cmd>` are judged as the commands behind them, and reasons and `explain` name
   the origin (`via mise run deploy`). A task with `depends`, `file`, `shell`, `dir`, templating or

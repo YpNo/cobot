@@ -11,8 +11,9 @@ open-source repositories where efficiency matters more than ceremony. Design:
 design, section 15.
 
 Release 1 (0.1.0) is the dogfood release: everything below works from a checkout through
-`install.sh --dev` or `--project`. Release 1.1 adds Python and TypeScript builders, `ship`,
-`contribute`, `security-sweep`, the learner agent and journal compaction.
+`install.sh --dev` or `--project`. Release 1.1 is in progress: the learner, knowledge staleness,
+the dependency check and the weekly refresh are in; Python and TypeScript builders, `ship`,
+`contribute`, `security-sweep` and journal compaction follow.
 
 ## Architecture
 
@@ -21,8 +22,10 @@ Release 1 (0.1.0) is the dogfood release: everything below works from a checkout
 | Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/partner/protocol.md` |
 | Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/partner-rules`, `rules/default.rules` |
 | Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree | `bin/partner-memory`, `bin/partner-session` |
-| Agents | `challenger` (red team), `consultant` (read-only experts), `builder`, `rust-builder`, `go-builder` | `agents/` |
-| Workflow skills | `/partner:onboard`, `/partner:spec`, `/partner:build`, `/partner:wrap`, `/partner:rules` | `skills/` |
+| Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `partner-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_partner_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
+| Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/partner-deps` |
+| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder` | `agents/` |
+| Workflow skills | `/partner:onboard`, `/partner:spec`, `/partner:build`, `/partner:wrap`, `/partner:rules`, `/partner:learn` | `skills/` |
 | Knowledge skills | `lang-rust`, `lang-go`, `lang-terraform`, `lang-fallback`, `expert-gha` (path-gated), `consult-gha` (forked audit) | `skills/` |
 
 Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
@@ -96,6 +99,10 @@ repository is trusted. Then:
 - `/partner:rules check "git push --force"` dry-runs the gate; `explain` names every matching rule;
   `sync` renders the settings block for you to apply.
 - `/partner:consult-gha` audits the workflows of the current repository.
+- `/partner:learn <skill or topic> [question]` sends the learner to primary sources and read-list
+  commands and brings back a dated delta; the brief names the skills whose knowledge is stale.
+- `partner-deps check` reports dependency currency (never upgrades); the brief shows the cached
+  line and says when to run it again.
 
 Memory commands the orchestrator uses, also available by hand:
 
@@ -105,6 +112,18 @@ plugins/partner/bin/partner-memory check
 
 ```bash
 plugins/partner/bin/partner-memory findings add "ci.yml" "checkout is on a floating tag"
+```
+
+```bash
+plugins/partner/bin/partner-memory knowledge --stale
+```
+
+```bash
+plugins/partner/bin/partner-memory learn --promote --dry-run '{"topic": "go", "entries": []}'
+```
+
+```bash
+plugins/partner/bin/partner-deps check --fresh
 ```
 
 ## Testing
@@ -138,6 +157,12 @@ The eval job runs only on manual dispatch with the `evals` input, since each run
 session. `release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `marketplace.json`
 and the changelog agree, then creates the GitHub release from the changelog section. Every action
 is pinned to a commit SHA and tokens are read-only except the release job.
+`knowledge-refresh.yml` runs weekly (and on dispatch): it picks the two stalest knowledge skills
+without an open `learn/<skill>` branch, runs the learner read-only under a dollar budget, applies
+the delta with `learn --promote --in-place`, runs the plugin checks and opens one pull request
+per skill for the owner to review. Its secrets live in the `knowledge-refresh` environment; with
+only `GITHUB_TOKEN` the PR gets no CI run (the checks ran in the job), a fine-grained PAT in
+`KNOWLEDGE_REFRESH_TOKEN` restores it.
 
 ## Security
 

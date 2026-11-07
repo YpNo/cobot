@@ -81,7 +81,7 @@ copy a row, or resolve `gh api repos/<r>/commits/<tag> --jq .sha` and add the ro
 
 - [verified 2026-11-06 · src: https://docs.github.com/en/actions/concepts/security/artifact-attestations] attestations alone give SLSA v1.0 Build L2; a reusable workflow build gives L3.
 - [verified 2026-11-06 · src: https://github.com/google-github-actions/auth] always set an attribute condition on the pool; Direct WIF preferred over SA keys.
-- [reported 2026-11-06 · src: https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions] masking is exact-match only; base64/JSON-embedded or sliced secrets print in clear.
+- [verified 2026-11-07 · src: https://docs.github.com/en/actions/reference/security/secure-use] Secret redaction in logs 'largely relies on finding an exact match' of the secret value; a JSON/XML/YAML blob holding a secret 'significantly reduces the probability' it is redacted, and a transformed secret (Base64, URL-encoded) must be registered as a new secret (::add-mask::). Use one secret per sensitive value.
 
 ## Release engineering
 

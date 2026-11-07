@@ -25,7 +25,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           v="${TAG#v}"
-          grep -q "\"version\": \"$v\"" plugins/partner/.claude-plugin/plugin.json
+          grep -q "\"version\": \"$v\"" plugins/cobot/.claude-plugin/plugin.json
           grep -q "\"version\": \"$v\"" .claude-plugin/marketplace.json
           grep -q "^## \[$v\]" CHANGELOG.md
       - name: Release notes from the changelog

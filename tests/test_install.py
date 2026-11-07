@@ -12,8 +12,8 @@ from conftest import INSTALL, PLUGIN
 FAKE_CLAUDE = """#!/bin/sh
 case "$1 $2 $3" in
   "--version  ") echo "9.9.9 (Claude Code)" ;;
-  "plugin marketplace list") echo "Configured marketplaces:"; echo "  agentic-partner" ;;
-  "plugin list ") echo "Installed plugins:"; echo "  partner@agentic-partner"; echo "    Scope: project" ;;
+  "plugin marketplace list") echo "Configured marketplaces:"; echo "  cobot" ;;
+  "plugin list ") echo "Installed plugins:"; echo "  cobot@cobot"; echo "    Scope: project" ;;
   "plugin install "*) echo "installed $3 $4 $5"; pwd ;;
   "plugin uninstall "*)
     case "$5" in local) echo "not installed at local scope" >&2; exit 1 ;; esac
@@ -81,7 +81,7 @@ def test_install_dev_printsAliasWritesNothing(home):
     before = sorted(p.relative_to(home) for p in home.rglob("*"))
     result = run_install(["--dev"], home)
     assert result.returncode == 0
-    assert f"alias claude-partner='claude --plugin-dir \"{PLUGIN}\"'" in result.stdout
+    assert f"alias claude-cobot='claude --plugin-dir \"{PLUGIN}\"'" in result.stdout
     assert sorted(p.relative_to(home) for p in home.rglob("*")) == before
 
 
@@ -111,7 +111,7 @@ def test_install_project_installsInDir(home, tmp_path):
     result = run_install(["--project", str(target)], home)
     assert result.returncode == 0
     assert "already registered" in result.stdout
-    assert "installed partner@agentic-partner --scope project" in result.stdout
+    assert "installed cobot@cobot --scope project" in result.stdout
     assert str(target) in result.stdout
 
 
@@ -125,7 +125,7 @@ def test_install_user_usesRepoDir(home):
 
 
 def test_install_uninstall_defaultScopeProject(home):
-    assert "uninstalled partner@agentic-partner --scope project" in run_install(["--uninstall"], home).stdout
+    assert "uninstalled cobot@cobot --scope project" in run_install(["--uninstall"], home).stdout
     assert "--scope user" in run_install(["--uninstall", "user"], home).stdout
 
 
@@ -137,10 +137,10 @@ def test_install_withoutClaude_installFails(home):
 
 def test_install_sourceGithub_registersFromGithub(home, tmp_path):
     exe = hermetic_bin(home, fake_claude=False) / "claude"
-    exe.write_text(FAKE_CLAUDE.replace('echo "  agentic-partner"', "true"))
+    exe.write_text(FAKE_CLAUDE.replace('echo "  cobot"', "true"))
     exe.chmod(0o755)
     result = run_install(["--project", str(tmp_path), "--source", "github"], home, fake_claude=False)
-    assert "registering marketplace from YpNo/agentic-partner" in result.stdout
+    assert "registering marketplace from YpNo/cobot" in result.stdout
     assert os.path.isdir(tmp_path)
 
 
@@ -149,8 +149,8 @@ def test_install_refresh_uninstallsThenInstallsAtTheInstalledScope(home, tmp_pat
     target.mkdir()
     result = run_install(["--refresh", str(target)], home)
     assert result.returncode == 0
-    assert "uninstalled partner@agentic-partner --scope project" in result.stdout
-    assert "installing partner@agentic-partner at scope project" in result.stdout
+    assert "uninstalled cobot@cobot --scope project" in result.stdout
+    assert "installing cobot@cobot at scope project" in result.stdout
     assert "at scope local" not in result.stdout and "nothing to uninstall" not in result.stdout
     assert str(target) in result.stdout
 

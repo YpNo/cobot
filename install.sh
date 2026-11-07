@@ -1,5 +1,5 @@
 #!/bin/sh
-# agentic-partner installer. POSIX sh. Writes nothing outside the chosen scope.
+# cobot installer. POSIX sh. Writes nothing outside the chosen scope.
 #   --dev                 print the session-only alias (claude --plugin-dir); writes nothing
 #   --project [DIR]       register the marketplace and install at project scope in DIR (default: .)
 #   --refresh [DIR]       uninstall and reinstall at the installed scope (project or local): the cache only refreshes on a version change
@@ -11,10 +11,10 @@
 set -eu
 
 REPO_DIR=$(cd "$(dirname "$0")" && pwd)
-PLUGIN_DIR="$REPO_DIR/plugins/partner"
-MARKETPLACE=agentic-partner
-PLUGIN=partner
-GITHUB_SOURCE=YpNo/agentic-partner
+PLUGIN_DIR="$REPO_DIR/plugins/cobot"
+MARKETPLACE=cobot
+PLUGIN=cobot
+GITHUB_SOURCE=YpNo/cobot
 HOME_DIR=${HOME:-/root}
 CLAUDE_DIR=${CLAUDE_CONFIG_DIR:-$HOME_DIR/.claude}
 LEGACY_DIR=$HOME_DIR/.agents
@@ -42,9 +42,9 @@ ensure_marketplace() {
 }
 
 cmd_dev() {
-  echo "alias claude-partner='claude --plugin-dir \"$PLUGIN_DIR\"'"
+  echo "alias claude-cobot='claude --plugin-dir \"$PLUGIN_DIR\"'"
   echo "# session only: nothing is written. Verify with:"
-  echo "#   claude-partner -p 'name the agent types whose name starts with partner:'"
+  echo "#   claude-cobot -p 'name the agent types whose name starts with cobot:'"
 }
 
 cmd_install() {
@@ -92,14 +92,14 @@ report_overlaps() {
     [ -e "$file" ] || continue
     name=$(basename "$file" .md)
     if [ -e "$CLAUDE_DIR/agents/$name.md" ] || [ -L "$CLAUDE_DIR/agents/$name.md" ]; then
-      echo "  agent '$name': also present in $CLAUDE_DIR/agents (plugin one is 'partner:$name'; no conflict)"
+      echo "  agent '$name': also present in $CLAUDE_DIR/agents (plugin one is 'cobot:$name'; no conflict)"
     fi
   done
   for dir in "$PLUGIN_DIR"/skills/*/; do
     [ -d "$dir" ] || continue
     name=$(basename "$dir")
     if [ -e "$CLAUDE_DIR/skills/$name" ] || [ -L "$CLAUDE_DIR/skills/$name" ]; then
-      echo "  skill '$name': also present in $CLAUDE_DIR/skills (plugin one is '/partner:$name'; no conflict)"
+      echo "  skill '$name': also present in $CLAUDE_DIR/skills (plugin one is '/cobot:$name'; no conflict)"
     fi
   done
 }

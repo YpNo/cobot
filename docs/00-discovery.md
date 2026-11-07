@@ -1,4 +1,4 @@
-# Discovery — agentic-partner (2026-11-05)
+# Discovery — cobot (2026-11-05)
 
 Working notes from the first session. Not a design yet: findings, a candidate shape, and
 the questions whose answers change the design.
@@ -19,7 +19,7 @@ the questions whose answers change the design.
   `/code-review`, `/security-review`, `/simplify`, Workflow tool, persistent memory.
   Version one routes to them instead of duplicating. Version two must keep that rule.
 
-## Work the partner must serve (from GitHub + sessions)
+## Work the cobot must serve (from GitHub + sessions)
 
 - Google Cloud: Terraform modules (GKE, folders, k8s objects, essential contacts),
   sovereign universe work (GCD / S3NS interceptors), gcp-platform, argocd (private).
@@ -36,18 +36,18 @@ the questions whose answers change the design.
 - No Google Cloud expert beyond `gcd-universe`.
 - No reverse-engineering protocol, no upstream-contribution flow.
 - No "foreign repo" memory mode (cannot commit `.agent/` into headscale or gitea).
-- Not a plugin (deferred in ADR-0001 until proven). No evals, no CI for the partner itself.
+- Not a plugin (deferred in ADR-0001 until proven). No evals, no CI for the cobot itself.
 
 ## Candidate shape (to confirm)
 
 One repo (this one) as a Claude Code plugin marketplace, layered:
 
-1. `partner-core` — orchestrator protocol: phases, proportionality, memory files, router,
+1. `cobot-core` — orchestrator protocol: phases, proportionality, memory files, router,
    hooks (session start, rtk), templates. The orchestrator is Claude Code's main thread.
-2. `partner-experts-<domain>` — narrow-tool agents that return a decision or a findings
+2. `cobot-experts-<domain>` — narrow-tool agents that return a decision or a findings
    list: architecture, languages, security (appsec, supply chain, reverse engineering),
    delivery (CI/CD, GitOps, config management, policy), cloud (GCP incl. GDC), docs/test.
-3. `partner-flows` — new phase skills: `/contribute`, `/reverse`, `/infra-review`,
+3. `cobot-flows` — new phase skills: `/contribute`, `/reverse`, `/infra-review`,
    `/research`. Existing five phases kept.
 
 `workstation-starter` keeps bootstrapping the machine and installs the plugin.

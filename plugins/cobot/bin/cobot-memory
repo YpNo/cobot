@@ -1,0 +1,707 @@
+#!/usr/bin/env python3
+"""cobot-memory: the committed memory of a repository (.agent/), read and written for the orchestrator.
+
+Commands
+  path                             the resolved .agent directory (worktree-aware)
+  init [--profile P] [--foreign] [--add-identity] [--trust-root]
+                                   create CONTEXT, JOURNAL, FINDINGS from the templates; never overwrites
+  trust                            trusted: <reason> | untrusted: <reason>
+  check                            mode, trust, files, journal order, brief size
+  brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
+  journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
+  findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
+  learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
+  learn --promote [--source DIR] [--in-place] [JSON|TOPIC]
+                                   also carry the general entries (or a topic's pending general lines) into the
+                                   cobot checkout: a learn/<topic> branch in a worktree, or in place
+  knowledge [--stale] [--json] [--brief] [SKILL]   dated knowledge lines per skill: age, stale, reported
+  compact [--keep N] [--summary TEXT] [--dry-run] [--force]
+                                   once JOURNAL.md passes 400 lines, fold every entry but the last N (10) into one
+                                   dated entry (a model summary when given, else a digest); the raw text goes to
+                                   .agent/JOURNAL-archive.md
+  risks add RULE FILE SYMBOL --why TEXT [--by WHO] [--days N]   accept a sweep finding for at most 90 days
+  risks list                       accepted risks with their expiry state
+
+Project entries go to .agent/; general entries reach the plugin only through --promote (an ask action).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+from _cobot_common import (  # noqa: E402
+    SECRET_RE,
+    data_dir,
+    host_owner_repo,
+    memory_dir,
+    cobot_config_dir,
+    plugin_root,
+    remotes,
+    repo_root,
+    root_commits,
+)
+from _cobot_knowledge import (  # noqa: E402
+    STATUSES,
+    Index,
+    brief_line,
+    claim_key,
+    format_line,
+    place,
+    promote,
+    report,
+    scan_memory,
+    scan_plugin,
+    source_checkout,
+    summaries,
+)
+
+DEFAULT_BUDGET = 6000
+CONTEXT_CAP = 2500  # the least CONTEXT.md gets in the brief
+CONTEXT_MAX = 4000  # the most, when a short journal leaves room
+ENTRY_CAP = 1200
+FINDINGS_FLOOR = 400
+SECTION_MARKER_RESERVE = 120
+BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
+KNOWLEDGE_CAP = 80
+ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
+FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
+FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
+JOURNAL_COMPACT_LINES = 400
+COMPACT_KEEP = 10
+RISK_RE = re.compile(r"^\| *(R-\d+) *\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$")
+RISK_MAX_DAYS = 90
+
+
+class Memory:
+    def __init__(self, cwd: str | None = None) -> None:
+        self.root = repo_root(cwd)
+        self.dir = memory_dir(cwd)
+
+    # ---------------------------------------------------------------- trust
+
+    def external_path(self) -> Path | None:
+        origin = remotes(self.root).get("origin")
+        parts = host_owner_repo(origin) if origin else None
+        return data_dir() / parts[0] / parts[1] / parts[2] if parts else None
+
+    def trust(self) -> tuple[bool, str]:
+        if self.dir.is_symlink():
+            expected = self.external_path()
+            if expected and self.dir.resolve() == expected.resolve():
+                return True, "foreign mode, memory outside the tree"
+            return False, f".agent is a symlink that does not resolve to the external memory for origin ({expected})"
+        remote_map = remotes(self.root)
+        identities = {line.lower() for line in read_lines(cobot_config_dir() / "identities")}
+        strangers: list[str] = []
+        if remote_map:
+            owners = {name: f"{p[0]}/{p[1]}" for name, url in remote_map.items() if (p := host_owner_repo(url))}
+            if owners and set(owners.values()) <= identities:
+                return True, f"every remote owner is an identity ({', '.join(sorted(set(owners.values())))})"
+            strangers = [f"{name} -> {owner}" for name, owner in sorted(owners.items()) if owner not in identities]
+        roots = set(root_commits(self.root))
+        trusted = {line.split()[0] for line in read_lines(cobot_config_dir() / "trusted") if line.split()}
+        if roots and roots & trusted:
+            return True, "root commit listed in ~/.claude/cobot/trusted"
+        if not remote_map and not roots:
+            return False, "no remote and no commit: onboard with --trust-root once the first commit exists"
+        detail = f" ({', '.join(strangers)})" if strangers else ""
+        return False, f"no identity matches every remote{detail} and the root commit is not trusted"
+
+    # ---------------------------------------------------------------- files
+
+    def read(self, name: str) -> str:
+        path = self.dir / name
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    def journal_entries(self) -> list[tuple[str, str]]:
+        """(date, text) per entry, newest first; ties keep the later position first."""
+        text = self.read("JOURNAL.md")
+        starts = [m.start() for m in ENTRY_RE.finditer(text)]
+        entries = []
+        for i, start in enumerate(starts):
+            end = starts[i + 1] if i + 1 < len(starts) else len(text)
+            chunk = text[start:end].strip()
+            entries.append((chunk[3:13], chunk))
+        indexed = list(enumerate(entries))
+        indexed.sort(key=lambda item: (item[1][0], item[0]), reverse=True)
+        return [entry for _, entry in indexed]
+
+    def findings(self) -> list[tuple[str, str, str, str]]:
+        rows = [m.groups() for line in self.read("FINDINGS.md").splitlines() if (m := FINDING_RE.match(line))]
+        return [tuple(cell.strip() for cell in row) for row in rows]
+
+    def open_findings(self) -> list[tuple[str, str, str, str]]:
+        return [f for f in self.findings() if f[3].strip().lower() in ("", "open")]
+
+    def knowledge_topics(self) -> list[str]:
+        folder = self.dir / "knowledge"
+        return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+    def specs(self) -> list[str]:
+        folder = self.dir / "specs"
+        return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+
+def read_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")]
+
+
+# ---------------------------------------------------------------- brief
+
+
+def context_head(text: str, limit: int = CONTEXT_CAP) -> str:
+    kept: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## Shape") or line.startswith("## Applies"):
+            break
+        kept.append(line)
+    return cap_sections("\n".join(kept).strip(), limit)
+
+
+TRUNCATED_MARKER = "\n…(truncated)"
+
+
+def cap(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(TRUNCATED_MARKER)].rstrip() + TRUNCATED_MARKER
+
+
+def cap_sections(text: str, limit: int) -> str:
+    """Cap on ``## `` boundaries: whole sections are dropped from the end and named, so the owner
+    can see what the brief no longer carries and reorder CONTEXT.md if it matters."""
+    if len(text) <= limit:
+        return text
+    sections = [section for section in re.split(r"(?m)^(?=## )", text) if section]
+    kept: list[str] = []
+    dropped: list[str] = []
+    used = 0
+    for section in sections:
+        if not dropped and used + len(section) <= limit - SECTION_MARKER_RESERVE:
+            kept.append(section)
+            used += len(section)
+        else:
+            dropped.append(section.splitlines()[0].lstrip("# ").strip() if section.startswith("## ") else "preamble")
+    if not kept:
+        return cap(text, limit)
+    names = ", ".join(dropped)
+    if len(names) > SECTION_MARKER_RESERVE - 30:
+        names = names[: SECTION_MARKER_RESERVE - 31] + "…"
+    return "".join(kept).rstrip() + f"\n…(truncated) sections dropped: {names}"
+
+
+def trim_entry(entry: str) -> str:
+    """Keep the heading, then Open and Next, then the rest, inside ENTRY_CAP."""
+    if len(entry) <= ENTRY_CAP:
+        return entry
+    lines = entry.splitlines()
+    heading, body = lines[0], lines[1:]
+
+    def rank(line: str) -> int:
+        for i, field in enumerate(FIELD_PRIORITY):
+            if line.startswith(f"{field}:"):
+                return i
+        return len(FIELD_PRIORITY)
+
+    ordered = sorted(body, key=rank)
+    out, used = [heading], len(heading)
+    for line in ordered:
+        if used + len(line) + 1 > ENTRY_CAP:
+            out.append("…(entry truncated)")
+            break
+        out.append(line)
+        used += len(line) + 1
+    return "\n".join(out)
+
+
+def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
+    if trust_check:
+        trusted, reason = mem.trust()
+        if not trusted:
+            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Run /cobot:onboard."
+    entries = mem.journal_entries()[:2]
+    journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
+    findings = mem.open_findings()
+    findings_block = ""
+    if findings:
+        rows = "\n".join(f"| {a} | {b} | {c} | {d} |" for a, b, c, d in findings[-3:])
+        findings_block = f"## FINDINGS open: {len(findings)}\n{rows}"
+    tail = []
+    if mem.knowledge_topics():
+        tail.append("knowledge: " + ", ".join(mem.knowledge_topics()))
+    if mem.specs():
+        tail.append("specs: " + ", ".join(mem.specs()))
+    if (mem.dir / "ARCHITECTURE.md").is_file():
+        tail.append("ARCHITECTURE.md present (read on demand)")
+    reserve = min(FINDINGS_FLOOR, len(findings_block)) + sum(len(t) + 1 for t in tail)
+    room = budget - reserve - len(journal_block) - BLOCK_SEPARATORS
+    context = context_head(mem.read("CONTEXT.md"), max(CONTEXT_CAP, min(CONTEXT_MAX, room)))
+    blocks = [block for block in ("## CONTEXT\n" + context if context else "", journal_block) if block]
+    text = cap("\n\n".join(blocks), max(budget - reserve, 200))
+    parts = [text]
+    if findings_block:
+        parts.append(cap(findings_block, max(budget - len(text), FINDINGS_FLOOR)))
+    parts.extend(tail)
+    return "\n\n".join(p for p in parts if p)
+
+
+# ---------------------------------------------------------------- writes
+
+
+def template(name: str, profile: str, repo_name: str) -> str:
+    text = (plugin_root() / "skills" / "onboard" / "templates" / name).read_text(encoding="utf-8")
+    return text.replace("{{PROFILE}}", profile).replace("{{NAME}}", repo_name).replace("{{DATE}}", date.today().isoformat())
+
+
+def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
+    lines = []
+    if "foreign" in flags:
+        external = mem.external_path()
+        if external is None:
+            return "init: --foreign needs an origin remote to derive the external path"
+        external.mkdir(parents=True, exist_ok=True)
+        if mem.dir.exists() and not mem.dir.is_symlink():
+            return f"init: {mem.dir} exists and is not a symlink; move it aside first"
+        if not mem.dir.is_symlink():
+            mem.dir.symlink_to(external, target_is_directory=True)
+        exclude = mem.root / ".git" / "info" / "exclude"
+        if exclude.parent.is_dir() and ".agent" not in read_lines(exclude):
+            with exclude.open("a", encoding="utf-8") as handle:
+                handle.write(".agent\n")
+        lines.append(f"foreign mode: {mem.dir} -> {external}; .agent excluded from git")
+    mem.dir.mkdir(parents=True, exist_ok=True)
+    profile = options.get("profile", "library")
+    for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md"):
+        target = mem.dir / name
+        if target.exists():
+            lines.append(f"kept {target}")
+        else:
+            target.write_text(template(name, profile, mem.root.name), encoding="utf-8")
+            lines.append(f"wrote {target}")
+    if "add-identity" in flags:
+        lines.append(add_identity(mem))
+    if "trust-root" in flags:
+        lines.append(add_trusted_root(mem))
+    return "\n".join(lines)
+
+
+def append_unique(path: Path, line: str) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if line in read_lines(path):
+        return False
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    return True
+
+
+def add_identity(mem: Memory) -> str:
+    origin = remotes(mem.root).get("origin")
+    parts = host_owner_repo(origin) if origin else None
+    if not parts:
+        return "identity: no origin remote to take the owner from"
+    line = f"{parts[0]}/{parts[1]}"
+    added = append_unique(cobot_config_dir() / "identities", line)
+    return f"identity {'added' if added else 'already present'}: {line}"
+
+
+def add_trusted_root(mem: Memory) -> str:
+    roots = root_commits(mem.root)
+    if not roots:
+        return "trust-root: no commit yet"
+    added = append_unique(cobot_config_dir() / "trusted", f"{roots[0]} {mem.root.name}")
+    return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
+
+
+def read_payload(positional: list[str]) -> str:
+    """The payload: the remaining argument when one is given, else stdin; a terminal is not waited on."""
+    if positional:
+        return positional[0]
+    if sys.stdin.isatty():
+        return ""
+    return sys.stdin.read()
+
+
+def cmd_journal_add(mem: Memory, entry: str) -> str:
+    entry = entry.strip()
+    if not re.match(r"^## \d{4}-\d{2}-\d{2} — .+", entry):
+        return "journal: the entry must start with '## YYYY-MM-DD — title'"
+    missing = [f for f in ("Changed:", "Why:", "Proof:") if f not in entry]
+    if missing:
+        return f"journal: missing fields {', '.join(missing)}"
+    path = mem.dir / "JOURNAL.md"
+    text = path.read_text(encoding="utf-8") if path.is_file() else "# Journal\n"
+    path.write_text(text.rstrip("\n") + "\n\n" + entry + "\n", encoding="utf-8")
+    return f"journal: appended to {path}"
+
+
+def next_finding_number(mem: Memory) -> int:
+    numbers = [int(f[0][2:]) for f in mem.findings()]
+    return max(numbers, default=0) + 1
+
+
+def cmd_findings_add(mem: Memory, seen: str, observation: str, goes_to: str) -> str:
+    path = mem.dir / "FINDINGS.md"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(template("FINDINGS.md", "", mem.root.name), encoding="utf-8")
+    number = f"F-{next_finding_number(mem):02d}"
+    clean = [s.replace("|", "/").replace("\n", " ").strip() for s in (seen, observation, goes_to)]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"| {number} | {clean[0]} | {clean[1]} | {clean[2]} |\n")
+    return f"findings: {number} added"
+
+
+def cmd_findings_list(mem: Memory, only_open: bool) -> str:
+    rows = mem.open_findings() if only_open else mem.findings()
+    if not rows:
+        return "findings: none" + (" open" if only_open else "")
+    return "\n".join(f"{a} · {b} · {c} · {d or 'open'}" for a, b, c, d in rows)
+
+
+def cmd_findings_close(mem: Memory, number: str, reason: str) -> str:
+    path = mem.dir / "FINDINGS.md"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    for i, line in enumerate(lines):
+        match = FINDING_RE.match(line)
+        if match and match.group(1) == number:
+            lines[i] = f"| {number} | {match.group(2)} | {match.group(3)} | {reason.replace('|', '/')} |"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return f"findings: {number} -> {reason}"
+    return f"findings: {number} not found"
+
+
+def knowledge_line(entry: dict) -> str:
+    return format_line(entry, date.today())
+
+
+def is_general(entry: dict) -> bool:
+    return entry.get("scope") in ("general", "plugin")
+
+
+def pending_general(mem: Memory, topic: str) -> list[dict]:
+    """Lines tagged ``(general)`` in ``.agent/knowledge/<topic>.md``, as delta entries."""
+    entries = []
+    for line in scan_memory(mem.dir).get(f"knowledge/{topic}", []):
+        if line.claim.endswith("(general)"):
+            claim = re.sub(r"\s*\(general\)\s*$", "", line.claim)
+            entries.append({"claim": claim, "status": line.status, "source": line.source, "checked": line.checked.isoformat(), "scope": "general"})
+    return entries
+
+
+def filter_delta(delta: dict, keep_assumed: bool) -> tuple[list[dict], list[str]]:
+    kept, skipped = [], []
+    seen: set[str] = set()
+    for entry in delta.get("entries", []):
+        claim = str(entry.get("claim", "")).strip()
+        status = str(entry.get("status", "")).strip()
+        key = claim_key(claim)
+        if not claim or status not in STATUSES:
+            skipped.append(f"malformed: {claim[:50] or '<empty>'}")
+        elif status == "assumed" and not keep_assumed:
+            skipped.append(f"assumed, not written: {claim[:50]}")
+        elif key in seen:
+            skipped.append(f"duplicate in delta: {claim[:50]}")
+        elif status != "assumed" and not str(entry.get("source", "")).strip():
+            skipped.append(f"no source: {claim[:50]}")
+        else:
+            seen.add(key)
+            kept.append({**entry, "claim": claim, "status": status})
+    return kept, skipped
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9-]+", "-", text.lower()).strip("-")
+
+
+def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool) -> list[str]:
+    if not entries:
+        return ["  promote: no general entry"]
+    checkout = source_checkout(source)
+    if checkout is None:
+        return ["  promote: no cobot checkout known (a directory marketplace, $COBOT_SOURCE or --source DIR)"]
+    worktrees = data_dir().parent / "promote"
+    result = promote(checkout, topic, entries, delta, date.today(), in_place, worktrees)
+    if isinstance(result, str):
+        return [f"  {result}"]
+    return [f"  {line}" for line in result.lines()]
+
+
+def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False) -> str:
+    try:
+        delta = json.loads(raw)
+    except json.JSONDecodeError as error:
+        if promoting and raw.strip() and slug(raw.strip()) == raw.strip():
+            entries = pending_general(mem, raw.strip())
+            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place)])
+        return f"learn: delta is not JSON ({error})"
+    if not isinstance(delta, dict):
+        return "learn: delta must be a JSON object"
+    topic = slug(str(delta.get("topic", "")))
+    if not topic:
+        return "learn: delta needs a topic"
+    if SECRET_RE.search(raw):
+        return "learn: refused, the delta contains a secret-like string"
+    kept, skipped = filter_delta(delta, keep_assumed)
+    general = [entry for entry in kept if is_general(entry)]
+    if promoting:
+        kept = [entry for entry in kept if not is_general(entry)]
+    path = mem.dir / "knowledge" / f"{topic}.md"
+    index = Index([path] if path.is_file() else [], dry=dry_run)
+    room = KNOWLEDGE_CAP - len(index.lines)
+    new_lines, changed = [], []
+    for entry in kept:
+        kind, text, _file = place(entry, index, date.today(), tag_general=True)
+        if kind == "skipped":
+            skipped.append(text)
+        elif kind in ("redated", "superseded"):
+            changed.append(f"{kind}: {text}")
+        elif room <= 0:
+            skipped.append(f"over the {KNOWLEDGE_CAP}-line cap, consolidate first: {text[:50]}")
+        else:
+            room -= 1
+            new_lines.append(text)
+    counts = f"learn: topic {topic}, {len(new_lines)} new line(s), {len(skipped)} skipped"
+    counts += f", {len(changed)} re-dated or superseded" if changed else ""
+    report = [counts + (f", {len(general)} general to promote" if promoting else "")]
+    report.extend(f"  + {line}" for line in new_lines)
+    report.extend(f"  ~ {line}" for line in changed)
+    report.extend(f"  - {reason}" for reason in skipped)
+    for item in delta.get("unverified", []):
+        report.append(f"  ? unverified: {item}")
+    if (new_lines or changed) and not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        head = path.read_text(encoding="utf-8").rstrip("\n") if path.is_file() else f"# knowledge: {topic}\n"
+        if new_lines:
+            path.write_text(head.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n", encoding="utf-8")
+        report.append(f"  written: {path}")
+    if promoting and not dry_run:
+        report.extend(promote_entries(mem, topic, general, delta, source, in_place))
+    elif promoting:
+        report.append(f"  promote: dry run, {len(general)} general entry(ies) would be promoted")
+    return "\n".join(report)
+
+
+def cmd_knowledge(mem: Memory, skill: str, stale_only: bool, as_json: bool, brief: bool) -> str:
+    groups = scan_plugin(plugin_root())
+    if mem.trust()[0]:
+        groups.update(scan_memory(mem.dir))
+    if skill:
+        groups = {name: lines for name, lines in groups.items() if name in (skill, f"knowledge/{skill}")}
+    items = summaries(groups, date.today())
+    if brief:
+        return brief_line(items, date.today())
+    return report(items, date.today(), stale_only=stale_only, as_json=as_json)
+
+
+def digest(entry: str) -> list[str]:
+    """One or more digest lines for an entry: compacted entries keep their bullets, others give
+    date, title and the first sentence of ``Changed:``."""
+    heading, _, body = entry.partition("\n")
+    date_text, title = heading[3:13], heading[13:].lstrip(" —-").strip()
+    if title.startswith("compacted "):
+        return [line for line in body.splitlines() if line.startswith(("- ", "  open: "))]
+    changed = next((line.partition(":")[2].strip() for line in body.splitlines() if line.startswith("Changed:")), "")
+    first = re.split(r"(?<=[.;])\s", changed, maxsplit=1)[0].strip()
+    lines = [f"- {date_text} {title}: {first}" if first else f"- {date_text} {title}"]
+    open_items = next((line.partition(":")[2].strip() for line in body.splitlines() if line.startswith("Open:")), "")
+    if open_items and open_items not in ("—", "-", "none", "nothing"):
+        lines.append(f"  open: {open_items[:300]}")
+    return lines
+
+
+def positional_entries(text: str) -> list[str]:
+    starts = [m.start() for m in ENTRY_RE.finditer(text)]
+    return [text[start : starts[i + 1] if i + 1 < len(starts) else len(text)].rstrip() for i, start in enumerate(starts)]
+
+
+def cmd_compact(mem: Memory, keep: int, summary: str, dry_run: bool, force: bool) -> str:
+    path = mem.dir / "JOURNAL.md"
+    text = mem.read("JOURNAL.md")
+    total = len(text.splitlines())
+    if total <= JOURNAL_COMPACT_LINES and not force:
+        return f"compact: JOURNAL.md has {total} lines (threshold {JOURNAL_COMPACT_LINES}); nothing to do"
+    order = journal_order(mem)
+    if order.startswith("mixed"):
+        return "compact: the journal mixes both orders; normalise it first"
+    entries = positional_entries(text)
+    if len(entries) <= keep:
+        return f"compact: {len(entries)} entries, keeping {keep}; nothing to fold"
+    newest_bottom = order.startswith("newest at bottom") or order == "single entry"
+    folded = entries[:-keep] if newest_bottom else entries[keep:]
+    kept = entries[-keep:] if newest_bottom else entries[:keep]
+    dates = sorted(e[3:13] for e in folded)
+    body = summary.strip() or "\n".join(line for e in folded for line in digest(e))
+    merged = f"## {dates[-1]} — compacted {dates[0]} → {dates[-1]} ({len(folded)} entries)\n{body}\nProof: raw entries in JOURNAL-archive.md and in git history before {dates[-1]}."
+    head = text[: ENTRY_RE.search(text).start()].rstrip("\n") if ENTRY_RE.search(text) else "# Journal"
+    new_entries = [*kept, merged] if not newest_bottom else [merged, *kept]
+    new_text = head + "\n\n" + "\n\n".join(new_entries) + "\n"
+    report = [f"compact: folding {len(folded)} of {len(entries)} entries ({dates[0]} → {dates[-1]}), keeping {keep}; {total} -> {len(new_text.splitlines())} lines"]
+    report.append(f"  summary: {'provided' if summary.strip() else 'mechanical digest'}")
+    if dry_run:
+        report.append("  dry run, nothing written")
+        return "\n".join(report)
+    archive = mem.dir / "JOURNAL-archive.md"
+    previous = archive.read_text(encoding="utf-8") if archive.is_file() else "# Journal archive (raw entries folded by cobot-memory compact)\n"
+    archive.write_text(previous.rstrip("\n") + "\n\n" + "\n\n".join(folded) + "\n", encoding="utf-8")
+    path.write_text(new_text, encoding="utf-8")
+    report.append(f"  written: {path}; archive: {archive}")
+    return "\n".join(report)
+
+
+def accepted_risks(mem: Memory) -> list[tuple[str, ...]]:
+    """(id, rule, file, symbol, why, by, accepted, expires) per row of .agent/accepted-risks.md."""
+    rows = []
+    for line in mem.read("accepted-risks.md").splitlines():
+        match = RISK_RE.match(line)
+        if match:
+            rows.append(tuple(cell.strip() for cell in match.groups()))
+    return rows
+
+
+def cmd_risks_add(mem: Memory, rule: str, file: str, symbol: str, why: str, by: str, days: int) -> str:
+    if not why.strip():
+        return "risks: --why is required (the reason the owner accepts it)"
+    days = max(1, min(days, RISK_MAX_DAYS))
+    path = mem.dir / "accepted-risks.md"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            (plugin_root() / "skills" / "security-sweep" / "templates" / "accepted-risks.md").read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    number = f"R-{max((int(r[0][2:]) for r in accepted_risks(mem)), default=0) + 1:02d}"
+    today = date.today()
+    expires = date.fromordinal(today.toordinal() + days).isoformat()
+    cells = [c.replace("|", "/").replace("\n", " ").strip() for c in (rule, file, symbol, why, by or "owner")]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"| {number} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} | {cells[4]} | {today.isoformat()} | {expires} |\n")
+    return f"risks: {number} accepted until {expires} ({cells[0]} · {cells[1]} · {cells[2]})"
+
+
+def cmd_risks_list(mem: Memory) -> str:
+    rows = accepted_risks(mem)
+    if not rows:
+        return "risks: none accepted"
+    today = date.today().isoformat()
+    return "\n".join(f"{rid} · {rule} · {file} · {symbol} · expires {expires} ({'expired' if expires < today else 'ok'}) · {why}" for rid, rule, file, symbol, why, _by, _acc, expires in rows)
+
+
+def journal_order(mem: Memory) -> str:
+    dates = [d for d, _ in sorted(((e[0], i) for i, e in enumerate(mem.journal_entries())), key=lambda x: x[1])]
+    raw = [m.group(1) for m in ENTRY_RE.finditer(mem.read("JOURNAL.md"))]
+    if len(raw) < 2:
+        return "single entry" if raw else "no entries"
+    if raw == sorted(raw):
+        return "newest at bottom"
+    if raw == sorted(raw, reverse=True):
+        return "newest on top (legacy order, read correctly)"
+    return "mixed order" if dates else "mixed order"
+
+
+def cmd_check(mem: Memory) -> str:
+    trusted, reason = mem.trust()
+    mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
+    lines = [f"memory: {mem.dir}", f"mode: {mode}", f"trust: {'trusted' if trusted else 'untrusted'} ({reason})"]
+    for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "ARCHITECTURE.md", "cobot.rules"):
+        path = mem.dir / name
+        if path.is_file():
+            count = len(path.read_text(encoding="utf-8").splitlines())
+            lines.append(f"{name}: {count} lines")
+    lines.append(f"journal: {journal_order(mem)}")
+    lines.append(f"findings: {len(mem.open_findings())} open / {len(mem.findings())} total")
+    lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
+    brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
+    lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
+    context_lines = len(mem.read("CONTEXT.md").splitlines())
+    if context_lines > 120:
+        lines.append(f"warning: CONTEXT.md has {context_lines} lines (> 120), trim the Shape section")
+    if len(mem.read("JOURNAL.md").splitlines()) > JOURNAL_COMPACT_LINES:
+        lines.append(f"warning: JOURNAL.md over {JOURNAL_COMPACT_LINES} lines; run cobot-memory compact")
+    risks = accepted_risks(mem)
+    if risks:
+        expired = [f"{row[0]} ({row[-1]})" for row in risks if row[-1] < date.today().isoformat()]
+        lines.append(f"accepted risks: {len(risks)}" + (f"; expired: {', '.join(expired)}" if expired else ""))
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- CLI
+
+
+def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    flags: set[str] = set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--profile", "--budget", "--goes-to", "--source", "--keep", "--summary", "--why", "--by", "--days") and i + 1 < len(argv):
+            options[arg[2:]] = argv[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--"):
+            flags.add(arg[2:])
+        else:
+            positional.append(arg)
+        i += 1
+    return positional, options, flags
+
+
+def main(argv: list[str]) -> int:
+    positional, options, flags = parse(argv)
+    mem = Memory()
+    command = positional[0] if positional else ""
+    sub = positional[1] if len(positional) > 1 else ""
+    if command == "path":
+        print(mem.dir)
+    elif command == "init":
+        print(cmd_init(mem, options, flags))
+    elif command == "trust":
+        trusted, reason = mem.trust()
+        print(f"{'trusted' if trusted else 'untrusted'}: {reason}")
+    elif command == "check":
+        print(cmd_check(mem))
+    elif command == "brief":
+        print(build_brief(mem, int(options.get("budget", DEFAULT_BUDGET)), trust_check="no-trust-check" not in flags))
+    elif command == "journal" and sub == "add":
+        print(cmd_journal_add(mem, read_payload(positional[2:])))
+    elif command == "findings" and sub == "add" and len(positional) >= 4:
+        print(cmd_findings_add(mem, positional[2], positional[3], options.get("goes-to", "")))
+    elif command == "findings" and sub == "list":
+        print(cmd_findings_list(mem, "open" in flags))
+    elif command == "findings" and sub == "close" and len(positional) >= 4:
+        print(cmd_findings_close(mem, positional[2], positional[3]))
+    elif command == "learn":
+        print(
+            cmd_learn(
+                mem,
+                read_payload(positional[1:]),
+                "dry-run" in flags,
+                "keep-assumed" in flags,
+                promoting="promote" in flags,
+                source=options.get("source"),
+                in_place="in-place" in flags,
+            )
+        )
+    elif command == "knowledge":
+        print(cmd_knowledge(mem, sub, "stale" in flags, "json" in flags, "brief" in flags))
+    elif command == "risks" and sub == "add" and len(positional) >= 5:
+        print(cmd_risks_add(mem, positional[2], positional[3], positional[4], options.get("why", ""), options.get("by", ""), int(options.get("days", RISK_MAX_DAYS))))
+    elif command == "risks" and sub == "list":
+        print(cmd_risks_list(mem))
+    elif command == "compact":
+        print(cmd_compact(mem, int(options.get("keep", COMPACT_KEEP)), options.get("summary", ""), "dry-run" in flags, "force" in flags))
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

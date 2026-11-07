@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""cobot-session: the SessionStart payload (protocol + rule counts + memory brief + knowledge and deps lines).
+
+Usage: cobot-session start < hook.json
+Prints hookSpecificOutput.additionalContext, at most 10 000 characters. Never blocks a session:
+on any error it still prints the protocol and one line naming the error.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+from _cobot_common import plugin_root  # noqa: E402
+
+TOTAL_CAP = 10_000
+BRIEF_CAP = 6_000
+LINES_RESERVE = 500  # room kept for the knowledge and dependency lines
+DEADLINE = 25  # seconds shared by every tool call; the hook has 30
+
+
+def protocol_text() -> str:
+    return (plugin_root() / "protocol.md").read_text(encoding="utf-8").strip()
+
+
+class Clock:
+    """One deadline shared by the tool calls of a payload."""
+
+    def __init__(self, seconds: float = DEADLINE) -> None:
+        self.end = time.monotonic() + seconds
+
+    def left(self) -> float:
+        return max(self.end - time.monotonic(), 0.5)
+
+
+def run_tool(name: str, args: list[str], cwd: str | None, clock: Clock | None = None) -> str:
+    timeout = min(20.0, clock.left()) if clock else 20.0
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-I", str(plugin_root() / "bin" / name), *args],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return f"{name} {args[0]}: timed out"
+    return out.stdout.strip()
+
+
+def rule_counts(cwd: str | None, clock: Clock) -> str:
+    for line in run_tool("cobot-rules", ["show"], cwd, clock).splitlines():
+        if line.startswith("rules:"):
+            return line
+    return "rules: unavailable"
+
+
+def status_lines(cwd: str | None, clock: Clock) -> str:
+    """Knowledge staleness (decision 23) and dependency currency from its cache (decision 21)."""
+    knowledge = run_tool("cobot-memory", ["knowledge", "--brief"], cwd, clock) or "knowledge: unavailable"
+    dependencies = run_tool("cobot-deps", ["brief"], cwd, clock) or "deps: unavailable"
+    return "\n".join(line.splitlines()[0] if line else "" for line in (knowledge, dependencies))
+
+
+def build_payload(stdin: str) -> str:
+    protocol = protocol_text()
+    try:
+        payload = json.loads(stdin) if stdin.strip() else {}
+        cwd = payload.get("cwd")
+        clock = Clock()
+        budget = min(BRIEF_CAP, TOTAL_CAP - len(protocol) - LINES_RESERVE)
+        parts = [
+            protocol,
+            rule_counts(cwd, clock),
+            run_tool("cobot-memory", ["brief", "--budget", str(budget)], cwd, clock),
+            status_lines(cwd, clock),
+        ]
+    except Exception as error:  # noqa: BLE001 - a session must still start
+        parts = [protocol, f"cobot session: brief unavailable ({type(error).__name__}: {error})"]
+    return "\n\n".join(p for p in parts if p)[:TOTAL_CAP]
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] != ["start"]:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    context = build_payload(sys.stdin.read())
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

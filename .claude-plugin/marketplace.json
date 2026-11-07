@@ -1,16 +1,16 @@
 {
-  "name": "agentic-partner",
+  "name": "cobot",
   "owner": {
     "name": "YpNo"
   },
   "metadata": {
-    "description": "A governed agentic partner for Claude Code: orchestrator protocol, conceptor, challenger, builders, experts and a rules gate."
+    "description": "A governed technical AI assistant for architects, developers and operators: orchestrator protocol, conceptor, challenger, builders, experts and a rules gate."
   },
   "plugins": [
     {
-      "name": "partner",
-      "source": "./plugins/partner",
-      "description": "Core partner: rules gate, conceptor, challenger, builders, experts, committed memory.",
+      "name": "cobot",
+      "source": "./plugins/cobot",
+      "description": "Core cobot: rules gate, conceptor, challenger, builders, experts, committed memory.",
       "version": "0.1.0",
       "category": "productivity",
       "tags": [

@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-PLUGIN = REPO / "plugins" / "partner"
-GATE_SCRIPT = PLUGIN / "bin" / "partner-rules"
+PLUGIN = REPO / "plugins" / "cobot"
+GATE_SCRIPT = PLUGIN / "bin" / "cobot-rules"
 GATE_SHIM = PLUGIN / "hooks" / "gate.sh"
 INSTALL = REPO / "install.sh"
 
@@ -32,19 +32,19 @@ def load_script(name: str, module_name: str):
 
 @pytest.fixture(scope="session")
 def memory():
-    return load_script("partner-memory", "partner_memory")
+    return load_script("cobot-memory", "cobot_memory")
 
 
 @pytest.fixture(scope="session")
 def session():
-    return load_script("partner-session", "partner_session")
+    return load_script("cobot-session", "cobot_session")
 
 
 @pytest.fixture(scope="session")
 def rules():
-    loader = importlib.machinery.SourceFileLoader("partner_rules", str(GATE_SCRIPT))
-    spec = importlib.util.spec_from_loader("partner_rules", loader)
+    loader = importlib.machinery.SourceFileLoader("cobot_rules", str(GATE_SCRIPT))
+    spec = importlib.util.spec_from_loader("cobot_rules", loader)
     module = importlib.util.module_from_spec(spec)
-    sys.modules["partner_rules"] = module  # dataclasses resolve annotations through sys.modules
+    sys.modules["cobot_rules"] = module  # dataclasses resolve annotations through sys.modules
     loader.exec_module(module)
     return module

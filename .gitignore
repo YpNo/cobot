@@ -3,4 +3,4 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-plugins/partner/evals/results/
+plugins/cobot/evals/results/

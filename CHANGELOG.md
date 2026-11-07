@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `/partner:ship`: the delivery pipeline from the verified commands and the profile (PR, merge,
+  release and weekly triggers, one `ci-ok` aggregator, SHA pins from the references, every
+  command run locally first, then audited); refuses in foreign mode and patches existing
+  workflows instead of rewriting them. `expert-containers` (Dockerfile, compose, Podman,
+  signing, SBOM, Trivy, GHCR) and `consult-containers`.
+- `/partner:contribute` with `templates/UPSTREAM.md`: upstream work under the maintainers'
+  rules (AI policy, sign-off, parent resolved through `gh repo view`), the wrap stamp checked
+  against HEAD, the PR body left to the owner when the policy forbids generated text, push and
+  PR commands printed, never run; `gh repo fork`, `git remote add|set-url` ask.
+- `/partner:security-sweep`: whole-tree read-only audit by the consultant with nine rule packs
+  (core, go, python, ts-js, rust, shell, dockerfile, terraform, github-actions) ported from the
+  legacy skill, honouring `.agent/accepted-risks.md`; `partner-memory risks add|list` writes and
+  reads rows keyed by rule, file and symbol with an expiry of at most 90 days; `check` names
+  expired rows; read-only scanner forms join the consultant's allow list.
+- `partner-memory compact`: past 400 lines the journal keeps its last ten entries and folds the
+  rest into one dated entry (a model summary from wrap, else a digest with the `Open:` items),
+  raw entries archived in `JOURNAL-archive.md`; the brief is unchanged by a fold.
+- `lang-python` and `lang-typescript` with verified versions and CI jobs; `python-builder`,
+  `typescript-builder` and `terraform-builder`; `build` routes by the files in scope.
+- Evals `never-apply`, `builder-routing`, `proof-required` (fixtures through `scaffold_script`,
+  the eval job passes `--scaffold`).
+- This repository's `ci.yml` gains the `ci-ok` aggregator and cancels in-progress runs only on
+  pull requests.
+
 - The learner: agent `learner` (read-only, sonnet) behind `/partner:learn <skill or topic>
   [question]`, which returns a knowledge delta whose entries carry a status, a source, a date and
   a scope; a re-verified claim is re-dated in place, a changed fact names what it `supersedes`.

@@ -53,7 +53,7 @@ agentic-partner/
       consultant.md                        read-only + Bash(read cmds) + WebFetch · sonnet/medium
       builder.md                           generic fallback (Terraform, Shell, Lua, other) · sonnet/medium
       rust-builder.md go-builder.md        thin: frontmatter `skills: [lang-<x>]`, model, ~15 lines
-                                           (python-builder, typescript-builder, terraform-builder: R1.1)
+      python-builder.md typescript-builder.md terraform-builder.md   same shape (R1.1 slice 2)
       learner.md                           read-only + WebFetch/WebSearch, returns a knowledge delta · sonnet/high
     skills/
       onboard/      SKILL.md + templates/CONTEXT.md JOURNAL.md FINDINGS.md  fingerprint, profile, foreign mode
@@ -61,23 +61,24 @@ agentic-partner/
       build/        SKILL.md                                           task loop, lanes, focused tests
       wrap/         SKILL.md                                           converge, full suite, reviews, journal
       rules/        SKILL.md                                           /partner:rules show|check|explain|sync
-      lang-rust/ lang-go/ lang-terraform/ lang-fallback/
+      lang-rust/ lang-go/ lang-python/ lang-typescript/ lang-terraform/ lang-fallback/
                     SKILL.md (+ refs)                                  paths-gated, not user-invocable
-      expert-gha/   SKILL.md                                           GitHub Actions idiom, paths-gated inline
-      consult-gha/  SKILL.md                                           context: fork, agent: partner:consultant
+      expert-gha/ expert-containers/  SKILL.md (+ refs)                 idiom, paths-gated inline
+      consult-gha/ consult-containers/  SKILL.md                        context: fork, agent: partner:consultant
+      ship/ contribute/ (+ templates/UPSTREAM.md)                       main-thread delivery skills (R1.1 slice 2)
+      security-sweep/ SKILL.md + references/<pack>.md + templates/accepted-risks.md   context: fork, read-only
       learn/        SKILL.md + templates/expert-SKILL.md                  context: fork, agent: partner:learner; skeleton expert template
       <any lang-*/expert-*>/references/<topic>.md                      dated lines: status · source · claim (§8)
-      (R1.1, next slice: ship, contribute + UPSTREAM.md, security-sweep, lang-python, lang-typescript)
     hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
     hooks/session.sh protocol.md           SessionStart shim and the ≤ 3k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
     bin/partner-rules  bin/partner-memory  bin/partner-session  bin/partner-deps          Python 3 stdlib, no deps
     bin/_partner_common.py _partner_make.py _partner_knowledge.py _partner_deps.py
-                                           (partner-memory: brief · learn [--promote] · knowledge · check; compact R1.1)
+                                           (partner-memory: brief · learn [--promote] · knowledge · compact · risks · check)
     rules/default.rules
     settings/permissions.example.json      the hard-wall block the owner installs via `rules sync`
     .mcp.json                              context7
-    evals/<5 cases>/prompt.md + graders/   (R1.1: +3)
+    evals/<8 cases>/prompt.md + graders/   (foreign-onboard, actions-pinning: R2)
     (R2: workflows/deep-review.js, SubagentStop report check)
   tests/  (pytest for bin/, fixtures for hooks)
   install.sh                               --dev | --project | --user | --check | --uninstall (§14, ADR-0003)
@@ -103,7 +104,7 @@ own `.mcp.json`, so a Python repo never pays for a Terraform or Home Assistant s
 | Experts | two skills per domain: `expert-<x>` (inline idiom, `paths:` gated) and `consult-<x>` (`context: fork`, `agent: partner:consultant`) | via consultant | sonnet / medium (sweep: high) | findings: severity, file:line, fix, confidence | spec, wrap, ship, owner |
 | Consultant | agent, generic read-only container for every expert and for onboarding fingerprints | Read Grep Glob Bash WebFetch; **read-only by rule** (`ask Bash(*) @consultant` except listed read commands) | sonnet / medium; haiku for fingerprints | structured findings, each with a confidence, or a fingerprint; plus an optional `knowledge_delta` (§8) | expert skills via `context: fork`, onboard |
 | Learner | agent `learner` (R1.1) behind skill `/partner:learn <topic>` (`context: fork`) | Read Grep Glob Bash WebFetch WebSearch; **read-only by rule** (`@learner`); experiments run under the gate like any command | sonnet / high | a knowledge delta: claims with status, source, date and scope; what stayed unverified; a skeleton `expert-<x>` when no expert exists | orchestrator when intake finds no expert for the domain, a consult returns low confidence, or a spike contradicts a skill; owner |
-| Security reviewer | built-in `/security-review` on diffs; `security-sweep` skill (forked) on whole repos | — | — | findings | wrap; owner |
+| Security reviewer | built-in `/security-review` on diffs; `security-sweep` skill (forked into the consultant, so at its `medium` effort until a per-skill override exists) on whole repos, against `.agent/accepted-risks.md` | — | — | findings with rule, file, symbol; `partner-memory risks add` lines for the owner's yes | wrap before a release or handover; owner |
 | Code reviewer | built-in `/code-review`, `/simplify` | — | — | findings / fixes | wrap |
 | Scribe | wrap skill (journal, findings triage), `bin/partner-memory learn` (applies deltas), `compact` | — | haiku / low for compaction | journal entry, compacted history | wrap |
 
@@ -238,10 +239,10 @@ Default set (owner decision 6: nothing outward runs on its own):
 | `.agent/JOURNAL.md` | append-only, **newest at the bottom**; entry = Changed / Why / Proof (commands, exit codes) / Open / Next; the wrap entry adds `verified: <sha> · <commands>`, which `contribute` and `ship` require to match HEAD | build (per task group), wrap (session) | last two entries injected |
 | `.agent/FINDINGS.md` | parked observations, one row each: `F-nn · seen · observation · goes to`, written the moment something is noticed outside the task | anyone in the main thread; wrap triages rows into a task, an issue or `closed — reason` | open count injected |
 | `.agent/knowledge/<topic>.md` (≤ 80 lines) | repository- or device-specific facts with status, source and date (§8) | orchestrator through `partner-memory learn`, never an agent | by the matching expert skill, on demand |
-| `.agent/accepted-risks.md` (R1.1) | accepted security findings: why, by whom, expiry ≤ 90 days | security-sweep after the owner's yes | by security-sweep |
+| `.agent/accepted-risks.md` | accepted security findings keyed by rule, file and symbol: why, by whom, accepted, expiry ≤ 90 days | the orchestrator through `partner-memory risks add` after the owner's yes; `check` names expired rows | by security-sweep |
 | `.agent/specs/<slug>.md` | one per medium / large change: spec, clarify answers, plan, challenger verdict, tasks with ticks, converge notes | spec, build, wrap | on demand |
 | `.agent/partner.rules` | project rule layer (optional) | owner | by the gate |
-| `.agent/UPSTREAM.md` | foreign repos only: conventions, DCO/CLA, maintainers' habits, open PR status | contribute | on demand |
+| `.agent/UPSTREAM.md` | foreign repos only: the maintainers' rules (AI policy, sign-off, branch, size), their habits, open and closed PRs with the facts for each body | contribute, from its template | on demand |
 | `ARCHITECTURE.md` | only when a `service`/`library` spec grows one | spec | on demand |
 
 Trust: the SessionStart hook (matcher `startup|resume|compact`, so the protocol survives
@@ -257,8 +258,11 @@ journals, at integration.
 
 Budget: SessionStart injection ≤ 10k chars (protocol ≈ 3k; `partner-memory brief` ≤ 6k: CONTEXT
 head, verified commands, last two journal entries, open findings count, rule counts). `partner-memory compact`
-(haiku) folds entries older than the last ten into a dated summary once JOURNAL exceeds 400
-lines; the 1 013-line cartridge-os journal is the test case.
+folds every entry but the last ten into one dated summary once JOURNAL exceeds 400 lines: wrap
+asks haiku for the summary and passes it with `--summary`, the command falls back to a
+mechanical digest (date, title, first `Changed:` sentence, `Open:` items), the raw entries go to
+`JOURNAL-archive.md`, and the brief is unchanged by a fold; the 1 013-line cartridge-os journal
+is the test case.
 
 Foreign mode: `/partner:onboard` detects that no remote belongs to an identity in
 `~/.claude/partner/identities` and proposes `--foreign`: it creates
@@ -455,7 +459,7 @@ legacy settings' `allow`. The switch itself is `docs/03-switch-plan.md`, with a 
 |---|---|---|
 | R0 | **repository bootstrap, nothing global**: marketplace.json, plugin.json, `install.sh --dev\|--project\|--check`, README install section, CI skeleton; the legacy scaffold is left untouched (ADR-0003) | `claude plugin validate --strict` passes; a `--plugin-dir` session lists `partner:*` beside the legacy set; coexistence spikes answered |
 | R1 | gate + shim, onboard / spec / build / wrap (findings, proof lines, verified stamp), `partner-memory brief\|learn\|check` (`compact` R1.1), references with status lines, challenger / consultant / builder, rust and go builders, lang-{rust,go,terraform,fallback}, expert-gha + consult-gha, 4 evals, pytest, ci.yml, release.yml; dogfood through `install.sh --project` on cartridge-os (Rust, service rigour) and `--scope local` on headscale (foreign Go) | day-one spikes pass; four evals green; a week of real use journaled |
-| R1.1 | **slice 1, done 2026-11-07** (`.agent/specs/r1-1-learning.md`): `learner` + `/partner:learn` + `learn --promote` + consult `knowledge_delta`, knowledge staleness in the brief and `knowledge-refresh.yml` (weekly PR) (decision 23), `partner-deps check` with its cache wired into `onboard`, the session brief and `wrap` (decision 21); **slice 2**: ship (trigger matrix, decision 17) with `expert-containers` (decision 26), contribute + UPSTREAM.md (decisions 18, 20), security-sweep (`context: fork`), compaction, lang-python + lang-typescript with their builders (dogfood dreame-vacuum, headplane), terraform-builder (one module), `accepted-risks.md`, 4 more evals | eight evals green; the switch plan's preconditions met |
+| R1.1 | **slice 1, done 2026-11-07** (`.agent/specs/r1-1-learning.md`): `learner` + `/partner:learn` + `learn --promote` + consult `knowledge_delta`, knowledge staleness in the brief and `knowledge-refresh.yml` (weekly PR) (decision 23), `partner-deps check` with its cache wired into `onboard`, the session brief and `wrap` (decision 21); **slice 2, done 2026-11-07** (`.agent/specs/r1-1-delivery.md`): ship (trigger matrix, decision 17) with `expert-containers` + `consult-containers` (decision 26), contribute + UPSTREAM.md (decisions 18, 20), security-sweep (`context: fork`, nine rule packs) with `accepted-risks.md` and `partner-memory risks`, `partner-memory compact`, lang-python + lang-typescript with python, typescript and terraform builders, the gate resolving `uv run`, the package-manager `run <script>` forms and `exec`, three evals (`never-apply`, `builder-routing`, `proof-required`; `foreign-onboard` and `actions-pinning` move to R2) | eight evals green; the switch plan's preconditions met |
 | Switch | owner-triggered, not a release: `docs/03-switch-plan.md` (backup, user-scope install, unlink, CLAUDE.md cut, rules sync, workstation-starter PR) | a fresh session lists `partner:*` only; rollback tested once |
 | R2 | `partner-gcp` (GCP expert skill, `gcd-universe` rewritten for provider 8.x), `deep-review` workflow, `SubagentStop` report check (a report must carry command + exit code), `partner-usage`, verified-stamp gate rule for `git push`, contribute flow hardened from headscale use; framework skills `fw-react`, `fw-next`, `fw-vue` on `lang-typescript` and `lang-shell` promoted from the fallback (decision 24); `expert-cicd` core + `expert-gitlab-ci` with `glab`, Gitea through `tea`, `expert-api` (OpenAPI, web protocols) (decision 25, first three); `expert-kubernetes` beside `partner-gcp` (GKE), then `expert-service-mesh` (Istio, Cloud Service Mesh) (decision 26) | GCP module work done end to end |
 | R3 | `partner-reverse` (host-before-device protocol, capture/replay), `expert-home-assistant` with `hass-cli`, `expert-iot-protocols` and `expert-electronics` with evidence grades, Jira and Confluence through the Atlassian MCP (writes ask), MCP builder skill reused after challenge (decision 25, rest), `partner-delivery-extra` (ArgoCD, Crossplane, OPA), GDC/S3NS expert | — |

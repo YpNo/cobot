@@ -44,6 +44,6 @@ owner: YpNo (Michael Lopez) · public · MIT
 - `plugins/partner/` is the only plugin for now; domain plugins come later
 - `bin/partner-rules` (gate, `_partner_make`), `bin/partner-memory` (brief, learn and promote, knowledge, check, init, journal, findings; `_partner_knowledge`), `bin/partner-deps` (currency, `_partner_deps`), `bin/partner-session` (SessionStart payload)
 - `hooks/` are thin shims around `bin/`; all logic is tested Python
-- skills: workflow (onboard, spec, build, wrap, rules, learn), knowledge (lang-*, expert-*), consults (consult-*, forked)
-- agents: challenger, consultant, learner, builder, rust-builder, go-builder
+- skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute), knowledge (lang-*, expert-*), consults (consult-*, security-sweep; forked)
+- agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder
 - design: `docs/02-design.md`; decisions: `docs/adr/`; platform facts: `docs/reference/claude-code-mechanics.md`

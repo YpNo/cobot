@@ -11,9 +11,9 @@ open-source repositories where efficiency matters more than ceremony. Design:
 design, section 15.
 
 Release 1 (0.1.0) is the dogfood release: everything below works from a checkout through
-`install.sh --dev` or `--project`. Release 1.1 is in progress: the learner, knowledge staleness,
-the dependency check and the weekly refresh are in; Python and TypeScript builders, `ship`,
-`contribute`, `security-sweep` and journal compaction follow.
+`install.sh --dev` or `--project`. Release 1.1 adds the learner and knowledge staleness, the
+dependency check and the weekly refresh, `ship`, `contribute`, `security-sweep`, journal
+compaction, the Python and TypeScript stacks with their builders and the containers expert.
 
 ## Architecture
 
@@ -24,9 +24,9 @@ the dependency check and the weekly refresh are in; Python and TypeScript builde
 | Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree | `bin/partner-memory`, `bin/partner-session` |
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `partner-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_partner_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/partner-deps` |
-| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder` | `agents/` |
-| Workflow skills | `/partner:onboard`, `/partner:spec`, `/partner:build`, `/partner:wrap`, `/partner:rules`, `/partner:learn` | `skills/` |
-| Knowledge skills | `lang-rust`, `lang-go`, `lang-terraform`, `lang-fallback`, `expert-gha` (path-gated), `consult-gha` (forked audit) | `skills/` |
+| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `agents/` |
+| Workflow skills | `/partner:onboard`, `/partner:spec`, `/partner:build`, `/partner:wrap`, `/partner:rules`, `/partner:learn`, `/partner:ship`, `/partner:contribute`, `/partner:security-sweep` | `skills/` |
+| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-containers` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
 
 Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
 `partner-memory`. Builders never commit. See ADR-0001 to ADR-0003.
@@ -103,6 +103,11 @@ repository is trusted. Then:
   commands and brings back a dated delta; the brief names the skills whose knowledge is stale.
 - `partner-deps check` reports dependency currency (never upgrades); the brief shows the cached
   line and says when to run it again.
+- `/partner:ship` writes the pipeline from the verified commands at the end of a work stream
+  (PR, merge, release and weekly triggers, one aggregator check, the image workflow for a
+  service); `/partner:contribute` prepares an upstream pull request under the maintainers'
+  rules and prints the push and `gh pr create` commands; `/partner:security-sweep` audits the
+  whole tree read-only against `.agent/accepted-risks.md`.
 
 Memory commands the orchestrator uses, also available by hand:
 

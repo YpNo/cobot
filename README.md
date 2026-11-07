@@ -186,8 +186,8 @@ are opaque and ask. `mise` tasks, `make` targets (read from the Makefile), a she
 (`distrobox enter`, `toolbox run`, `docker exec`, `nix develop -c`, …) are looked through and the
 command behind them is judged.
 Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
-protection is advisory for the model's own reads. Report a vulnerability through a private GitHub
-security advisory on this repository.
+protection is advisory for the model's own reads. Report a vulnerability as `SECURITY.md` says:
+a private GitHub security advisory, never a public issue.
 
 ## Contributing
 

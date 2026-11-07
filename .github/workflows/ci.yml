@@ -55,13 +55,18 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      security-events: write
-      actions: read
+      actions: read # the online audits read other repositories' action metadata
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          # code scanning is a paid feature on a private repository; findings arrive as
+          # annotations instead, and the action fails the job on a medium or worse
+          advanced-security: false
+          annotations: true
+          min-severity: medium
 
   # the one required check (decision 17): fails when a needed job failed or was cancelled,
   # passes when one was legitimately skipped (the evals run on dispatch only)

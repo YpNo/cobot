@@ -12,7 +12,8 @@ All notable changes to this project are documented here. The format follows
   SHA-pinned actions required, read-only token, Dependabot alerts and security PRs, the `evals`
   and `knowledge-refresh` environments, the `main` ruleset where the plan allows it); secrets
   stay with the owner. `.github/dependabot.yml` for the pinned actions; the eval job's API key
-  now lives in the `evals` environment.
+  now lives in the `evals` environment; the zizmor job annotates instead of uploading to code
+  scanning (paid on a private repository) and fails on medium or worse. `SECURITY.md`.
 - `/partner:ship`: the delivery pipeline from the verified commands and the profile (PR, merge,
   release and weekly triggers, one `ci-ok` aggregator, SHA pins from the references, every
   command run locally first, then audited); refuses in foreign mode and patches existing

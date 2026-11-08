@@ -36,8 +36,9 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    question with the challenger's scenario and your recommendation; the owner's answer is written
    under *Challenger verdict*. You may not accept an objection against your own plan on your own.
    MINOR items become a line in the spec or a finding. Record the verdict and the date.
-7. **Hand over.** Print the task table and the open questions, then stop. The owner starts the
-   build with `/cobot:build <slug>`.
+7. **Hand over.** Print the challenger verdict as the word it returned (`SOUND`, `SOUND WITH
+   CHANGES` or `UNSOUND`) with the points folded, then the task table and the open questions,
+   then stop. The owner starts the build with `/cobot:build <slug>`.
 
 Rules of the conceptor: one spec per change; no code; no version numbers without a dated
 source (ask the matching `lang-*` or `expert-*` skill, or propose `/cobot:learn`); stories carry

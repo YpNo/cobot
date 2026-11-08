@@ -49,29 +49,35 @@ today is unmeasured.
 
 ## Measurement, 2026-11-08
 
-The owner ran `/context` after uninstalling `mattpocock-skills`, in this repository's session
-(Opus 5.5, 1M window). That session loads no cobot (it is installed only in `cartridge-os` and
-`headscale`) and still lists the uninstalled plugin, because plugins load at session start. So it
-measures the neighbours, and cobot's share is estimated.
+`claude -p "/context"` run in `cartridge-os` (Opus 5.5, 1M window), where cobot is enabled at
+project scope and read straight from this checkout (a directory marketplace serves the working
+tree, so the branch checked out here is the cobot every dogfood repository gets). It loaded
+cobot's 9 agents and 24 skills, from `main` before slice 3.
 
-| Listing | Tokens |
-|---|---|
-| Budget, 1 % of a 1M window | ≈ 10 000 |
-| This session's Skills row (no cobot) | 8 800 |
-| of which `mattpocock-skills`, now uninstalled | ≈ 830 |
-| of which the legacy user skills, gone at the switch | ≈ 720 |
-| of which `anthropic-skills` (the app's own) | ≈ 3 300 |
-| cobot on `main`, 24 skills, estimated | ≈ 5 000 |
-| cobot with slice 3, 30 skills, estimated | ≈ 5 300 |
-| A cobot session today, estimated | ≈ 13 300 |
+| Skills listing in that session | Count | Tokens |
+|---|---|---|
+| Budget, 1 % of the 1M window | | 10 000 |
+| Skills row, after the budget | 71 skills | 10 000 (at the cap) |
+| cobot | 24 | ≈ 5 000, every description kept |
+| Built-in | 17 | kept |
+| Project skills of `cartridge-os` (10 `speckit-*`, 4 device skills) | 14 | ≈ 930, kept |
+| Legacy user skills | 7 | ≈ 720, kept |
+| Synced from claude.ai (`anthropic-skills`) | 13 | 10 of them cut to under 20 tokens |
 
-The estimate calibrates 2.8 characters per token from twelve skills whose `/context` rows and
-descriptions were both read; the rows are rounded, so the figures are rough. They point one way:
-a cobot session runs about 3 000 tokens over the budget, so descriptions are dropped, least-used
-first, and cobot's `expert-*` and `lang-*` are never invoked by name. On a 200 000-token window the
-budget would be 2 000 and most descriptions would go. Proposals 3 and 7 therefore stand, pending
-one confirmation in a real cobot session: `/context` in `cartridge-os`, or `claude --debug`, whose
-log names the dropped descriptions.
+The listing is at the cap and descriptions are being dropped today, but the victims are the
+claude.ai skills, not cobot: "least invoked" is decided per skill across the whole machine, not
+by plugin. Slice 3 adds six cobot descriptions (about 1 500 tokens), which pushes more out, and
+which ones go is not something cobot controls. Proposal 3 stands as prevention, ahead of slice 4;
+proposal 7 waits until a cobot description is actually dropped.
+
+Two findings beside the budget:
+
+- **Two planning paths in one repository.** `cartridge-os` carries the ten `speckit-*` skills next
+  to `/cobot:spec` and `/cobot:build`. Decision 2 absorbed spec-kit into one path precisely to
+  avoid this; which one the owner uses there is the owner's call.
+- **The desktop app's `/context` in `cartridge-os` listed only the ten legacy user agents**, none
+  of cobot's nine, while the CLI loads all of them from the same directory. Whether the app session
+  loaded cobot at all is open.
 
 ## Challenge
 
@@ -101,14 +107,14 @@ written**, sound with changes. Every point below is folded into the proposals th
 
 | # | Proposal | User gains | Source | Cost |
 |---|---|---|---|---|
-| 0 | **Measure first.** Remove `mattpocock-skills`, open a session in a repository with cobot, read the Skills row in `/context` and note which descriptions are dropped. Proposals 3 and 8 proceed only if some are. | Decisions on evidence; one plugin's eleven listing entries gone | red team | Two owner commands, below |
+| 0 | **Measure first** (done 2026-11-08, above). Remove `mattpocock-skills`, read the Skills row in `/context` in a cobot repository, and re-measure after each slice. | Decisions on evidence; one plugin's eleven listing entries gone | red team | Two owner commands, below |
 | 1 | **One `/cobot:consult <domain>` in slice 4**, as decision 28 planned. The domain is required and must be in a fixed list; with no argument the skill only lists the domains detected from the `ship` and `paths:` signals, and the orchestrator calls it once per domain, so each audit keeps its own fork and its ten-finding cap. The dated facts now in `consult-*` move to the matching `expert-*/references`, so consult references hold procedure only and staleness tracking keeps working. Spike first: two Skill calls to the same skill in one message run in parallel (spec and wrap rely on parallel consults). | 16 → 10 commands, and the menu stops growing with each domain | Pocock (small surface), Google (flat references, one hop), decision 28 | Medium: its own spec. Touches decisions 27 and 28 (owner amends), design §4, README, `ship`, `expert-ui`, `expert-containers`, the `cobot-deps` hint and its test, four graders, the `../` paths, and an argument grammar for `consult ui site/` |
 | 2 | **User-only for `onboard`, `rules`, `security-sweep`** (`disable-model-invocation: true`). `ship` and `contribute` stay model-invocable because they carry rules the model must follow whenever that work comes up. The two eval prompts start with the slash command; the protocol's "Dry-run with `/cobot:rules check`" becomes the `cobot-rules check` binary the model can run. | About 1 500 listing chars; three commands the model never fires on its own | Pocock `.agents/invocation.md` | Small, plus one check: the eval sandbox must let `fixture.sh` hold what the prompt carried |
-| 3 | **The estimate shows drops; confirm, then** cap `expert-*` and `lang-*` descriptions at about 350 chars, keep their task triggers, shrink the `learn` skeleton template to fit, and re-run `actions-pinning`. | The descriptions most at risk survive the budget | Google L1 | Small |
+| 3 | **Before slice 4:** cap `expert-*` and `lang-*` descriptions at about 350 chars, keep their task triggers, shrink the `learn` skeleton template to fit, and re-run `actions-pinning`. | The descriptions most at risk survive the budget | Google L1 | Small |
 | 4 | **Cut a release after each merged slice.** `release.yml` already refuses a tag unless `plugin.json`, `marketplace.json` and the changelog heading agree; what is missing is the habit: 0.1.0 has carried R1.1 and R2 slices 1–2 unchanged, so `claude plugin update` has never had anything to pick up. `--refresh` stays for dogfooding inside a branch. No per-PR gate (see Challenge). | Updates the documented way, one version per slice | Google ("every behavioral change requires an explicit version bump"), narrowed to releases | Small: a version bump, a changelog cut and a tag the owner pushes |
 | 5 | **README front door in three steps**: install, `/cobot:onboard`, ask. Commands grouped "you type" and "cobot uses". `check-plugin` asserts every skill name appears in the README; no generator. Fix the broken skills row on the way. | One screen to start | Pocock README grouping; Google's drift lesson, scaled down | Small |
 | 6 | **Graders: regex where possible, at most one judge per case**, each regex checking one thing. Applied to F-13. | A red eval says what to fix, without extra judge noise under `--threshold 1.0` | Google lesson 2; our F-12 | Small |
-| 7 | **Spike before hiding `lang-*`**, once the drops are confirmed. Pass criteria: a builder's `skills:` preload still loads a `disable-model-invocation` skill, and a main-thread risk task (Terraform state, `unsafe`) still gets its language skill. | Possibly 3 500 more chars | Claude Code docs (silent here) | One spike |
+| 7 | **Spike before hiding `lang-*`**, once a cobot description is actually dropped. Pass criteria: a builder's `skills:` preload still loads a `disable-model-invocation` skill, and a main-thread risk task (Terraform state, `unsafe`) still gets its language skill. | Possibly 3 500 more chars | Claude Code docs (silent here) | One spike |
 
 A weekly link check (Google's lychee job) is not proposed: the staleness check of decision 23
 already re-fetches sources, and adding outbound fetches to the job that holds the API key and PR

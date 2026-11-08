@@ -8,8 +8,9 @@ argument-hint: <what to build, in one sentence>
 
 You run in the main thread so you can ask the owner. Do not build anything here.
 
-1. **Size and profile.** Read the brief (CONTEXT.md head). Name the size in one line. If it is tiny
-   or small, stop and say so: the build path handles it without a spec.
+1. **Size and profile.** Read the brief (CONTEXT.md head) and the file CONTEXT.md names under
+   `governance:`, if any. Name the size in one line. If it is tiny or small, stop and say so:
+   the build path handles it without a spec.
 2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
    read only what the spec needs. Note the verified commands that will prove each story.
 3. **Draft** `.agent/specs/<slug>.md` from the template at
@@ -19,7 +20,9 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    `no_std` Rust, concurrency, crypto, auth, Terraform state, migrations; `lane` when file sets are
    disjoint; `deps`), trade-offs. The spec is the unit of delivery: **one spec = one branch = one
    PR**, each task one commit (decision 20), so size it as a coherent topic, not a single task.
-   In the principles check, write the **architecture choice** with options and a recommendation:
+   In the principles check, give **every principle of the governance file** one line: holds,
+   not relevant, or violated; a violation becomes a clarify question, never a silent waiver.
+   Write the **architecture choice** with options and a recommendation:
    hexagonal (domain, ports, adapters, in-memory doubles) by default for the `service` profile or
    when two external adapters or a test substitute are needed; plain layering for `cli`, `library`
    and `embedded`; a host project's architecture always wins in a contribution (decision 19).

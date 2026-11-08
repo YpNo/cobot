@@ -36,6 +36,15 @@ argument-hint: [--foreign]
    into Constraints: what the maintainers forbid (autonomous contributions, AI-written PR text or
    comments), the sign-off they need, the branch they take PRs against. `/cobot:contribute`
    reads them from there before anything reaches upstream.
+   If the project states its principles in a file (a constitution, spec-kit's
+   `.specify/memory/constitution.md`, a principles section of `CONTRIBUTING.md`), put its path
+   in `governance:`; `/cobot:spec` checks every change against it.
+   **Spec-kit project** (`.specify/`, `specs/NNN-*/tasks.md`): one planning path (decision 2).
+   Propose to the owner: move the constitution out of `.specify/` and point `governance:` at it;
+   for each feature folder with open `- [ ]` tasks, write `.agent/specs/<NNN-slug>.md` from the
+   spec template with a one-paragraph goal, the folder named as reference and the open task
+   lines copied verbatim under Tasks, so `/cobot:build <NNN-slug>` continues them; the folders
+   stay as history; then the `speckit-*` skills and `.specify/` can go.
 6. **Rules.** Print the owner-layer lines that would make the verified commands silent for the
    gate (`allow Bash(<command>*)`), and offer to append them to `~/.claude/cobot.rules`. Never
    touch `settings.json`; `/cobot:rules sync` renders the hard wall for the owner to apply.

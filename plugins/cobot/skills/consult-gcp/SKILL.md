@@ -1,10 +1,9 @@
 ---
 name: consult-gcp
 description: >-
-  Read-only Google Cloud audit by the consultant: service-account keys, basic roles,
-  authoritative IAM and provider blocks inside modules, hand-built service-agent emails and
-  googleapis.com endpoints (universe rules), Workload Identity, public buckets, audit logs,
-  budgets. Invoke before a plan is applied or a project is handed over.
+  Read-only Google Cloud audit by the consultant: service-account keys, basic roles, authoritative
+  IAM and provider blocks in modules, hand-built service-agent emails and googleapis.com endpoints
+  (universe rules), Workload Identity, public buckets, audit logs, budgets.
 context: fork
 agent: cobot:consultant
 user-invocable: true

@@ -3,8 +3,7 @@ name: consult-kubernetes
 description: >-
   Read-only Kubernetes audit by the consultant: manifests, kustomizations, charts and values
   against expert-kubernetes (resources, probes, image pins, restricted pod security, token
-  mounting, NetworkPolicy, PDB, Gateway over Ingress, secrets as literals, GKE Autopilot
-  fit). Invoke before a deploy pipeline is written or a workload goes to production.
+  mounting, NetworkPolicy, PDB, Gateway over Ingress, secrets as literals, Autopilot fit).
 context: fork
 agent: cobot:consultant
 user-invocable: true

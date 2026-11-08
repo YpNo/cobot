@@ -139,9 +139,10 @@ SessionStart payload under 10 000 characters.
 - Knowledge rot: UI facts move slowly, GitLab monthly; the brief flags version lines after 30
   days and the weekly refresh (when the owner enables it) re-verifies them.
 - Skill count grows from 19 to 24. The SessionStart payload does not depend on it; the skill
-  listing in the system prompt does (19 descriptions = 4 189 chars today as `check-plugin`
-  measures them). The five new descriptions are capped (consults ≤ 350 chars, experts ≤ 600)
-  and `check-plugin` fails the build when the listing total passes 8 000 chars.
+  listing in the system prompt does (`check-plugin` measured folded descriptions as two
+  characters until this slice fixed its parser: 19 descriptions are ≈ 11 400 chars, 22 are
+  13 049). The five new descriptions are capped (consults ≤ 350 chars, experts ≤ 600) and
+  `check-plugin` fails the build when the listing total passes 15 000 chars.
 - Stitch facts are `reported`; the expert's no-Stitch path is the default until verified.
 - `glab` is not installed on this machine: the rules are tested through the gate's dry run and
   `consult-gitlab-ci` says what it could not run.

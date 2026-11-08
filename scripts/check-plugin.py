@@ -19,13 +19,18 @@ FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
 
 def frontmatter(text: str) -> dict[str, str]:
+    """Top-level keys; a folded or literal block (``>-``, ``|``) is joined into its key's value."""
     match = FRONTMATTER.match(text)
     fields: dict[str, str] = {}
+    key = ""
     if match:
         for line in match.group(1).splitlines():
-            if ":" in line and not line.startswith(" "):
+            if line.startswith(" ") and key:
+                fields[key] = (fields[key] + " " + line.strip()).strip()
+            elif ":" in line and not line.startswith(" "):
                 key, _, value = line.partition(":")
-                fields[key.strip()] = value.strip()
+                key = key.strip()
+                fields[key] = "" if value.strip() in (">-", ">", "|", "|-") else value.strip()
     return fields
 
 

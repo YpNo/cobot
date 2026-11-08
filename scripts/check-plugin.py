@@ -12,6 +12,7 @@ from pathlib import Path
 
 SKILL_MAX_LINES = 500
 DESCRIPTION_MAX = 1536
+SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every skill description sits in the system prompt of every turn
 AGENT_BUDGET_TOKENS = 600
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
@@ -30,9 +31,11 @@ def frontmatter(text: str) -> dict[str, str]:
 
 def check(plugin: Path) -> list[str]:
     problems: list[str] = []
+    skill_chars = 0
     for skill in sorted((plugin / "skills").glob("*/SKILL.md")):
         text = skill.read_text(encoding="utf-8")
         fields = frontmatter(text)
+        skill_chars += len(fields.get("description", ""))
         count = len(text.splitlines())
         if count >= SKILL_MAX_LINES:
             problems.append(f"{skill}: {count} lines (max {SKILL_MAX_LINES - 1})")
@@ -49,6 +52,8 @@ def check(plugin: Path) -> list[str]:
             if refs and not any(KNOWLEDGE_LINE.search(r.read_text(encoding="utf-8")) for r in refs):
                 problems.append(f"{skill.parent}: references without a dated knowledge line")
     total_chars = 0
+    if skill_chars > SKILL_DESCRIPTIONS_TOTAL_MAX:
+        problems.append(f"skill descriptions total {skill_chars} chars (max {SKILL_DESCRIPTIONS_TOTAL_MAX})")
     for agent in sorted((plugin / "agents").glob("*.md")):
         fields = frontmatter(agent.read_text(encoding="utf-8"))
         if not fields.get("name") or not fields.get("description"):
@@ -57,7 +62,9 @@ def check(plugin: Path) -> list[str]:
     tokens = total_chars // 4
     if tokens > AGENT_BUDGET_TOKENS:
         problems.append(f"agents: listing ≈ {tokens} tokens (budget {AGENT_BUDGET_TOKENS})")
-    print(f"agents listing ≈ {tokens} tokens; skills: {len(list((plugin / 'skills').glob('*/SKILL.md')))}")
+    skills = list((plugin / "skills").glob("*/SKILL.md"))
+    chars = sum(len(frontmatter(s.read_text(encoding="utf-8")).get("description", "")) for s in skills)
+    print(f"agents listing ≈ {tokens} tokens; skills: {len(skills)}, descriptions {chars} chars")
     return problems
 
 

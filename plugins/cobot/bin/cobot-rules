@@ -405,12 +405,19 @@ def expand_push_flags(tokens: list[str]) -> list[str]:
     return [*tokens[:2], *positionals, *options]
 
 
+API_CLIS = ("gh", "glab")
+API_BODY_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input")
+
+
 def canonical_gh_api(tokens: list[str]) -> list[str]:
-    """``gh api repos/x -X DELETE`` and ``gh api -XDELETE repos/x`` become ``gh api -X DELETE repos/x``."""
-    if tokens[:2] != ["gh", "api"]:
+    """``gh api repos/x -X DELETE``, ``gh api -XDELETE repos/x`` and ``glab api …`` become
+    ``<cli> api -X <METHOD> …``; a body flag (``-f``, ``-F``, ``--field``, ``--raw-field``,
+    ``--input``) without an explicit method is the implicit POST both CLIs perform."""
+    if len(tokens) < 2 or tokens[0] not in API_CLIS or tokens[1] != "api":
         return tokens
     rest: list[str] = []
     method = None
+    body = False
     i = 2
     while i < len(tokens):
         token = tokens[i]
@@ -422,9 +429,15 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
         elif token.startswith("--method="):
             method = token.split("=", 1)[1].upper()
         else:
+            if token in API_BODY_FLAGS or token.startswith(("--field=", "--raw-field=", "--input=")):
+                body = True
+            elif re.fullmatch(r"-[fF][^-].*", token):
+                body = True
             rest.append(token)
         i += 1
-    return ["gh", "api", "-X", method, *rest] if method else tokens
+    if method is None and body:
+        method = "POST"
+    return [tokens[0], "api", "-X", method, *rest] if method else tokens
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:

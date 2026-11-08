@@ -162,6 +162,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `install.sh` no longer prints "Failed to remove marketplace 'agentic-partner'" on every
+  install: it matched the old name anywhere in the marketplace list, including the cobot
+  marketplace's own folder path, which is still named `agentic-partner`. It now matches the
+  name line only.
 - Eval graders agree with the protocol (F-12): `profile-caps-size` grades the reply with
   three regexes (`small`, the profile cap, a first step) instead of a haiku judge that failed
   answers meeting the protocol and wanted a sentence the protocol never asks for;

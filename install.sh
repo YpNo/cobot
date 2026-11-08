@@ -20,6 +20,9 @@ CLAUDE_DIR=${CLAUDE_CONFIG_DIR:-$HOME_DIR/.claude}
 LEGACY_DIR=$HOME_DIR/.agents
 # the name before 2026-11-07 (ADR-0004): state and registrations are migrated once, never deleted
 OLD_MARKETPLACE=agentic-partner
+# its name line in `claude plugin marketplace list`; a bare match would also hit the cobot
+# marketplace's Source line, whose folder is still named agentic-partner
+OLD_MARKETPLACE_LINE="[[:space:]]${OLD_MARKETPLACE}[[:space:]]*\$"
 OLD_PLUGIN=partner
 DATA_BASE=${XDG_DATA_HOME:-$HOME_DIR/.local/share}
 OLD_DATA=$DATA_BASE/$OLD_MARKETPLACE
@@ -88,11 +91,11 @@ uninstall_old() { # SCOPE DIR: the old plugin id at this scope, when installed
 }
 
 old_marketplace_path() { # the folder the old marketplace was registered from, when it was a folder
-  claude plugin marketplace list 2>/dev/null | sed -n "/$OLD_MARKETPLACE/{n;s/.*Folder (\(.*\)).*/\1/p;}"
+  claude plugin marketplace list 2>/dev/null | sed -n "/$OLD_MARKETPLACE_LINE/{n;s/.*Folder (\(.*\)).*/\1/p;}"
 }
 
 retire_old_marketplace() { # before the new marketplace registers: a folder carries one marketplace name only
-  claude plugin marketplace list 2>/dev/null | grep -q "$OLD_MARKETPLACE" || return 0
+  claude plugin marketplace list 2>/dev/null | grep -q "$OLD_MARKETPLACE_LINE" || return 0
   remaining=$(claude plugin list 2>/dev/null | grep -c "$OLD_PLUGIN@$OLD_MARKETPLACE" || true)
   if [ "$remaining" -gt 0 ]; then
     if [ "$(old_marketplace_path)" != "$REPO_DIR" ]; then

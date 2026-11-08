@@ -1287,3 +1287,259 @@ def test_gate_glabRows_mirrorGh(rules):
         ]
         == "ask"
     )
+
+
+# ---------------------------------------------------------------- cloud CLIs (R2 slice 3)
+
+
+def test_canonical_gcloud_cutsAtTheFirstVerb(rules):
+    cut = rules.canonical_gcloud
+    assert cut(["gcloud", "compute", "instances", "list", "--format=json"]) == [
+        "gcloud", "compute", "instances", "list",
+    ]  # fmt: skip
+    assert cut(["gcloud", "pubsub", "topics", "create", "list"]) == ["gcloud", "pubsub", "topics", "create"]
+    assert cut(["gcloud", "run", "services", "list"]) == ["gcloud", "run", "services", "list"]
+    assert cut(["gcloud", "run", "deploy", "svc", "--image", "x"]) == ["gcloud", "run", "deploy"]
+    assert cut(["gcloud", "deploy", "releases", "list"]) == ["gcloud", "deploy", "releases", "list"]
+    assert cut(["gcloud", "projects", "add-iam-policy-binding", "p", "--member=x"]) == [
+        "gcloud", "projects", "add-iam-policy-binding",
+    ]  # fmt: skip
+    assert cut(["gcloud", "sql", "backups", "restore", "1"]) == ["gcloud", "sql", "backups", "restore"]
+    assert cut(["gcloud", "config", "set", "project", "p"]) == ["gcloud", "config", "set", "project", "p"]
+    assert cut(["gcloud", "auth", "print-access-token"]) == ["gcloud", "auth", "print-access-token"]
+    assert cut(["gcloud", "container", "fleet", "mesh", "update", "--management", "automatic"]) == [
+        "gcloud", "container", "fleet", "mesh", "update",
+    ]  # fmt: skip
+    assert cut(["git", "log"]) == ["git", "log"]
+
+
+@pytest.mark.parametrize(
+    ("command", "foreign"),
+    [
+        ("GIT_PAGER=./x git log", True),
+        ("env KUBECTL_EXTERNAL_DIFF=./d kubectl diff -f m.yaml", True),
+        ("PATH=./bin git log", True),
+        ("KUBECONFIG=./kc kubectl get pods", True),
+        ("CLOUDSDK_PYTHON=./x.sh gcloud projects list", True),
+        ("GIT_CONFIG_GLOBAL=./gc git log", True),
+        ("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0=./x git log", True),
+        ("NO_COLOR=1 git log", False),
+        ("LANG=C LC_ALL=C TZ=UTC git log", False),
+        ("RUST_LOG=debug cargo test", True),
+        ("git -c core.pager=./x log", True),
+        ("git -c user.name=x log", True),
+        ("git --exec-path=./bin log", True),
+        ("kubectl --kubeconfig ./kc get pods", True),
+        ("kubectl get pods --kubeconfig ./kc", True),
+        ("kubectl get pods --kubeconfig=./kc", True),
+        ("helm --kubeconfig=./kc list", True),
+        ("istioctl -c ./kc proxy-status", True),
+        ("kubectl logs pod -c app", False),
+        ("helm template api ./chart --post-renderer ./x", True),
+        ("helm template api ./chart --post-renderer=./x", True),
+        ("kustomize build --enable-exec o", True),
+        ("kustomize build --enable-alpha-plugins o", True),
+        ("kustomize build --enable-helm --helm-command ./evil o", True),
+        ("kubectl kustomize --enable-helm o", True),
+        ("rtk kubectl get pods", False),
+        ("timeout 30 kubectl get pods", False),
+        ("/usr/bin/git -c core.pager=x log", True),
+        ("gcloud compute instances list", False),
+    ],
+)
+def test_executesForeign_marksSegmentsThatCouldRunRepositoryContent(rules, command, foreign):
+    assert rules.executes_foreign(shlex.split(command)) is foreign, command
+
+
+def test_candidates_canonicalGcloudForm(rules):
+    tokens = ["gcloud", "--project", "p", "compute", "instances", "list", "--zone", "z"]
+    assert rules.candidates(tokens)[-1] == "gcloud compute instances list"
+    assert rules.candidates(["GIT_PAGER=./x", "git", "log"])[-1] == "git log"
+
+
+def test_isOpaque_optionFirstSegment(rules):
+    assert rules.is_opaque(rules.strip_wrappers(["env", "-S", "git push --force origin main"])) is True
+    assert decide(rules, "env -S 'git push --force origin main'")[0].decision == "ask"
+    assert decide(rules, "env -i git log")[0].decision == "ask"
+
+
+@pytest.mark.parametrize(
+    ("command", "silent"),
+    [
+        ("gcloud compute instances list --format=json", True),
+        ("gcloud --project p projects describe p", True),
+        ("gcloud projects get-iam-policy p --format=json", True),
+        ("gcloud config list", True),
+        ("gcloud config get-value project", True),
+        ("gcloud auth list", True),
+        ("gcloud logging read 'severity>=ERROR' --limit 5", True),
+        ("gcloud storage ls gs://b", True),
+        ("gcloud artifacts docker images list europe-docker.pkg.dev/p/r", True),
+        ("gcloud container fleet mesh describe", True),
+        ("gcloud version", True),
+        ("gcloud pubsub topics create list", False),
+        ("gcloud auth print-access-token", False),
+        ("gcloud secrets versions access latest --secret=s", False),
+        ("gcloud container clusters get-credentials c --region r", False),
+        ("gcloud config set project p", False),
+        ("CLOUDSDK_PYTHON=./x.sh gcloud projects list", False),
+        ("kubectl get pods -A", True),
+        ("kubectl -n prod describe deploy/api", True),
+        ("kubectl logs deploy/api --tail=50", True),
+        ("kubectl logs pod -c app", True),
+        ("kubectl diff -f m.yaml", True),
+        ("kubectl explain deployment.spec", True),
+        ("kubectl top pods", True),
+        ("kubectl events -n prod", True),
+        ("kubectl api-resources", True),
+        ("kubectl version --client", True),
+        ("kubectl cluster-info", True),
+        ("kubectl auth can-i create pods", True),
+        ("kubectl config view --minify", True),
+        ("kubectl config current-context", True),
+        ("kubectl kustomize overlays/prod", True),
+        ("kubectl rollout status deploy/api", True),
+        ("kubectl rollout history deploy/api", True),
+        ("kubectl get secret db -o yaml", False),
+        ("kubectl get Secret db -o yaml", False),
+        ("kubectl get secrets -A", False),
+        ("kubectl -n prod get pods,secrets", False),
+        ("kubectl get -f k8s/ -o yaml", False),
+        ("kubectl get pods -f k8s/", False),
+        ("kubectl get -k overlays/prod -o yaml", False),
+        ("kubectl get --filename k8s/ -o yaml", False),
+        ("kubectl config view --raw", False),
+        ("kubectl config view --minify --raw", False),
+        ("kubectl cluster-info dump --output-directory=/tmp/x", False),
+        ("kubectl rollout restart deploy/api", False),
+        ("kubectl --kubeconfig ./kc get pods", False),
+        ("kubectl get pods --kubeconfig ./kc", False),
+        ("KUBECONFIG=./kc kubectl get pods", False),
+        ("KUBECTL_EXTERNAL_DIFF=./d kubectl diff -f m.yaml", False),
+        ("NO_COLOR=1 kubectl get pods", True),
+        ("helm template api ./chart -f values.yaml", True),
+        ("helm lint ./chart", True),
+        ("helm list -A", True),
+        ("helm ls", True),
+        ("helm status api", True),
+        ("helm show values oci://r/c", True),
+        ("helm search repo nginx", True),
+        ("helm history api", True),
+        ("helm env", True),
+        ("helm version", True),
+        ("helm verify ./c.tgz", True),
+        ("helm dependency list ./chart", True),
+        ("helm get notes api", True),
+        ("helm get metadata api", True),
+        ("helm get values api", False),
+        ("helm get manifest api", False),
+        ("helm get all api", False),
+        ("helm template api ./chart --post-renderer ./kustomize.sh", False),
+        ("helm dependency update ./chart", False),
+        ("helm upgrade --install api ./chart", False),
+        ("kustomize build overlays/prod", True),
+        ("kustomize build overlays/prod --enable-exec", False),
+        ("kustomize build --enable-alpha-plugins overlays/prod", False),
+        ("kustomize build --enable-helm --helm-command ./evil overlays/prod", False),
+        ("kubeconform -strict -summary out.yaml", True),
+        ("istioctl analyze --use-kube=false mesh/", True),
+        ("istioctl proxy-status", True),
+        ("istioctl -n prod proxy-config listeners api-1", True),
+        ("istioctl version", True),
+        ("istioctl verify-install", True),
+        ("istioctl -c ./kc proxy-status", False),
+        ("istioctl install --set profile=ambient", False),
+        ("istioctl dashboard kiali", False),
+        ("istioctl bug-report", False),
+        ("GIT_PAGER=./x git log", False),
+        ("PATH=./bin git log", False),
+        ("git -c core.pager=./x log", False),
+        ("env -S 'git log'", False),
+        ("git log --oneline", True),
+        ("NO_COLOR=1 git log", True),
+    ],
+)
+def test_gate_cloudReadListForReadOnlyAgents(rules, command, silent):
+    for agent in ("cobot:consultant", "cobot:learner"):
+        out = rules.gate(payload(command, agent_type=agent))
+        assert (out is None) is silent, f"{agent}: {command}"
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("gcloud projects add-iam-policy-binding p --member=x --role=roles/owner", "ask"),
+        ("gcloud projects remove-iam-policy-binding p --member=x --role=r", "ask"),
+        ("gcloud projects set-iam-policy p policy.json", "ask"),
+        ("gcloud compute instances attach-disk vm --disk d", "ask"),
+        ("gcloud compute instances detach-disk vm --disk d", "ask"),
+        ("gcloud sql backups restore 1 --restore-instance=i", "ask"),
+        ("gcloud run deploy svc --image x", "ask"),
+        ("gcloud app deploy", "ask"),
+        ("gcloud builds submit --tag x", "ask"),
+        ("gcloud services enable container.googleapis.com", "ask"),
+        ("gcloud services disable x", "ask"),
+        ("gcloud deploy apply --file=p.yaml", "ask"),
+        ("gcloud deploy releases promote --release=r", "ask"),
+        ("gcloud compute instances start vm", "ask"),
+        ("gcloud compute instances stop vm", "ask"),
+        ("gcloud compute instances reset vm", "ask"),
+        ("gcloud compute instances suspend vm", "ask"),
+        ("gcloud compute instances resume vm", "ask"),
+        ("gcloud container clusters resize c --num-nodes 3", "ask"),
+        ("gcloud container clusters upgrade c", "ask"),
+        ("gcloud kms keys versions destroy 1 --key k --keyring r --location l", "ask"),
+        ("gcloud sql instances patch i --tier t", "ask"),
+        ("gcloud sql instances restart i", "ask"),
+        ("gcloud sql instances clone a b", "ask"),
+        ("gcloud sql instances failover i", "ask"),
+        ("gcloud sql export sql i gs://b/f", "ask"),
+        ("gcloud sql import sql i gs://b/f", "ask"),
+        ("gcloud scheduler jobs pause j", "ask"),
+        ("gcloud builds cancel b", "ask"),
+        ("gcloud projects move p --folder f", "ask"),
+        ("gcloud projects undelete p", "ask"),
+        ("gcloud storage cp a gs://b", "ask"),
+        ("gcloud storage mv gs://a gs://b", "ask"),
+        ("gcloud storage rm gs://b/x", "ask"),
+        ("gcloud storage rsync . gs://b", "ask"),
+        ("gcloud pubsub topics publish t --message=m", "ask"),
+        ("gcloud workflows execute w", "ask"),
+        ("gcloud functions call f", "ask"),
+        ("gcloud scheduler jobs run j", "ask"),
+        ("gcloud components install kubectl", "ask"),
+        ("gcloud auth login", "ask"),
+        ("gcloud auth application-default login", "ask"),
+        ("gcloud auth revoke", "ask"),
+        ("gcloud auth activate-service-account --key-file k.json", "ask"),
+        ("gcloud compute instances describe runner-1", None),
+        ("gcloud deploy releases list", None),
+        ("gcloud run services list", None),
+        ("gcloud storage ls gs://b", None),
+        ("gcloud logging read x", None),
+        ("gcloud config set project p", None),
+        ("kubectl run debug --image=busybox", "ask"),
+        ("kubectl debug pod/x -it --image=busybox", "ask"),
+        ("kubectl cp pod:/a ./a", "ask"),
+        ("kubectl expose deploy api --port 80", "ask"),
+        ("kubectl autoscale deploy api --max 5", "ask"),
+        ("kubectl rollout pause deploy/api", "ask"),
+        ("kubectl rollout resume deploy/api", "ask"),
+        ("kubectl certificate approve csr-1", "ask"),
+        ("helm plugin install https://x", "ask"),
+        ("helm registry login r", "ask"),
+        ("istioctl waypoint apply -n default --enroll-namespace", "ask"),
+        ("istioctl waypoint delete --all -n default", "ask"),
+        ("istioctl tag set default --revision 1-31-4", "ask"),
+        ("istioctl create-remote-secret --name c1", "ask"),
+        ("istioctl waypoint list", None),
+        ("istioctl tag list", None),
+        ("helm template api ./chart --post-renderer ./x", None),
+        ("kustomize build --enable-exec o", None),
+        ("GIT_PAGER=./x git log", None),
+        ("FOO=bar git push", "ask"),
+        ("RUST_LOG=debug cargo test", None),
+    ],
+)
+def test_decide_cloudMutatingRows(rules, command, decision):
+    assert decide(rules, command)[0].decision == decision

@@ -1,14 +1,12 @@
 ---
 name: lang-go
 description: >-
-  Senior Go developer knowledge for this cobot: verified toolchain versions, the exact
-  format/lint/test/coverage/vuln/build commands, current idiom (modules, errors, context,
-  interfaces, generics, concurrency), project shape for small modules, test rules,
-  security specifics (govulncheck, net/http timeouts, input bounds, secrets), pitfalls.
-  Applies whenever Go files are read or changed — `**/*.go`, `**/go.mod`, `**/go.sum` — and
-  is preloaded into the go-builder agent. Use it before writing, reviewing or testing Go code,
-  adding a module, or touching Go CI. Versions and sources live in references/versions.md;
-  the CI job in references/ci.md.
+  Senior Go developer knowledge: verified toolchain versions, the exact format, lint, test,
+  coverage, vuln and build commands, current idiom (modules, errors, context, interfaces,
+  generics, concurrency), project shape for small modules, test rules, security specifics
+  (govulncheck, net/http timeouts, input bounds, secrets), pitfalls. Loads on **/*.go, **/go.mod,
+  **/go.sum and inside go-builder. Use before writing, reviewing or testing Go, adding a module or
+  touching Go CI. Versions: references/versions.md; CI job: references/ci.md.
 paths:
   - "**/*.go"
   - "**/go.mod"

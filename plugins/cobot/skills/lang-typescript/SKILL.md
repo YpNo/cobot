@@ -1,15 +1,13 @@
 ---
 name: lang-typescript
 description: >-
-  Senior TypeScript developer knowledge for this cobot: verified Node, TypeScript and tool
-  versions, the exact pnpm/tsc/vitest/lint commands, strict tsconfig, current idiom (ESM,
-  narrowing, errors, async), project shape, test rules, supply-chain and runtime security,
-  pitfalls. Applies whenever TypeScript or Node files are read or changed — `**/*.ts`,
-  `**/*.tsx`, `**/package.json`, `**/tsconfig*.json`, `**/pnpm-lock.yaml`,
-  `**/package-lock.json` — and is preloaded into the typescript-builder agent. Use it before
-  writing, reviewing or testing TypeScript, adding a package, or touching Node CI. Framework
-  specifics (React, Next, Vue) are separate skills; versions live in references/versions.md,
-  the CI job in references/ci.md.
+  Senior TypeScript developer knowledge: verified Node, TypeScript and tool versions, the exact
+  pnpm, tsc, vitest and lint commands, strict tsconfig, current idiom (ESM, narrowing, errors,
+  async), project shape, test rules, supply-chain and runtime security, pitfalls. Loads on
+  **/*.ts, **/*.tsx, **/package.json, **/tsconfig*.json, **/pnpm-lock.yaml, **/package-lock.json
+  and inside typescript-builder. Use before writing, reviewing or testing TypeScript, adding a
+  package or touching Node CI. React, Next and Vue are separate skills; versions:
+  references/versions.md; CI job: references/ci.md.
 paths:
   - "**/*.ts"
   - "**/*.tsx"

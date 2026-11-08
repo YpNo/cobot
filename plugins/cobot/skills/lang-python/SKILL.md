@@ -1,14 +1,13 @@
 ---
 name: lang-python
 description: >-
-  Senior Python developer knowledge for this cobot: verified interpreter and tool versions,
-  the exact uv/ruff/pytest/type-check/audit commands, current idiom (3.12+ typing, pathlib,
-  dataclasses, exceptions, async), project shape with pyproject.toml and uv.lock, test rules,
-  security specifics (subprocess, deserialisation, secrets), Home Assistant custom components,
-  pitfalls. Applies whenever Python files are read or changed — `**/*.py`, `**/pyproject.toml`,
-  `**/uv.lock`, `**/requirements*.txt` — and is preloaded into the python-builder agent. Use it
-  before writing, reviewing or testing Python code, adding a package, or touching Python CI.
-  Versions and sources live in references/versions.md; the CI job in references/ci.md.
+  Senior Python developer knowledge: verified interpreter and tool versions, the exact uv, ruff,
+  pytest, type-check and audit commands, current idiom (3.12+ typing, pathlib, dataclasses,
+  exceptions, async), pyproject.toml and uv.lock shape, test rules, security specifics
+  (subprocess, deserialisation, secrets), Home Assistant custom components, pitfalls. Loads on
+  **/*.py, **/pyproject.toml, **/uv.lock, **/requirements*.txt and inside python-builder. Use
+  before writing, reviewing or testing Python, adding a package or touching Python CI. Versions:
+  references/versions.md; CI job: references/ci.md.
 paths:
   - "**/*.py"
   - "**/pyproject.toml"

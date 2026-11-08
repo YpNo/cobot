@@ -1,13 +1,12 @@
 ---
 name: lang-rust
 description: >-
-  Senior Rust developer knowledge for this cobot: verified toolchain versions, the exact
-  fmt/clippy/test/coverage/audit/build commands, current idiom (edition 2024, errors, async,
-  ownership), project shape for small crates, test rules, unsafe and supply-chain policy,
-  pitfalls. Applies whenever Rust files are read or changed — `**/*.rs`, `**/Cargo.toml`,
-  `**/Cargo.lock`, `**/rust-toolchain.toml` — and is preloaded into the rust-builder agent.
-  Use it before writing, reviewing or testing Rust code, adding a crate, or touching Rust CI.
-  Versions and sources live in references/versions.md; the CI job in references/ci.md.
+  Senior Rust developer knowledge: verified toolchain versions, the exact fmt, clippy, test,
+  coverage, audit and build commands, current idiom (edition 2024, errors, async, ownership),
+  project shape for small crates, test rules, unsafe and supply-chain policy, pitfalls. Loads on
+  **/*.rs, **/Cargo.toml, **/Cargo.lock, **/rust-toolchain.toml and inside rust-builder. Use
+  before writing, reviewing or testing Rust, adding a crate or touching Rust CI. Versions:
+  references/versions.md; CI job: references/ci.md.
 paths:
   - "**/*.rs"
   - "**/Cargo.toml"

@@ -9,8 +9,7 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: # every base, so a stacked PR runs too
 permissions:
   contents: read
 concurrency:

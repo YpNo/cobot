@@ -136,6 +136,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The CI workflow and the `expert-gha` template fire on every pull request, not only those
+  based on `main`: a PR stacked on an unmerged branch got no run at all.
 - Eval cases: fixtures moved from the unknown `scaffold_script` frontmatter key to `case.yaml`
   and `fixture.sh`; `gate-asks`, `learn-unknown-domain`, `medium-spec-then-challenge` and
   `tiny-no-ceremony` now list the `Bash`, `Write` or `Edit` their graders need; the learner is

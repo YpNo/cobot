@@ -1,6 +1,7 @@
 # {{NAME}} — context
 
 profile: {{PROFILE}}          # spike | script | cli | library | service | infra
+forge: github                  # github | gitlab | gitea | other — where CI runs; ship reads it
 goal: <one line: what this repository is for>
 owner: <who decides> · <visibility> · <license>
 

@@ -131,8 +131,10 @@ def rust(root: Path, runner: Run) -> Result:
         for line in (root / "Cargo.lock").read_text(encoding="utf-8", errors="replace").splitlines()
         if line.strip() == "[[package]]"
     )
+    # the whole graph: `--workspace` would update only the members and report every
+    # compatible dependency update as "Unchanged … (available: …)"
     code, out, err = runner(
-        ["cargo", "update", "--dry-run", "--verbose", "--workspace"], root, {"CARGO_NET_OFFLINE": "false"}
+        ["cargo", "update", "--dry-run", "--verbose"], root, {"CARGO_NET_OFFLINE": "false"}
     )
     if code is None:
         result.notes.append(err)
@@ -143,7 +145,7 @@ def rust(root: Path, runner: Run) -> Result:
     else:
         for line in err.splitlines():
             updating = re.match(r"\s*Updating (\S+) (v\S+) -> (v\S+)", line)
-            behind = re.match(r"\s*Unchanged (\S+) (v\S+) \(available: (v\S+)\)", line)
+            behind = re.match(r"\s*Unchanged (\S+) (v\S+) \(available: (v[^,)\s]+)", line)
             match = updating or behind
             if match:
                 result.behind += 1

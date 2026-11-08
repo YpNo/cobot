@@ -139,6 +139,35 @@ def test_rust_adapter_countsCompatibleAndAvailable(tools, repo):
     assert result.items == ["serde v1.0.1 -> v1.0.9", "log v0.4.34 -> v0.5.0 (outside the requirement)"]
 
 
+def test_rust_adapter_wholeGraph_compatibleUpdatesNotOutsideRequirement(tools, repo):
+    # cargo 1.99 on arlo-camera-streamer-rs: `--workspace` holds every dependency back, so
+    # each compatible update came back as "Unchanged … (available: …)"
+    write_fakes(tools)
+    fake_tool(
+        tools,
+        "cargo",
+        [
+            ("*--workspace*", "   Unchanged arlo-rs v0.4.0 (available: v0.4.1)\n", 0, "err"),
+            (
+                "update*",
+                "     Locking 3 packages to highest compatible versions\n"
+                "    Updating arlo-rs v0.4.0 -> v0.4.1 (requires Rust 1.99.1)\n"
+                "   Unchanged matchit v0.8.4 (available: v0.8.6)\n"
+                "   Unchanged foo v1.0.0 (available: v2.0.0, requires Rust 1.200)\n",
+                0,
+                "err",
+            ),
+        ],
+    )
+    seed_repo(repo, "Cargo.lock")
+    result = deps.rust(repo, deps.run)
+    assert result.items == [
+        "arlo-rs v0.4.0 -> v0.4.1",
+        "matchit v0.8.4 -> v0.8.6 (outside the requirement)",
+        "foo v1.0.0 -> v2.0.0 (outside the requirement)",
+    ]
+
+
 def test_rust_adapter_cargoAuditFallback_andMissingTools(tools, repo):
     seed_repo(repo, "Cargo.lock")
     fake_tool(tools, "cargo", [("*", "error: failed to load manifest\n", 101, "err")])

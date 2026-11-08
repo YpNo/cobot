@@ -20,6 +20,8 @@ user-invocable: false
 # expert-gha
 
 A workflow is code that runs with your token and secrets on every push. Review it like that.
+The platform-neutral principles (trigger matrix, aggregator, pinning, OIDC, provenance, SBOM,
+signing, DORA) live once in `../expert-cicd/SKILL.md`; this skill is their GitHub Actions form.
 Pins: `references/actions.md`. Templates: `references/snippets.md`. Never pin from memory —
 copy a row, or resolve `gh api repos/<r>/commits/<tag> --jq .sha` and add the row.
 
@@ -46,7 +48,8 @@ copy a row, or resolve `gh api repos/<r>/commits/<tag> --jq .sha` and add the ro
 
 ## Workflow shapes
 
-- **ci.yml** — `push: [main]` + `pull_request: [main]`. Runs the same commands as local
+- **ci.yml** — `push: [main]` + `pull_request` with no base filter (a PR stacked on another
+  branch runs too). Runs the same commands as local
   (`.agent/CONTEXT.md`). Cheap checks first. A separate `zizmor` job with its own permissions.
 - **release.yml** — `push: tags: v*`. Two jobs: `build` (read-only, no cache restore) uploads
   `dist/`; `publish` (environment `release`, `contents: write`, `id-token: write`,

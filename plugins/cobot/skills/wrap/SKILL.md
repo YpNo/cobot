@@ -30,8 +30,9 @@ argument-hint: [spec slug]
    with today's date. Keep CONTEXT.md under 120 lines.
 6. **Journal.** One entry through `cobot-memory journal add`:
    `## YYYY-MM-DD — <title>` then `Changed:` `Why:` `Proof:` (commands, exit codes, tails)
-   `Open:` `Next:` and the stamp `verified: <HEAD sha> · <commands run>`. The stamp is what
-   `contribute` and `ship` will require before proposing a push.
+   `Open:` `Next:` and the stamp `verified: <HEAD sha> · <commands run>`. HEAD must be clean
+   except `.agent/` when the stamp is written: never write `+working-tree`; commit the last task
+   first. `cobot-memory stamp` is what `contribute`, `ship` and the gate's `git push` reason read.
 7. **Hand over.** The spec's branch becomes **one PR** (decision 20): check the commit log for an
    attribution footer or an AI named as author (decision 18) before proposing it, then list what
    the owner may now do (push, `gh pr create` with the body you drafted), each as a command the

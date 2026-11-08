@@ -68,6 +68,28 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   in `~/.claude/settings.json` itself; `plugins/cache/<old>/` stays behind (observed 2026-11-07,
   2.1.285).
 
+## Hooks (verified 2026-11-07 against <https://code.claude.com/docs/en/hooks.md>, 2.1.311)
+- `SubagentStop` input: common fields plus `agent_id`, `agent_type`, `agent_transcript_path`
+  (`<session>/subagents/agent-<id>.jsonl`), `last_assistant_message`, `stop_hook_active`. The
+  matcher is the agent type; plugin agents match their namespaced name (`^cobot:rust-builder$`).
+  Internal agents fire it too with an empty `agent_type`, so anchor the matcher. Output
+  `{"decision": "block", "reason": "…"}` (exit 0) or exit 2 with stderr keeps the subagent
+  running with the reason as its next instruction; `stop_hook_active` true means a stop hook
+  already continued it once. For a subagent that reports through `SubagentHandback`,
+  `last_assistant_message` is closing text and the report is `tool_input.message` of that call
+  (`PreToolUse`/`PostToolUse` matcher `SubagentHandback`). 2.1.311 fixed `SubagentStop` firing
+  twice a minute per running subagent.
+- `PostToolUse` on `Agent` carries `tool_response.content` (the report), `usage`, `totalTokens`,
+  `modelsUsed` for foreground runs; it cannot block the tool, it can `block` the result with a
+  reason. Plugin hooks run inside subagents too.
+- `SubagentStart`: matcher by agent type, context-only (`hookSpecificOutput.additionalContext`),
+  cannot block.
+- Transcripts: `~/.claude/projects/<slug>/<session>.jsonl` (slug = cwd with non-alphanumerics →
+  `-`; `CLAUDE_CONFIG_DIR` moves the root), subagents under `<session>/subagents/`, retention
+  `cleanupPeriodDays` (30). The row format is documented as internal and changeable; `/usage`
+  (aliases `/cost`, `/stats`) attributes the live session's cost to skills, subagents and
+  plugins. Plugins may ship Workflow scripts under `workflows/`, namespaced `/<plugin>:<name>`.
+
 ## Evals
 - `evals/<case>/prompt.md` (frontmatter `name`, `runs`, `max_turns`, `model`, …) +
   `evals/<case>/graders/<g>.md` (`type: regex|tool_used|tool_order|file_exists|llm|baseline`,
@@ -146,6 +168,13 @@ eval exit code 2 for partial runs.
   "sandbox required but unavailable" and scores as failed at zero cost. Cases that only need
   `Write`/`Edit` run without it. The `gate-asks` case therefore needs the backend on the machine
   that runs it (CI's ubuntu runner has to install it too).
+- The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
+  --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
+  held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`
+  accepts `EVAL_*` names only and the child inherits an allowlist (`PATH`, locale, proxy,
+  `ANTHROPIC_*`, `CLAUDE_CODE_*`, `EVAL_*`); `regex` graders read a workspace file with
+  `target: {source: file, path: …}`; `tool_used input_match` is a regex over the JSON-encoded
+  tool input; `--case <glob> --runs 1 --ablation none` iterates on one case.
 - Eval judges (`llm`, default haiku) failed two runs whose final message plainly met the rubric
   ("I sized this as tiny"). Prefer `regex`, `tool_used`, `tool_order` and `file_exists` graders;
   keep `llm` for what cannot be matched. Traces are deleted after a run unless `--keep-temp`.

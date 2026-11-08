@@ -25,8 +25,8 @@ compaction, the Python and TypeScript stacks with their builders and the contain
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `agents/` |
-| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep` | `skills/` |
-| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-containers` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
+| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep` | `skills/`, `/cobot:consult-ui`, `/cobot:consult-gitlab-ci` |
+| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
 
 Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
 `cobot-memory`. Builders never commit. See ADR-0001 to ADR-0003.
@@ -98,7 +98,14 @@ repository is trusted. Then:
   fans out reviews and journals with a verified stamp.
 - `/cobot:rules check "git push --force"` dry-runs the gate; `explain` names every matching rule;
   `sync` renders the settings block for you to apply.
-- `/cobot:consult-gha` audits the workflows of the current repository.
+- `/cobot:consult-gha` audits the workflows of the current repository; `/cobot:consult-gitlab-ci`
+  does the same for `.gitlab-ci.yml`, and `/cobot:ship` detects the forge offline and writes the
+  matching pipeline.
+- `/cobot:consult-ui` audits stylesheets, components and OnionOS themes against `expert-ui`
+  (contrast ratios computed with `jq`, focus, targets, reflow, preferences, tokens). To let the
+  expert render screens with Google Stitch, register the server at user scope with your own key
+  (decision 27): `claude mcp add stitch --transport http https://stitch.googleapis.com/mcp --header "X-Goog-Api-Key: …" -s user`;
+  generate and edit tools ask, list and get tools are silent.
 - `/cobot:learn <skill or topic> [question]` sends the learner to primary sources and read-list
   commands and brings back a dated delta; the brief names the skills whose knowledge is stale.
 - `cobot-deps check` reports dependency currency (never upgrades); the brief shows the cached
@@ -130,6 +137,11 @@ plugins/cobot/bin/cobot-memory learn --promote --dry-run '{"topic": "go", "entri
 ```bash
 plugins/cobot/bin/cobot-deps check --fresh
 ```
+
+`cobot-usage [--since DATE] [--session PREFIX] [--json]` reads this repository's local Claude Code
+transcripts (and its worktrees') and reports requests and tokens per session, model and agent
+type plus Skill and Agent call counts, never message text. Claude Code's `/usage` shows the live
+session; this is the history a routing decision needs (design §10).
 
 ## Testing
 

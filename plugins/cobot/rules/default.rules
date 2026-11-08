@@ -15,6 +15,8 @@ never Bash(git commit*Co-Authored-By*)
 never Bash(git commit*Co-authored-by*)
 never Bash(gh pr create*Generated with*)
 never Bash(gh pr edit*Generated with*)
+never Bash(glab mr create*Generated with*)
+never Bash(glab mr update*Generated with*)
 never Bash(git push * +*)
 never Bash(terragrunt apply*)
 never Bash(terragrunt destroy*)
@@ -29,9 +31,14 @@ never Bash(npm publish*)
 never Bash(pnpm publish*)
 never Bash(uv publish*)
 never Bash(gh release create*)
+never Bash(glab release create*)
+never Bash(gh repo delete*)
+never Bash(glab repo delete*)
 never Bash(git tag -a v*)
 never Bash(gh api -X DELETE*)
 never Bash(gh api --method DELETE*)
+never Bash(glab api -X DELETE*)
+never Bash(glab api --method DELETE*)
 never Edit(~/.claude/settings*.json)
 never Write(~/.claude/settings*.json)
 never Edit(.claude/settings*.json)
@@ -44,6 +51,16 @@ ask Bash(gh repo fork*)
 ask Bash(git remote add*)
 ask Bash(git remote set-url*)
 ask Bash(gh pr merge*)
+ask Bash(glab mr merge*)
+ask Bash(glab mr create*)
+ask Bash(glab mr update*)
+ask Bash(glab ci run*)
+ask Bash(glab ci retry*)
+ask Bash(glab ci cancel*)
+ask Bash(glab ci delete*)
+ask Bash(glab variable set*)
+ask Bash(glab variable delete*)
+ask Bash(glab release delete*)
 ask Bash(gh pr comment*)
 ask Bash(gh pr review*)
 ask Bash(gh issue create*)
@@ -54,6 +71,13 @@ ask Bash(gh api -X PATCH*)
 ask Bash(gh api --method POST*)
 ask Bash(gh api --method PUT*)
 ask Bash(gh api --method PATCH*)
+# a body flag without -X is an implicit POST: the canonical form rewrites it, so these rows see it
+ask Bash(glab api -X POST*)
+ask Bash(glab api -X PUT*)
+ask Bash(glab api -X PATCH*)
+ask Bash(glab api --method POST*)
+ask Bash(glab api --method PUT*)
+ask Bash(glab api --method PATCH*)
 ask Bash(ansible-playbook*)
 ask Bash(kubectl apply*)
 ask Bash(kubectl delete*)
@@ -130,6 +154,9 @@ ask mcp__*__update*
 ask mcp__*__delete*
 ask mcp__*__merge*
 ask mcp__*__push*
+# design artefacts created in the owner's own SaaS account (decision 27: Stitch screens) ask too
+ask mcp__*__generate*
+ask mcp__*__edit*
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).
@@ -158,6 +185,20 @@ allow Bash(gh release list*) @consultant
 allow Bash(gh api repos/*) @consultant
 allow Bash(gh api users/*) @consultant
 allow Bash(gh api orgs/*) @consultant
+allow Bash(glab api projects/*) @consultant
+allow Bash(glab api groups/*) @consultant
+allow Bash(glab api users/*) @consultant
+allow Bash(glab ci status*) @consultant
+allow Bash(glab ci list*) @consultant
+allow Bash(glab ci get*) @consultant
+allow Bash(glab ci trace*) @consultant
+allow Bash(glab ci lint*) @consultant
+allow Bash(glab mr view*) @consultant
+allow Bash(glab mr list*) @consultant
+allow Bash(glab mr diff*) @consultant
+allow Bash(glab repo view*) @consultant
+allow Bash(glab release list*) @consultant
+allow Bash(glab release view*) @consultant
 allow Bash(zizmor*) @consultant
 # scanners, read-only forms only (a fixer or a build would execute repository content)
 allow Bash(trivy fs*) @consultant
@@ -242,6 +283,20 @@ allow Bash(gh release list*) @learner
 allow Bash(gh api repos/*) @learner
 allow Bash(gh api users/*) @learner
 allow Bash(gh api orgs/*) @learner
+allow Bash(glab api projects/*) @learner
+allow Bash(glab api groups/*) @learner
+allow Bash(glab api users/*) @learner
+allow Bash(glab ci status*) @learner
+allow Bash(glab ci list*) @learner
+allow Bash(glab ci get*) @learner
+allow Bash(glab ci trace*) @learner
+allow Bash(glab ci lint*) @learner
+allow Bash(glab mr view*) @learner
+allow Bash(glab mr list*) @learner
+allow Bash(glab mr diff*) @learner
+allow Bash(glab repo view*) @learner
+allow Bash(glab release list*) @learner
+allow Bash(glab release view*) @learner
 allow Bash(zizmor*) @learner
 allow Bash(cargo tree*) @learner
 allow Bash(cargo metadata*) @learner

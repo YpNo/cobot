@@ -18,6 +18,6 @@ asked. Stay inside the files in scope; park anything else under `Noticed:`. Neve
 publish or edit `.agent/`, specs, changelog or versions; the rules gate asks or denies, do not
 work around it. After two failed attempts at the same check, stop and hand back.
 
-Report, under 500 words: `Files:` · `Checks:` (each command, exit code, output tail; nothing
+Report, under 500 words: `Files:` · `Checks:` (one line per command as `` - `<command>` → exit <n> `` with its output tail below, or `Checks: none — <reason>`; nothing
 listed as passing that did not run) · `Deps added:` (only what the task names, else `none`) ·
 `Open:` · `Noticed:`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md).
+"""cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md) and the builder report check.
 
 Commands
   gate                       read a PreToolUse payload on stdin; print a decision or nothing
@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -376,25 +377,47 @@ def strip_heredocs(command: str) -> str:
     return "\n".join(out)
 
 
+PUSH_VALUE_OPTIONS = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
+
+
 def expand_push_flags(tokens: list[str]) -> list[str]:
-    """``git push -uf`` becomes ``git push -u -f`` so the force rules see it."""
+    """``git push -uf origin x`` becomes ``git push origin x -u -f``: combined flags split, options
+    hoisted after the remote and refspecs so ``git push <remote>*`` rules see the remote first."""
     if tokens[:2] != ["git", "push"]:
         return tokens
-    out = tokens[:2]
-    for token in tokens[2:]:
+    positionals: list[str] = []
+    options: list[str] = []
+    rest = tokens[2:]
+    i = 0
+    while i < len(rest):
+        token = rest[i]
+        if token in PUSH_VALUE_OPTIONS and i + 1 < len(rest):
+            options.extend([token, rest[i + 1]])
+            i += 2
+            continue
         if re.fullmatch(r"-[a-zA-Z]{2,}", token):
-            out.extend(f"-{flag}" for flag in token[1:])
+            options.extend(f"-{flag}" for flag in token[1:])
+        elif len(token) > 1 and token[0] == "-":
+            options.append(token)
         else:
-            out.append(token)
-    return out
+            positionals.append(token)
+        i += 1
+    return [*tokens[:2], *positionals, *options]
+
+
+API_CLIS = ("gh", "glab")
+API_BODY_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input")
 
 
 def canonical_gh_api(tokens: list[str]) -> list[str]:
-    """``gh api repos/x -X DELETE`` and ``gh api -XDELETE repos/x`` become ``gh api -X DELETE repos/x``."""
-    if tokens[:2] != ["gh", "api"]:
+    """``gh api repos/x -X DELETE``, ``gh api -XDELETE repos/x`` and ``glab api …`` become
+    ``<cli> api -X <METHOD> …``; a body flag (``-f``, ``-F``, ``--field``, ``--raw-field``,
+    ``--input``) without an explicit method is the implicit POST both CLIs perform."""
+    if len(tokens) < 2 or tokens[0] not in API_CLIS or tokens[1] != "api":
         return tokens
     rest: list[str] = []
     method = None
+    body = False
     i = 2
     while i < len(tokens):
         token = tokens[i]
@@ -406,9 +429,15 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
         elif token.startswith("--method="):
             method = token.split("=", 1)[1].upper()
         else:
+            if token in API_BODY_FLAGS or token.startswith(("--field=", "--raw-field=", "--input=")):
+                body = True
+            elif re.fullmatch(r"-[fF][^-].*", token):
+                body = True
             rest.append(token)
         i += 1
-    return ["gh", "api", "-X", method, *rest] if method else tokens
+    if method is None and body:
+        method = "POST"
+    return [tokens[0], "api", "-X", method, *rest] if method else tokens
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:
@@ -1036,6 +1065,80 @@ def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent
 # ---------------------------------------------------------------- commands
 
 
+BUILDER_TYPE_RE = re.compile(r"^cobot:(builder|[a-z0-9-]+-builder)$")
+CHECKS_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Checks`?:\s*(.*)$")
+REPORT_SECTION_RE = re.compile(r"^\s*[-*]?\s*`?(Files|Deps added|Open|Noticed)`?:")
+EXIT_MARKER_RE = re.compile(r"(?:\bexit(?: code)?\s*:?\s*\d+|(?:→|->)\s*\d+)")
+COMMAND_RE = re.compile(r"`[^`\n]+`")
+CHECKS_NONE_RE = re.compile(r"^none\s*[—–-]+\s*\S")
+REPORT_BLOCK_REASON = (
+    "builder report lacks command and exit code under Checks:; re-run the task and require each check as "
+    "`<command>` → exit <n> with its output tail, or `Checks: none — <reason>`"
+)
+
+
+def checks_block(report: str) -> tuple[str, list[str]] | None:
+    """The text after the Checks: header and the lines of its block, or None when absent."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = CHECKS_HEADER_RE.match(line)
+        if not match:
+            continue
+        block: list[str] = []
+        for following in lines[index + 1 :]:
+            if REPORT_SECTION_RE.match(following):
+                break
+            block.append(following)
+        return match.group(1).strip(), block
+    return None
+
+
+def check_report(report: str) -> tuple[bool, str]:
+    """A builder report passes with `Checks: none — <reason>` or with a command carrying an exit marker."""
+    found = checks_block(report)
+    if found is None:
+        return False, "no Checks: section"
+    head, block = found
+    if CHECKS_NONE_RE.match(head):
+        return True, "checks: none, reason given"
+    text = "\n".join([head, *block])
+    if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
+        return True, "command and exit code present"
+    return False, "Checks: without a `command` and an exit marker"
+
+
+def response_text(response: object) -> str:
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        return response_text(response.get("content", ""))
+    if isinstance(response, list):
+        return "\n".join(str(block.get("text", "")) for block in response if isinstance(block, dict))
+    return ""
+
+
+def report(stdin: str) -> str | None:
+    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything odd)."""
+    try:
+        payload = json.loads(stdin)
+        if payload.get("tool_name") != "Agent":
+            return None
+        subagent = str((payload.get("tool_input") or {}).get("subagent_type", ""))
+        if not BUILDER_TYPE_RE.match(subagent):
+            return None
+        response = payload.get("tool_response")
+        if isinstance(response, dict) and response.get("status") == "async_launched":
+            return None
+        ok, why = check_report(response_text(response))
+        log_event({"tool": "Agent", "head": subagent, "decision": None if ok else "block", "reason": why})
+    except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
+        print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
+        return None
+    if ok:
+        return None
+    return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+
+
 def hook_output(decision: str, reason: str) -> str:
     return json.dumps(
         {
@@ -1053,6 +1156,31 @@ def log_event(payload: dict) -> None:
     if path:
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload) + "\n")
+
+
+PUSH_RE = re.compile(r"(?:^|[;&|]\s*|\s)(?:rtk\s+)?git\s+push\b")
+STAMP_SUFFIX_LIMIT = 72
+
+
+def stamp_suffix(cwd: str | None) -> str:
+    """` · stamp: <line>` from cobot-memory for a git push that asks; empty when it cannot be read."""
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "stamp"],
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - a missing suffix must never block the push verdict
+        return ""
+    line = out.stdout.strip().splitlines()[0] if out.returncode == 0 and out.stdout.strip() else ""
+    if not line:
+        return ""
+    if line.startswith("missing"):
+        line += "; run /cobot:wrap"
+    return f" · stamp: {line}"[:STAMP_SUFFIX_LIMIT]
 
 
 def gate(stdin: str) -> str | None:
@@ -1082,7 +1210,10 @@ def gate(stdin: str) -> str | None:
         return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     if verdict.decision is None:
         return None
-    return hook_output(verdict.decision, verdict.reason())
+    reason = verdict.reason()
+    if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head):
+        reason += stamp_suffix(cwd)
+    return hook_output(verdict.decision, reason)
 
 
 def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:
@@ -1195,6 +1326,11 @@ def main(argv: list[str]) -> int:
     command = positional[0] if positional else ""
     if command == "gate":
         output = gate(sys.stdin.read())
+        if output:
+            print(output)
+        return 0
+    if command == "report":
+        output = report(sys.stdin.read())
         if output:
             print(output)
         return 0

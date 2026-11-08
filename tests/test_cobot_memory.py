@@ -623,3 +623,112 @@ def test_check_oldRulesFile_warnsToRename(memory, repo):
     (mem.dir / "partner.rules").write_text("ask Bash(x*)\n")
     out = memory.cmd_check(mem)
     assert "partner.rules is not read since the rename" in out and "rename it to cobot.rules" in out
+
+
+# ---------------------------------------------------------------- stamp (R2)
+
+
+def stamped(memory, repo, stamp_line):
+    remote(repo, "origin", "https://github.com/o/r.git")
+    write_config("identities", "github.com/o\n")
+    commit(repo)
+    mem = memory.Memory()
+    memory.cmd_init(mem, {"profile": "cli"}, set())
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True
+    ).stdout.strip()
+    with open(mem.dir / "JOURNAL.md", "a") as handle:
+        handle.write(f"\n## 2026-11-07 — wrap\nChanged: x\n{stamp_line.replace('HEAD', head[:7])}\n")
+    return mem, head
+
+
+def add_commit(repo, path, text="x"):
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text(text)
+    subprocess.run(["git", "-C", str(repo), "add", str(path)], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", f"touch {path}"], check=True)
+
+
+def test_stamp_equalsHead_ok(memory, repo):
+    mem, head = stamped(memory, repo, "verified: HEAD · pytest")
+    assert memory.cmd_stamp(mem) == f"ok {head[:7]}"
+
+
+def test_stamp_docsOnlyAfter_ok(memory, repo):
+    mem, _ = stamped(memory, repo, "verified: HEAD")
+    add_commit(repo, "docs/x.md")
+    add_commit(repo, "CHANGELOG.md")
+    assert memory.cmd_stamp(mem).startswith("ok ")
+
+
+def test_stamp_codeAfter_missing(memory, repo):
+    mem, _ = stamped(memory, repo, "verified: HEAD · pytest")
+    add_commit(repo, "src/main.py")
+    assert memory.cmd_stamp(mem) == "missing — HEAD moved since the stamp"
+
+
+def test_stamp_dirtyTreeStamp_missing(memory, repo):
+    mem, _ = stamped(memory, repo, "verified: HEAD+working-tree · pytest")
+    assert memory.cmd_stamp(mem) == "missing — dirty-tree stamp; commit, then wrap"
+
+
+def test_stamp_noStamp_missing(memory, repo):
+    mem, _ = stamped(memory, repo, "Proof: none yet")
+    assert memory.cmd_stamp(mem) == "missing — no stamp"
+
+
+def test_stamp_untrustedMemory_missingWithoutReadingJournal(memory, repo):
+    remote(repo, "origin", "https://github.com/stranger/r.git")
+    commit(repo)
+    mem = memory.Memory()
+    (mem.dir).mkdir(exist_ok=True)
+    (mem.dir / "JOURNAL.md").write_text("verified: 0000000 · <script>evil</script>\n")
+    assert memory.cmd_stamp(mem) == "missing — untrusted memory"
+
+
+# ---------------------------------------------------------------- never-push rules at foreign init (R2)
+
+
+def test_never_push_rules_everyRemoteExceptOrigin(memory):
+    rules = memory.never_push_rules(
+        {
+            "origin": "https://github.com/YpNo/headscale.git",
+            "ghsa": "git@github.com:juanfont/headscale-ghsa-8598-8grw-c4hv.git",
+            "upstream": "https://github.com/juanfont/headscale",
+        }
+    )
+    assert rules == [
+        "never Bash(git push ghsa*)",
+        "never Bash(git push *headscale-ghsa-8598-8grw-c4hv*)",
+        "never Bash(git push upstream*)",
+        "never Bash(git push *headscale*)",
+    ]
+
+
+def test_init_foreign_writesNeverPushRules_gateDeniesBothForms(memory, rules, repo):
+    remote(repo, "origin", "https://github.com/other/proj.git")
+    remote(repo, "ghsa", "git@github.com:other/proj-ghsa-1234.git")
+    commit(repo)
+    out = memory.cmd_init(memory.Memory(), {}, {"foreign"})
+    assert "rules: never Bash(git push ghsa*)" in out
+    external = memory.Memory().external_path()
+    text = (external / "cobot.rules").read_text()
+    assert "never Bash(git push *proj-ghsa-1234*)" in text
+    assert "kept" in memory.cmd_init(memory.Memory(), {}, {"foreign"})  # idempotent: no second copy
+    assert text == (external / "cobot.rules").read_text()
+    for command in ("git push -u ghsa fix", "git push git@github.com:other/proj-ghsa-1234.git HEAD:fix"):
+        verdict = json.loads(
+            rules.gate(
+                json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo)})
+            )
+        )
+        assert verdict["hookSpecificOutput"]["permissionDecision"] == "deny", command
+        assert "project layer" in verdict["hookSpecificOutput"]["permissionDecisionReason"]
+    origin = json.loads(
+        rules.gate(
+            json.dumps(
+                {"tool_name": "Bash", "tool_input": {"command": "git push -u origin fix"}, "cwd": str(repo)}
+            )
+        )
+    )
+    assert origin["hookSpecificOutput"]["permissionDecision"] == "ask"

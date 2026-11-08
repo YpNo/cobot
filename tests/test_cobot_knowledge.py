@@ -728,8 +728,8 @@ def test_learn_local_redatesAndSupersedes(memory, repo):
     out = memory.cmd_learn(mem, again, False, False)
     assert "written" in out
     assert dated_lines(path) == [
-        "- [verified 2026-11-07 · src: exp: capture] freq 868.3 MHz",
-        "- [verified 2026-11-07 · src: exp: x] channel 11",
+        "- [verified 2026-11-07 · src: exp: capture] freq 868.3 MHz",  # the entry's own checked date
+        f"- [verified {date.today().isoformat()} · src: exp: x] channel 11",  # no checked date: today
     ]
     sup = json.dumps(
         {
@@ -740,7 +740,7 @@ def test_learn_local_redatesAndSupersedes(memory, repo):
         }
     )
     assert "~ superseded:" in memory.cmd_learn(mem, sup, False, False)
-    assert dated_lines(path)[1] == "- [verified 2026-11-07 · src: exp: y] channel 15"
+    assert dated_lines(path)[1] == f"- [verified {date.today().isoformat()} · src: exp: y] channel 15"
 
 
 def test_cli_knowledge(memory, repo, capsys):

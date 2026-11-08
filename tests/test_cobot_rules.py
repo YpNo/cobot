@@ -1052,3 +1052,238 @@ def test_gate_contributeRemotesAsk(rules, command):
 def test_gate_consultantScannersReadOnlyForms(rules, command, silent):
     out = rules.gate(payload(command, agent_type="cobot:consultant"))
     assert (out is None) is silent, command
+
+
+# ---------------------------------------------------------------- builder report check (R2)
+
+REPORT_SHIM = PLUGIN / "hooks" / "report.sh"
+GOOD_REPORT = """Files:
+- src/lib.rs
+Checks:
+- `cargo test -q` → exit 0
+  test result: ok. 3 passed
+- `cargo clippy -q` → exit 0
+Deps added: none
+Open: nothing
+"""
+PROMISE_REPORT = """Files:
+- src/lib.rs
+Checks: ran the tests, all green.
+Deps added: none
+"""
+
+
+def agent_payload(subagent: str, content, status: str = "completed") -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": subagent, "prompt": "T1"},
+            "tool_response": {"status": status, "content": content},
+        }
+    )
+
+
+def test_report_builderWithExitCodes_allows(rules):
+    assert rules.report(agent_payload("cobot:rust-builder", GOOD_REPORT)) is None
+
+
+def test_report_checksNoneWithReason_allows(rules):
+    text = "Files:\n- README.md\nChecks: none — docs-only task, nothing to run\nOpen: nothing\n"
+    assert rules.report(agent_payload("cobot:builder", text)) is None
+
+
+def test_report_promiseWithoutExitCode_blocks(rules):
+    out = json.loads(rules.report(agent_payload("cobot:python-builder", PROMISE_REPORT)))
+    assert out["decision"] == "block"
+    assert "exit <n>" in out["reason"] and "Checks: none" in out["reason"]
+
+
+def test_report_noChecksSection_blocks(rules):
+    out = json.loads(rules.report(agent_payload("cobot:go-builder", "Files:\n- a.go\nOpen: nothing\n")))
+    assert out["decision"] == "block"
+
+
+def test_report_contentAsBlocks_isRead(rules):
+    blocks = [{"type": "text", "text": GOOD_REPORT}]
+    assert rules.report(agent_payload("cobot:typescript-builder", blocks)) is None
+    blocks = [{"type": "text", "text": PROMISE_REPORT}]
+    assert json.loads(rules.report(agent_payload("cobot:typescript-builder", blocks)))["decision"] == "block"
+
+
+def test_report_nonBuilderAgent_isIgnored(rules):
+    assert rules.report(agent_payload("cobot:consultant", PROMISE_REPORT)) is None
+    assert rules.report(agent_payload("general-purpose", PROMISE_REPORT)) is None
+    assert rules.report(agent_payload("", PROMISE_REPORT)) is None
+
+
+def test_report_asyncLaunch_isIgnored(rules):
+    assert rules.report(agent_payload("cobot:builder", "", status="async_launched")) is None
+
+
+def test_report_otherToolOrMalformed_allows(rules, capsys):
+    other = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": "x"})
+    assert rules.report(other) is None
+    assert rules.report("not json") is None
+    assert "allowing" in capsys.readouterr().err
+
+
+def test_check_report_exitMarkerForms(rules):
+    for marker in ("exit 0", "exit code 1", "exit: 2", "-> 0", "→ 3"):
+        ok, _ = rules.check_report(f"Checks:\n- `make test` {marker}\n")
+        assert ok, marker
+    ok, why = rules.check_report("Checks:\n- make test exit 0\n")
+    assert not ok and "command" in why
+
+
+def test_report_shim_blocksAndNeverFails(tmp_path):
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM)],
+        input=agent_payload("cobot:builder", PROMISE_REPORT),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert run.returncode == 0 and json.loads(run.stdout)["decision"] == "block"
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM)], input="garbage", capture_output=True, text=True, env=env
+    )
+    assert run.returncode == 0 and run.stdout == "" and "allowing" in run.stderr
+
+
+# ---------------------------------------------------------------- stamp suffix on git push (R2)
+
+
+def test_gate_gitPush_carriesStampSuffix(rules, tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    out = json.loads(rules.gate(payload("git push -u origin fix", cwd=str(tmp_path))))
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert " · stamp: missing" in reason and "run /cobot:wrap" in reason
+    assert len(reason) <= rules.REASON_LIMIT
+
+
+def test_gate_forcePush_noStampSuffix(rules, tmp_path):
+    out = json.loads(rules.gate(payload("git push --force", cwd=str(tmp_path))))
+    assert "stamp" not in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_stamp_suffix_unreadable_isEmpty(rules, monkeypatch):
+    monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
+    assert rules.stamp_suffix("/") == ""
+
+
+# ---------------------------------------------------------------- push option hoisting (R2)
+
+
+def test_expand_push_flags_hoistsOptionsAfterRemote(rules):
+    assert rules.expand_push_flags(["git", "push", "-u", "ghsa", "fix"]) == [
+        "git",
+        "push",
+        "ghsa",
+        "fix",
+        "-u",
+    ]
+    assert rules.expand_push_flags(["git", "push", "-uf", "origin"]) == ["git", "push", "origin", "-u", "-f"]
+    assert rules.expand_push_flags(["git", "push", "-o", "ci.skip", "ghsa", "HEAD"]) == [
+        "git", "push", "ghsa", "HEAD", "-o", "ci.skip",
+    ]  # fmt: skip
+    assert rules.expand_push_flags(["git", "push", "--force", "origin", "main"]) == [
+        "git", "push", "origin", "main", "--force",
+    ]  # fmt: skip
+    assert rules.expand_push_flags(["git", "status"]) == ["git", "status"]
+
+
+def test_gate_forcePushAnyOrder_stillDenied(rules):
+    for command in (
+        "git push -f origin main",
+        "git push origin -f main",
+        "git push --force-with-lease origin",
+    ):
+        out = json.loads(rules.gate(payload(command)))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny", command
+
+
+def test_gate_mcpGenerateAndEdit_ask(rules):
+    for tool in ("mcp__stitch__generate_screen_from_text", "mcp__google-stitch__edit_screen"):
+        out = json.loads(rules.gate(payload(tool=tool, tool_input={"prompt": "x"})))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", tool
+    assert rules.gate(payload(tool="mcp__stitch__list_projects", tool_input={})) is None
+    assert rules.gate(payload(tool="mcp__stitch__get_screen", tool_input={"id": "1"})) is None
+
+
+# ---------------------------------------------------------------- gh/glab api canonical form, glab rows (R2)
+
+
+def test_canonical_api_implicitPostAndGlab(rules):
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r/issues", "-f", "title=x"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+    assert rules.canonical_gh_api(["glab", "api", "projects/1/issues", "--raw-field", "t=x"])[:4] == [
+        "glab", "api", "-X", "POST",
+    ]  # fmt: skip
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r", "--input=body.json"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+    assert rules.canonical_gh_api(["glab", "api", "projects/1", "-XDELETE"])[:4] == [
+        "glab",
+        "api",
+        "-X",
+        "DELETE",
+    ]
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r"]) == ["gh", "api", "repos/o/r"]
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r", "-F", "per_page=5"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+
+
+def test_gate_apiBodyFlag_asksEvenForConsultant(rules):
+    for command in ("gh api repos/o/r/issues -f title=x", "glab api projects/1/issues --raw-field title=x"):
+        out = json.loads(rules.gate(payload(command, agent_type="cobot:consultant")))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", command
+    assert rules.gate(payload("gh api repos/o/r", agent_type="cobot:consultant")) is None
+    assert rules.gate(payload("glab api projects/1 --paginate", agent_type="cobot:consultant")) is None
+
+
+def test_gate_glabRows_mirrorGh(rules):
+    expect = {
+        "glab release create v1": "deny",
+        "gh repo delete o/r": "deny",
+        "glab repo delete o/r": "deny",
+        "glab api projects/1 -X DELETE": "deny",
+        "glab mr create --fill --description 'Generated with X'": "deny",
+        "glab mr merge 12": "ask",
+        "glab mr create --fill": "ask",
+        "glab ci run": "ask",
+        "glab variable set K v": "ask",
+    }
+    for command, decision in expect.items():
+        out = json.loads(rules.gate(payload(command)))
+        assert out["hookSpecificOutput"]["permissionDecision"] == decision, command
+    for command in (
+        "glab ci status",
+        "glab mr view 12",
+        "glab repo view",
+        "glab ci lint",
+        "glab release list",
+    ):
+        assert rules.gate(payload(command, agent_type="cobot:consultant")) is None, command
+    assert (
+        json.loads(rules.gate(payload("glab ci view", agent_type="cobot:consultant")))["hookSpecificOutput"][
+            "permissionDecision"
+        ]
+        == "ask"
+    )

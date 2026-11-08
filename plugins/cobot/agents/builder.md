@@ -24,8 +24,10 @@ Contract:
 Report, under 500 words:
 
 - `Files:` paths created or changed, one line each.
-- `Checks:` every command you ran as proof, each with its exit code and the last lines of output.
-  A check you did not run is not listed as passing.
+- `Checks:` every command you ran as proof, one line each as `` - `<command>` → exit <n> `` with
+  the last lines of output indented below it. A task with nothing to run (docs only, or the
+  gate denied the command) reports the single line `Checks: none — <reason>`. A check you did
+  not run is not listed as passing; a report without this shape is sent back by the hook.
 - `Deps added:` every new dependency, or `none`. Add only what the task names (decision 22).
 - `Open:` what is incomplete or uncertain.
 - `Noticed:` observations outside the task, for the findings file.

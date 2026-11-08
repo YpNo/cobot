@@ -180,6 +180,23 @@ def test_brief_trimsLongEntryKeepingOpenAndNext(memory, repo):
     assert len(brief) < 2500
 
 
+def test_trimEntry_multiLineField_keepsContinuationWithItsField(memory):
+    # the legacy journal layout (arlo-camera-streamer-rs): a field, then indented continuation lines
+    entry = (
+        "## 2026-01-01 — legacy\n"
+        "Changed:  first change line\n"
+        "  change continued\n"
+        "Why: because\n"
+        "  why continued\n"
+        "Proof: " + "p" * 1100 + "\n"
+        "Next: n-line"
+    )
+    lines = memory.trim_entry(entry).splitlines()
+    assert lines[1] == "Next: n-line"
+    assert lines[lines.index("Changed:  first change line") + 1] == "  change continued"
+    assert lines[lines.index("Why: because") + 1] == "  why continued"
+
+
 def test_brief_findingsFloorAndTail(memory, repo):
     agent = seed(repo, journal="# J\n\n## 2026-01-01 — e\n" + "Changed: " + "y" * 7000 + "\n")
     rows = "".join(f"| F-{i:02d} | s{i} | obs{i} | |\n" for i in range(1, 6))

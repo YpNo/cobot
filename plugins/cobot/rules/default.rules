@@ -111,6 +111,68 @@ ask Bash(gcloud * create*)
 ask Bash(gcloud * delete*)
 ask Bash(gcloud * update*)
 ask Bash(gcloud * ssh*)
+# gcloud verbs the first rows missed (decision 26, slice 3): the gate cuts the command after its
+# verb, so these match the canonical form exactly; add-*/set-*/remove-* families included
+ask Bash(gcloud * add-*)
+ask Bash(gcloud * remove-*)
+ask Bash(gcloud * set-*)
+ask Bash(gcloud * attach-*)
+ask Bash(gcloud * detach-*)
+ask Bash(gcloud * restore*)
+ask Bash(gcloud * deploy)
+ask Bash(gcloud * submit)
+ask Bash(gcloud * enable)
+ask Bash(gcloud * disable)
+ask Bash(gcloud * import)
+ask Bash(gcloud * export)
+ask Bash(gcloud * apply)
+ask Bash(gcloud * promote)
+ask Bash(gcloud * rollback)
+ask Bash(gcloud * resize)
+ask Bash(gcloud * start)
+ask Bash(gcloud * stop)
+ask Bash(gcloud * reset)
+ask Bash(gcloud * suspend)
+ask Bash(gcloud * resume)
+ask Bash(gcloud * restart)
+ask Bash(gcloud * move)
+ask Bash(gcloud * undelete)
+ask Bash(gcloud * destroy)
+ask Bash(gcloud * upgrade)
+ask Bash(gcloud * patch)
+ask Bash(gcloud * clone)
+ask Bash(gcloud * failover)
+ask Bash(gcloud * pause)
+ask Bash(gcloud * cancel)
+ask Bash(gcloud * replace)
+ask Bash(gcloud * invoke)
+ask Bash(gcloud * install)
+ask Bash(gcloud * cp)
+ask Bash(gcloud * mv)
+ask Bash(gcloud * rm)
+ask Bash(gcloud * rsync)
+ask Bash(gcloud * publish)
+ask Bash(gcloud * execute)
+ask Bash(gcloud * call)
+ask Bash(gcloud * run)
+ask Bash(gcloud * login)
+ask Bash(gcloud * revoke)
+ask Bash(gcloud * activate-service-account)
+ask Bash(kubectl run*)
+ask Bash(kubectl debug*)
+ask Bash(kubectl cp*)
+ask Bash(kubectl expose*)
+ask Bash(kubectl autoscale*)
+ask Bash(kubectl rollout pause*)
+ask Bash(kubectl rollout resume*)
+ask Bash(kubectl certificate*)
+ask Bash(helm plugin install*)
+ask Bash(helm registry login*)
+ask Bash(istioctl waypoint apply*)
+ask Bash(istioctl waypoint delete*)
+ask Bash(istioctl tag set*)
+ask Bash(istioctl tag remove*)
+ask Bash(istioctl create-remote-secret*)
 # adding a dependency is a decision (decision 22); bare installs from a lockfile stay silent
 ask Bash(cargo add*)
 ask Bash(cargo install*)
@@ -332,3 +394,123 @@ allow Bash(diff*) @learner
 allow Bash(sha256sum*) @learner
 allow Bash(curl -s*) @learner
 allow Bash(curl --silent*) @learner
+
+# cloud reads for the read-only agents (decision 28): silent like gh api repos/*. The gate cuts a
+# gcloud command after its verb, so the gcloud rows carry no trailing star; a segment that could
+# run repository content (an environment assignment, git -c, --kubeconfig, --post-renderer,
+# --enable-exec, --enable-helm) never matches these allows. Secret values stay out: the never
+# rows below win over every allow.
+never Bash(kubectl get *[sS][eE][cC][rR][eE][tT]*) @consultant
+never Bash(kubectl get *[sS][eE][cC][rR][eE][tT]*) @learner
+never Bash(kubectl get *-f *) @consultant
+never Bash(kubectl get *-f *) @learner
+never Bash(kubectl get *-k *) @consultant
+never Bash(kubectl get *-k *) @learner
+never Bash(kubectl get *--filename*) @consultant
+never Bash(kubectl get *--filename*) @learner
+never Bash(kubectl get *--kustomize*) @consultant
+never Bash(kubectl get *--kustomize*) @learner
+never Bash(kubectl config view*--raw*) @consultant
+never Bash(kubectl config view*--raw*) @learner
+allow Bash(gcloud * list) @consultant
+allow Bash(gcloud * describe) @consultant
+allow Bash(gcloud * get-iam-policy) @consultant
+allow Bash(gcloud * get-value) @consultant
+allow Bash(gcloud * get-ancestors) @consultant
+allow Bash(gcloud * read) @consultant
+allow Bash(gcloud * ls) @consultant
+allow Bash(gcloud version) @consultant
+allow Bash(kubectl get*) @consultant
+allow Bash(kubectl describe*) @consultant
+allow Bash(kubectl logs*) @consultant
+allow Bash(kubectl diff*) @consultant
+allow Bash(kubectl explain*) @consultant
+allow Bash(kubectl top*) @consultant
+allow Bash(kubectl events*) @consultant
+allow Bash(kubectl api-resources*) @consultant
+allow Bash(kubectl api-versions*) @consultant
+allow Bash(kubectl version*) @consultant
+allow Bash(kubectl cluster-info) @consultant
+allow Bash(kubectl auth can-i*) @consultant
+allow Bash(kubectl config view*) @consultant
+allow Bash(kubectl config current-context*) @consultant
+allow Bash(kubectl config get-contexts*) @consultant
+allow Bash(kubectl kustomize*) @consultant
+allow Bash(kubectl rollout status*) @consultant
+allow Bash(kubectl rollout history*) @consultant
+allow Bash(helm template*) @consultant
+allow Bash(helm lint*) @consultant
+allow Bash(helm list*) @consultant
+allow Bash(helm ls*) @consultant
+allow Bash(helm status*) @consultant
+allow Bash(helm show*) @consultant
+allow Bash(helm search*) @consultant
+allow Bash(helm history*) @consultant
+allow Bash(helm env*) @consultant
+allow Bash(helm version*) @consultant
+allow Bash(helm verify*) @consultant
+allow Bash(helm dependency list*) @consultant
+allow Bash(helm get notes*) @consultant
+allow Bash(helm get metadata*) @consultant
+allow Bash(helm get hooks*) @consultant
+allow Bash(kustomize build*) @consultant
+allow Bash(kubeconform*) @consultant
+allow Bash(istioctl analyze*) @consultant
+allow Bash(istioctl proxy-status*) @consultant
+allow Bash(istioctl proxy-config*) @consultant
+allow Bash(istioctl version*) @consultant
+allow Bash(istioctl verify-install*) @consultant
+allow Bash(istioctl waypoint list*) @consultant
+allow Bash(istioctl waypoint status*) @consultant
+allow Bash(istioctl tag list*) @consultant
+allow Bash(gcloud * list) @learner
+allow Bash(gcloud * describe) @learner
+allow Bash(gcloud * get-iam-policy) @learner
+allow Bash(gcloud * get-value) @learner
+allow Bash(gcloud * get-ancestors) @learner
+allow Bash(gcloud * read) @learner
+allow Bash(gcloud * ls) @learner
+allow Bash(gcloud version) @learner
+allow Bash(kubectl get*) @learner
+allow Bash(kubectl describe*) @learner
+allow Bash(kubectl logs*) @learner
+allow Bash(kubectl diff*) @learner
+allow Bash(kubectl explain*) @learner
+allow Bash(kubectl top*) @learner
+allow Bash(kubectl events*) @learner
+allow Bash(kubectl api-resources*) @learner
+allow Bash(kubectl api-versions*) @learner
+allow Bash(kubectl version*) @learner
+allow Bash(kubectl cluster-info) @learner
+allow Bash(kubectl auth can-i*) @learner
+allow Bash(kubectl config view*) @learner
+allow Bash(kubectl config current-context*) @learner
+allow Bash(kubectl config get-contexts*) @learner
+allow Bash(kubectl kustomize*) @learner
+allow Bash(kubectl rollout status*) @learner
+allow Bash(kubectl rollout history*) @learner
+allow Bash(helm template*) @learner
+allow Bash(helm lint*) @learner
+allow Bash(helm list*) @learner
+allow Bash(helm ls*) @learner
+allow Bash(helm status*) @learner
+allow Bash(helm show*) @learner
+allow Bash(helm search*) @learner
+allow Bash(helm history*) @learner
+allow Bash(helm env*) @learner
+allow Bash(helm version*) @learner
+allow Bash(helm verify*) @learner
+allow Bash(helm dependency list*) @learner
+allow Bash(helm get notes*) @learner
+allow Bash(helm get metadata*) @learner
+allow Bash(helm get hooks*) @learner
+allow Bash(kustomize build*) @learner
+allow Bash(kubeconform*) @learner
+allow Bash(istioctl analyze*) @learner
+allow Bash(istioctl proxy-status*) @learner
+allow Bash(istioctl proxy-config*) @learner
+allow Bash(istioctl version*) @learner
+allow Bash(istioctl verify-install*) @learner
+allow Bash(istioctl waypoint list*) @learner
+allow Bash(istioctl waypoint status*) @learner
+allow Bash(istioctl tag list*) @learner

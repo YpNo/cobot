@@ -162,6 +162,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Three bugs found by onboarding arlo-camera-streamer-rs: `cobot-deps` ran `cargo update
+  --workspace`, which reports every compatible dependency update as held back (it hid arlo-rs
+  0.4.0 -> 0.4.1); the brief's journal trimming split a field from its indented continuation
+  lines, garbling older entries; and a capped brief dropped Verified commands and Constraints
+  first, because they come after Environment in the template. Those two sections now get room
+  first.
 - `install.sh` no longer prints "Failed to remove marketplace 'agentic-partner'" on every
   install: it matched the old name anywhere in the marketplace list, including the cobot
   marketplace's own folder path, which is still named `agentic-partner`. It now matches the

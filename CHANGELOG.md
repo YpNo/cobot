@@ -143,6 +143,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `/cobot:spec` checks every change against the project's own principles: CONTEXT.md gains
+  `governance:` (the path to a constitution or equivalent), `/cobot:onboard` fills it, and the
+  spec's principles check gives each principle one line, a violation becoming a clarify
+  question. Onboard also carries a spec-kit project over: the constitution moves out of
+  `.specify/`, open tasks are copied verbatim into `.agent/specs/` for `/cobot:build`, and the
+  feature folders stay as history.
 - **Breaking: the project is named cobot** (ADR-0004). Marketplace `cobot`, plugin `cobot@cobot`
   (was `partner@agentic-partner`), prefix `/cobot:`, agents `cobot:*`, binaries `cobot-*`,
   modules `_cobot_*`, environment `COBOT_*`, tags `cobot rule|gate|session:`, rule files

@@ -4,6 +4,7 @@ profile: {{PROFILE}}          # spike | script | cli | library | service | infra
 forge: github                  # github | gitlab | gitea | other — where CI runs; ship reads it
 goal: <one line: what this repository is for>
 owner: <who decides> · <visibility> · <license>
+governance: none               # path to the project's principles (a constitution); every spec checks against it
 
 ## Stack
 

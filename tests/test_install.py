@@ -241,6 +241,21 @@ def test_install_refresh_reportsOwnerRulesFile(home, old_state):
     assert (home / ".claude" / "partner.rules").is_file()
 
 
+def test_install_project_cobotFolderNamedAgenticPartner_removesNothing(home, tmp_path):
+    # the real list prints the folder on the line under the name; the checkout is still
+    # ~/workspace/agentic-partner, which must not read as the old marketplace
+    fake = FAKE_CLAUDE.replace(
+        'echo "  cobot" ;;',
+        'echo "  \u276f cobot"; echo "    Source: Folder (/home/u/workspace/agentic-partner)" ;;',
+    )
+    target = tmp_path / "proj"
+    target.mkdir()
+    result = run_migrating(["--project", str(target)], home, fake=fake)
+    assert result.returncode == 0
+    assert "marketplace remove" not in result.stdout
+    assert "removed marketplace" not in result.stdout
+
+
 def test_install_refresh_keepsOldMarketplaceWhileInstallsRemain(home, old_state):
     result = run_migrating(["--refresh", str(old_state["repo"])], home, fake=FAKE_CLAUDE_OLD_REMAINS)
     assert "marketplace agentic-partner kept: 1 install(s)" in result.stdout

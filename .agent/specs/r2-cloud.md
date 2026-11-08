@@ -136,8 +136,8 @@ to `expert-gcp` instead. Recorded as decision 28 and ADR-0006.
    provider, prefixed project IDs and `LastIndex` parsing, what does not change, unavailable
    services, the audit greps, the test rules; every claim re-verified or marked `reported` with
    the Fabric source). Acceptance: `check-plugin` passes; the description names the files and
-   the hand-off; every version line has a source; `grep -rn gcd-universe plugins/cobot` is
-   empty.
+   the hand-off; every version line has a source; no skill hands off to `gcd-universe` any more (the
+   universe reference names it once, as the superseded source).
 2. **`/cobot:consult-gcp` audits read-only.** Fork of the consultant: inventory (Terraform
    roots and modules with a `google` provider, `cloudbuild*.y*ml`, workflows that authenticate to
    GCP, `gcloud` calls in scripts), then the checks: keys (`google_service_account_key`, JSON

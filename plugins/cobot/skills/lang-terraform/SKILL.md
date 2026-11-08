@@ -120,9 +120,10 @@ project and only when the owner asks. Example and override patterns: `references
   `disable_on_destroy = false` in live roots.
 - IAM: `_member` resources (additive) in modules; `_binding` and `_policy` are authoritative and
   will remove grants made elsewhere. Never mix authoritative and additive on the same role.
-- `universe_domain` on the provider selects a non-public universe (sovereign clouds such as S3NS,
-  Google Cloud Dedicated). It matters as soon as one hardcoded `googleapis.com` endpoint or
-  service-agent email exists; hand off to the `gcd-universe` skill (later `expert-gcp`).
+- A `google` or `google-beta` provider loads `../expert-gcp/SKILL.md`: IAM shape, federation,
+  GKE, registry, logging and cost live there, and `references/universe.md` covers
+  `universe_domain` (sovereign clouds such as S3NS, Google Cloud Dedicated), which matters as
+  soon as one hardcoded `googleapis.com` endpoint or service-agent email exists.
 
 ## Pitfalls
 

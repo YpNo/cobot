@@ -1,6 +1,6 @@
 # Spec — R2 slice 3: Google Cloud, Kubernetes and the service mesh
 
-size: large · profile: library · owner: YpNo · date: 2026-11-08 · parent: `.agent/specs/r2.md` · branch `feat/r2-cloud` stacked on `feat/r2-experts-ui-cicd`
+size: large · profile: library · owner: YpNo · date: 2026-11-08 · parent: `.agent/specs/r2.md` · branch `feat/r2-cloud` on `main`
 
 ## Goal
 
@@ -68,9 +68,9 @@ description total stays under 15 000 characters; the SessionStart payload under 
 - Proof: `check-plugin` (paths, dated lines, the two budgets), strict validation, markdownlint,
   pytest on the canonical forms and every new row, three eval cases single-arm, a gate dry run
   of every row named in the stories.
-- Delivery: tasks below are the commits; one PR with base `feat/r2-experts-ui-cicd`; when PR 5
-  merges GitHub retargets it; review changes to the earlier slices reach this branch by `git
-  merge`, never by a rebase of a pushed branch.
+- Delivery: tasks below are the commits; one PR with base `main` (PRs 4 to 7 merged while this
+  slice was built; the unpushed branch was rebased onto `main` once, before its first push;
+  after the push, review changes reach it by `git merge`, never by a rebase).
 
 ## Decision 28 (drafted here, confirmed by the challenger pass): skill pairs, not `cobot-gcp`
 

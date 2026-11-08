@@ -1,15 +1,13 @@
 ---
 name: expert-containers
 description: >-
-  Container images and release engineering for this cobot: Dockerfile and Containerfile
-  idiom (BuildKit frontend, multi-stage, distroless and Chainguard bases, cache and secret
-  mounts, multi-platform), compose files, rootless Podman and Quadlet, SBOM and provenance
-  attestations, keyless cosign signing, Trivy gates, GHCR publishing with pinned actions.
-  Applies whenever image or compose files are read or changed — `**/Dockerfile*`,
-  `**/Containerfile*`, `**/*.dockerfile`, `**/compose*.y*ml`, `**/docker-compose*.y*ml`,
-  `**/.dockerignore`, `**/*.container` — and is what /cobot:ship follows for the image
-  workflow. Verified versions and SHAs live in references/versions.md; the workflow in
-  references/ci.md; the read-only audit is consult-containers.
+  Container images and release engineering: Dockerfile and Containerfile idiom (BuildKit frontend,
+  multi-stage, distroless and Chainguard bases, cache and secret mounts, multi-platform), compose,
+  rootless Podman and Quadlet, SBOM and provenance, keyless cosign, Trivy gates, GHCR publishing
+  with pinned actions. Loads on **/Dockerfile*, **/Containerfile*, **/*.dockerfile,
+  **/compose*.y*ml, **/docker-compose*.y*ml, **/.dockerignore, **/*.container; what /cobot:ship
+  follows for the image workflow. Versions and SHAs in references/versions.md, workflow in
+  references/ci.md; audit: consult-containers.
 paths:
   - "**/Dockerfile*"
   - "**/Containerfile*"

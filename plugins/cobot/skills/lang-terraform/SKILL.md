@@ -2,14 +2,12 @@
 name: lang-terraform
 description: >-
   Senior Terraform/OpenTofu developer for small modules and live environments, Google Cloud first.
-  Loads when the session reads or edits **/*.tf, **/*.tfvars, **/*.tftest.hcl,
-  **/.terraform.lock.hcl or **/*.hcl, and is preloaded into builder agents working on
-  infrastructure code. Use it to pick the binary (terraform or tofu), run the verified
-  check chain (fmt, validate, tflint, trivy config, terraform test), pin providers and refresh
-  the lock file, write idiomatic variables/outputs/moved/import blocks, write .tftest.hcl tests
-  with mocks, and keep state safe. Plans are proposed, never applied: the cobot rules gate
-  denies apply and destroy, the owner applies. Works without the HashiCorp Terraform MCP server:
-  versions come from the registry API over curl and from references/versions.md (dated lines).
+  Loads on **/*.tf, **/*.tfvars, **/*.tftest.hcl, **/.terraform.lock.hcl, **/*.hcl and inside
+  builders on infrastructure code. Picks the binary, runs the verified chain (fmt, validate,
+  tflint, trivy config, test), pins providers and the lock file, writes idiomatic variables,
+  outputs, moved and import blocks and .tftest.hcl mocks, keeps state safe. Plans are proposed,
+  never applied: the gate denies apply and destroy. Versions in references/versions.md. A google
+  provider hands off to expert-gcp.
 paths:
   - "**/*.tf"
   - "**/*.tfvars"

@@ -1,14 +1,13 @@
 ---
 name: expert-gha
 description: >-
-  GitHub Actions, CI/CD, release engineering and CI supply-chain security, current as of
-  2026-11-06. Loads whenever a file under .github/workflows/**, .github/actions/**, or any
-  action.yml / action.yaml is read, created or edited, and when the task is designing a CI
+  GitHub Actions CI/CD, release engineering and CI supply-chain security. Loads on
+  .github/workflows/**, .github/actions/**, action.yml or action.yaml, and when the task is a CI
   pipeline, a tag-driven release, OIDC to Google Cloud, artifact attestations, Dependabot or
-  Renovate for actions, or fixing a zizmor finding. Gives the non-negotiables (full-SHA pins,
-  least-privilege permissions, persist-credentials false, concurrency, timeouts, no untrusted
-  ${{ }} in run, zizmor), workflow shapes, release and SLSA guidance, cost levers and
-  pitfalls. Pinned SHAs live in references/actions.md, ready workflows in references/snippets.md.
+  Renovate for actions, or a zizmor finding. Gives the non-negotiables (full-SHA pins,
+  least-privilege permissions, persist-credentials false, concurrency, timeouts, no untrusted ${{
+  }} in run, zizmor), workflow shapes, release and SLSA guidance, cost levers, pitfalls. SHAs:
+  references/actions.md; workflows: references/snippets.md.
 paths:
   - ".github/workflows/**"
   - ".github/actions/**"

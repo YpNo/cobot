@@ -3,8 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: # every base: a PR stacked on another branch runs too
   workflow_dispatch:
     inputs:
       evals:

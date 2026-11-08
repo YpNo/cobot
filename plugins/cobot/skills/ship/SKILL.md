@@ -10,9 +10,14 @@ You run in the main thread. Pipelines run the commands the owner runs: CONTEXT.m
 table is the only source of commands. A job that invents its own invocation drifts from local
 reality and fails where nobody can reproduce it. Nothing here pushes, tags or publishes.
 
-1. **Ground.** Read CONTEXT.md (profile, verified commands, constraints), the existing
-   `.github/workflows/*`, `Dockerfile*` and `compose*.y*ml`, and `expert-gha` with its
-   `references/actions.md`. In foreign mode (memory outside the tree) stop: the workflows belong
+1. **Ground.** Detect the forge offline, in this order: `.gitlab-ci.yml` or `.gitlab/` present
+   → GitLab; `.github/` present → GitHub; the `origin` host contains `gitlab` → GitLab,
+   `github.com` → GitHub; else ask the owner once and record `forge:` in CONTEXT.md. Read
+   CONTEXT.md (profile, `forge`, verified commands, constraints), the existing pipeline files
+   (`.github/workflows/*` or `.gitlab-ci.yml`), `Dockerfile*` and `compose*.y*ml`, and the
+   forge's expert: `expert-gha` with its `references/actions.md`, or `expert-gitlab-ci` with its
+   `references/snippets.md` and `versions.md` (image digests younger than 30 days; a digest you
+   did not resolve today is not written). In foreign mode (memory outside the tree) stop: the workflows belong
    to the maintainers and changes to them travel through `/cobot:contribute`. A repository
    that already has workflows gets a `consult-gha` audit and a proposed patch to the existing
    files (the diff shown, the owner approves), never a rewrite or a second pipeline beside the
@@ -35,6 +40,7 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    verified, otherwise the full suite with a note), the security scan, `concurrency` with
    `cancel-in-progress`. Merge to the default branch runs the full suite once and builds the
    artifact once. Release verifies the tag's commit passed on the default branch:
+   on GitLab `glab ci get --branch <main>` / `glab ci status` on the tag's commit; on GitHub
    `gh run list --workflow ci.yml --event push --branch <main> --commit <sha> --status success
    --json conclusion` (the job needs `actions: read`; the merge run, not a PR run), runs in an
    `environment: release` with a required reviewer, rebuilds or reuses the artifact

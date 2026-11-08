@@ -1214,3 +1214,76 @@ def test_gate_mcpGenerateAndEdit_ask(rules):
         assert out["hookSpecificOutput"]["permissionDecision"] == "ask", tool
     assert rules.gate(payload(tool="mcp__stitch__list_projects", tool_input={})) is None
     assert rules.gate(payload(tool="mcp__stitch__get_screen", tool_input={"id": "1"})) is None
+
+
+# ---------------------------------------------------------------- gh/glab api canonical form, glab rows (R2)
+
+
+def test_canonical_api_implicitPostAndGlab(rules):
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r/issues", "-f", "title=x"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+    assert rules.canonical_gh_api(["glab", "api", "projects/1/issues", "--raw-field", "t=x"])[:4] == [
+        "glab", "api", "-X", "POST",
+    ]  # fmt: skip
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r", "--input=body.json"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+    assert rules.canonical_gh_api(["glab", "api", "projects/1", "-XDELETE"])[:4] == [
+        "glab",
+        "api",
+        "-X",
+        "DELETE",
+    ]
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r"]) == ["gh", "api", "repos/o/r"]
+    assert rules.canonical_gh_api(["gh", "api", "repos/o/r", "-F", "per_page=5"])[:4] == [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+    ]
+
+
+def test_gate_apiBodyFlag_asksEvenForConsultant(rules):
+    for command in ("gh api repos/o/r/issues -f title=x", "glab api projects/1/issues --raw-field title=x"):
+        out = json.loads(rules.gate(payload(command, agent_type="cobot:consultant")))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", command
+    assert rules.gate(payload("gh api repos/o/r", agent_type="cobot:consultant")) is None
+    assert rules.gate(payload("glab api projects/1 --paginate", agent_type="cobot:consultant")) is None
+
+
+def test_gate_glabRows_mirrorGh(rules):
+    expect = {
+        "glab release create v1": "deny",
+        "gh repo delete o/r": "deny",
+        "glab repo delete o/r": "deny",
+        "glab api projects/1 -X DELETE": "deny",
+        "glab mr create --fill --description 'Generated with X'": "deny",
+        "glab mr merge 12": "ask",
+        "glab mr create --fill": "ask",
+        "glab ci run": "ask",
+        "glab variable set K v": "ask",
+    }
+    for command, decision in expect.items():
+        out = json.loads(rules.gate(payload(command)))
+        assert out["hookSpecificOutput"]["permissionDecision"] == decision, command
+    for command in (
+        "glab ci status",
+        "glab mr view 12",
+        "glab repo view",
+        "glab ci lint",
+        "glab release list",
+    ):
+        assert rules.gate(payload(command, agent_type="cobot:consultant")) is None, command
+    assert (
+        json.loads(rules.gate(payload("glab ci view", agent_type="cobot:consultant")))["hookSpecificOutput"][
+            "permissionDecision"
+        ]
+        == "ask"
+    )

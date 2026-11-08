@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- R2 slice 2 (`.agent/specs/r2-experts-ui-cicd.md`): `expert-ui` (WCAG 2.2 AA by criterion,
+  W3C design tokens, type scale, component systems, device profiles including the Miyoo Mini
+  Plus and OnionOS themes, the brief → tokens → screens procedure with Google Stitch under the
+  gate) and `consult-ui` (contrast computed with `jq`); `expert-cicd` (platform-neutral
+  delivery principles, forge table) linked from `expert-gha`; `expert-gitlab-ci` (keywords,
+  `.gitlab-ci.yml` snippets in the trigger-matrix shape, dated versions and an image digest) and
+  `consult-gitlab-ci`; `/cobot:ship` detects the forge offline and CONTEXT.md gains `forge:`;
+  `glab` rows mirror the `gh` rows and the `gh`/`glab api` canonical form treats a body flag as
+  the implicit POST it is; evals `ui-contrast` and `gitlab-ci-shape`; `check-plugin` reads
+  folded descriptions and caps their total.
 - R2 slice 1 (`.agent/specs/r2.md`): a `PostToolUse` hook on the Agent tool blocks a builder
   report that carries no command with an exit code under `Checks:` (or no `Checks: none —
   <reason>` line) back to the orchestrator; every builder prompt fixes that shape.

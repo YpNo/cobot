@@ -25,8 +25,8 @@ compaction, the Python and TypeScript stacks with their builders and the contain
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `agents/` |
-| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep` | `skills/`, `/cobot:consult-ui`, `/cobot:consult-gitlab-ci` |
-| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
+| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep` | `skills/`, `/cobot:consult-ui`, `/cobot:consult-gitlab-ci`, `/cobot:consult-gcp`, `/cobot:consult-kubernetes`, `/cobot:consult-service-mesh` |
+| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
 
 Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
 `cobot-memory`. Builders never commit. See ADR-0001 to ADR-0003.
@@ -106,6 +106,14 @@ repository is trusted. Then:
   expert render screens with Google Stitch, register the server at user scope with your own key
   (decision 27): `claude mcp add stitch --transport http https://stitch.googleapis.com/mcp --header "X-Goog-Api-Key: …" -s user`;
   generate and edit tools ask, list and get tools are silent.
+- `/cobot:consult-gcp`, `/cobot:consult-kubernetes` and `/cobot:consult-service-mesh` audit a
+  Google Cloud module, a set of manifests or charts, and Istio or Cloud Service Mesh policies
+  against their experts (decision 28: skill pairs inside this plugin, no `cobot-gcp` plugin
+  until a server or an agent needs one). For the read-only agents, `gcloud … list|describe`,
+  `kubectl get|describe|logs|diff`, `helm template|lint`, `kustomize build`, `kubeconform` and
+  `istioctl analyze|proxy-status` are silent like `gh api repos/*`; a command that could run
+  repository content (an environment assignment, `git -c`, `--kubeconfig`, `--post-renderer`,
+  `--enable-exec`) asks instead, and `kubectl get secret` is denied for them.
 - `/cobot:learn <skill or topic> [question]` sends the learner to primary sources and read-list
   commands and brings back a dated delta; the brief names the skills whose knowledge is stale.
 - `cobot-deps check` reports dependency currency (never upgrades); the brief shows the cached

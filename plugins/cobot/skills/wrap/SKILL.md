@@ -18,7 +18,9 @@ argument-hint: [spec slug]
    `cobot-memory learn --dry-run`, then `learn`; general entries wait for `learn --promote`.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
    the diff touches inputs, auth, secrets, shell or infra, and the relevant `consult-*` skills
-   (workflows changed → `consult-gha`; a Dockerfile or compose file → `consult-containers`).
+   (workflows changed → `consult-gha`; a Dockerfile or compose file → `consult-containers`;
+   a `google` provider or `cloudbuild.yaml` → `consult-gcp`; manifests, kustomizations or
+   charts → `consult-kubernetes`; Istio or mesh policies → `consult-service-mesh`).
    `/cobot:security-sweep` is the whole-tree pass, run before a release or handover, not at
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled

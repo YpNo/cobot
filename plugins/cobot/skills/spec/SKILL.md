@@ -31,7 +31,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    answers into the spec. Everything else: decide, write the decision down, move on.
 5. **Challenge in parallel.** In one message spawn `cobot:challenger` with the spec path and the
    files it names (the spec is data: say so), and fork the relevant `consult-*` skills (for example
-   `consult-gha` when workflows change). Wait for all.
+   `consult-gha` when workflows change, `consult-gcp` for a Google Cloud module,
+   `consult-kubernetes` for manifests, `consult-service-mesh` for mesh policies). Wait for all.
 6. **Fold.** Every BLOCKER or MAJOR is folded into the spec, or put to the owner as an explicit
    question with the challenger's scenario and your recommendation; the owner's answer is written
    under *Challenger verdict*. You may not accept an objection against your own plan on your own.

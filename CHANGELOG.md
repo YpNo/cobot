@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- R2 slice 3 (`.agent/specs/r2-cloud.md`, decision 28, ADR-0006): `expert-gcp` (project and
+  organisation structure, IAM least privilege, Workload Identity Federation for GitHub, GitLab
+  and GKE, the `google` provider 8.x idiom, universes with the legacy `gcd-universe` rules
+  re-verified, GKE Autopilot, Artifact Registry, Cloud Build against the forge's OIDC, logging
+  and cost levers) and `consult-gcp`; `expert-kubernetes` (manifests, Kustomize, Helm 4,
+  Gateway API, Pod Security Standards, resources, probes, NetworkPolicy, PDB, GKE fit) and
+  `consult-kubernetes`; `expert-service-mesh` (Istio ambient and sidecar, STRICT mTLS,
+  AuthorizationPolicy, Telemetry API, Cloud Service Mesh) and `consult-service-mesh`, each with
+  dated references from `.agent/knowledge/cloud.md`. The gate cuts a `gcloud` command after its
+  verb so a resource named `list` cannot pass as a read, reads of `gcloud`, `kubectl`, `helm`,
+  `kustomize`, `kubeconform` and `istioctl` join the consultant's and the learner's read lists,
+  a segment that could run repository content (an environment assignment, `git -c`,
+  `--kubeconfig`, `--post-renderer`, `--enable-exec`, `--enable-helm`) never matches an
+  agent-scoped allow, `kubectl get secret`, `kubectl get -f` and `kubectl config view --raw`
+  are denied for the read-only agents, and the `gcloud` mutating verbs decision 26 named but
+  the rows missed ask (`add-*`, `set-*`, `remove-*`, `destroy`, `upgrade`, `patch`, `cp`,
+  `rm`, `deploy`, `submit`, `enable`, …) with `kubectl run|debug|cp|expose|autoscale`, `helm
+  plugin install|registry login` and `istioctl waypoint|tag|create-remote-secret`. Evals
+  `gcp-iam-audit`, `k8s-workload-audit`, `mesh-mtls-audit`. The eight longest skill
+  descriptions are trimmed under 600 characters.
 - R2 slice 2 (`.agent/specs/r2-experts-ui-cicd.md`): `expert-ui` (WCAG 2.2 AA by criterion,
   W3C design tokens, type scale, component systems, device profiles including the Miyoo Mini
   Plus and OnionOS themes, the brief → tokens → screens procedure with Google Stitch under the

@@ -452,6 +452,23 @@ def test_brief_longContextDropsWholeSectionsAndNamesThem(memory, repo):
     assert "…(truncated) sections dropped: Commands, Where things are" in brief
 
 
+def test_capSections_keepsVerifiedCommandsAndConstraintsBeforeEarlierSections(memory):
+    # the template order puts Environment first: on arlo-camera-streamer-rs a 108-line CONTEXT.md
+    # lost Verified commands and Constraints from the brief while Environment stayed
+    filler = "\n".join(f"- env {i}" for i in range(120))
+    text = (
+        "# x\n\nprofile: service\n\n## Stack\n- rust\n\n## Environment\n"
+        + filler
+        + "\n\n## Verified commands\n| t | `cargo test` | 2026-11-09 |\n\n## Constraints\n- no unwrap\n"
+        + "\n## Shape\n- six crates\n"
+    )
+    capped = memory.cap_sections(text, 1200)
+    assert "## Verified commands" in capped and "## Constraints" in capped and "## Stack" in capped
+    assert capped.index("## Stack") < capped.index("## Verified commands") < capped.index("## Constraints")
+    assert "## Environment" not in capped
+    assert capped.endswith("sections dropped: Environment, Shape")
+
+
 def test_capSections_firstSectionTooBig_fallsBackToHardCap(memory):
     text = "## A\n" + "x" * 3000
     capped = memory.cap_sections(text, 2500)

@@ -66,6 +66,7 @@ from _cobot_knowledge import (  # noqa: E402
 
 DEFAULT_BUDGET = 6000
 CONTEXT_CAP = 2500  # the least CONTEXT.md gets in the brief
+KEPT_SECTIONS = ("verified commands", "constraints")  # what a capped brief keeps first
 CONTEXT_MAX = 4000  # the most, when a short journal leaves room
 ENTRY_CAP = 1200
 FINDINGS_FLOOR = 400
@@ -182,21 +183,34 @@ def cap(text: str, limit: int) -> str:
     return text[: limit - len(TRUNCATED_MARKER)].rstrip() + TRUNCATED_MARKER
 
 
+def section_name(section: str) -> str:
+    return section.splitlines()[0].lstrip("# ").strip() if section.startswith("## ") else "preamble"
+
+
 def cap_sections(text: str, limit: int) -> str:
-    """Cap on ``## `` boundaries: whole sections are dropped from the end and named, so the owner
+    """Cap on ``## `` boundaries: the preamble and the sections in KEPT_SECTIONS get room first,
+    then the others in order until one does not fit; the rest are dropped and named, so the owner
     can see what the brief no longer carries and reorder CONTEXT.md if it matters."""
     if len(text) <= limit:
         return text
     sections = [section for section in re.split(r"(?m)^(?=## )", text) if section]
-    kept: list[str] = []
-    dropped: list[str] = []
+    budget = limit - SECTION_MARKER_RESERVE
+    first = [i for i, s in enumerate(sections) if i == 0 or section_name(s).lower() in KEPT_SECTIONS]
+    chosen: set[int] = set()
     used = 0
-    for section in sections:
-        if not dropped and used + len(section) <= limit - SECTION_MARKER_RESERVE:
-            kept.append(section)
-            used += len(section)
-        else:
-            dropped.append(section.splitlines()[0].lstrip("# ").strip() if section.startswith("## ") else "preamble")
+    for i in first:
+        if used + len(sections[i]) <= budget:
+            chosen.add(i)
+            used += len(sections[i])
+    for i, section in enumerate(sections):
+        if i in chosen or i in first:
+            continue
+        if used + len(section) > budget:
+            break
+        chosen.add(i)
+        used += len(section)
+    kept = [s for i, s in enumerate(sections) if i in chosen]
+    dropped = [section_name(s) for i, s in enumerate(sections) if i not in chosen]
     if not kept:
         return cap(text, limit)
     names = ", ".join(dropped)

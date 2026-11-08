@@ -19,6 +19,6 @@ park anything else under `Noticed:`. Never commit, push, publish or edit `.agent
 changelog, versions or the lock beyond what the task names; the rules gate asks or denies, do
 not work around it. After two failed attempts at the same check, stop and hand back.
 
-Report, under 500 words: `Files:` · `Checks:` (each command, exit code, output tail; nothing
+Report, under 500 words: `Files:` · `Checks:` (one line per command as `` - `<command>` → exit <n> `` with its output tail below, or `Checks: none — <reason>`; nothing
 listed as passing that did not run) · `Deps added:` (only what the task names, else `none`) ·
 `Open:` · `Noticed:`.

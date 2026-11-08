@@ -368,7 +368,7 @@ condense what carries a decision. A saving that forces a second run is a loss.
 | short hooks | gate reason ≤ 200 chars; SessionStart brief trimmed by priority (rules, CONTEXT head, journal, findings) | 10k hard cap |
 | listing budget | all agent descriptions ≤ 600 tokens, measured with `claude plugin details cobot` in CI after the runner installs the checkout as a path marketplace | fails the build when exceeded |
 | compaction | journal compaction and knowledge consolidation on haiku | only when thresholds are crossed |
-| measurement | `claude plugin details` (projected cost) now; `cobot-usage` (R2) reads the local transcripts and reports tokens per role, skill and model per session | the only basis for changing a route or a cap |
+| measurement | `claude plugin details` (projected cost); `cobot-usage` (R2, shipped) reads the local transcripts one request at a time and reports tokens per session, model and agent type, plus Skill and Agent call counts (token attribution per skill is not computable from a tool-use row); Claude Code's `/usage` covers the live session | the only basis for changing a route or a cap |
 
 Never condensed: test failures, compiler and linter errors, diffs under review, security
 findings, anything quoted into a spec, journal, finding or knowledge entry.
@@ -396,8 +396,10 @@ Never parallel: tiny and small, anything needing the owner's answers, anything w
 | Google Cloud | `cobot-gcp` (R2) | evaluated when the GCP expert exists |
 | Home Assistant | `cobot-reverse` (R3) | device state during protocol work |
 
-Outward writes go through `git`/`gh` CLI, never through MCP write tools, so the gate sees one
-deterministic surface; MCP write tools are `ask` as a belt.
+Outward writes to code and repositories go through `git`/`gh` CLI, never through MCP write
+tools, so the gate sees one deterministic surface; MCP write tools are `ask` as a belt. Design
+artefacts in the owner's own SaaS account (Stitch screens, decision 27) may be created through
+MCP under that `ask`.
 
 ## 13. Quality of the cobot itself
 
@@ -461,7 +463,7 @@ legacy settings' `allow`. The switch itself is `docs/03-switch-plan.md`, with a 
 | R1 | gate + shim, onboard / spec / build / wrap (findings, proof lines, verified stamp), `cobot-memory brief\|learn\|check` (`compact` R1.1), references with status lines, challenger / consultant / builder, rust and go builders, lang-{rust,go,terraform,fallback}, expert-gha + consult-gha, 4 evals, pytest, ci.yml, release.yml; dogfood through `install.sh --project` on cartridge-os (Rust, service rigour) and `--scope local` on headscale (foreign Go) | day-one spikes pass; four evals green; a week of real use journaled |
 | R1.1 | **slice 1, done 2026-11-07** (`.agent/specs/r1-1-learning.md`): `learner` + `/cobot:learn` + `learn --promote` + consult `knowledge_delta`, knowledge staleness in the brief and `knowledge-refresh.yml` (weekly PR) (decision 23), `cobot-deps check` with its cache wired into `onboard`, the session brief and `wrap` (decision 21); **slice 2, done 2026-11-07** (`.agent/specs/r1-1-delivery.md`): ship (trigger matrix, decision 17) with `expert-containers` + `consult-containers` (decision 26), contribute + UPSTREAM.md (decisions 18, 20), security-sweep (`context: fork`, nine rule packs) with `accepted-risks.md` and `cobot-memory risks`, `cobot-memory compact`, lang-python + lang-typescript with python, typescript and terraform builders, the gate resolving `uv run`, the package-manager `run <script>` forms and `exec`, three evals (`never-apply`, `builder-routing`, `proof-required`; `foreign-onboard` and `actions-pinning` move to R2) | eight evals green; the switch plan's preconditions met |
 | Switch | owner-triggered, not a release: `docs/03-switch-plan.md` (backup, user-scope install, unlink, CLAUDE.md cut, rules sync, workstation-starter PR) | a fresh session lists `cobot:*` only; rollback tested once |
-| R2 | `cobot-gcp` (GCP expert skill, `gcd-universe` rewritten for provider 8.x), `deep-review` workflow, `SubagentStop` report check (a report must carry command + exit code), `cobot-usage`, verified-stamp gate rule for `git push`, contribute flow hardened from headscale use; framework skills `fw-react`, `fw-next`, `fw-vue` on `lang-typescript` and `lang-shell` promoted from the fallback (decision 24); `expert-cicd` core + `expert-gitlab-ci` with `glab`, Gitea through `tea`, `expert-api` (OpenAPI, web protocols) (decision 25, first three); `expert-kubernetes` beside `cobot-gcp` (GKE), then `expert-service-mesh` (Istio, Cloud Service Mesh) (decision 26) | GCP module work done end to end |
+| R2 | four slices, `.agent/specs/r2.md`. **Slice 1 hardening (2026-11-08)**: `PostToolUse` report check on builder agents (a report without command and exit code is blocked back to the orchestrator), `cobot-memory stamp` behind the gate's `git push` reason, `cobot-usage`, never-push rules for every remote but `origin` at foreign onboard, push options hoisted, evals `foreign-onboard` and `actions-pinning`. **Slice 2 UI and CI/CD**: `expert-ui` + `consult-ui` with Stitch over MCP (decision 27), `expert-cicd` core + `expert-gitlab-ci` (`glab`). **Slice 3 cloud**: `cobot-gcp` (GCP expert, `gcd-universe` rewritten for provider 8.x), `expert-kubernetes`, `expert-service-mesh` (decision 26). **Slice 4 stacks**: `fw-react`, `fw-next`, `fw-vue`, `lang-shell` promoted (decision 24), `expert-api`, Gitea through `tea` (decision 25). `deep-review` waits for eval evidence (§11); contribute hardening from headscale landed in slice 1. | GCP module work done end to end |
 | R3 | `cobot-reverse` (host-before-device protocol, capture/replay), `expert-home-assistant` with `hass-cli`, `expert-iot-protocols` and `expert-electronics` with evidence grades, Jira and Confluence through the Atlassian MCP (writes ask), MCP builder skill reused after challenge (decision 25, rest), `cobot-delivery-extra` (ArgoCD, Crossplane, OPA), GDC/S3NS expert | — |
 
 ## 16. Where each choice came from

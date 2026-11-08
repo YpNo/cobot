@@ -1,6 +1,6 @@
 # {{NAME}} — upstream notes
 
-upstream: <owner/repo> · fork: <remote name and URL> · default branch: <main> · updated: {{DATE}}
+upstream: <owner/repo> · fork: <remote name and URL> · never push to: <every other remote, e.g. a private advisory fork; onboard wrote `never Bash(git push <remote>*)` for each into cobot.rules> · default branch: <main> · updated: {{DATE}}
 
 ## Rules the maintainers set
 

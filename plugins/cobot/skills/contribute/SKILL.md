@@ -16,15 +16,15 @@ maintainers' size.
    (the same sections in the same order if the variable is not expanded) and fill it from
    `CONTRIBUTING.md`, `AI_POLICY.md` or its equivalent, `.github/PULL_REQUEST_TEMPLATE*`, the DCO
    or CLA note, the project's agent instructions and `git log` (commit style, sign-offs, branch
-   the maintainers merge into). Memory is outside the tree, so this file never reaches upstream.
+   the maintainers merge into). Record every remote other than `origin` under `never push to:`;
+   `onboard --foreign` already wrote a `never Bash(git push <remote>*)` line for each into the
+   project rules. Memory is outside the tree, so this file never reaches upstream.
    If the policy forbids autonomous contributions, stop here and say so: the owner contributes,
    the cobot only prepares.
-2. **Proof on HEAD.** The latest journal entry must carry `verified: <sha> · <commands>`. In
-   foreign mode (`.agent` outside the tree) the sha must be `git rev-parse HEAD`. Where `.agent/`
-   is committed, the journal commit itself moves HEAD, so the stamp holds when
-   `git diff --name-only <sha>..HEAD` touches only `.agent/**`, `docs/**`, `CHANGELOG.md` and
-   `README.md`; any other file means unverified work, named by commit. Otherwise run
-   `/cobot:wrap` first; never propose a push of unverified work.
+2. **Proof on HEAD.** Run `cobot-memory stamp`. `ok <sha>` means the last wrap covers HEAD
+   (equal, or only `.agent/**`, `docs/**`, `CHANGELOG.md`, `README.md` changed since in
+   committed mode). `missing — <reason>` means unverified work: run `/cobot:wrap` first; never
+   propose a push of unverified work.
 3. **Topology.** Resolve the upstream, never guess it: `gh repo view --json parent,nameWithOwner`
    names the parent of the fork; `git remote -v` shows which remote is the fork (the owner's
    identity) and which others exist (headscale carries a private advisory remote that nothing

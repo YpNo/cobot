@@ -131,6 +131,11 @@ plugins/cobot/bin/cobot-memory learn --promote --dry-run '{"topic": "go", "entri
 plugins/cobot/bin/cobot-deps check --fresh
 ```
 
+`cobot-usage [--since DATE] [--session PREFIX] [--json]` reads this repository's local Claude Code
+transcripts (and its worktrees') and reports requests and tokens per session, model and agent
+type plus Skill and Agent call counts, never message text. Claude Code's `/usage` shows the live
+session; this is the history a routing decision needs (design §10).
+
 ## Testing
 
 ```bash

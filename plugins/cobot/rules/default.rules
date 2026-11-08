@@ -130,6 +130,9 @@ ask mcp__*__update*
 ask mcp__*__delete*
 ask mcp__*__merge*
 ask mcp__*__push*
+# design artefacts created in the owner's own SaaS account (decision 27: Stitch screens) ask too
+ask mcp__*__generate*
+ask mcp__*__edit*
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

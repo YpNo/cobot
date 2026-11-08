@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- R2 slice 1 (`.agent/specs/r2.md`): a `PostToolUse` hook on the Agent tool blocks a builder
+  report that carries no command with an exit code under `Checks:` (or no `Checks: none —
+  <reason>` line) back to the orchestrator; every builder prompt fixes that shape.
+  `cobot-memory stamp` answers whether HEAD is covered by the last wrap and the gate appends it
+  to every `git push` that asks. `cobot-usage` reports requests and tokens per session, model
+  and agent type from the local transcripts. `onboard --foreign` writes never-push rules for
+  every remote but `origin`; push options are hoisted after the remote. Evals `foreign-onboard`
+  and `actions-pinning`. `ask mcp__*__generate*` and `ask mcp__*__edit*` (decision 27, ADR-0005).
 - `scripts/github-settings.sh --check|--apply`: the repository settings as code (merge flags,
   SHA-pinned actions required, read-only token, Dependabot alerts and security PRs, the `evals`
   and `knowledge-refresh` environments, the `main` ruleset where the plan allows it); secrets

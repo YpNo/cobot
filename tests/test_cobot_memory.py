@@ -804,3 +804,23 @@ def test_help_initDescriptionFollowsInit(memory):
     init = next(i for i, line in enumerate(lines) if line.lstrip().startswith("init ["))
     assert "never overwrites" in lines[init + 1]
     assert lines[init + 2].lstrip().startswith("stamp")
+
+
+def test_check_listsTemplateHeaderFieldsMissingFromContext(memory, repo):
+    seed(repo, context="# x\n\nProfile: `service`\ngoal: g\n\n## Stack\n- rust\n")
+    out = memory.cmd_check(memory.Memory())
+    assert "context: header fields missing (template): profile, forge, owner, governance" in out
+
+
+def test_check_contextWithEveryHeaderField_reportsNothingMissing(memory, repo):
+    header = "profile: cli\nforge: github\ngoal: g\nowner: me\ngovernance: none\n"
+    seed(repo, context="# x\n\n" + header)
+    assert "header fields missing" not in memory.cmd_check(memory.Memory())
+
+
+def test_check_briefDropsContextSections_warns(memory, repo):
+    filler = "\n".join(f"- line {i} " + "z" * 60 for i in range(40))
+    context = "# x\n\nprofile: cli\n\n## Stack\n" + filler + "\n\n## Environment\n" + filler + "\n"
+    seed(repo, context=context)
+    out = memory.cmd_check(memory.Memory())
+    assert "warning: the brief drops CONTEXT sections: Environment" in out

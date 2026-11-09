@@ -81,6 +81,8 @@ DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
 ROUTED = "open → "
+HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
+DROPPED_RE = re.compile(r"sections dropped: (.*)")
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 FIELD_START = re.compile(r"[A-Z][A-Za-z ]{0,30}:")  # "Changed:", "Not done:"; indented lines continue
 JOURNAL_COMPACT_LINES = 400
@@ -693,6 +695,17 @@ def cmd_stamp(mem: Memory) -> str:
     return "missing — HEAD moved since the stamp"
 
 
+def missing_header_fields(mem: Memory) -> list[str]:
+    """The template's ``key:`` header lines that CONTEXT.md lacks (a legacy file, or one written
+    before a field was added); empty when there is no CONTEXT.md."""
+    context = mem.read("CONTEXT.md")
+    if not context:
+        return []
+    head = template("CONTEXT.md", "", "").split("\n## ", 1)[0]
+    present = set(HEADER_FIELD_RE.findall(context))
+    return [key for key in HEADER_FIELD_RE.findall(head) if key not in present]
+
+
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
@@ -707,6 +720,12 @@ def cmd_check(mem: Memory) -> str:
     lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
     brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
     lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
+    dropped = DROPPED_RE.search(brief)
+    if dropped:
+        lines.append(f"warning: the brief drops CONTEXT sections: {dropped.group(1)}; move them up or trim")
+    missing = missing_header_fields(mem)
+    if missing:
+        lines.append(f"context: header fields missing (template): {', '.join(missing)}")
     context_lines = len(mem.read("CONTEXT.md").splitlines())
     if context_lines > 120:
         lines.append(f"warning: CONTEXT.md has {context_lines} lines (> 120), trim the Shape section")

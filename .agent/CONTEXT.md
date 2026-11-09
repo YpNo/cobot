@@ -49,4 +49,5 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 - `hooks/` are thin shims around `bin/`; all logic is tested Python
 - skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute), knowledge (lang-*, expert-*), consults (consult-*, security-sweep; forked)
 - agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder
+- people read `README.md`; agents and architects read `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`
 - design: `docs/02-design.md`; decisions: `docs/01-decisions.md`, `docs/adr/`; platform facts: `docs/reference/claude-code-mechanics.md`; open inputs: `docs/design-inputs/`; decided ones: `docs/history/`

@@ -33,11 +33,11 @@ listing under 600 tokens, the skill listing under its 15 000-character budget.
 | 4 | `feat/r2-surface` | review proposals 1–3 with their own spec: one `/cobot:consult <domain>` replacing the eight `consult-*` skills (spike first: two Skill calls in one message run in parallel), `onboard`, `rules`, `security-sweep` user-only, `expert-*` and `lang-*` descriptions capped near 350 characters | 1 |
 | 5 | `feat/r2-stacks` | R2 slice 4: `fw-react`, `fw-next`, `fw-vue`, `lang-shell` promoted, `expert-api`, Gitea through `tea`; its own spec, challenged | 4 |
 | 6 | none (journal), then `docs/expert-gcp-mcp` | live proofs: a builder run through the report hook, `/cobot:security-sweep` and a full `/cobot:ship` on a service repository, GCP module work end to end (R2's exit criterion; needs one of the owner's GCP repositories) **with the Google Cloud MCP spike** (below), a clean `/cobot:wrap` here so `git push` reads a stamp | 2, 3, 5 |
-| 7 | `docs/readme` | the README below, `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`, badges, the banner, `scripts/github-settings.sh --apply` if the repository goes public | 5 |
-| 8 | `chore/release-0.2.0` | `plugin.json` and `marketplace.json` to 0.2.0, Unreleased cut to `[0.2.0] - <date>`; the owner pushes the tag and `release.yml` publishes; then the switch (`docs/03-switch-plan.md`) | 2, 6, 7 |
+| 7 | `docs/readme` | the README below, `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`, badges, the banner. **As built (2026-11-09), before slice 4 at the owner's request:** a 103-line README, the three documents carrying the moved content, the six badges, `banner.jpg` and `social.jpg` from the owner's illustration with the wordmark set by `scripts/make-banner.py` (Inter 4.1, not committed); PR 4 edits the consult row of the command table | 1 |
+| 8 | `chore/release-0.2.0` | `plugin.json` and `marketplace.json` to 0.2.0, Unreleased cut to `[0.2.0] - <date>`; `scripts/github-settings.sh --apply` as the repository goes public and `docs/assets/social.jpg` uploaded as the social preview; the owner pushes the tag and `release.yml` publishes; then the switch (`docs/03-switch-plan.md`) | 2, 6, 7 |
 
-2, 3 and 4 can run in parallel. The README comes after slice 4 because slice 4 changes the
-command list it shows.
+2, 3 and 4 can run in parallel. The README came early at the owner's request; PR 4 edits its
+command table when the consult skills merge.
 
 ## Google Cloud MCP spike (inside PR 6)
 
@@ -103,8 +103,8 @@ coverage service, which this spec does not add.
 
 ## Banner (prompt for the image agent)
 
-Two crops from one image: `docs/assets/banner.png` at 1600×400 for the README and
-`docs/assets/social.png` at 1280×640 for GitHub's social preview.
+Two crops from one image: `docs/assets/banner.jpg` 1600 wide for the README and
+`docs/assets/social.jpg` at 1280×640 for GitHub's social preview (as built).
 
 > A wide, calm banner illustration for a developer tool named "cobot". Flat vector style with
 > soft depth, clean geometric shapes, generous negative space on the left third for a wordmark

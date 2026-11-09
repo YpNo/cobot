@@ -212,7 +212,7 @@ def test_brief_findingsFloorAndTail(memory, repo):
     (agent / "ARCHITECTURE.md").write_text("# a\n")
     brief = memory.build_brief(memory.Memory(), 3000, trust_check=False)
     assert "## FINDINGS open: 5" in brief and "F-05" in brief and "F-01" not in brief
-    assert "knowledge: gha" in brief and "specs: r1" in brief and "ARCHITECTURE.md present" in brief
+    assert "knowledge: gha" in brief and "specs: r1" in brief and "(read on demand): ARCHITECTURE.md" in brief
     assert "(entry truncated)" in brief
     assert len(brief) <= 3000 + 600
 
@@ -249,11 +249,11 @@ def test_findings_addListClose(memory, repo):
     assert memory.cmd_findings_add(mem, "ci.yml", "pipe | in text\nnewline", "") == "findings: F-01 added"
     assert memory.cmd_findings_add(mem, "x", "y", "E2") == "findings: F-02 added"
     listing = memory.cmd_findings_list(mem, False)
-    assert "pipe / in text newline" in listing and "F-02 · x · y · E2" in listing
-    assert memory.cmd_findings_list(mem, True).count("F-") == 1
+    assert "pipe / in text newline" in listing and "F-02 · x · y · open → E2" in listing
+    assert memory.cmd_findings_list(mem, True).count("F-") == 2
     assert memory.cmd_findings_close(mem, "F-01", "closed — dup") == "findings: F-01 -> closed — dup"
     assert memory.cmd_findings_close(mem, "F-09", "x") == "findings: F-09 not found"
-    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+    assert memory.cmd_findings_list(mem, True).count("F-") == 1
 
 
 # ---------------------------------------------------------------- learn
@@ -766,3 +766,69 @@ def test_init_foreign_writesNeverPushRules_gateDeniesBothForms(memory, rules, re
         )
     )
     assert origin["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
+# ---------------------------------------------------------------- onboarding follow-ups (arlo)
+
+
+def test_findingsAdd_goesTo_recordsRoutingAndStaysOpen(memory, repo):
+    mem = memory.Memory()
+    memory.cmd_findings_add(mem, "x", "y", "E2")
+    assert "| F-01 | x | y | open → E2 |" in (repo / ".agent" / "FINDINGS.md").read_text()
+    assert memory.cmd_findings_list(mem, True) == "F-01 · x · y · open → E2"
+    memory.cmd_findings_close(mem, "F-01", "fixed in PR 4")
+    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+
+
+def test_openFindings_closeReasonStartingWithOpened_isClosed(memory, repo):
+    agent = seed(repo)
+    (agent / "FINDINGS.md").write_text(
+        "| # | Seen | Observation | Goes to |\n|---|---|---|---|\n"
+        "| F-01 | s | o | opened issue 12 |\n| F-02 | s | o | open |\n| F-03 | s | o | |\n"
+    )
+    assert [f[0] for f in memory.Memory().open_findings()] == ["F-02", "F-03"]
+
+
+def test_compact_summaryWithProof_addsArchiveLineNotSecondProof(memory, repo):
+    path = long_journal(repo)
+    memory.cmd_compact(
+        memory.Memory(), 10, "Set up the crate.\nProof: tests green on day four.", False, False
+    )
+    merged = path.read_text().split("## 2026-01-05")[0]
+    assert merged.count("Proof:") == 1
+    assert "Archive: raw entries in JOURNAL-archive.md and in git history before 2026-01-04." in merged
+
+
+def test_help_initDescriptionFollowsInit(memory):
+    lines = memory.__doc__.splitlines()
+    init = next(i for i, line in enumerate(lines) if line.lstrip().startswith("init ["))
+    assert "never overwrites" in lines[init + 1]
+    assert lines[init + 2].lstrip().startswith("stamp")
+
+
+def test_check_listsTemplateHeaderFieldsMissingFromContext(memory, repo):
+    seed(repo, context="# x\n\nProfile: `service`\ngoal: g\n\n## Stack\n- rust\n")
+    out = memory.cmd_check(memory.Memory())
+    assert "context: header fields missing (template): profile, forge, owner, governance" in out
+
+
+def test_check_contextWithEveryHeaderField_reportsNothingMissing(memory, repo):
+    header = "profile: cli\nforge: github\ngoal: g\nowner: me\ngovernance: none\n"
+    seed(repo, context="# x\n\n" + header)
+    assert "header fields missing" not in memory.cmd_check(memory.Memory())
+
+
+def test_check_briefDropsContextSections_warns(memory, repo):
+    filler = "\n".join(f"- line {i} " + "z" * 60 for i in range(40))
+    context = "# x\n\nprofile: cli\n\n## Stack\n" + filler + "\n\n## Environment\n" + filler + "\n"
+    seed(repo, context=context)
+    out = memory.cmd_check(memory.Memory())
+    assert "warning: the brief drops CONTEXT sections: Environment" in out
+
+
+def test_brief_tailListsEveryOtherAgentFile(memory, repo):
+    agent = seed(repo)
+    for name in ("ARCHITECTURE.md", "HANDOFF.md", "JOURNAL-archive.md", "FINDINGS.md", "notes.txt"):
+        (agent / name).write_text("# x\n")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert brief.endswith("also in .agent (read on demand): ARCHITECTURE.md, HANDOFF.md")

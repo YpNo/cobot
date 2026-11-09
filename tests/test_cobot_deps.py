@@ -418,3 +418,25 @@ def test_cli(tools, repo, capsys, monkeypatch):
     assert script.main(["brief"]) == 0 and capsys.readouterr().out.startswith("deps: 2 of 3 behind")
     assert script.main(["path"]) == 0 and capsys.readouterr().out.strip().endswith(".json")
     assert script.main(["bogus"]) == 2
+
+
+def test_rust_adapter_denyGraphTargets_notesNarrowerScopeThanLockfile(tools, repo):
+    # arlo-camera-streamer-rs: deny.toml lists four targets, so cargo-deny skips a wasm32-only
+    # crate's advisory that cargo-audit, reading the whole Cargo.lock, reports
+    write_fakes(tools)
+    seed_repo(repo, "Cargo.lock")
+    (repo / "deny.toml").write_text('[graph]\ntargets = [\n  { triple = "x86_64-unknown-linux-gnu" },\n]\n')
+    result = deps.rust(repo, deps.run)
+    assert (
+        "cargo-deny checks only the deny.toml [graph] targets; cargo-audit reads all of Cargo.lock"
+        in result.notes
+    )
+
+
+def test_rust_adapter_denyWithoutTargetsOrUnreadable_noScopeNote(tools, repo):
+    write_fakes(tools)
+    seed_repo(repo, "Cargo.lock")
+    (repo / "deny.toml").write_text("[advisories]\nignore = []\n")
+    assert not any("deny.toml" in note for note in deps.rust(repo, deps.run).notes)
+    (repo / "deny.toml").write_text("not = [valid toml\n")
+    assert not any("deny.toml" in note for note in deps.rust(repo, deps.run).notes)

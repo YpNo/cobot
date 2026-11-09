@@ -9,7 +9,7 @@ argument-hint: <what to build, in one sentence>
 You run in the main thread so you can ask the owner. Do not build anything here.
 
 1. **Size and profile.** Read the brief (CONTEXT.md head) and the file CONTEXT.md names under
-   `governance:`, if any. Name the size in one line. If it is tiny or small, stop and say so:
+   `governance:`, if any; with a `#heading-slug`, only that section is the principles. Name the size in one line. If it is tiny or small, stop and say so:
    the build path handles it without a spec.
 2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
    read only what the spec needs. Note the verified commands that will prove each story.

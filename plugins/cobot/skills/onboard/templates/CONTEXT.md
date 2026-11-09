@@ -4,7 +4,7 @@ profile: {{PROFILE}}          # spike | script | cli | library | service | infra
 forge: github                  # github | gitlab | gitea | other — where CI runs; ship reads it
 goal: <one line: what this repository is for>
 owner: <who decides> · <visibility> · <license>
-governance: none               # path to the project's principles (a constitution); every spec checks against it
+governance: none               # path to the project's principles, #heading-slug for one section; every spec checks against it
 
 ## Stack
 
@@ -18,11 +18,11 @@ governance: none               # path to the project's principles (a constitutio
 
 ## Verified commands
 
-| purpose | command | verified |
-|---|---|---|
-| unit tests | `<command>` | {{DATE}} |
-| lint | `<command>` | {{DATE}} |
-| build | `<command>` | {{DATE}} |
+| purpose | command | result | verified |
+|---|---|---|---|
+| unit tests | `<command>` | exit 0 | {{DATE}} |
+| lint | `<command>` | exit 0 | {{DATE}} |
+| build | `<command>` | exit 0 | {{DATE}} |
 
 ## Constraints
 

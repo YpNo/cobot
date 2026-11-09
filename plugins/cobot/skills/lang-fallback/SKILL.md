@@ -20,6 +20,9 @@ user-invocable: false
 
 # lang-fallback
 
+CONTEXT.md and the governance file it names override this skill: the project's coverage tool and
+threshold, error-handling rules and shape win over the defaults below.
+
 The repository is the authority, not this file and not model memory. Versions and sources:
 `references/versions.md`.
 

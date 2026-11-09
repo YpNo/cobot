@@ -169,6 +169,8 @@ uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/
 claude plugin validate plugins/cobot --strict && python3 scripts/check-plugin.py
 ```
 
+`tests/test_eval_graders.py` checks the eval suite for free before a paid run: every grader
+pattern compiles, no case has more than one judge, every fixture runs clean.
 Live spikes that need a logged-in CLI: `sh scripts/spikes/spike-coexistence.sh` and
 `sh scripts/spikes/spike-r1.sh`. Evals run as Claude sessions under the logged-in account (an API key in
 CI): `claude plugin eval plugins/cobot --trust-plugin --scaffold --allow-tools Bash Write Edit`.

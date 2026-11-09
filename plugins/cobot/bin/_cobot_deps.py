@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -124,6 +125,25 @@ def first_json(text: str):
 # ---------------------------------------------------------------- adapters
 
 
+DENY_SCOPE_NOTE = "cargo-deny checks only the deny.toml [graph] targets; cargo-audit reads all of Cargo.lock"
+DENY_CONFIGS = ("deny.toml", ".deny.toml", ".cargo/deny.toml")  # where cargo-deny looks, in order
+
+
+def deny_targets(root: Path) -> bool:
+    """Whether cargo-deny's config limits the graph to listed targets, so an advisory on a crate
+    built only for another target (wasm32, say) is not counted."""
+    for name in DENY_CONFIGS:
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            config = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except tomllib.TOMLDecodeError:
+            return False
+        return bool((config.get("graph") or {}).get("targets"))
+    return False
+
+
 def rust(root: Path, runner: Run) -> Result:
     result = Result("rust", "Cargo.lock", tool="cargo update --dry-run --verbose")
     result.total = sum(
@@ -155,6 +175,8 @@ def rust(root: Path, runner: Run) -> Result:
                 )
     if shutil.which("cargo-deny"):
         result.advisory_tool = "cargo-deny check advisories"
+        if deny_targets(root):
+            result.notes.append(DENY_SCOPE_NOTE)
         code, out, err = runner(["cargo-deny", "--format", "json", "check", "advisories"], root, None)
         diagnostics = [
             o for o in json_objects(out + "\n" + err) if isinstance(o, dict) and o.get("type") == "diagnostic"

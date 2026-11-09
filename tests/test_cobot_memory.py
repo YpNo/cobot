@@ -787,3 +787,13 @@ def test_openFindings_closeReasonStartingWithOpened_isClosed(memory, repo):
         "| F-01 | s | o | opened issue 12 |\n| F-02 | s | o | open |\n| F-03 | s | o | |\n"
     )
     assert [f[0] for f in memory.Memory().open_findings()] == ["F-02", "F-03"]
+
+
+def test_compact_summaryWithProof_addsArchiveLineNotSecondProof(memory, repo):
+    path = long_journal(repo)
+    memory.cmd_compact(
+        memory.Memory(), 10, "Set up the crate.\nProof: tests green on day four.", False, False
+    )
+    merged = path.read_text().split("## 2026-01-05")[0]
+    assert merged.count("Proof:") == 1
+    assert "Archive: raw entries in JOURNAL-archive.md and in git history before 2026-01-04." in merged

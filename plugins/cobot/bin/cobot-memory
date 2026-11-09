@@ -599,7 +599,7 @@ def cmd_compact(mem: Memory, keep: int, summary: str, dry_run: bool, force: bool
     kept = entries[-keep:] if newest_bottom else entries[:keep]
     dates = sorted(e[3:13] for e in folded)
     body = summary.strip() or "\n".join(line for e in folded for line in digest(e))
-    merged = f"## {dates[-1]} — compacted {dates[0]} → {dates[-1]} ({len(folded)} entries)\n{body}\nProof: raw entries in JOURNAL-archive.md and in git history before {dates[-1]}."
+    merged = f"## {dates[-1]} — compacted {dates[0]} → {dates[-1]} ({len(folded)} entries)\n{body}\nArchive: raw entries in JOURNAL-archive.md and in git history before {dates[-1]}."
     head = text[: ENTRY_RE.search(text).start()].rstrip("\n") if ENTRY_RE.search(text) else "# Journal"
     new_entries = [*kept, merged] if not newest_bottom else [merged, *kept]
     new_text = head + "\n\n" + "\n\n".join(new_entries) + "\n"

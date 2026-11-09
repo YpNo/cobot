@@ -211,11 +211,12 @@ branch.
 3. `SessionStart` `injectSteps` carries a 6 000-character brief.
 4. `agy plugin import claude` on this machine: what it carries of hooks and agents.
 
-## Decisions for the owner
+## Owner decisions (2026-11-09)
 
-1. Debug: the lead in the main thread with a read-only `cobot:investigator` probe (recommended),
-   or a standalone debug agent.
-2. Antigravity: amend decision 1 (ADR-0007) and ship a generated second distribution from the
-   same source (recommended), knowing builder proof is asked for, not enforced, there.
-3. `cobot-reverse`: take rea's method into a cobot skill and reference (recommended), or
-   register rea's MCP server as an optional backend as well.
+1. Debug: **the lead in the main thread (`/cobot:debug`) with a read-only `cobot:investigator`
+   probe**, as recommended.
+2. Antigravity: **decision 1 is amended** (ADR-0007 in the 0.3.0 spec): a generated second
+   distribution from the same source, spike first; builder proof is asked for, not enforced,
+   there. The repository goes public with 0.2.0, so work installs it by GitHub URL.
+3. `cobot-reverse`: not asked yet; the recommendation stands (rea's method as a cobot skill and
+   reference, its MCP server at most an optional backend the owner registers).

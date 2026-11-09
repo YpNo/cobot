@@ -142,3 +142,10 @@ Why: F-13: judges failed compliant replies and fixtures assumed tools the sandbo
 Proof: tests/test_eval_graders.py 29 passed (compliant and non-compliant sample replies for the three cases, all ten fixtures in an empty workspace with HOME and XDG in tmp); full checks in the PR.
 Open: the paid run on main is the owner's (workflow_dispatch with evals, or claude plugin eval locally); the three cloud audits run for the first time there; learn-unknown-domain keeps its one judge.
 Next: PR 4 (R2 surface: one /cobot:consult, user-only skills, description caps).
+
+## 2026-11-09 — README for people, docs for agents (0.2.0 PR 7)
+Changed: README rewritten (230 to 103 lines: banner, badges, what you get, mermaid diagram, install, first steps, commands, safety, links); docs/architecture.md, docs/configuration.md, docs/development.md carry the moved content; docs/assets/banner.jpg and social.jpg from the owner's illustration with the wordmark set by scripts/make-banner.py (Pillow 13.0.0 through uv, Inter 4.1 OFL downloaded, not committed); SECURITY.md and CONTEXT.md point at the new docs; spec row 7 as built.
+Why: the owner asked for a concise README for human readers, technical reading in CONTEXT.md and documents for agents and architects, badges and a banner; done before slice 4 at the owner's request.
+Proof: make-banner.py reproduces banner.jpg byte for byte; both images checked by eye; markdownlint 0.24.0 clean on the four documents; full checks in the PR.
+Open: PR 4 edits the consult row of the command table; the shields release badge renders only once the repository is public and tagged; social.jpg is uploaded by the owner (Settings, Social preview).
+Next: PR 4 (R2 surface).

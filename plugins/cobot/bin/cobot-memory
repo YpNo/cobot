@@ -11,6 +11,8 @@ Commands
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
   journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
+                                   --goes-to records where a finding is headed (open → X); it stays open
+                                   until findings close
   learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
   learn --promote [--source DIR] [--in-place] [JSON|TOPIC]
                                    also carry the general entries (or a topic's pending general lines) into the
@@ -77,6 +79,8 @@ ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 STAMP_RE = re.compile(r"^verified: ([0-9a-f]{7,40})(\+working-tree)?( · .*)?$", re.M)
 DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
+OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
+ROUTED = "open → "
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 FIELD_START = re.compile(r"[A-Z][A-Za-z ]{0,30}:")  # "Changed:", "Not done:"; indented lines continue
 JOURNAL_COMPACT_LINES = 400
@@ -145,7 +149,7 @@ class Memory:
         return [tuple(cell.strip() for cell in row) for row in rows]
 
     def open_findings(self) -> list[tuple[str, str, str, str]]:
-        return [f for f in self.findings() if f[3].strip().lower() in ("", "open")]
+        return [f for f in self.findings() if not f[3] or OPEN_RE.match(f[3])]
 
     def knowledge_topics(self) -> list[str]:
         folder = self.dir / "knowledge"
@@ -408,6 +412,8 @@ def cmd_findings_add(mem: Memory, seen: str, observation: str, goes_to: str) -> 
         path.write_text(template("FINDINGS.md", "", mem.root.name), encoding="utf-8")
     number = f"F-{next_finding_number(mem):02d}"
     clean = [s.replace("|", "/").replace("\n", " ").strip() for s in (seen, observation, goes_to)]
+    if clean[2] and not OPEN_RE.match(clean[2]):
+        clean[2] = ROUTED + clean[2]
     with path.open("a", encoding="utf-8") as handle:
         handle.write(f"| {number} | {clean[0]} | {clean[1]} | {clean[2]} |\n")
     return f"findings: {number} added"

@@ -249,11 +249,11 @@ def test_findings_addListClose(memory, repo):
     assert memory.cmd_findings_add(mem, "ci.yml", "pipe | in text\nnewline", "") == "findings: F-01 added"
     assert memory.cmd_findings_add(mem, "x", "y", "E2") == "findings: F-02 added"
     listing = memory.cmd_findings_list(mem, False)
-    assert "pipe / in text newline" in listing and "F-02 · x · y · E2" in listing
-    assert memory.cmd_findings_list(mem, True).count("F-") == 1
+    assert "pipe / in text newline" in listing and "F-02 · x · y · open → E2" in listing
+    assert memory.cmd_findings_list(mem, True).count("F-") == 2
     assert memory.cmd_findings_close(mem, "F-01", "closed — dup") == "findings: F-01 -> closed — dup"
     assert memory.cmd_findings_close(mem, "F-09", "x") == "findings: F-09 not found"
-    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+    assert memory.cmd_findings_list(mem, True).count("F-") == 1
 
 
 # ---------------------------------------------------------------- learn
@@ -766,3 +766,24 @@ def test_init_foreign_writesNeverPushRules_gateDeniesBothForms(memory, rules, re
         )
     )
     assert origin["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
+# ---------------------------------------------------------------- onboarding follow-ups (arlo)
+
+
+def test_findingsAdd_goesTo_recordsRoutingAndStaysOpen(memory, repo):
+    mem = memory.Memory()
+    memory.cmd_findings_add(mem, "x", "y", "E2")
+    assert "| F-01 | x | y | open → E2 |" in (repo / ".agent" / "FINDINGS.md").read_text()
+    assert memory.cmd_findings_list(mem, True) == "F-01 · x · y · open → E2"
+    memory.cmd_findings_close(mem, "F-01", "fixed in PR 4")
+    assert memory.cmd_findings_list(mem, True) == "findings: none open"
+
+
+def test_openFindings_closeReasonStartingWithOpened_isClosed(memory, repo):
+    agent = seed(repo)
+    (agent / "FINDINGS.md").write_text(
+        "| # | Seen | Observation | Goes to |\n|---|---|---|---|\n"
+        "| F-01 | s | o | opened issue 12 |\n| F-02 | s | o | open |\n| F-03 | s | o | |\n"
+    )
+    assert [f[0] for f in memory.Memory().open_findings()] == ["F-02", "F-03"]

@@ -54,6 +54,14 @@ def test_graders_knownTypesCompilingPatternsAtMostOneJudge(case):
     assert sum(g.get("type") == "llm" for g in found.values()) <= 1, case
 
 
+def test_builderRouting_proofQuoted_acceptsAnyExitCodeNotAClaim():
+    grader = graders("builder-routing")["proof-quoted"]
+    assert matches(grader, "The builder ran `cargo test` (exit code 0): 2 passed.")
+    assert matches(grader, "Proof: cargo test → exit 101, the toolchain could not lock ~/.cargo.")
+    assert matches(grader, "exit 0 for `cargo clippy --all-targets -- -D warnings`")
+    assert not matches(grader, "The builder says the tests pass.")
+
+
 SCAFFOLDED = sorted(
     p.parent.name for p in EVALS.glob("*/case.yaml") if "scaffold_script:" in p.read_text(encoding="utf-8")
 )

@@ -128,3 +128,10 @@ Why: PR 1 of .agent/specs/release-0.2.0.md (branch docs/release-plan); the owner
 Proof: pytest 795 passed, coverage 98 %; ruff, shellcheck (new spike path), markdownlint 0.24.0, plugin validate --strict (plugin and marketplace), check-plugin: all exit 0; this entry and the F-10/F-14 closures landed in the worktree's .agent/, the main checkout's stayed unchanged.
 Open: evals, spikes and the reinstall are carried over, not rerun; docs/reference/legacy-audit.md stays until the switch.
 Next: PR 2 (eval suite, F-13) and PR 3 (R2 surface) in parallel.
+
+## 2026-11-09 — MCP read verbs (0.2.0 PR 3)
+Changed: the gate's MCP rules: catch-all ask mcp__*, reads judged by name (MCP_READ_VERBS list/get/describe/search/read, MCP_JOINERS and/or/then/plus before a write word block a read), the desktop host's UI tools allowed by exact name, and an MCP order where an owner or project ask outranks a read or a host allow. README Security, design §12, spec row 3 updated.
+Why: Google's remote Cloud MCP tool lists (read without credentials) showed ten mutating tools that matched none of the seven write-verb rules; run_in_terminal, javascript_tool and set_setting passed too, and update_plan asked on every call. Challenger: SOUND WITH CHANGES, six points folded (BLOCKER: a default allow cancelling a project or owner ask; MAJOR: prefix collisions such as get_or_create and checkout; MAJOR: browser friction, accepted and documented).
+Proof: tests/test_cobot_rules.py 619 passed, all 86 Google tools against readOnlyHint (check_k8s_auth asks by design); full suite 801 passed, coverage 98.09 %; ruff, shellcheck, markdownlint 0.24.0, plugin validate --strict (plugin and marketplace), check-plugin: exit 0.
+Open: Chrome, Playwright, fetch and context7 resolve-library-id ask until the owner allows them; a name containing an inner __ still reads by its last segment.
+Next: PR 2 (eval suite) and PR 4 (R2 surface).

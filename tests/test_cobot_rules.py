@@ -1543,3 +1543,200 @@ def test_gate_cloudReadListForReadOnlyAgents(rules, command, silent):
 )
 def test_decide_cloudMutatingRows(rules, command, decision):
     assert decide(rules, command)[0].decision == decision
+
+
+# ---------------------------------------------------------------- MCP: read verbs, host tools (0.2.0 PR 3)
+
+GOOGLE_MCP_TOOLS = {  # tools/list of Google's remote Cloud MCP servers, 2026-11-09: (readOnlyHint, the rest)
+    "run": (
+        ("get_service", "list_services"),
+        ("deploy_service_from_image", "deploy_service_from_archive", "deploy_service_from_file_contents"),
+    ),
+    "gke": (
+        (
+            "list_k8s_api_resources",
+            "check_k8s_auth",
+            "describe_k8s_resource",
+            "list_k8s_events",
+            "get_k8s_resource",
+            "get_k8s_cluster_info",
+            "get_k8s_version",
+            "get_k8s_rollout_status",
+            "list_clusters",
+            "get_cluster",
+            "list_operations",
+            "get_operation",
+            "list_node_pools",
+            "get_node_pool",
+            "get_k8s_logs",
+        ),
+        (
+            "create_cluster",
+            "update_cluster",
+            "cancel_operation",
+            "create_node_pool",
+            "update_node_pool",
+            "apply_k8s_manifest",
+            "delete_k8s_resource",
+            "patch_k8s_resource",
+        ),
+    ),
+    "compute": (
+        (
+            "get_instance_basic_info",
+            "list_instance_attached_disks",
+            "list_instances",
+            "get_instance_group_manager_basic_info",
+            "list_instance_group_managers",
+            "list_managed_instances",
+            "list_instance_templates",
+            "get_instance_template_basic_info",
+            "get_instance_template_properties",
+            "get_disk_basic_info",
+            "get_disk_performance_config",
+            "list_disks",
+            "list_accelerator_types",
+            "list_machine_types",
+            "list_images",
+            "get_zone_operation",
+            "get_reservation_basic_info",
+            "get_reservation_details",
+            "list_reservations",
+            "list_commitments",
+            "get_commitment_basic_info",
+            "list_commitment_reservations",
+            "list_snapshots",
+        ),
+        (
+            "create_instance",
+            "delete_instance",
+            "start_instance",
+            "stop_instance",
+            "reset_instance",
+            "set_instance_machine_type",
+        ),
+    ),
+    "iam": (
+        ("list_deny_policies", "get_deny_policy", "get_deny_policy_status", "list_roles", "get_role"),
+        (
+            "create_deny_policy",
+            "update_deny_policy",
+            "delete_deny_policy",
+            "create_role",
+            "update_role",
+            "delete_role",
+            "undelete_role",
+        ),
+    ),
+    "logging": (
+        ("list_log_entries", "list_log_names", "get_bucket", "list_buckets", "get_view", "list_views"),
+        (),
+    ),
+    "crm": (
+        ("search_projects",),
+        (),
+    ),
+    "storage": (
+        (
+            "list_buckets",
+            "list_objects",
+            "get_bucket_metadata",
+            "read_text",
+            "read_object",
+            "get_object_metadata",
+        ),
+        ("create_bucket", "delete_bucket", "write_text", "delete_object"),
+    ),
+}
+MCP_READ_TOOLS_THAT_ASK = {"check_k8s_auth"}  # read-only, but "check" is not a read verb (check_in_file)
+
+
+def verdict_of(rules, tool):
+    out = rules.gate(payload(tool=tool, tool_input={}))
+    return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
+
+
+def test_mcp_googleCloudTools_onlyReadOnlyOnesAreSilent(rules):
+    for server, (read_only, others) in GOOGLE_MCP_TOOLS.items():
+        for name in others:
+            assert verdict_of(rules, f"mcp__gcp-{server}__{name}") == "ask", name
+        for name in read_only:
+            expected = "ask" if name in MCP_READ_TOOLS_THAT_ASK else None
+            assert verdict_of(rules, f"mcp__gcp-{server}__{name}") == expected, name
+
+
+def test_mcp_readVerbWithAWriteWordOrAnotherFirstWord_asks(rules):
+    for name in (
+        "get_or_create_user",
+        "getOrCreateUser",
+        "checkout_branch",
+        "check_in_file",
+        "list_and_delete_old",
+        "readwrite_object",
+        "search-and-replace",
+        "describeAndUpdate",
+        "resolve-library-id",
+        "fetch",
+    ):
+        assert verdict_of(rules, f"mcp__srv__{name}") == "ask", name
+    for name in ("getDiagnostics", "get-library-docs", "list_projects", "search_threads", "read_page"):
+        assert verdict_of(rules, f"mcp__srv__{name}") is None, name
+
+
+def test_mcp_hostUiTools_silent_otherHostToolsAsk(rules):
+    for tool in (
+        "mcp__ccd_turn__update_plan",
+        "mcp__ccd_turn__wrap_up",
+        "mcp__ccd_session__mark_chapter",
+        "mcp__ccd_session__dismiss_task",
+        "mcp__ccd_view__show_pane",
+        "mcp__visualize__show_widget",
+        "mcp__visualize__read_me",
+    ):
+        assert verdict_of(rules, tool) is None, tool
+    for tool in (
+        "mcp__ccd_turn__something_new",
+        "mcp__terminal__run_in_terminal",
+        "mcp__claude-in-chrome__javascript_tool",
+        "mcp__claude-in-chrome__computer",
+        "mcp__claude-in-chrome__navigate",
+        "mcp__ccd_settings__set_setting",
+        "mcp__ccd_session__start_session",
+    ):
+        assert verdict_of(rules, tool) == "ask", tool
+
+
+def decide_mcp(rules, tool):
+    loaded, _, _ = rules.load_rules(None)
+    return rules.judge_mcp(tool, loaded, None)
+
+
+def test_mcp_ownerOrProjectAsk_beatsADefaultRead(rules, layers):
+    owner, project = layers
+    project.write_text("ask mcp__supabase__get_publishable_keys\n")
+    owner.write_text("ask mcp__*__get_secret*\n")
+    assert decide_mcp(rules, "mcp__supabase__get_publishable_keys").decision == "ask"
+    assert decide_mcp(rules, "mcp__vault__get_secret_value").decision == "ask"
+    assert decide_mcp(rules, "mcp__vault__get_status").decision is None
+
+
+def test_mcp_ownerAllowSilences_neverBeatsEverything(rules, layers):
+    owner, project = layers
+    owner.write_text("allow mcp__claude-in-chrome__*\nnever mcp__*__get_secret*\n")
+    assert decide_mcp(rules, "mcp__claude-in-chrome__computer").decision is None
+    assert decide_mcp(rules, "mcp__vault__get_secret_value").decision == "deny"
+
+
+def test_mcp_readOfANounThatLooksLikeAVerb_staysSilent(rules):
+    # GitHub and GitLab MCP reads: the noun after the read verb is not an action
+    for name in (
+        "get_commit",
+        "get_workflow_run",
+        "get_merge_request",
+        "list_tags",
+        "get_tag",
+        "get_comment",
+    ):
+        assert verdict_of(rules, f"mcp__srv__{name}") is None, name
+    for name in ("get_then_delete", "read_plus_write"):
+        assert verdict_of(rules, f"mcp__srv__{name}") == "ask", name

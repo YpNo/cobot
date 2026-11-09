@@ -217,6 +217,18 @@ All notable changes to this project are documented here. The format follows
   `--force` on the next line only asked. A `#` inside a word (`nix develop .#dev`) no longer
   truncates the command.
 
+### Security
+
+- Every MCP tool asks unless it is a read or one of the desktop app's UI tools. The gate asked on
+  seven write verbs only, so Google's Cloud MCP servers' `deploy_service_from_image`,
+  `start_instance`, `stop_instance`, `reset_instance`, `set_instance_machine_type`,
+  `apply_k8s_manifest`, `patch_k8s_resource`, `cancel_operation`, `write_text` and
+  `undelete_role`, and `run_in_terminal`, `javascript_tool` and `set_setting`, passed silently. A
+  read is judged by name (`list`, `get`, `describe`, `search` or `read` first, no write word
+  joined to it as in `get_or_create`); an owner or project `ask` outranks it. Browser servers,
+  `fetch` and context7's `resolve-library-id` now ask until the owner adds
+  `allow mcp__<server>__*`; `update_plan`, which asked on every call, is silent.
+
 ## [0.1.0] - 2026-11-06
 
 Release 1: the governed orchestrator, dogfood-ready through `install.sh --dev` and `--project`.

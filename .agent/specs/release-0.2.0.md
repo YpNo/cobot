@@ -1,19 +1,19 @@
 # Spec — release 0.2.0: close R2, tidy, a human README
 
-size: large · profile: library · owner: YpNo · date: 2026-11-09 · seven PRs, one branch each
+size: large · profile: library · owner: YpNo · date: 2026-11-09 · eight PRs, one branch each
 
 ## Goal
 
 0.2.0 is the first tagged release. It carries everything merged since 0.1.0 (R1.1, R2 slices
-1–3, the rename, the onboarding fixes) and closes what is still open: a green eval suite, R2
-slice 4, the live proofs R2 owes, a tidy repository, and a README a person reads in two minutes,
+1–3, the rename, the onboarding fixes) and closes what is still open: a green eval suite, a gap
+in the gate's MCP rules, R2 slice 4, the live proofs R2 owes, a tidy repository, and a README a person reads in two minutes,
 with everything technical moved to documents written for agents and architects. After the tag,
 the owner runs the switch. What does not change: the gate's contract, memory formats, the agent
 listing under 600 tokens, the skill listing under its 15 000-character budget.
 
 ## Principles check
 
-- Proportionality: one release, seven PRs, each one concern; no new dependency.
+- Proportionality: one release, eight PRs, each one concern; no new dependency.
 - Evidence before structure: slice 4's surface changes (one `consult` skill, user-only skills)
   come with the measurement from the simplicity review; the eval run proves the suite before the
   switch relies on it.
@@ -28,17 +28,41 @@ listing under 600 tokens, the skill listing under its 15 000-character budget.
 | # | Branch | Content | Depends on |
 |---|---|---|---|
 | 1 | `chore/tidy` | history moves to `docs/history/` with an index (`00-discovery.md`, the design inputs that are decided: `challenge-01`, `crissp-review`, `proposal-a-lean`, `proposal-b-layered`, `owner-ideas-02`, `simplicity-review`, `onboard-arlo-findings`; `reference/legacy-audit.md` after the switch is planned); R1 spike scripts to `scripts/spikes/`; F-10 closed (fixed in R1.1 slice 2); F-14 fixed (`journal add` from a worktree writes the worktree's memory); markdownlint-cli2 0.24.0; CONTEXT.md refreshed | — |
-| 2 | `fix/eval-suite` | F-13 and review proposal 6: regex graders for rule names and rejections, at most one judge per case, fixtures that stub cargo, terraform and pytest; the four cases below the bar re-read against PR 7; then the owner dispatches one full run on `main` (paid) and the result is journaled | 1 |
-| 3 | `feat/r2-surface` | review proposals 1–3 with their own spec: one `/cobot:consult <domain>` replacing the eight `consult-*` skills (spike first: two Skill calls in one message run in parallel), `onboard`, `rules`, `security-sweep` user-only, `expert-*` and `lang-*` descriptions capped near 350 characters | 1 |
-| 4 | `feat/r2-stacks` | R2 slice 4: `fw-react`, `fw-next`, `fw-vue`, `lang-shell` promoted, `expert-api`, Gitea through `tea`; its own spec, challenged | 3 |
-| 5 | none (journal) | live proofs: a builder run through the report hook, `/cobot:security-sweep` and a full `/cobot:ship` on a service repository, GCP module work end to end (R2's exit criterion; needs one of the owner's GCP repositories), a clean `/cobot:wrap` here so `git push` reads a stamp | 2, 4 |
-| 6 | `docs/readme` | the README below, `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`, badges, the banner, `scripts/github-settings.sh --apply` if the repository goes public | 4 |
-| 7 | `chore/release-0.2.0` | `plugin.json` and `marketplace.json` to 0.2.0, Unreleased cut to `[0.2.0] - <date>`; the owner pushes the tag and `release.yml` publishes; then the switch (`docs/03-switch-plan.md`) | 2, 5, 6 |
+| 2 | `fix/eval-suite` | F-13 and review proposal 6: regex graders for rule names and rejections, at most one judge per case, fixtures that stub cargo, terraform and pytest; the four cases below the bar re-read against the F-12 grader fix (GitHub PR 7); then the owner dispatches one full run on `main` (paid) and the result is journaled | 1 |
+| 3 | `security/mcp-read-verbs` | the gate's MCP rules flip from a write-verb denylist to a read-verb allowlist: an MCP tool is silent only when its name starts with `list`, `get`, `describe`, `search`, `read` or `check`, and asks otherwise; `never` rules and owner `allow mcp__<server>__<tool>` lines keep their precedence. Found 2026-11-09 against Google's remote Cloud MCP servers (tool lists read without credentials): `deploy_service_from_image`, `start_instance`, `stop_instance`, `reset_instance`, `set_instance_machine_type`, `apply_k8s_manifest`, `patch_k8s_resource`, `cancel_operation`, `write_text` and `undelete_role` matched no rule. Tests take every tool of the seven servers read that day, with Google's `readOnlyHint` and `destructiveHint` as the oracle; the agent scopes (consultant, learner) get the same check | 1 |
+| 4 | `feat/r2-surface` | review proposals 1–3 with their own spec: one `/cobot:consult <domain>` replacing the eight `consult-*` skills (spike first: two Skill calls in one message run in parallel), `onboard`, `rules`, `security-sweep` user-only, `expert-*` and `lang-*` descriptions capped near 350 characters | 1 |
+| 5 | `feat/r2-stacks` | R2 slice 4: `fw-react`, `fw-next`, `fw-vue`, `lang-shell` promoted, `expert-api`, Gitea through `tea`; its own spec, challenged | 4 |
+| 6 | none (journal), then `docs/expert-gcp-mcp` | live proofs: a builder run through the report hook, `/cobot:security-sweep` and a full `/cobot:ship` on a service repository, GCP module work end to end (R2's exit criterion; needs one of the owner's GCP repositories) **with the Google Cloud MCP spike** (below), a clean `/cobot:wrap` here so `git push` reads a stamp | 2, 3, 5 |
+| 7 | `docs/readme` | the README below, `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`, badges, the banner, `scripts/github-settings.sh --apply` if the repository goes public | 5 |
+| 8 | `chore/release-0.2.0` | `plugin.json` and `marketplace.json` to 0.2.0, Unreleased cut to `[0.2.0] - <date>`; the owner pushes the tag and `release.yml` publishes; then the switch (`docs/03-switch-plan.md`) | 2, 6, 7 |
 
-2 and 3 can run in parallel. The README comes after slice 4 because slice 4 changes the command
-list it shows.
+2, 3 and 4 can run in parallel. The README comes after slice 4 because slice 4 changes the
+command list it shows.
 
-## README (PR 6)
+## Google Cloud MCP spike (inside PR 6)
+
+Google hosts remote MCP servers at `https://<service>.googleapis.com/mcp` (Streamable HTTP,
+IAM-controlled: `roles/mcp.toolUser` plus the service's own roles; an IAM condition can block a
+principal from read-write tools server-side; read 2026-11-09 at
+docs.cloud.google.com/mcp/supported-products and /mcp/authenticate-mcp). `google/mcp` is a
+curated list, "not an officially supported Google product".
+
+1. On the project of the GCP proof repository, a principal with `roles/mcp.toolUser`, viewer
+   roles and the IAM condition that prevents read-write tool use.
+2. `claude mcp add --transport http --client-id <id> --client-secret --callback-port <port>
+   gcp-logging https://logging.googleapis.com/mcp -s user` (Google's docs describe only the
+   claude.ai connector; the CLI flags exist in 2.1.311, the flow is unverified), then the same
+   for `container.googleapis.com/mcp`.
+3. Prove: `list_log_entries` and `list_k8s_events` answer from the main thread and from a
+   consult fork; a write tool asks through the gate (PR 3) and fails at IAM even when approved.
+4. Write the setup into `expert-gcp` the way Stitch is set up (decision 27): the owner
+   registers servers and holds the credentials, cobot ships none. ADR-0006 stands: `cobot-gcp`
+   is created only once cobot ships a server configuration. Decisions 25 and 26 are refined for
+   Google Cloud: Google-hosted read tools are welcome (structured, no local code); writes stay
+   with `gcloud` under the gate. The local open-source servers (`gcloud-mcp`, `gke-mcp`, MCP
+   Toolbox) run code on the machine and are used only where no remote server exists.
+
+## README (PR 7)
 
 For people, under 120 lines:
 
@@ -99,13 +123,14 @@ The wordmark and tagline are set afterwards in SVG, so no generated lettering en
 ## Exit criterion
 
 The tag `v0.2.0` exists and `release.yml` published it; the full eval run on `main` is green at
-the suite's thresholds; R2's GCP proof is journaled; the README passes a two-minute read by the
+the suite's thresholds; R2's GCP proof and the MCP spike are journaled; no MCP tool outside the read verbs passes the
+gate silently; the README passes a two-minute read by the
 owner; `install.sh --check` is clean, so the switch can start.
 
 ## Owner decisions (2026-11-09)
 
-1. **Public with 0.2.0** (decision 10 holds): PR 6 runs `scripts/github-settings.sh --apply`,
+1. **Public with 0.2.0** (decision 10 holds): PR 7 runs `scripts/github-settings.sh --apply`,
    the badges render for everyone, and 0.3.0's Antigravity install can use the GitHub URL.
 2. GCP proof: the owner names the repository; open until then.
 3. Banner: generated by the owner's image agent from the prompt above; the result goes to
-   `docs/assets/` in PR 6.
+   `docs/assets/` in PR 7.

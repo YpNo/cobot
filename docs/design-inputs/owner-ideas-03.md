@@ -120,6 +120,11 @@ flowchart TD
 | regression after a dependency bump | `cobot-deps` + `lang-*` | lockfile diff, advisories |
 | unknown domain | `lang-fallback`, then `/cobot:learn` | read list only |
 
+When the owner has registered Google's remote Cloud MCP servers (0.2.0 spike), the GCP and GKE
+probes prefer their read tools (`list_log_entries`, `get_k8s_logs`, `list_k8s_events`,
+`describe_k8s_resource`, Monitoring, Trace, Error Reporting): structured output, IAM-limited to
+read-only on the server side, no local code.
+
 ### What it adds
 
 - `skills/debug/SKILL.md` (main thread, user- and model-invocable), `skills/debug/template.md`
@@ -178,7 +183,7 @@ path>`, `validate --strict`, `import claude`), and a plugin carries `skills/`, `
 Two collisions to guard: Antigravity still discovers the legacy `.agent/skills`, and `.agent/` is
 cobot's memory folder (harmless while no `skills/` exists there; `check` should warn if one
 appears). And arlo-camera-streamer-rs already keeps project skills in `.agents/skills`, which
-Antigravity loads beside cobot's: the `lang-*` precedence line from PR 13 matters there too.
+Antigravity loads beside cobot's: the `lang-*` precedence line from GitHub PR 13 matters there too.
 
 ### Shape
 

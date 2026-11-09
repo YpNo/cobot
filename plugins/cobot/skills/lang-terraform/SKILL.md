@@ -19,6 +19,9 @@ user-invocable: false
 
 # lang-terraform
 
+CONTEXT.md and the governance file it names override this skill: the project's coverage tool and
+threshold, error-handling rules and shape win over the defaults below.
+
 Versions, sources and dates: `references/versions.md`. Test example and mock patterns:
 `references/testing.md`. Quote the status (`verified <date>` or `reported`) when a version drives a
 decision; re-check any line the brief flags stale (versions after 30 days, idiom after 90) before relying on it.

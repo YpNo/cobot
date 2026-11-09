@@ -16,6 +16,9 @@ user-invocable: false
 
 # lang-go
 
+CONTEXT.md and the governance file it names override this skill: the project's coverage tool and
+threshold, error-handling rules and shape win over the defaults below.
+
 Versions, dates and sources: `references/versions.md`. Re-verify a line the brief flags stale (versions after 30 days, idiom after 90)
 before relying on it; never "upgrade" a repo as a side effect — report the gap.
 

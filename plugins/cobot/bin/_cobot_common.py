@@ -66,6 +66,14 @@ def repo_root(cwd: str | os.PathLike | None) -> Path:
 
 
 def memory_dir(cwd: str | os.PathLike | None) -> Path:
+    """The worktree's own .agent/ when it is a real directory there (a tracked .agent/ is checked
+    out per branch, so its journal belongs to that branch); else the main checkout's, which
+    foreign mode keeps as one symlink shared by every worktree."""
+    if not os.environ.get("COBOT_RULES_PROJECT_DIR"):
+        top = git(["rev-parse", "--show-toplevel"], Path(cwd or os.getcwd()))
+        own = Path(top) / ".agent" if top else None
+        if own and own.is_dir() and not own.is_symlink():
+            return own
     return repo_root(cwd) / ".agent"
 
 

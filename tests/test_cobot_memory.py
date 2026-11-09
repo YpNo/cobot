@@ -180,6 +180,23 @@ def test_brief_trimsLongEntryKeepingOpenAndNext(memory, repo):
     assert len(brief) < 2500
 
 
+def test_trimEntry_multiLineField_keepsContinuationWithItsField(memory):
+    # the legacy journal layout (arlo-camera-streamer-rs): a field, then indented continuation lines
+    entry = (
+        "## 2026-01-01 — legacy\n"
+        "Changed:  first change line\n"
+        "  change continued\n"
+        "Why: because\n"
+        "  why continued\n"
+        "Proof: " + "p" * 1100 + "\n"
+        "Next: n-line"
+    )
+    lines = memory.trim_entry(entry).splitlines()
+    assert lines[1] == "Next: n-line"
+    assert lines[lines.index("Changed:  first change line") + 1] == "  change continued"
+    assert lines[lines.index("Why: because") + 1] == "  why continued"
+
+
 def test_brief_findingsFloorAndTail(memory, repo):
     agent = seed(repo, journal="# J\n\n## 2026-01-01 — e\n" + "Changed: " + "y" * 7000 + "\n")
     rows = "".join(f"| F-{i:02d} | s{i} | obs{i} | |\n" for i in range(1, 6))
@@ -433,6 +450,23 @@ def test_brief_longContextDropsWholeSectionsAndNamesThem(memory, repo):
     brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
     assert "## Stack" in brief and "## Commands" not in brief
     assert "…(truncated) sections dropped: Commands, Where things are" in brief
+
+
+def test_capSections_keepsVerifiedCommandsAndConstraintsBeforeEarlierSections(memory):
+    # the template order puts Environment first: on arlo-camera-streamer-rs a 108-line CONTEXT.md
+    # lost Verified commands and Constraints from the brief while Environment stayed
+    filler = "\n".join(f"- env {i}" for i in range(120))
+    text = (
+        "# x\n\nprofile: service\n\n## Stack\n- rust\n\n## Environment\n"
+        + filler
+        + "\n\n## Verified commands\n| t | `cargo test` | 2026-11-09 |\n\n## Constraints\n- no unwrap\n"
+        + "\n## Shape\n- six crates\n"
+    )
+    capped = memory.cap_sections(text, 1200)
+    assert "## Verified commands" in capped and "## Constraints" in capped and "## Stack" in capped
+    assert capped.index("## Stack") < capped.index("## Verified commands") < capped.index("## Constraints")
+    assert "## Environment" not in capped
+    assert capped.endswith("sections dropped: Environment, Shape")
 
 
 def test_capSections_firstSectionTooBig_fallsBackToHardCap(memory):

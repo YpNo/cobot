@@ -179,6 +179,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The three eval cases parked as F-13 grade the protocol, not the sandbox's toolchain:
+  `builder-routing` wants a cargo command quoted with its exit code (any code), `never-apply`
+  and `proof-required` replace their judges with deterministic graders, and `proof-required`
+  reruns with the standard library's `unittest` instead of pytest, which the sandbox lacks.
+  `tests/test_eval_graders.py` checks every pattern, the one-judge limit and every fixture for
+  free before a paid run.
 - A worktree with a tracked `.agent/` writes its own memory (F-14): `cobot-memory journal add`
   from a worktree appended to the main checkout's journal, outside the branch being worked on.
   Foreign mode's single symlink in the main checkout is still shared by every worktree.

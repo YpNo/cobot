@@ -135,3 +135,10 @@ Why: Google's remote Cloud MCP tool lists (read without credentials) showed ten 
 Proof: tests/test_cobot_rules.py 619 passed, all 86 Google tools against readOnlyHint (check_k8s_auth asks by design); full suite 801 passed, coverage 98.09 %; ruff, shellcheck, markdownlint 0.24.0, plugin validate --strict (plugin and marketplace), check-plugin: exit 0.
 Open: Chrome, Playwright, fetch and context7 resolve-library-id ask until the owner allows them; a name containing an inner __ still reads by its last segment.
 Next: PR 2 (eval suite) and PR 4 (R2 surface).
+
+## 2026-11-09 — eval suite: F-13 (0.2.0 PR 2)
+Changed: builder-routing's proof grader accepts a cargo command with any exit code; never-apply and proof-required replace their judges with tool and regex graders (one terraform call at most, no rules or settings edit, no question, no Apply complete; refusal and rerun-or-send-back regexes); proof-required's fixture uses unittest; never-apply's prompt asks for the alternative without running anything else; tests/test_eval_graders.py checks patterns, the one-judge limit and every fixture for free.
+Why: F-13: judges failed compliant replies and fixtures assumed tools the sandbox lacks; the switch needs the suite green on main.
+Proof: tests/test_eval_graders.py 29 passed (compliant and non-compliant sample replies for the three cases, all ten fixtures in an empty workspace with HOME and XDG in tmp); full checks in the PR.
+Open: the paid run on main is the owner's (workflow_dispatch with evals, or claude plugin eval locally); the three cloud audits run for the first time there; learn-unknown-domain keeps its one judge.
+Next: PR 4 (R2 surface: one /cobot:consult, user-only skills, description caps).

@@ -1,234 +1,103 @@
-# cobot
+<p align="center">
+  <img src="docs/assets/banner.jpg" alt="cobot — a governed co-pilot for Claude Code" width="100%">
+</p>
 
-## Overview
+<p align="center">
+  <a href="https://github.com/YpNo/cobot/actions/workflows/ci.yml"><img src="https://github.com/YpNo/cobot/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/YpNo/cobot/releases"><img src="https://img.shields.io/github/v/release/YpNo/cobot?sort=semver" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.285-d97757" alt="Claude Code 2.1.285 or newer"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.12%2B-3776ab" alt="Python 3.12 or newer"></a>
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage%20gate-85%25-brightgreen" alt="Coverage gate 85 %"></a>
+</p>
 
-A Claude Code plugin marketplace that turns the main thread into a governed orchestrator. One
-plugin, `cobot`, brings a conceptor that writes one spec, a fresh-context challenger,
-per-language builders, experts as skills, committed memory per repository, and a rules gate that
-decides every outward action with `never`, `ask` or `allow`. Built for small personal and
-open-source repositories where efficiency matters more than ceremony. Design:
-[docs/02-design.md](docs/02-design.md); decisions: [docs/adr](docs/adr); release plan in the
-design, section 15.
+**cobot turns Claude Code into a careful teammate: it plans before it builds, proves what it did,
+remembers each repository, and asks before anything leaves your machine.**
 
-Release 1 (0.1.0) is the dogfood release: everything below works from a checkout through
-`install.sh --dev` or `--project`. Release 1.1 adds the learner and knowledge staleness, the
-dependency check and the weekly refresh, `ship`, `contribute`, `security-sweep`, journal
-compaction, the Python and TypeScript stacks with their builders and the containers expert.
+## What you get
 
-## Architecture
+- **A plan before code.** Bigger changes start with a short spec that a fresh, independent
+  reviewer attacks before anything is built.
+- **Work with proof.** Rust, Go, Python, TypeScript and Terraform builders work in isolation and
+  report the commands they ran with their exit codes; a report without proof goes back.
+- **Memory per repository.** Context, verified commands, a journal and open findings live in
+  `.agent/`, so each session starts where the last one stopped.
+- **A rules gate.** Every shell command, file edit and MCP call passes `never`, `ask` and `allow`
+  rules: force pushes, `terraform apply` and publishing never run on their own.
+- **Experts on call.** GitHub Actions, GitLab CI, containers, Google Cloud, Kubernetes, service
+  mesh and UI experts audit your files read-only.
 
-| Layer | What | Where |
-|---|---|---|
-| Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/cobot/protocol.md` |
-| Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/cobot-rules`, `rules/default.rules` |
-| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree | `bin/cobot-memory`, `bin/cobot-session` |
-| Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
-| Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
-| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `agents/` |
-| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep` | `skills/`, `/cobot:consult-ui`, `/cobot:consult-gitlab-ci`, `/cobot:consult-gcp`, `/cobot:consult-kubernetes`, `/cobot:consult-service-mesh` |
-| Knowledge skills | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-fallback`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh` (path-gated), `consult-gha`, `consult-containers` (forked audits) | `skills/` |
+## How it works
 
-Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
-`cobot-memory`. Builders never commit. See ADR-0001 to ADR-0003.
-
-## Prerequisites
-
-- Claude Code 2.1.285 or newer (`claude --version`).
-- Python 3.12 or newer on PATH as `python3`; the scripts use the standard library only.
-- POSIX `sh`, `git`. For development: `uv` (runs pinned `ruff`, `pytest`, `shellcheck`), `npx` for markdownlint.
-
-## Installation
-
-None of these touch `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills` or
-`~/.claude/settings.json` (ADR-0003). The legacy scaffold can stay until the switch described in
-[docs/03-switch-plan.md](docs/03-switch-plan.md).
-
-```bash
-./install.sh --dev
+```mermaid
+flowchart LR
+    you([You]) --> lead[Claude Code with cobot]
+    lead -->|bigger work| spec[Spec + challenge]
+    spec --> build[Builders with proof]
+    lead -->|audits| experts[Read-only experts]
+    gate{{Rules gate}} -.-> lead
+    memory[(.agent memory)] -.-> lead
 ```
 
-Prints a session-only alias using `claude --plugin-dir`; nothing is written.
+Small requests are done directly. Bigger ones go spec → build → wrap, one pull request each.
+
+## Install
+
+You need Claude Code 2.1.285 or newer, Python 3.12 or newer, and git.
 
 ```bash
-./install.sh --project /path/to/repo
-```
-
-Registers the marketplace (from this checkout, or from GitHub with `--source github`) and installs
-the plugin at project scope in that repository. Use `--local` in a repository you do not own.
-The install is a copy pinned to the plugin version: after editing this checkout, run
-`./install.sh --refresh /path/to/repo` (uninstall and reinstall at the scope found there, project or local), because `claude plugin update`
-only acts on a version change.
-
-```bash
-./install.sh --check
-```
-
-Reports Claude Code, the marketplace, installed scopes, the legacy scaffold and name overlaps.
-`--uninstall [scope]` reverses an install. `--user` is reserved for the switch.
-
-## Configuration
-
-| Setting | Type | Default | Effect |
-|---|---|---|---|
-| `~/.claude/cobot.rules` | rule file | absent | owner layer: `allow` lines silence a default `ask`; `never` and `ask` tighten |
-| `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
-| `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
-| `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live |
-| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
-| `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
-| `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
-
-Rule syntax, one per line: `decision Tool(pattern) [@agent]`, for example
-`ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`, `allow mcp__claude-in-chrome__*`,
-`allow Bash(cargo test*)`. Precedence: `never` in any layer wins; an `allow` from the owner layer
-(or an agent-scoped one from the default layer) silences the gate; `ask` prompts; otherwise
-Claude Code's own permissions decide. The hard wall is a `permissions.deny` block the owner applies
-from `/cobot:rules sync`, rendered in plain and `rtk` forms.
-
-## Usage
-
-Start a session with the plugin loaded in a repository. The brief tells you whether the
-repository is trusted. Then:
-
-- `/cobot:onboard` once per repository: trust, fingerprint, verified commands, memory files.
-- Tiny and small work: ask directly; the orchestrator names the size and skips the ceremony.
-- Medium and large work: `/cobot:spec <what>` writes and challenges the spec,
-  `/cobot:build <slug>` implements with proof, `/cobot:wrap` converges, runs the full checks,
-  fans out reviews and journals with a verified stamp.
-- `/cobot:rules check "git push --force"` dry-runs the gate; `explain` names every matching rule;
-  `sync` renders the settings block for you to apply.
-- `/cobot:consult-gha` audits the workflows of the current repository; `/cobot:consult-gitlab-ci`
-  does the same for `.gitlab-ci.yml`, and `/cobot:ship` detects the forge offline and writes the
-  matching pipeline.
-- `/cobot:consult-ui` audits stylesheets, components and OnionOS themes against `expert-ui`
-  (contrast ratios computed with `jq`, focus, targets, reflow, preferences, tokens). To let the
-  expert render screens with Google Stitch, register the server at user scope with your own key
-  (decision 27): `claude mcp add stitch --transport http https://stitch.googleapis.com/mcp --header "X-Goog-Api-Key: …" -s user`;
-  generate and edit tools ask, list and get tools are silent.
-- `/cobot:consult-gcp`, `/cobot:consult-kubernetes` and `/cobot:consult-service-mesh` audit a
-  Google Cloud module, a set of manifests or charts, and Istio or Cloud Service Mesh policies
-  against their experts (decision 28: skill pairs inside this plugin, no `cobot-gcp` plugin
-  until a server or an agent needs one). For the read-only agents, `gcloud … list|describe`,
-  `kubectl get|describe|logs|diff`, `helm template|lint`, `kustomize build`, `kubeconform` and
-  `istioctl analyze|proxy-status` are silent like `gh api repos/*`; a command that could run
-  repository content (an environment assignment, `git -c`, `--kubeconfig`, `--post-renderer`,
-  `--enable-exec`) asks instead, and `kubectl get secret` is denied for them.
-- `/cobot:learn <skill or topic> [question]` sends the learner to primary sources and read-list
-  commands and brings back a dated delta; the brief names the skills whose knowledge is stale.
-- `cobot-deps check` reports dependency currency (never upgrades); the brief shows the cached
-  line and says when to run it again.
-- `/cobot:ship` writes the pipeline from the verified commands at the end of a work stream
-  (PR, merge, release and weekly triggers, one aggregator check, the image workflow for a
-  service); `/cobot:contribute` prepares an upstream pull request under the maintainers'
-  rules and prints the push and `gh pr create` commands; `/cobot:security-sweep` audits the
-  whole tree read-only against `.agent/accepted-risks.md`.
-
-Memory commands the orchestrator uses, also available by hand:
-
-```bash
-plugins/cobot/bin/cobot-memory check
+git clone https://github.com/YpNo/cobot.git
 ```
 
 ```bash
-plugins/cobot/bin/cobot-memory findings add "ci.yml" "checkout is on a floating tag"
+cobot/install.sh --project /path/to/your/repo
 ```
 
-```bash
-plugins/cobot/bin/cobot-memory knowledge --stale
-```
+Use `--local` instead of `--project` in a repository you don't own (nothing is committed there),
+or `--dev` to try cobot for one session without installing anything.
 
-```bash
-plugins/cobot/bin/cobot-memory learn --promote --dry-run '{"topic": "go", "entries": []}'
-```
+## First steps
 
-```bash
-plugins/cobot/bin/cobot-deps check --fresh
-```
+1. Open Claude Code in your repository and run `/cobot:onboard`. It checks the repository is
+   yours, finds the commands that build and test it, and writes the `.agent/` memory.
+2. Ask for small changes as usual. cobot names the size and skips the ceremony.
+3. For a bigger change: `/cobot:spec <what you want>`, then `/cobot:build <spec>`, then
+   `/cobot:wrap` to run every check and record the result.
 
-`cobot-usage [--since DATE] [--session PREFIX] [--json]` reads this repository's local Claude Code
-transcripts (and its worktrees') and reports requests and tokens per session, model and agent
-type plus Skill and Agent call counts, never message text. Claude Code's `/usage` shows the live
-session; this is the history a routing decision needs (design §10).
+## Commands you type
 
-## Testing
+| Command | What it does |
+|---|---|
+| `/cobot:onboard` | first contact with a repository: trust, verified commands, memory |
+| `/cobot:spec <what>` | writes the spec and has it challenged |
+| `/cobot:build <spec>` | builds the spec task by task, with proof |
+| `/cobot:wrap` | full checks, reviews, journal; ready for a pull request |
+| `/cobot:rules check "<command>"` | shows what the gate would do with a command |
+| `/cobot:learn <topic>` | researches a topic from primary sources into dated knowledge |
+| `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
+| `/cobot:contribute` | prepares a pull request to someone else's project, under their rules |
+| `/cobot:security-sweep` | audits the whole repository, read-only |
+| `/cobot:consult-<domain>` | expert audit: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui` |
 
-```bash
-uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85
-```
+Language skills, experts and builders load on their own when your files need them.
 
-```bash
-uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
-```
+## Safety
 
-```bash
-uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh
-```
+The gate asks before anything outward or hard to undo, and some things it never allows. It never
+approves on its own and never edits your Claude Code settings: `/cobot:rules sync` prints the
+settings block for you to apply. The memory of a repository you don't trust is never loaded.
+To quiet a tool you trust, add one line to `~/.claude/cobot.rules`, for example
+`allow mcp__claude-in-chrome__*`. Report a vulnerability as [SECURITY.md](SECURITY.md) says,
+never in a public issue.
 
-```bash
-claude plugin validate plugins/cobot --strict && python3 scripts/check-plugin.py
-```
+## Learn more
 
-`tests/test_eval_graders.py` checks the eval suite for free before a paid run: every grader
-pattern compiles, no case has more than one judge, every fixture runs clean.
-Live spikes that need a logged-in CLI: `sh scripts/spikes/spike-coexistence.sh` and
-`sh scripts/spikes/spike-r1.sh`. Evals run as Claude sessions under the logged-in account (an API key in
-CI): `claude plugin eval plugins/cobot --trust-plugin --scaffold --allow-tools Bash Write Edit`.
-A case's `allowed_tools` only lists what it may use; `Bash`, `Write` and `Edit` must also be granted
-on the command line, and `Bash` needs the sandbox backend (`bubblewrap` and `socat` on Linux).
-`--scaffold` runs each case's `fixture.sh` (named in its `case.yaml`) to seed the workspace; the
-default two-arm run scores the plugin against a no-plugin baseline, `--ablation none` runs one arm.
+For agents and architects:
 
-## CI/CD
+- [`.agent/CONTEXT.md`](.agent/CONTEXT.md): this repository's working context and verified commands
+- [docs/architecture.md](docs/architecture.md): layers, roster, flow, security model
+- [docs/configuration.md](docs/configuration.md): install options, rule syntax, files, MCP servers
+- [docs/development.md](docs/development.md): checks, evals, CI/CD, releasing, contributing
+- [docs/02-design.md](docs/02-design.md) and [docs/adr/](docs/adr/): the design and its decisions
 
-`ci.yml` runs on every push and pull request: ruff, shellcheck, the plugin contract check,
-plugin and marketplace validation, pytest with the 85 % coverage gate, markdownlint and zizmor.
-The eval job runs only on manual dispatch with the `evals` input, since each run is a paid Claude
-session. `release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `marketplace.json`
-and the changelog agree, then creates the GitHub release from the changelog section. Every action
-is pinned to a commit SHA and tokens are read-only except the release job.
-`knowledge-refresh.yml` runs weekly (and on dispatch): it picks the two stalest knowledge skills
-without an open `learn/<skill>` branch, runs the learner read-only under a dollar budget, applies
-the delta with `learn --promote --in-place`, runs the plugin checks and opens one pull request
-per skill for the owner to review. Its secrets live in the `knowledge-refresh` environment; with
-only `GITHUB_TOKEN` the PR gets no CI run (the checks ran in the job), a fine-grained PAT in
-`KNOWLEDGE_REFRESH_TOKEN` restores it.
-
-The repository settings those workflows rely on are code: `scripts/github-settings.sh --check`
-prints wanted against current and `--apply` sets what differs (delete branch on merge, no squash,
-SHA-pinned actions required, read-only default token, Dependabot alerts and security PRs, the
-`evals` and `knowledge-refresh` environments deployable from `main` only, and the `main` ruleset
-with `ci-ok` as the one required check where the plan allows rulesets). Secrets are never
-handled by the script: it prints the `gh secret set` commands, one `ANTHROPIC_API_KEY` per
-environment and none at repository level. `.github/dependabot.yml` groups the weekly action
-updates into one PR.
-
-## Security
-
-The gate is argv and pattern matching: it stops honest and careless attempts, not determined
-obfuscation. Interpreters running code, task runners, remote execution and command substitution
-are opaque and ask. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string and container or sandbox entry wrappers
-(`distrobox enter`, `toolbox run`, `docker exec`, `nix develop -c`, …) are looked through and the
-command behind them is judged.
-MCP tools are judged by name: a read (`list`, `get`, `describe`, `search`, `read` first, and no
-write word joined to it as in `get_or_create`) and the desktop app's own UI tools are silent;
-every other MCP tool asks, a browser server's clicks and navigation included, since it acts with
-your sign-ins. Silence one server you trust with an owner line such as
-`allow mcp__claude-in-chrome__*`; tighten a single read with `ask mcp__<server>__<tool>`.
-Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
-protection is advisory for the model's own reads. Report a vulnerability as `SECURITY.md` says:
-a private GitHub security advisory, never a public issue.
-
-## Contributing
-
-Branches `feat/`, `fix/`, `docs/`, `chore/`, `security/`; Conventional Commits without
-attribution trailers; one concern per pull request; tests with every behaviour change; the design
-and ADRs are the source of truth for scope.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog, semantic versions).
-
-## License
-
-MIT, see [LICENSE](LICENSE).
+[Changelog](CHANGELOG.md) · [License: MIT](LICENSE)

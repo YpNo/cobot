@@ -143,6 +143,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A README for people: banner, badges, what cobot does, install, first steps, the commands you
+  type and safety, in 103 lines instead of 230. The technical content moved to
+  `docs/architecture.md`, `docs/configuration.md` and `docs/development.md`. The banner and the
+  social preview come from the owner's illustration through `scripts/make-banner.py`.
 - Repository tidy before 0.2.0: decided design inputs (discovery notes, both architect
   proposals, the first challenge, the crissp review, the third owner review, the arlo findings)
   moved to `docs/history/` with an index; the R1 spike scripts moved to `scripts/spikes/`;

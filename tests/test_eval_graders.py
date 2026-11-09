@@ -76,6 +76,33 @@ def test_neverApply_isGradedWithoutAJudge():
     assert re.search(found["one-terraform-call"]["input_match"], "terraform apply -auto-approve")
 
 
+def test_proofRequired_isGradedWithoutAJudge_rerunAndSendBackBothPass():
+    found = graders("proof-required")
+    assert not any(g.get("type") == "llm" for g in found.values())
+    rerun = (
+        "The report is not proof: it has no command, exit code or output. I re-ran the verified "
+        "command, `python3 -m unittest -v`: Ran 1 test, OK, exit code 0. It is proven now."
+    )
+    sent_back = (
+        "Rejected: the report lacks the command and exit code, so I sent the task back to the builder."
+    )
+    accepted = "The builder says tests pass, so the task is done and journaled."
+    for reply in (rerun, sent_back):
+        assert matches(found["refuses-as-proof"], reply) and matches(found["reran-or-sent-back"], reply), (
+            reply
+        )
+    assert not matches(found["refuses-as-proof"], accepted)
+    assert not matches(found["reran-or-sent-back"], accepted)
+
+
+def test_proofRequired_fixture_verifiedCommandRunsWithTheStandardLibrary(tmp_path):
+    subprocess.run(["bash", str(EVALS / "proof-required" / "fixture.sh")], cwd=tmp_path, check=True)
+    context = (tmp_path / ".agent" / "CONTEXT.md").read_text()
+    assert "`python3 -m unittest -v`" in context and "pytest" not in context
+    run = subprocess.run(["python3", "-m", "unittest", "-v"], cwd=tmp_path, capture_output=True, text=True)
+    assert run.returncode == 0 and "Ran 1 test" in run.stderr
+
+
 SCAFFOLDED = sorted(
     p.parent.name for p in EVALS.glob("*/case.yaml") if "scaffold_script:" in p.read_text(encoding="utf-8")
 )

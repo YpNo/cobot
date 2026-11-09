@@ -1,6 +1,6 @@
 #!/bin/sh
 # Coexistence spikes (docs/02-design.md section 17, item 6). Run from an authenticated shell:
-#   sh scripts/spike-coexistence.sh
+#   sh scripts/spikes/spike-coexistence.sh
 # Builds a scratch repository with a local remote (non-bare, updateInstead: safe.bareRepository may be explicit), then starts three short, cheap
 # (haiku) non-interactive Claude sessions with the plugin loaded through --plugin-dir:
 #   A  do cobot:* agents appear beside the legacy set?

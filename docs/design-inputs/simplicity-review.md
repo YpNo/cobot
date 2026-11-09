@@ -139,7 +139,7 @@ write permission widens it.
 It is installed at user scope from `claude-plugins-official` and enabled in
 `~/.claude/settings.json`. Eleven of its skills are model-invoked, so their descriptions sit in
 every session's listing beside cobot's, and its `code-review` shares a name with the built-in.
-Nothing in cobot depends on it (one historical mention in `docs/00-discovery.md`). It is the only
+Nothing in cobot depends on it (one historical mention in `docs/history/00-discovery.md`). It is the only
 plugin installed from that marketplace; the marketplace itself can stay.
 
 The cobot rules forbid editing `~/.claude/settings*.json`, so the steps are the owner's:

@@ -1,9 +1,9 @@
 # cobot — design (v1.1, 2026-11-06, challenged, amended after the owner's second review)
 
-Synthesis of two independent architect proposals (`design-inputs/proposal-a-lean.md`,
-`design-inputs/proposal-b-layered.md`) against the owner's decisions (`01-decisions.md`), the
+Synthesis of two independent architect proposals (`history/proposal-a-lean.md`,
+`history/proposal-b-layered.md`) against the owner's decisions (`01-decisions.md`), the
 verified platform mechanics (`reference/claude-code-mechanics.md`) and the audit of the previous
-scaffold (`reference/legacy-audit.md`), then red-teamed once (`design-inputs/challenge-01.md`,
+scaffold (`reference/legacy-audit.md`), then red-teamed once (`history/challenge-01.md`,
 verdict SOUND WITH CHANGES; every finding is folded in below). Section 13 records where each
 choice came from.
 
@@ -484,11 +484,11 @@ legacy settings' `allow`. The switch itself is `docs/03-switch-plan.md`, with a 
 | foreign mode by symlink + `info/exclude`, path keyed by remote | A + B | skills stay path-agnostic; clones share memory |
 | no GitHub MCP, no duplicate Terraform MCP | A + orchestrator | the HashiCorp plugins already ship the server |
 | opt-in workflow deferred to R2 | challenger | shipping it in R1 proved nothing; it returns once evals show where fan-out is inconsistent |
-| rtk-aware patterns, `sh` shim, argv matching, trusted-repo injection, two skills per expert, worktree hook, owner gate on objections, R1 scope cut | challenger pass 1 | see `design-inputs/challenge-01.md` for the failure scenarios |
+| rtk-aware patterns, `sh` shim, argv matching, trusted-repo injection, two skills per expert, worktree hook, owner gate on objections, R1 scope cut | challenger pass 1 | see `history/challenge-01.md` for the failure scenarios |
 | learner / teacher: delta not files, three statuses with provenance, relevance filter, two layers | owner (second review) + orchestrator | ADR-0002 |
 | token economy: brief not files, report caps, `rtk proxy` for decision-carrying output, usage measurement | owner + crissp (`brief`, `measure.py`) | §10 |
 | coexistence install, switch plan, R0 without global changes | owner | ADR-0003, `03-switch-plan.md` |
-| findings file, options + recommendation, impact map, verified stamp, `omitClaudeMd` challenger, accepted risks with expiry, proof line | crissp review | `design-inputs/crissp-review.md` |
+| findings file, options + recommendation, impact map, verified stamp, `omitClaudeMd` challenger, accepted risks with expiry, proof line | crissp review | `history/crissp-review.md` |
 
 ## 17. Risks and the day-one spikes
 

@@ -1,6 +1,6 @@
 # Decisions taken with the owner — 2026-11-06
 
-Answers to the discovery questions (docs/00-discovery.md). These are constraints for the
+Answers to the discovery questions (docs/history/00-discovery.md). These are constraints for the
 design, not proposals.
 
 | # | Topic | Decision |
@@ -21,12 +21,12 @@ design, not proposals.
 | 13 | Learner / teacher (2026-11-06, second review) | When no expert covers a domain, or an expert hits an unknown, the cobot learns from primary sources and its own experiments, never by guessing; every expert updates its knowledge when it validates something. Write little: relevant, verified, dated. See ADR-0002. |
 | 14 | Token economy | Keep rtk and use it smartly; add other savings techniques, none at the cost of quality. Design §10. |
 | 15 | Legacy scaffold | **Do not touch it now.** Build the cobot first, ship install methods in this repo, switch at a moment the owner picks. See ADR-0003 and docs/03-switch-plan.md. |
-| 16 | crissp | Not used; reviewed for ideas. Ten taken, listed in docs/design-inputs/crissp-review.md. |
+| 16 | crissp | Not used; reviewed for ideas. Ten taken, listed in docs/history/crissp-review.md. |
 
 ## Third review — 2026-11-07 (confirmed by the owner the same day)
 
 Ideas raised after the cartridge-os dogfood, challenged in
-[design-inputs/owner-ideas-02.md](design-inputs/owner-ideas-02.md) and **confirmed as written**.
+[history/owner-ideas-02.md](history/owner-ideas-02.md) and **confirmed as written**.
 The "Enforced by" column names where each lives; items marked *R1.1* are built in that release.
 
 | # | Topic | Proposed rule | Enforced by |

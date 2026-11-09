@@ -143,6 +143,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Repository tidy before 0.2.0: decided design inputs (discovery notes, both architect
+  proposals, the first challenge, the crissp review, the third owner review, the arlo findings)
+  moved to `docs/history/` with an index; the R1 spike scripts moved to `scripts/spikes/`;
+  `.agent/CONTEXT.md` gained `forge:` and `governance:` and a result column; markdownlint-cli2
+  0.24.0 everywhere (CI already used it).
 - Onboarding follow-ups from arlo-camera-streamer-rs. A refresh runs `cobot-memory init` for
   missing files and offers `compact` when the journal is long; `check` names the CONTEXT.md
   header fields the template has and the file lacks, and the CONTEXT sections the brief drops.
@@ -174,6 +179,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A worktree with a tracked `.agent/` writes its own memory (F-14): `cobot-memory journal add`
+  from a worktree appended to the main checkout's journal, outside the branch being worked on.
+  Foreign mode's single symlink in the main checkout is still shared by every worktree.
 - `cobot-memory findings add --goes-to X` closed the finding: any value but empty or `open`
   counted as closed. It now writes `open → X`, and only `findings close` ends a finding.
   `compact --summary` no longer writes a second `Proof:` line (the archive pointer is

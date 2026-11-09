@@ -832,3 +832,28 @@ def test_brief_tailListsEveryOtherAgentFile(memory, repo):
         (agent / name).write_text("# x\n")
     brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
     assert brief.endswith("also in .agent (read on demand): ARCHITECTURE.md, HANDOFF.md")
+
+
+def test_memoryDir_trackedAgentInWorktree_usesTheWorktreesCopy(memory, repo, tmp_path):
+    # F-14: with a tracked .agent/, a journal entry written from a worktree landed in the main
+    # checkout, outside the branch being worked on
+    seed(repo)
+    subprocess.run(["git", "-C", str(repo), "add", ".agent"], check=True)
+    commit(repo)
+    tree = tmp_path / "tree"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "feat", str(tree)], check=True)
+    mem = memory.Memory(str(tree))
+    assert mem.dir == tree / ".agent" and mem.root == repo
+    memory.cmd_journal_add(mem, "## 2026-02-02 — t\nChanged: a\nWhy: b\nProof: c\n")
+    assert "2026-02-02" in (tree / ".agent" / "JOURNAL.md").read_text()
+    assert "2026-02-02" not in (repo / ".agent" / "JOURNAL.md").read_text()
+
+
+def test_memoryDir_foreignSymlinkInMainCheckout_sharedByWorktrees(memory, repo, tmp_path):
+    commit(repo)
+    external = tmp_path / "external"
+    external.mkdir()
+    (repo / ".agent").symlink_to(external, target_is_directory=True)
+    tree = tmp_path / "tree"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "feat", str(tree)], check=True)
+    assert memory.Memory(str(tree)).dir == repo / ".agent"

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Release 1 spikes (spec T00). Run from an authenticated shell: sh scripts/spike-r1.sh
+# Release 1 spikes (spec T00). Run from an authenticated shell: sh scripts/spikes/spike-r1.sh
 # A harmless owner-layer probe rule makes the model call Bash, so the hook (not the model) decides:
 #   D  hook deny on a command the model has no reason to refuse (echo cobot-deny-probe)
 #   E  the same command from a subagent's Bash: does the hook fire for subagents, and what agent_type arrives

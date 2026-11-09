@@ -80,7 +80,7 @@ Reports Claude Code, the marketplace, installed scopes, the legacy scaffold and 
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
 
 Rule syntax, one per line: `decision Tool(pattern) [@agent]`, for example
-`ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`, `ask mcp__*__create*`,
+`ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`, `allow mcp__claude-in-chrome__*`,
 `allow Bash(cargo test*)`. Precedence: `never` in any layer wins; an `allow` from the owner layer
 (or an agent-scoped one from the default layer) silences the gate; `ask` prompts; otherwise
 Claude Code's own permissions decide. The hard wall is a `permissions.deny` block the owner applies
@@ -208,6 +208,11 @@ obfuscation. Interpreters running code, task runners, remote execution and comma
 are opaque and ask. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string and container or sandbox entry wrappers
 (`distrobox enter`, `toolbox run`, `docker exec`, `nix develop -c`, …) are looked through and the
 command behind them is judged.
+MCP tools are judged by name: a read (`list`, `get`, `describe`, `search`, `read` first, and no
+write word joined to it as in `get_or_create`) and the desktop app's own UI tools are silent;
+every other MCP tool asks, a browser server's clicks and navigation included, since it acts with
+your sign-ins. Silence one server you trust with an owner line such as
+`allow mcp__claude-in-chrome__*`; tighten a single read with `ask mcp__<server>__<tool>`.
 Hooks run as the user. Untrusted repositories' `.agent/` is never injected; in release 1 that
 protection is advisory for the model's own reads. Report a vulnerability as `SECURITY.md` says:
 a private GitHub security advisory, never a public issue.

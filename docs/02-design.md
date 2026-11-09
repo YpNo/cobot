@@ -231,7 +231,7 @@ Default set (owner decision 6: nothing outward runs on its own):
 | Decision | Patterns |
 |---|---|
 | never | `git push --force*`, `git push -f*`, `terraform\|tofu apply\|destroy*`, `cargo\|npm\|pnpm\|uv publish*`, `gh release create*`, `git tag -a v*`, `gh api -X DELETE*`, `Edit\|Write(~/.claude/settings*.json)`, `Edit\|Write(.claude/settings*.json)` |
-| ask | `git push*`, `gh pr create\|merge\|comment\|review*`, `gh issue create\|comment*`, `gh api -X POST\|PUT\|PATCH*`, `ansible-playbook*` (without `--check`), `kubectl apply\|delete*`, `gcloud * create\|delete\|update*`, `rm -rf*`, `git reset --hard*`, `git clean*`, `git rebase*`, `git commit*`, `docker\|podman run*`, `mcp__*__create\|update\|delete\|merge\|push*` |
+| ask | `git push*`, `gh pr create\|merge\|comment\|review*`, `gh issue create\|comment*`, `gh api -X POST\|PUT\|PATCH*`, `ansible-playbook*` (without `--check`), `kubectl apply\|delete*`, `gcloud * create\|delete\|update*`, `rm -rf*`, `git reset --hard*`, `git clean*`, `git rebase*`, `git commit*`, `docker\|podman run*`, `mcp__*` except reads by name and the host's UI tools (0.2.0) |
 | allow (sync only) | the verified-commands table of CONTEXT.md, `git status\|diff\|log\|add\|stash*`, `gh pr view\|checks\|diff*`, `gh issue view\|list*` |
 
 ## 7. Memory
@@ -400,9 +400,12 @@ Never parallel: tiny and small, anything needing the owner's answers, anything w
 | Home Assistant | `cobot-reverse` (R3) | device state during protocol work |
 
 Outward writes to code and repositories go through `git`/`gh` CLI, never through MCP write
-tools, so the gate sees one deterministic surface; MCP write tools are `ask` as a belt. Design
-artefacts in the owner's own SaaS account (Stitch screens, decision 27) may be created through
-MCP under that `ask`.
+tools, so the gate sees one deterministic surface; every MCP tool asks as a belt, except a read
+(its name starts with list, get, describe, search or read and joins no write word) and the
+desktop host's UI tools, named one by one in the default layer. Until 0.2.0 only seven write
+verbs asked, and Google's Cloud MCP servers showed what that missed (`deploy_service_from_image`,
+`start_instance`, `apply_k8s_manifest`, …). Design artefacts in the owner's own SaaS account
+(Stitch screens, decision 27) may be created through MCP under that `ask`.
 
 ## 13. Quality of the cobot itself
 

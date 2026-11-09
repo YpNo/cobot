@@ -81,6 +81,8 @@ DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
 ROUTED = "open → "
+KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md"})
+AGENT_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
 DROPPED_RE = re.compile(r"sections dropped: (.*)")
 FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
@@ -256,6 +258,15 @@ def trim_entry(entry: str) -> str:
     return "\n".join(out)
 
 
+def other_agent_files(mem: Memory) -> list[str]:
+    """Markdown files in .agent/ beyond the ones the brief reads (ARCHITECTURE.md, a legacy
+    HANDOFF.md): named, never loaded."""
+    if not mem.dir.is_dir():
+        return []
+    names = (p.name for p in mem.dir.glob("*.md") if p.is_file())
+    return sorted(n for n in names if n not in KNOWN_AGENT_FILES and AGENT_FILE_RE.fullmatch(n))
+
+
 def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     if trust_check:
         trusted, reason = mem.trust()
@@ -273,8 +284,9 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
         tail.append("knowledge: " + ", ".join(mem.knowledge_topics()))
     if mem.specs():
         tail.append("specs: " + ", ".join(mem.specs()))
-    if (mem.dir / "ARCHITECTURE.md").is_file():
-        tail.append("ARCHITECTURE.md present (read on demand)")
+    others = other_agent_files(mem)
+    if others:
+        tail.append("also in .agent (read on demand): " + ", ".join(others))
     reserve = min(FINDINGS_FLOOR, len(findings_block)) + sum(len(t) + 1 for t in tail)
     room = budget - reserve - len(journal_block) - BLOCK_SEPARATORS
     context = context_head(mem.read("CONTEXT.md"), max(CONTEXT_CAP, min(CONTEXT_MAX, room)))

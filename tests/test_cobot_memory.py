@@ -212,7 +212,7 @@ def test_brief_findingsFloorAndTail(memory, repo):
     (agent / "ARCHITECTURE.md").write_text("# a\n")
     brief = memory.build_brief(memory.Memory(), 3000, trust_check=False)
     assert "## FINDINGS open: 5" in brief and "F-05" in brief and "F-01" not in brief
-    assert "knowledge: gha" in brief and "specs: r1" in brief and "ARCHITECTURE.md present" in brief
+    assert "knowledge: gha" in brief and "specs: r1" in brief and "(read on demand): ARCHITECTURE.md" in brief
     assert "(entry truncated)" in brief
     assert len(brief) <= 3000 + 600
 
@@ -824,3 +824,11 @@ def test_check_briefDropsContextSections_warns(memory, repo):
     seed(repo, context=context)
     out = memory.cmd_check(memory.Memory())
     assert "warning: the brief drops CONTEXT sections: Environment" in out
+
+
+def test_brief_tailListsEveryOtherAgentFile(memory, repo):
+    agent = seed(repo)
+    for name in ("ARCHITECTURE.md", "HANDOFF.md", "JOURNAL-archive.md", "FINDINGS.md", "notes.txt"):
+        (agent / name).write_text("# x\n")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert brief.endswith("also in .agent (read on demand): ARCHITECTURE.md, HANDOFF.md")

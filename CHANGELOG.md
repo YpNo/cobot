@@ -143,6 +143,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Onboarding follow-ups from arlo-camera-streamer-rs. A refresh runs `cobot-memory init` for
+  missing files and offers `compact` when the journal is long; `check` names the CONTEXT.md
+  header fields the template has and the file lacks, and the CONTEXT sections the brief drops.
+  The brief names every other `.agent/*.md` (a legacy `HANDOFF.md`) as read on demand. Onboard
+  checks free disk space before the first build of a compiled stack, records each verified
+  command's result (and a `carried over, not re-run` form), reads the repository's other agent
+  files and parks contradictions as findings, and explains what owner allow lines change
+  (`ask` verdicts and `/cobot:rules sync`; the gate judges the inner command of `distrobox` and
+  `bash -c` wrappers). `governance:` takes `path#heading-slug`, and `/cobot:spec` reads only
+  that section. Every `lang-*` skill says CONTEXT.md and governance override its defaults.
+  `cobot-deps` notes when `deny.toml` limits cargo-deny to listed targets, which is why it can
+  count fewer advisories than cargo-audit over the whole `Cargo.lock`.
 - `/cobot:spec` checks every change against the project's own principles: CONTEXT.md gains
   `governance:` (the path to a constitution or equivalent), `/cobot:onboard` fills it, and the
   spec's principles check gives each principle one line, a violation becoming a clarify
@@ -162,6 +174,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `cobot-memory findings add --goes-to X` closed the finding: any value but empty or `open`
+  counted as closed. It now writes `open → X`, and only `findings close` ends a finding.
+  `compact --summary` no longer writes a second `Proof:` line (the archive pointer is
+  `Archive:`), and the help puts init's description under `init`, not `stamp`.
 - Three bugs found by onboarding arlo-camera-streamer-rs: `cobot-deps` ran `cargo update
   --workspace`, which reports every compatible dependency update as held back (it hid arlo-rs
   0.4.0 -> 0.4.1); the brief's journal trimming split a field from its indented continuation

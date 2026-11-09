@@ -124,7 +124,7 @@ jobs:
         run: |
           python3 scripts/check-plugin.py plugins/cobot
           claude plugin validate plugins/cobot --strict
-          npx --yes markdownlint-cli2@0.21.0 "plugins/cobot/skills/**/*.md"
+          npx --yes markdownlint-cli2@0.24.0 "plugins/cobot/skills/**/*.md"
       - name: Open the pull request
         if: steps.apply.outputs.changed == 'true'
         env:

@@ -4,8 +4,8 @@
 Commands
   path                             the resolved .agent directory (worktree-aware)
   init [--profile P] [--foreign] [--add-identity] [--trust-root]
-  stamp                       ok <sha> | missing — <reason>: is HEAD covered by the last verified stamp
                                    create CONTEXT, JOURNAL, FINDINGS from the templates; never overwrites
+  stamp                            ok <sha> | missing — <reason>: is HEAD covered by the last verified stamp
   trust                            trusted: <reason> | untrusted: <reason>
   check                            mode, trust, files, journal order, brief size
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)

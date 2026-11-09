@@ -797,3 +797,10 @@ def test_compact_summaryWithProof_addsArchiveLineNotSecondProof(memory, repo):
     merged = path.read_text().split("## 2026-01-05")[0]
     assert merged.count("Proof:") == 1
     assert "Archive: raw entries in JOURNAL-archive.md and in git history before 2026-01-04." in merged
+
+
+def test_help_initDescriptionFollowsInit(memory):
+    lines = memory.__doc__.splitlines()
+    init = next(i for i, line in enumerate(lines) if line.lstrip().startswith("init ["))
+    assert "never overwrites" in lines[init + 1]
+    assert lines[init + 2].lstrip().startswith("stamp")

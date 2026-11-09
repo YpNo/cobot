@@ -211,14 +211,24 @@ ask Bash(docker rmi*)
 ask Bash(docker login*)
 ask Bash(podman login*)
 ask Bash(podman run*)
-ask mcp__*__create*
-ask mcp__*__update*
-ask mcp__*__delete*
-ask mcp__*__merge*
-ask mcp__*__push*
-# design artefacts created in the owner's own SaaS account (decision 27: Stitch screens) ask too
-ask mcp__*__generate*
-ask mcp__*__edit*
+# MCP: every tool asks, except a read (the last part of its name starts with list, get, describe,
+# search or read, and joins no write word to it as get_or_create or list_and_delete do:
+# MCP_READ_VERBS, MCP_JOINERS, MCP_WRITE_WORDS in cobot-rules) and the desktop host's UI tools
+# named below, each by its exact name so a tool the host adds later asks until it is reviewed. Order for MCP:
+# never > owner allow > owner or project ask > a read or a host tool > this catch-all. Owners
+# widen one server with `allow mcp__<server>__*` (a browser server acts with your sign-ins, so it
+# asks until you do).
+ask mcp__*
+allow mcp__ccd_turn__update_plan
+allow mcp__ccd_turn__wrap_up
+allow mcp__ccd_session__mark_chapter
+allow mcp__ccd_session__dismiss_task
+allow mcp__ccd_view__show_pane
+allow mcp__ccd_view__close_pane
+allow mcp__ccd_view__get_layout
+allow mcp__ccd_view__set_transcript_view
+allow mcp__visualize__read_me
+allow mcp__visualize__show_widget
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

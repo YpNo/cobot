@@ -14,6 +14,8 @@ Precedence: ``never`` in any layer wins; else an ``allow`` silences the gate
 when it comes from the owner layer, or from the default layer with an agent
 scope (read-only command lists for the consultant and learner); else ``ask``
 from any layer; else silence. The project layer holds ``never`` and ``ask`` only.
+MCP tools differ in one place: every tool asks unless it is a read (by name) or a host UI tool
+named in the default layer, and an owner or project ``ask`` outranks both.
 """
 
 from __future__ import annotations
@@ -52,6 +54,17 @@ PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
     "stdbuf": (frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
     "flock": (frozenset({"-w", "--timeout", "-E", "--conflict-exit-code"}), 1),
 }
+# MCP tools are judged by name: a read starts with a read verb and joins no write word to it
+MCP_JOINERS = frozenset({"and", "or", "then", "plus"})
+MCP_READ_VERBS = frozenset({"list", "get", "describe", "search", "read"})
+MCP_WRITE_WORDS = frozenset(
+    "add apply approve archive assign attach cancel change clear close comment commit copy create delete "
+    "deploy destroy detach disable drop edit enable erase exec execute forward generate grant import "
+    "insert install invite invoke kill label lock mark merge modify move patch pause post promote "
+    "publish purge push put reboot remove rename replace reply reset restart resolve resume revoke "
+    "rollback run save scale send set share shutdown start stop submit sync tag terminate transfer "
+    "trigger truncate undelete uninstall unlock update upload upsert wipe write".split()
+)
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . xargs sudo doas su make gmake just task npx ssh mosh".split()
@@ -1132,8 +1145,39 @@ def judge_file(tool: str, path: str, cwd: str | None, rules: list[Rule], agent: 
     return resolve(matched, "no rule matched")
 
 
+def mcp_words(tool: str) -> list[str]:
+    """The words of an MCP tool's own name (after the last ``__``): snake, kebab and camel case."""
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", tool.rsplit("__", 1)[-1])
+    return [word for word in re.split(r"[^A-Za-z0-9]+", name.lower()) if word]
+
+
+def mcp_is_read(tool: str) -> bool:
+    """A read verb first, and no write word joined to it (``get_or_create_user``, ``list_and_delete``).
+    A write word used as a noun stays a read (``get_commit``, ``get_workflow_run``); ``checkout`` is
+    not ``check``."""
+    words = mcp_words(tool)
+    if not words or words[0] not in MCP_READ_VERBS:
+        return False
+    joined = (words[i + 1] for i, word in enumerate(words[:-1]) if word in MCP_JOINERS)
+    return not MCP_WRITE_WORDS.intersection(joined)
+
+
 def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
+    """never > owner allow > owner or project ask > a read or a default allow (host UI tools) >
+    default ask. A default rule never cancels an ask the owner or the project wrote."""
     matched = [r for r in rules if applies(r, tool, agent) and fnmatch.fnmatchcase(tool, r.pattern)]
+    nevers = [r for r in matched if r.decision == "never"]
+    if nevers:
+        return Verdict(DENY, nevers[0])
+    if any(allow_counts(r) for r in matched):
+        return Verdict(None, None, "allow rule")
+    tighter = [r for r in matched if r.decision == "ask" and r.layer != "default"]
+    if tighter:
+        return Verdict(ASK, tighter[0])
+    if mcp_is_read(tool):
+        return Verdict(None, None, "read tool")
+    if any(r.decision == "allow" and r.layer == "default" for r in matched):
+        return Verdict(None, None, "host tool")
     return resolve(matched, "no rule matched")
 
 

@@ -37,7 +37,7 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
-          shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh
+          shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh
           python3 scripts/check-plugin.py plugins/cobot
       - name: Validate plugin and marketplace
         run: |

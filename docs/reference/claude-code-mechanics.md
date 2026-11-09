@@ -152,7 +152,7 @@ eval exit code 2 for partial runs.
   saw it (one log line only). R1 re-tests `deny` with a harmless probe rule
   (`never Bash(echo cobot-deny-probe*)`) so the model does call the tool. Whether hooks fire for
   a subagent's Bash is still open (`agent` was null: main thread).
-- R1 spike results (owner's terminal, 2026-11-06, `scripts/spike-r1.sh`): **D** a plugin hook's
+- R1 spike results (owner's terminal, 2026-11-06, `scripts/spikes/spike-r1.sh`): **D** a plugin hook's
   `permissionDecision: deny` blocks a Bash call in the main thread (the model had no reason to
   refuse `echo`). **E** the hook fires for a subagent's Bash too; the hook input carries
   `agent_type` as the **namespaced** name (`cobot:builder`), so agent scopes must match with or

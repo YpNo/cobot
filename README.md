@@ -162,15 +162,15 @@ uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
 ```
 
 ```bash
-uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh
+uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh
 ```
 
 ```bash
 claude plugin validate plugins/cobot --strict && python3 scripts/check-plugin.py
 ```
 
-Live spikes that need a logged-in CLI: `sh scripts/spike-coexistence.sh` and
-`sh scripts/spike-r1.sh`. Evals run as Claude sessions under the logged-in account (an API key in
+Live spikes that need a logged-in CLI: `sh scripts/spikes/spike-coexistence.sh` and
+`sh scripts/spikes/spike-r1.sh`. Evals run as Claude sessions under the logged-in account (an API key in
 CI): `claude plugin eval plugins/cobot --trust-plugin --scaffold --allow-tools Bash Write Edit`.
 A case's `allowed_tools` only lists what it may use; `Bash`, `Write` and `Edit` must also be granted
 on the command line, and `Bash` needs the sandbox backend (`bubblewrap` and `socat` on Linux).

@@ -23,10 +23,14 @@ say what you did not cover. The argument, when given, narrows the tree to one pa
    and randomness, authn and authz decisions, logging sinks, every place a secret is read, held
    or forwarded. A library has no CORS, a CLI no session handling, IaC no injection but a
    privilege blast radius: audit what the shape calls for.
-2. **Packs.** Read `references/core.md` always, then one pack per kind present: `go.md`,
-   `python.md`, `ts-js.md`, `rust.md`, `shell.md`, `dockerfile.md`, `terraform.md`,
-   `github-actions.md`. A language without a pack: derive its idiom for the eight core
-   categories from the repository first, audit against that, and say so under *Not covered*.
+2. **Packs.** Read `references/core.md` always, then every pack whose files the inventory
+   found, one or many: `*.go` → `go.md`; `*.py` → `python.md`; `*.ts`, `*.js` → `ts-js.md`;
+   `*.rs` → `rust.md`; `*.sh`, `*.bash`, a `sh` or `bash` shebang → `shell.md`; `Dockerfile`,
+   `Containerfile` → `dockerfile.md`; `*.tf`, `*.hcl` → `terraform.md`;
+   `.github/workflows/*.yml` → `github-actions.md`. The shape never narrows this list: an
+   `infra` repository with one bootstrap script reads `shell.md` too. A language without a pack:
+   derive its idiom for the eight core categories from the repository first, audit against
+   that, and say so under *Not covered*.
 3. **Tools as hints.** When on PATH and on your read list, run the read-only forms:
    `gitleaks detect --no-git --report-format json`, `semgrep --config auto --json` (offline
    rules only), `trivy fs --scanners vuln,secret,misconfig .`, `govulncheck ./...`,
@@ -51,7 +55,7 @@ say what you did not cover. The argument, when given, narrows the tree to one pa
 ## Report
 
 ```text
-scope: <paths audited, languages, packs loaded, tools run or absent, what was skipped>
+scope: <paths audited, each kind present → its pack (or "no pack"), tools run or absent, what was skipped>
 
 findings:
 1. <severity> · <confidence> · <rule id> · <file>:<line> · <what> · path: <how untrusted input reaches it, or unproven> · fix: <concrete change>

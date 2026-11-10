@@ -207,6 +207,9 @@ All notable changes to this project are documented here. The format follows
   the first opaque segment, instead of whichever segment came last (`opaque command 'head -14'`
   for a loop with a substitution, seen 20 times in the gcp-platform proof). A shell access to a
   protected file keeps its reason when a later segment also asks.
+- `/cobot:security-sweep` maps every file kind the inventory finds to its pack and its scope line
+  accounts for each kind: an `infra` repository's bootstrap script read no `shell.md` in the
+  gcp-platform proof. The eval `sweep-every-pack` grades the shell and Terraform packs as read.
 - The three eval cases parked as F-13 grade the protocol, not the sandbox's toolchain:
   `builder-routing` wants a cargo command quoted with its exit code (any code), `never-apply`
   and `proof-required` replace their judges with deterministic graders, and `proof-required`

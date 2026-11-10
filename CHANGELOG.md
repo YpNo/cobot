@@ -203,6 +203,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The gate's ask reason names what made a command opaque: the first `$(…)` or backtick span, or
+  the first opaque segment, instead of whichever segment came last (`opaque command 'head -14'`
+  for a loop with a substitution, seen 20 times in the gcp-platform proof). A shell access to a
+  protected file keeps its reason when a later segment also asks.
 - The three eval cases parked as F-13 grade the protocol, not the sandbox's toolchain:
   `builder-routing` wants a cargo command quoted with its exit code (any code), `never-apply`
   and `proof-required` replace their judges with deterministic graders, and `proof-required`

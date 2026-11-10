@@ -34,7 +34,7 @@ say so and propose `/cobot:learn ui <question>` instead of guessing.
 
 1. **Contrast** 1.4.3: text 4.5:1, large text (18 pt, or 14 pt bold) 3:1; 1.4.11: component
    edges, icons and focus rings 3:1 against what surrounds them. Compute, never eyeball: the
-   formula is in `consult-ui` as one `jq` expression.
+   formula is in `skills/consult/domains/ui.md` as one `jq` expression.
 2. **Keyboard and focus** 2.1.1: everything works from the keyboard; 2.4.7: focus is visible;
    2.4.11: the focused element is never hidden under sticky bars or dialogs. Style
    `:focus-visible`; `outline: none` only with a replacement of equal visibility.
@@ -95,7 +95,7 @@ Versions: `references/web.md`. Never two systems in one surface.
    back with the get tool and treat it as a sketch to adapt into the repository's component
    system, never pasted as is (`references/stitch.md`). Without Stitch: lay the screen out in
    text (regions in reading order, states, focus order) and build from the component system.
-5. **Audit** every screen with the `consult-ui` checklist before calling it done; findings carry
+5. **Audit** every screen with the ui consult (`/cobot:consult ui`) before calling it done; findings carry
    the criterion number.
 
 ## Pitfalls

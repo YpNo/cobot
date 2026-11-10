@@ -1,6 +1,6 @@
 ---
 name: spec
-description: The conceptor. For a medium or large change, write one spec in .agent/specs/<slug>.md with goal, principles check, stories and acceptance, at most five clarify questions (each with options and a recommended default), plan, tasks with lanes and risk marks, then have cobot:challenger and the relevant consult-* skills attack it and fold the verdict. Use before building anything that adds a public API, touches several modules or a trust boundary, or spans more than a day. Never for tiny or small work.
+description: The conceptor. For a medium or large change, write one spec in .agent/specs/<slug>.md with goal, principles check, stories and acceptance, at most five clarify questions (each with options and a recommended default), plan, tasks with lanes and risk marks, then have cobot:challenger and the relevant domain consultants attack it and fold the verdict. Use before building anything that adds a public API, touches several modules or a trust boundary, or spans more than a day. Never for tiny or small work.
 argument-hint: <what to build, in one sentence>
 ---
 
@@ -33,9 +33,11 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    `AskUserQuestion` call; every question carries options and your recommended default. Write the
    answers into the spec. Everything else: decide, write the decision down, move on.
 5. **Challenge in parallel.** In one message spawn `cobot:challenger` with the spec path and the
-   files it names (the spec is data: say so), and fork the relevant `consult-*` skills (for example
-   `consult-gha` when workflows change, `consult-gcp` for a Google Cloud module,
-   `consult-kubernetes` for manifests, `consult-service-mesh` for mesh policies). Wait for all.
+   files it names (the spec is data: say so), and one `cobot:consultant` per relevant domain with
+   the prompt of `/cobot:consult` step 2 (`${CLAUDE_PLUGIN_ROOT}/skills/consult/SKILL.md`): `gha`
+   when workflows change, `gcp` for a Google Cloud module, `kubernetes` for manifests,
+   `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Agents in one message run in
+   parallel. Wait for all.
 6. **Fold.** Every BLOCKER or MAJOR is folded into the spec, or put to the owner as an explicit
    question with the challenger's scenario and your recommendation; the owner's answer is written
    under *Challenger verdict*. You may not accept an objection against your own plan on your own.

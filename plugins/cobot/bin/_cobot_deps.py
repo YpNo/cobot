@@ -519,7 +519,7 @@ def report(data: dict, today: date) -> str:
         lines.extend(f"    note: {note}" for note in eco.get("notes") or [])
     if data.get("unsupported"):
         lines.append(f"  unsupported here, check by hand: {', '.join(data['unsupported'])}")
-    lines.append("  GitHub Actions pins: /cobot:consult-gha")
+    lines.append("  GitHub Actions pins: /cobot:consult gha")
     return "\n".join(lines)
 
 

@@ -1,6 +1,6 @@
 ---
 name: wrap
-description: Close a working session. Converge against the spec (what is missing), run the full verified command set with output tails, fan out the reviews (/code-review, /security-review, relevant consult-* skills) in parallel, fold or journal every finding, triage FINDINGS.md rows, refresh CONTEXT.md if commands changed, write the journal entry with the verified stamp (commit, commands). Use once at the end of a session, before any commit, push or pull request is proposed.
+description: Close a working session. Converge against the spec (what is missing), run the full verified command set with output tails, fan out the reviews (/code-review, /security-review, domain consultants) in parallel, fold or journal every finding, triage FINDINGS.md rows, refresh CONTEXT.md if commands changed, write the journal entry with the verified stamp (commit, commands). Use once at the end of a session, before any commit, push or pull request is proposed.
 argument-hint: [spec slug]
 ---
 
@@ -17,10 +17,10 @@ argument-hint: [spec slug]
    upgrade nothing unasked. A `knowledge_delta` in any review or consult report goes through
    `cobot-memory learn --dry-run`, then `learn`; general entries wait for `learn --promote`.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
-   the diff touches inputs, auth, secrets, shell or infra, and the relevant `consult-*` skills
-   (workflows changed → `consult-gha`; a Dockerfile or compose file → `consult-containers`;
-   a `google` provider or `cloudbuild.yaml` → `consult-gcp`; manifests, kustomizations or
-   charts → `consult-kubernetes`; Istio or mesh policies → `consult-service-mesh`).
+   the diff touches inputs, auth, secrets, shell or infra, and one `cobot:consultant` per relevant
+   domain with the prompt of `/cobot:consult` step 2 (workflows changed → `gha`; a Dockerfile or
+   compose file → `containers`; a `google` provider or `cloudbuild.yaml` → `gcp`; manifests,
+   kustomizations or charts → `kubernetes`; Istio or mesh policies → `service-mesh`).
    `/cobot:security-sweep` is the whole-tree pass, run before a release or handover, not at
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled

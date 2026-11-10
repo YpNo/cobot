@@ -7,7 +7,7 @@ description: >-
   with pinned actions. Loads on **/Dockerfile*, **/Containerfile*, **/*.dockerfile,
   **/compose*.y*ml, **/docker-compose*.y*ml, **/.dockerignore, **/*.container; what /cobot:ship
   follows for the image workflow. Versions and SHAs in references/versions.md, workflow in
-  references/ci.md; audit: consult-containers.
+  references/ci.md; audit: /cobot:consult containers.
 paths:
   - "**/Dockerfile*"
   - "**/Containerfile*"

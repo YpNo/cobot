@@ -4,23 +4,7 @@ Format: `- [status date · src] claim`. Version lines are flagged after 30 days,
 `curl -s https://api.github.com/repos/<owner>/<repo>/releases/latest | jq -r .tag_name`.
 Maintenance is judged on the last commit, not the last release.
 
-## Shell
-
-| Tool | Current | Released | Last commit |
-|---|---|---|---|
-| shellcheck | 0.11.0 | 2025-08-04 | 2026-11-05 |
-| shfmt (mvdan/sh) | 3.14.1 | 2026-09-06 | — |
-| bats-core | 1.14.0 | 2026-07-21 | — |
-| bats-assert | 2.2.4 | 2025-10-14 | — |
-| bats-support | 0.3.0 | 2022-03-04 | — |
-
-- [verified 2026-11-06 · src: https://github.com/koalaman/shellcheck/releases] shellcheck 0.11.0 is the latest release; master is active (commit 2026-11-05).
-- [verified 2026-11-06 · src: https://github.com/koalaman/shellcheck/wiki/SC1071] shellcheck supports sh, bash, dash and ksh only; no zsh.
-- [verified 2026-11-06 · src: https://github.com/mvdan/sh/releases] shfmt 3.14.1; parses POSIX sh, bash, zsh and mksh; building from source needs Go 1.26+.
-- [verified 2026-11-06 · src: https://github.com/mvdan/sh/blob/master/cmd/shfmt/shfmt.1.scd] shfmt applies `.editorconfig` only when no parser or printer flag is given.
-- [verified 2026-11-06 · src: https://github.com/bats-core/bats-core/releases] bats-core 1.14.0.
-- [verified 2026-11-06 · src: https://github.com/bats-core/bats-assert/releases] bats-assert 2.2.4; bats-support 0.3.0 is old but still the dependency bats-assert expects.
-- [verified 2026-11-06 · src: https://www.shellcheck.net/wiki/SC3040] `set -o pipefail` entered POSIX in POSIX.1-2024; older `/bin/sh` implementations reject it.
+Shell moved to `lang-shell` (2026-11-10).
 
 ## Lua
 

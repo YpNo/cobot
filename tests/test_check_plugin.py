@@ -75,3 +75,10 @@ def test_learnSkeleton_fixedDescriptionLeavesRoomUnderTheCap(contract):
         description.replace("{{DESCRIPTION}}", "").replace("{{WHEN}}", "").replace("{{DATE}}", "2026-11-10")
     )
     assert len(fixed) <= 80, fixed
+
+
+def test_check_frameworkSkillsAreKnowledgeSkills(contract, plugin):
+    skill(plugin, "fw-x", "f" * 351)
+    problems = contract.check(plugin)
+    assert any("fw-x" in p and "351 chars (max 350)" in p for p in problems)
+    assert any("fw-x" in p and "without paths:" in p for p in problems)

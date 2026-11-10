@@ -10,12 +10,15 @@ You run in the main thread. Pipelines run the commands the owner runs: CONTEXT.m
 table is the only source of commands. A job that invents its own invocation drifts from local
 reality and fails where nobody can reproduce it. Nothing here pushes, tags or publishes.
 
-1. **Ground.** Detect the forge offline, in this order: `.gitlab-ci.yml` or `.gitlab/` present
-   → GitLab; `.github/` present → GitHub; the `origin` host contains `gitlab` → GitLab,
-   `github.com` → GitHub; else ask the owner once and record `forge:` in CONTEXT.md. Read
+1. **Ground.** The forge is CONTEXT.md's `forge:` when set; else detect it offline, in this
+   order: `.gitea/` present → Gitea; `.gitlab-ci.yml` or `.gitlab/` present → GitLab; `.github/`
+   present → GitHub; the `origin` host contains `gitea` → Gitea, `gitlab` → GitLab, `github.com` →
+   GitHub; else ask the owner once and record `forge:` in CONTEXT.md. A Gitea repository may keep
+   `.github/workflows` (Gitea reads it when `.gitea/workflows` is absent): `forge: gitea` decides. Read
    CONTEXT.md (profile, `forge`, verified commands, constraints), the existing pipeline files
-   (`.github/workflows/*` or `.gitlab-ci.yml`), `Dockerfile*` and `compose*.y*ml`, and the
-   forge's expert: `expert-gha` with its `references/actions.md`, or `expert-gitlab-ci` with its
+   (`.github/workflows/*`, `.gitea/workflows/*` or `.gitlab-ci.yml`), `Dockerfile*` and
+   `compose*.y*ml`, and the forge's expert: `expert-gha` with its `references/actions.md` (for
+   Gitea too, plus `expert-gitea` for what Gitea ignores), or `expert-gitlab-ci` with its
    `references/snippets.md` and `versions.md` (image digests younger than 30 days; a digest you
    did not resolve today is not written). In foreign mode (memory outside the tree) stop: the workflows belong
    to the maintainers and changes to them travel through `/cobot:contribute`. A repository
@@ -42,8 +45,10 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    artifact once. Release verifies the tag's commit passed on the default branch:
    on GitLab `glab ci get --branch <main>` / `glab ci status` on the tag's commit; on GitHub
    `gh run list --workflow ci.yml --event push --branch <main> --commit <sha> --status success
-   --json conclusion` (the job needs `actions: read`; the merge run, not a PR run), runs in an
-   `environment: release` with a required reviewer, rebuilds or reuses the artifact
+   --json conclusion` (the job needs `actions: read`; the merge run, not a PR run); on Gitea the
+   runs API through `gt api` with the job's token. It runs in an `environment: release` with a
+   required reviewer (on Gitea 28, which ignores `environment:`, the release stays a manual tag
+   push by the owner and the workflow says so), rebuilds or reuses the artifact
    reproducibly, attests, publishes; it never reruns tests. Changed-area selection names a tool
    only when the language skill verified one (`vitest run --changed <base>`, `cargo test -p`,
    `go list -deps`); Python runs the full pytest on PRs and the workflow says why. Weekly: full matrix and the
@@ -60,7 +65,9 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    publish and deploy jobs, Dependabot `github-actions` entry with a cooldown. For the image
    workflow follow `expert-containers`: buildx with provenance and SBOM, `docker/metadata-action`
    tags, GHCR login with `packages: write`, keyless cosign on the digest, Trivy as a gate on
-   CRITICAL and HIGH with `--ignore-unfixed`.
+   CRITICAL and HIGH with `--ignore-unfixed`. On Gitea 28 write no `environment:` gate, no
+   `id-token` job and no keyless cosign (ignored or unsupported until 29.0): name what is
+   missing in the report and keep the publishing step for the owner.
 6. **Prove.** `cobot-memory stamp` must answer `ok`: the pipeline describes a tree the last wrap
    verified. Then run every command the workflows run, locally, from the verified table; a command
    that fails locally does not ship. Run `zizmor --offline` and `actionlint` when present. Then

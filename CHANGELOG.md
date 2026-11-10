@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- R2 slice 4 (`.agent/specs/r2-stacks.md`): `fw-react` (React 19.3, the Compiler, React Router 8,
+  TanStack Query), `fw-next` (Next.js 16.4, every line reported until a repository exercises it),
+  `fw-vue` (Vue 3.5, Pinia 4, vue-router 5), `lang-shell` promoted from `lang-fallback`,
+  `expert-api` with `/cobot:consult api` and the eval `api-contract-audit`, and `expert-gitea`
+  (Gitea 28 against GitHub and GitLab, its API, contributing to go-gitea). Build names the
+  framework or shell skill in the builder's brief and the builders call it first; `*.jsx` and
+  `*.vue` go to the TypeScript builder. Framework skills are knowledge skills (capped, tracked for
+  staleness). The gate rewrites CLI aliases before matching (`glab mr new`, `gt release new`,
+  `tea r c`) and covers Gitea's `gt` and the archived `tea` like `gh`.
 - R2 slice 3 (`.agent/specs/r2-cloud.md`, decision 28, ADR-0006): `expert-gcp` (project and
   organisation structure, IAM least privilege, Workload Identity Federation for GitHub, GitLab
   and GKE, the `google` provider 8.x idiom, universes with the legacy `gcd-universe` rules

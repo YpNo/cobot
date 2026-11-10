@@ -1,14 +1,11 @@
 ---
 name: lang-fallback
 description: >-
-  Procedure for a stack without a lang-* skill, with verified shell and Lua tooling: find the
-  repository's idiom fast, record verified commands, say when /cobot:learn pays. Shell: POSIX sh or
-  bash, strict mode, shellcheck, shfmt, bats. Lua: luacheck, StyLua, busted. Use on *.sh, *.bash,
-  *.zsh, *.lua, Makefile, justfile, any uncovered language.
+  Procedure for a stack without a lang-* skill, with verified Lua tooling: find the repository's
+  idiom fast, record verified commands, say when /cobot:learn pays. Lua: 5.4 and 5.5 against
+  LuaJIT, luacheck, StyLua, busted, hosts. Use on *.lua, Makefile, justfile and any language no
+  other skill covers; shell is lang-shell.
 paths:
-  - "**/*.sh"
-  - "**/*.bash"
-  - "**/*.zsh"
   - "**/*.lua"
   - "**/Makefile"
   - "**/justfile"
@@ -58,28 +55,7 @@ knowledge file in `.agent/knowledge/` is enough.
 
 ## Shell
 
-**sh or bash.** POSIX `sh` for anything run by `/bin/sh` on unknown hosts (Debian's is dash,
-Alpine and OpenWrt use BusyBox ash), container entrypoints and installers. `bash` when you need
-arrays, `[[ ]]`, `pipefail`, `mapfile` or process substitution; then say so: `#!/usr/bin/env bash`.
-zsh only for zsh config; shellcheck does not parse zsh.
-
-- Strict mode: `set -eu` in sh; `set -euo pipefail` in bash. `-e` is skipped inside `if`, `&&`,
-  `||` and functions called from them; check critical commands explicitly. `pipefail` is POSIX
-  only since the 2024 edition: do not rely on it in `sh`.
-- Quote every expansion: `"$var"`, `"$@"`, `"$(cmd)"`. Unquoted means split and glob.
-- Never change global `IFS`; scope it: `while IFS= read -r line; do ...; done < file`.
-- `mktemp` plus `trap 'rm -rf "$tmp"' EXIT`; never fixed paths in `/tmp`.
-- `printf '%s\n'` over `echo` for data; `command -v` over `which`; `$(...)` over backticks.
-- `cd "$dir" || exit` (SC2164); `rm -rf "${dir:?}/"` so an empty variable fails loudly.
-- Arguments through arrays (bash) or `"$@"`, never through `eval` or a string rebuilt from input.
-- Never `curl | sh` from a moving branch: download a pinned version, verify its checksum or
-  signature, then run it.
-
-Commands: `shellcheck -x -S style <files>` (`-s sh|bash` when there is no shebang);
-`shfmt -d .` when `.editorconfig` sets the style (any printer flag disables it), else
-`shfmt -d -i 2 -ci <files>`;
-tests in `test/*.bats` with bats-core plus `bats-support` and `bats-assert`, run by `bats test/`.
-Test name: `@test "parse_args_missingFile_exits2"`.
+Shell has its own skill since 2026-11-10: `lang-shell`.
 
 ## Lua
 

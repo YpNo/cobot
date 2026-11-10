@@ -163,3 +163,10 @@ Why: T08 of .agent/specs/r2-surface.md, the owner's OK: the router and the user-
 Proof: claude plugin eval --runs 1 --ablation none on 0d3ef3c, Claude Code 2.1.311, 1.99 USD: consult-fan-out 1.00 (Agent called 2x), gcp-iam-audit 1.00, k8s-workload-audit 1.00, mesh-mtls-audit 1.00, ui-contrast 1.00 (Agent called 1x each), foreign-onboard 1.00.
 Open: same-message fan-out is shown by the spike, not by these runs (traces not kept; --keep-temp next time); the full three-run, two-arm suite on main stays the owner's dispatch.
 Next: merge PR 19, then PR 5 (slice 4).
+
+## 2026-11-10 — R2 slice 4: stacks (0.2.0 PR 5)
+Changed: fw-react, fw-next (lines reported), fw-vue, lang-shell (promoted), expert-api with /cobot:consult api and eval api-contract-audit, expert-gitea; fw- joins the knowledge prefixes; build names the framework or shell skill in the brief and routes *.jsx and *.vue to typescript-builder; builders call the named skill first; the gate canonicalises CLI aliases (glab, gt, tea) and covers gt and tea like gh; ship reads forge: first and knows Gitea's limits.
+Why: R2 slice 4, decisions 24 and 25; the owner's answers (build fw-next now; understand Gitea and contribute to it; expert plus api audit). Challenger SOUND WITH CHANGES, ten points folded.
+Proof: research by six parallel agents from primary sources (2026-11-10); full suite and checks in the PR; dogfood read-only on demo-profil-matching (vue-tsc --noEmit exit 0), headplane (oxlint), server-automation (shellcheck exit 0), gitea (api inventory), docs (Gitea detection); spike: eval graders see subagent Skill calls.
+Open: T08 single paid runs (api-contract-audit; a builder-loads-framework eval if wanted); tea is archived, so the owner installs gt to use Gitea from the CLI; listing at about 10 200 of 15 000.
+Next: PR 6 (live proofs and the Google Cloud MCP spike; GCP repository to be named), then PR 8 (release).

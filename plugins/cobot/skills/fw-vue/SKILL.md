@@ -54,8 +54,8 @@ holds only what Vue changes. CONTEXT.md and the governance file override it. Ver
 - [verified 2026-11-10 · src: https://pinia.vuejs.org/cookbook/testing.html] `createTestingPinia({ createSpy: vi.fn })` in component tests (actions stubbed); `setActivePinia(createPinia())` in `beforeEach` for store tests.
 - [verified 2026-11-10 · src: https://github.com/vuejs/language-tools/blob/master/packages/tsc/README.md] Type check with `vue-tsc --noEmit` (writes nothing); plain `tsc` does not read `.vue` files.
 - [verified 2026-11-10 · src: https://eslint.vuejs.org/user-guide/] Flat config `...pluginVue.configs['flat/recommended']`; TypeScript through `@vue/eslint-config-typescript` or `parserOptions.parser`, never the top-level `parser`.
-- Commands that write: `eslint --fix`, `vitest -u`, `vitest --coverage`, `vue-tsc` without
-  `--noEmit`, and the vue-router Vite plugin (`route-map.d.ts`). Name them before running.
+- Commands that write: `eslint --fix`, `vitest -u`, `vitest --coverage`, `vue-tsc -b` or `vue-tsc`
+  without `--noEmit` (a repository's `typecheck` script is often `vue-tsc -b`), and the vue-router Vite plugin (`route-map.d.ts`). Name them before running.
 
 ## Security
 

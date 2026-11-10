@@ -51,7 +51,8 @@ the brief flags stale. Next.js is `fw-next`.
 - [verified 2026-11-10 · src: https://testing-library.com/docs/user-event/intro] `const user = userEvent.setup()` before render, then `await user.click(…)`; prefer it to `fireEvent`.
 - [verified 2026-11-10 · src: https://vitest.dev/guide/browser/] Browser mode: `test.browser` with the `playwright()` provider from `@vitest/browser-playwright`, `vitest-browser-react`, `await expect.element(…)`; jsdom or happy-dom stay fine for unit tests.
 - [verified 2026-11-10 · src: https://reactrouter.com/how-to/route-module-type-safety] Type check `react-router typegen && tsc`: **typegen writes** `.react-router/types/` (gitignored, in `include` and `rootDirs`). Name it before running it.
-- Read-only: `eslint .`, `vitest run`. Writing: `--fix`, `-u`, `--coverage`, `vite build`,
+- Read-only: the repository's linter (`eslint .` or `oxlint`; headplane uses oxlint), `vitest run`.
+  Writing: `--fix`, `-u`, `--coverage`, `vite build`,
   `react-router build`, `tsc -b` (`.tsbuildinfo`).
 
 ## Security

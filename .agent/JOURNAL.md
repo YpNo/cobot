@@ -156,3 +156,10 @@ Why: simplicity review proposals 1-3; spike: forked skills run sequentially, Age
 Proof: full suite 839 passed; check-plugin ok (523 agent tokens, 24 skills, 8 142 listed chars); plugin validate --strict; spike costs about 0.05 USD.
 Open: T08 single paid runs (four consult cases, consult-fan-out, foreign-onboard) wait for the owner's OK; protocol at 3 362 chars, over its stated 3 000.
 Next: T08, then PR 5 (slice 4) with the room the listing now has.
+
+## 2026-11-10 — R2 surface proven by eval (0.2.0 PR 4, T08)
+Changed: spec converge and this entry record the single eval runs; no code changed.
+Why: T08 of .agent/specs/r2-surface.md, the owner's OK: the router and the user-only onboard needed a live model, not prose.
+Proof: claude plugin eval --runs 1 --ablation none on 0d3ef3c, Claude Code 2.1.311, 1.99 USD: consult-fan-out 1.00 (Agent called 2x), gcp-iam-audit 1.00, k8s-workload-audit 1.00, mesh-mtls-audit 1.00, ui-contrast 1.00 (Agent called 1x each), foreign-onboard 1.00.
+Open: same-message fan-out is shown by the spike, not by these runs (traces not kept; --keep-temp next time); the full three-run, two-arm suite on main stays the owner's dispatch.
+Next: merge PR 19, then PR 5 (slice 4).

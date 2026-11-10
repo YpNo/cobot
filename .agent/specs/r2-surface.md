@@ -128,17 +128,22 @@ ten-finding cap and delta format; knowledge refresh never names consult; decisio
 
 ## Converge
 
-2026-11-10: every story built; T08 (paid single runs) waits for the owner's OK.
+2026-11-10: every story built and proven. T08, single runs on 0d3ef3c (`--runs 1 --ablation
+none`, Claude Code 2.1.311, 1.99 USD): consult-fan-out 1.00 (two consultants spawned),
+gcp-iam-audit, k8s-workload-audit, mesh-mtls-audit and ui-contrast 1.00 (a consultant ran in
+each), foreign-onboard 1.00 with the slash command first. The runs prove the count of
+consultants, not that both went out in one message (traces not kept); the 2026-11-10 spike is
+the evidence that same-message `Agent` calls overlap.
 
 - Story 1: seven domain procedures moved by `git mv`, paths from the plugin root; plugin
   validation passes; the four consult cases call `/cobot:consult <domain>` and check a consultant
-  ran (single runs pending, T08).
+  ran.
 - Story 2: the router audits every detected domain with no argument; `consult-fan-out` added
-  (single run pending, T08).
+ .
 - Story 3: spec, wrap, protocol and the consultant agent use the router's prompt; the parallelism
   is the spike's measured `Agent` behaviour.
 - Story 4: the three skills are user-only; the protocol, the brief and wrap say so;
-  `foreign-onboard` starts with the slash command (single run pending, T08).
+  `foreign-onboard` starts with the slash command.
 - Story 5: `check-plugin` counts the model-visible listing and caps expert and lang descriptions:
   8 142 listed characters, contract ok.
 - T00 found `paths:` inert for plugin skills, so T06 kept short globs in every description.

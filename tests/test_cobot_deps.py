@@ -350,7 +350,7 @@ def test_check_runsCachesAndReportsStaleness(tools, repo):
     assert (
         "    github.com/a/b v1.0.0 -> v1.2.0" in text
         and "unsupported here, check by hand: yarn" in text
-        and text.endswith("/cobot:consult-gha")
+        and text.endswith("/cobot:consult gha")
     )
     again = deps.check(repo, TODAY)
     assert again["cached"] is True and deps.report(again, TODAY).startswith(

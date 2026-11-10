@@ -149,3 +149,10 @@ Why: the owner asked for a concise README for human readers, technical reading i
 Proof: make-banner.py reproduces banner.jpg byte for byte; both images checked by eye; markdownlint 0.24.0 clean on the four documents; full checks in the PR.
 Open: PR 4 edits the consult row of the command table; the shields release badge renders only once the repository is public and tagged; social.jpg is uploaded by the owner (Settings, Social preview).
 Next: PR 4 (R2 surface).
+
+## 2026-11-10 — R2 surface (0.2.0 PR 4)
+Changed: one /cobot:consult router (one cobot:consultant per domain in one message; procedures in skills/consult/domains/) replaces seven consult skills; spec, wrap, ship, protocol, consultant agent, cobot-deps hint, evals follow; onboard, rules, security-sweep user-only; 14 expert and lang descriptions under 350 with triggers; check-plugin counts the model-visible listing (8 142 of 15 000, was 14 651) and keeps dated lines out of consult procedures; new eval consult-fan-out; docs, decisions 27 and 28, ADR-0005 and ADR-0006 amended; mechanics reference records the spikes.
+Why: simplicity review proposals 1-3; spike: forked skills run sequentially, Agent calls in parallel, plugin skills ignore paths:. Challenger SOUND WITH CHANGES, nine points folded; owner answered three clarify questions (remove old names, spawn consultants, 350).
+Proof: full suite 839 passed; check-plugin ok (523 agent tokens, 24 skills, 8 142 listed chars); plugin validate --strict; spike costs about 0.05 USD.
+Open: T08 single paid runs (four consult cases, consult-fan-out, foreign-onboard) wait for the owner's OK; protocol at 3 362 chars, over its stated 3 000.
+Next: T08, then PR 5 (slice 4) with the room the listing now has.

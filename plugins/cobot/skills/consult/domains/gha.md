@@ -1,20 +1,9 @@
----
-name: consult-gha
-description: >-
-  Read-only GitHub Actions audit by the consultant agent. Invoke to audit a repository's
-  workflows and composite actions, before cutting a release, after upgrading or adding
-  actions, or when zizmor, Dependabot or a reviewer flags CI. Checks every non-negotiable of
-  expert-gha, resolves each pinned SHA against upstream, and returns at most ten ranked findings
-  plus a knowledge_delta for anything newly verified.
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: gha
 
-# consult-gha
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, commit nothing, push nothing; never pass `--fix` to zizmor. Read the
-sibling skill `../expert-gha/SKILL.md` and its `references/actions.md` first: they are the
+skill `skills/expert-gha/SKILL.md` and its `references/actions.md` first: they are the
 baseline. Network use is limited to `gh api` GETs and documentation fetches.
 
 ## Procedure
@@ -95,6 +84,3 @@ knowledge_delta:            # optional — only facts verified during this audit
 No finding without a file and line. Repository settings you cannot read (branch protection,
 environment reviewers, allowed-actions policy) go in the summary as "not verifiable from the
 tree", not as findings. Zero findings is a valid result; say what was checked.
-
-- [verified 2026-11-06 · src: https://docs.zizmor.sh/usage/] exit codes 0 clean, 1 error, 2 bad args, 3 no inputs, 11–14 findings by max severity; `--gh-token` or `GH_TOKEN` enables online mode, `--offline` forces it off.
-- [verified 2026-11-06 · src: https://docs.zizmor.sh/audits/] `impostor-commit`, `known-vulnerable-actions`, `ref-confusion`, `stale-action-refs` need online mode; `secrets-outside-env` runs only under the auditor persona.

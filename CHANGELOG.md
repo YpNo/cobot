@@ -143,6 +143,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Breaking: one `/cobot:consult [domain]` replaces the seven `consult-<domain>` skills.** It
+  spawns one read-only consultant per domain in one message, so audits run in parallel (forked
+  skills ran one at a time, measured 2026-11-10); with no domain it audits every domain it
+  detects. Spec and wrap launch the same consultants beside the challenger or the reviews. Use
+  `/cobot:consult gha` where you typed `/cobot:consult-gha`.
+- **Breaking: `/cobot:onboard`, `/cobot:rules` and `/cobot:security-sweep` are typed by the
+  owner.** The model proposes them and dry-runs the gate through the `cobot-rules check` binary.
+- Expert and language skill descriptions fit 350 characters with their triggers kept, and
+  `check-plugin` counts only what the model sees (user-only skills out, `when_to_use` in): the
+  listing drops from 14 651 to 8 142 characters. A plugin skill's `paths:` does not gate it, so
+  the description is its only trigger.
 - A README for people: banner, badges, what cobot does, install, first steps, the commands you
   type and safety, in 103 lines instead of 230. The technical content moved to
   `docs/architecture.md`, `docs/configuration.md` and `docs/development.md`. The banner and the

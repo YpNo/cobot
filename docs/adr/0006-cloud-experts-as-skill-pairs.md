@@ -43,3 +43,9 @@ thing: a listing the owner could leave disabled on repositories without Google C
   agent-scoped allow whenever a segment could execute repository content (spec
   `.agent/specs/r2-cloud.md`, story 7).
 - Six skills join the bench; the agent listing stays at 528 tokens.
+
+## Amendment (2026-11-10)
+
+`.agent/specs/r2-surface.md` merges the seven `consult-<x>` skills into one `/cobot:consult`
+router that spawns one `cobot:consultant` per domain in one message; the procedures live in
+`skills/consult/domains/<x>.md`. Decision point 3's caps change: `expert-*` and `lang-*` descriptions are capped at 350 characters, the consult caps fall away with the consult skills, and the budget counts only model-visible skills. Points 1, 2 and 4 hold: no `cobot-gcp` plugin until a server or an agent needs one.

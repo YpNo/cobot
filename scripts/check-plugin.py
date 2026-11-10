@@ -12,7 +12,10 @@ from pathlib import Path
 
 SKILL_MAX_LINES = 500
 DESCRIPTION_MAX = 1536
-SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every skill description sits in the system prompt of every turn
+SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every model-visible skill sits in the system prompt of every turn
+KNOWLEDGE_DESCRIPTION_MAX = (
+    350  # expert-* and lang-*: plugin skills are always listed, paths: does not gate them
+)
 AGENT_BUDGET_TOKENS = 600
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
@@ -34,13 +37,32 @@ def frontmatter(text: str) -> dict[str, str]:
     return fields
 
 
+def listed(fields: dict[str, str]) -> int:
+    """Characters a skill adds to the model's listing: description plus when_to_use, or nothing
+    for a user-only skill (Claude Code drops disable-model-invocation skills from the listing)."""
+    if fields.get("disable-model-invocation") == "true":
+        return 0
+    return len(fields.get("description", "")) + len(fields.get("when_to_use", ""))
+
+
+def listing_chars(plugin: Path) -> int:
+    return sum(
+        listed(frontmatter(s.read_text(encoding="utf-8"))) for s in (plugin / "skills").glob("*/SKILL.md")
+    )
+
+
 def check(plugin: Path) -> list[str]:
     problems: list[str] = []
-    skill_chars = 0
+    skill_chars = listing_chars(plugin)
+    consult = plugin / "skills" / "consult"
+    for procedure in sorted(consult.rglob("*.md")) if consult.is_dir() else []:
+        if KNOWLEDGE_LINE.search(procedure.read_text(encoding="utf-8")):
+            problems.append(
+                f"{procedure}: dated knowledge line in a consult procedure (it belongs in the expert)"
+            )
     for skill in sorted((plugin / "skills").glob("*/SKILL.md")):
         text = skill.read_text(encoding="utf-8")
         fields = frontmatter(text)
-        skill_chars += len(fields.get("description", ""))
         count = len(text.splitlines())
         if count >= SKILL_MAX_LINES:
             problems.append(f"{skill}: {count} lines (max {SKILL_MAX_LINES - 1})")
@@ -51,6 +73,9 @@ def check(plugin: Path) -> list[str]:
                 f"{skill}: description {len(fields['description'])} chars (max {DESCRIPTION_MAX})"
             )
         if skill.parent.name.startswith(("lang-", "expert-")):
+            length = len(fields.get("description", ""))
+            if length > KNOWLEDGE_DESCRIPTION_MAX:
+                problems.append(f"{skill}: description {length} chars (max {KNOWLEDGE_DESCRIPTION_MAX})")
             if "paths" not in text.split("---")[1]:
                 problems.append(f"{skill}: knowledge skill without paths:")
             refs = list(skill.parent.glob("references/*.md"))
@@ -68,8 +93,7 @@ def check(plugin: Path) -> list[str]:
     if tokens > AGENT_BUDGET_TOKENS:
         problems.append(f"agents: listing ≈ {tokens} tokens (budget {AGENT_BUDGET_TOKENS})")
     skills = list((plugin / "skills").glob("*/SKILL.md"))
-    chars = sum(len(frontmatter(s.read_text(encoding="utf-8")).get("description", "")) for s in skills)
-    print(f"agents listing ≈ {tokens} tokens; skills: {len(skills)}, descriptions {chars} chars")
+    print(f"agents listing ≈ {tokens} tokens; skills: {len(skills)}, listed {skill_chars} chars")
     return problems
 
 

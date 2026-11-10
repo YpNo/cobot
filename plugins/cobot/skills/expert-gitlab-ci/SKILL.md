@@ -1,12 +1,10 @@
 ---
 name: expert-gitlab-ci
 description: >-
-  GitLab CI/CD knowledge, current as of 2026-11-08: .gitlab-ci.yml keywords and shapes
-  (workflow:rules against duplicate pipelines, rules, needs DAG, components, id_tokens, cache,
-  reports, interruptible, resource_group, environments, release with glab, digest-pinned images,
-  default, !reference, job token allowlist, variables, security templates and tiers), the glab
-  commands and their gate verdicts, pitfalls. Loads when .gitlab-ci.yml or .gitlab/ is touched;
-  pipelines in references/snippets.md, versions in references/versions.md.
+  GitLab CI/CD: .gitlab-ci.yml keywords and shapes (workflow:rules, needs, components, id_tokens,
+  cache, interruptible, environments, releases with glab, digest-pinned images, job token
+  allowlist), the glab commands and their gate verdicts, pitfalls. Use on .gitlab-ci.yml and
+  .gitlab/.
 paths:
   - ".gitlab-ci.yml"
   - "**/.gitlab-ci*.yml"

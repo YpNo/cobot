@@ -1,12 +1,10 @@
 ---
 name: lang-rust
 description: >-
-  Senior Rust developer knowledge: verified toolchain versions, the exact fmt, clippy, test,
-  coverage, audit and build commands, current idiom (edition 2024, errors, async, ownership),
-  project shape for small crates, test rules, unsafe and supply-chain policy, pitfalls. Loads on
-  **/*.rs, **/Cargo.toml, **/Cargo.lock, **/rust-toolchain.toml and inside rust-builder. Use
-  before writing, reviewing or testing Rust, adding a crate or touching Rust CI. Versions:
-  references/versions.md; CI job: references/ci.md.
+  Senior Rust: verified toolchain, the exact fmt, clippy, test, coverage, audit and build commands,
+  edition 2024 idiom (errors, async, ownership), small-crate shape, test, unsafe and supply-chain
+  rules. Use on *.rs, Cargo.toml, Cargo.lock, rust-toolchain.toml, in rust-builder, and before
+  writing, reviewing or testing Rust or touching Rust CI.
 paths:
   - "**/*.rs"
   - "**/Cargo.toml"

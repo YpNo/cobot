@@ -1,11 +1,10 @@
 ---
 name: expert-kubernetes
 description: >-
-  Kubernetes workloads: manifests, Kustomize, Helm 4, Gateway API, Pod Security Standards
-  (restricted), requests and limits, probes, NetworkPolicy, PDB, GKE specifics, the kubectl, helm
-  and kustomize forms that ask. Loads on **/kustomization.y*ml, **/Chart.yaml, **/Chart.lock,
-  **/values*.y*ml, **/helmfile*.y*ml, **/skaffold*.y*ml, **/k8s/**, **/kubernetes/**,
-  **/manifests/**/*.y*ml, **/*.k8s.y*ml.
+  Kubernetes workloads: manifests, Kustomize, Helm 4, Gateway API, restricted Pod Security, requests
+  and limits, probes, NetworkPolicy, PDB, GKE specifics, the kubectl and helm forms that ask. Use on
+  kustomization.yaml, Chart.yaml, values*.yaml, helmfile, and k8s/, kubernetes/ or manifests/
+  folders.
 paths:
   - "**/kustomization.y*ml"
   - "**/Chart.yaml"

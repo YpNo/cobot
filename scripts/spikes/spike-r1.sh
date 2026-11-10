@@ -3,7 +3,7 @@
 # A harmless owner-layer probe rule makes the model call Bash, so the hook (not the model) decides:
 #   D  hook deny on a command the model has no reason to refuse (echo cobot-deny-probe)
 #   E  the same command from a subagent's Bash: does the hook fire for subagents, and what agent_type arrives
-#   F  a context: fork skill (consult-gha) resolves agent: cobot:consultant
+#   F  /cobot:consult gha spawns the plugin-scoped agent cobot:consultant
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
 plugin="$repo/plugins/cobot"
@@ -36,7 +36,7 @@ claude --plugin-dir "$plugin" --model haiku --max-turns 4 -p \
 
 echo "=== F: forked consult skill resolves cobot:consultant"
 claude --plugin-dir "$plugin" --model haiku --max-turns 6 -p \
-  "Invoke the /cobot:consult-gha skill on this repository and report its findings. Also state which agent type ran it if you can tell." || true
+  "Invoke /cobot:consult gha on this repository and report its findings. Also state which agent type ran it if you can tell." || true
 
 echo "=== gate log: $COBOT_GATE_LOG"
 cat "$COBOT_GATE_LOG" 2>/dev/null || echo "no log written: the hook did not fire"

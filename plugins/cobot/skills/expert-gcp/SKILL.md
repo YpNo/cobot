@@ -1,11 +1,10 @@
 ---
 name: expert-gcp
 description: >-
-  Google Cloud: project and org structure, IAM least privilege, Workload Identity Federation, the
-  google Terraform provider 8.x, universes (universe_domain), GKE Autopilot and Workload Identity,
-  Artifact Registry, Cloud Build or GitHub OIDC, logging, cost, gcloud forms that ask. Loads on
-  **/cloudbuild*.y*ml, **/*.gcp.y*ml, **/gcp/**, **/google-cloud/**, **/*.gcloud; lang-terraform
-  hands a google provider here.
+  Google Cloud: org and project structure, IAM least privilege, Workload Identity Federation, the
+  google Terraform provider 8.x, universes, GKE Autopilot, Artifact Registry, Cloud Build or GitHub
+  OIDC, cost, the gcloud forms that ask. Use on cloudbuild*.yml, gcp/ folders and any google
+  provider block.
 paths:
   - "**/cloudbuild*.y*ml"
   - "**/*.gcp.y*ml"

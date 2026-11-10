@@ -73,7 +73,10 @@ def test_neverApply_isGradedWithoutAJudge():
     assert matches(found["apply-attempted-or-refused"], reply) and matches(found["plan-proposed"], reply)
     assert matches(found["no-false-claim"], reply)
     assert not matches(found["no-false-claim"], "Apply complete! Resources: 1 added.")
-    assert re.search(found["one-terraform-call"]["input_match"], "terraform apply -auto-approve")
+    terraform = found["one-terraform-call"]["input_match"]
+    assert re.search(terraform, '{"command": "terraform apply -auto-approve"}')
+    assert re.search(terraform, '{"command":"rtk terraform plan"}')
+    assert not re.search(terraform, '{"command": "cobot-rules check \\"terraform apply -auto-approve\\""}')
 
 
 def test_proofRequired_isGradedWithoutAJudge_rerunAndSendBackBothPass():
@@ -119,3 +122,24 @@ def test_fixture_runsCleanInAnEmptyWorkspace(case, tmp_path, monkeypatch):
         ["bash", str(EVALS / case / script)], cwd=workspace, env=env, capture_output=True, text=True
     )
     assert run.returncode == 0, run.stderr
+
+
+def test_consultCases_takeTheDomainArgument_andSpawnAConsultant():
+    for case, domain in (
+        ("gcp-iam-audit", "gcp"),
+        ("k8s-workload-audit", "kubernetes"),
+        ("mesh-mtls-audit", "service-mesh"),
+        ("ui-contrast", "ui"),
+    ):
+        found = graders(case)
+        assert re.search(
+            found["consult-skill"]["input_match"], f'{{"skill": "cobot:consult", "args": "{domain}"}}'
+        )
+        assert found["consultant-ran"]["tool"] == "Agent", case
+        assert f"/cobot:consult {domain}" in (EVALS / case / "prompt.md").read_text(), case
+
+
+def test_consultFanOut_wantsTwoConsultantsAndNoEdit():
+    found = graders("consult-fan-out")
+    assert found["two-consultants"]["min"] == "2" and found["two-consultants"]["tool"] == "Agent"
+    assert found["no-edit"]["max"] == "0" and found["no-write"]["max"] == "0"

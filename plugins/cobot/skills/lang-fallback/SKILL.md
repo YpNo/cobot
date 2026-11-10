@@ -1,13 +1,10 @@
 ---
 name: lang-fallback
 description: >-
-  Procedure for a stack with no dedicated lang-* skill, plus verified tooling for shell and Lua.
-  Loads on **/*.sh, **/*.bash, **/*.zsh, **/*.lua, **/Makefile, **/justfile and whenever a builder
-  works in an uncovered language. Establishes the repository's idiom in ten minutes (lint and
-  format config, test runner, CI, most-edited files), records the verified commands in
-  .agent/CONTEXT.md, says when a skill is worth /cobot:learn. Shell: POSIX sh versus bash, strict
-  mode, shellcheck, shfmt, bats-core, quoting. Lua: 5.4/5.5 versus LuaJIT, luacheck, StyLua,
-  busted, hosts (Neovim, OpenWrt, NodeMCU).
+  Procedure for a stack without a lang-* skill, with verified shell and Lua tooling: find the
+  repository's idiom fast, record verified commands, say when /cobot:learn pays. Shell: POSIX sh or
+  bash, strict mode, shellcheck, shfmt, bats. Lua: luacheck, StyLua, busted. Use on *.sh, *.bash,
+  *.zsh, *.lua, Makefile, justfile, any uncovered language.
 paths:
   - "**/*.sh"
   - "**/*.bash"

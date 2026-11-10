@@ -271,7 +271,7 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     if trust_check:
         trusted, reason = mem.trust()
         if not trusted:
-            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Run /cobot:onboard."
+            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Ask the owner to type /cobot:onboard."
     entries = mem.journal_entries()[:2]
     journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
     findings = mem.open_findings()

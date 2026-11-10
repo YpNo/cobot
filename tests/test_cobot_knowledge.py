@@ -142,7 +142,7 @@ def test_scanPlugin_knowledgeSkillsOnly_andMemoryTopics(tmp_path):
         },
     )
     groups = knowledge.scan_plugin(plugin)
-    assert sorted(groups) == ["consult-y", "expert-y", "lang-x"]
+    assert sorted(groups) == ["expert-y", "lang-x"]  # consult procedures hold no dated lines (check-plugin)
     assert [line.file.name for line in groups["lang-x"]] == ["SKILL.md", "versions.md", "versions.md"]
     memory = tmp_path / ".agent"
     (memory / "knowledge").mkdir(parents=True)
@@ -438,7 +438,7 @@ def test_writeLines_dedupesRedatesCapsAndSkeleton(tmp_path):
         and '  - "**/*.yaml"\n  - "esphome/**"' in head
         and "ESPHome firmware YAML." in head
     )
-    assert "Use when an esphome/ folder exists." in head and "stays reported" in head
+    assert "Use when an esphome/ folder exists." in head and "reported until promoted" in head
     explicit = knowledge.write_lines(
         plugin,
         "zwave",

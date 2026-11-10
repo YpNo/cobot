@@ -1,18 +1,9 @@
----
-name: consult-gcp
-description: >-
-  Read-only Google Cloud audit by the consultant: service-account keys, basic roles, authoritative
-  IAM and provider blocks in modules, hand-built service-agent emails and googleapis.com endpoints
-  (universe rules), Workload Identity, public buckets, audit logs, budgets.
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: gcp
 
-# consult-gcp
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, apply nothing, authenticate to nothing. Read the sibling skill
-`../expert-gcp/SKILL.md` and its `references/` first: they are the baseline. `gcloud … list`,
+`skills/expert-gcp/SKILL.md` and its `references/` first: they are the baseline. `gcloud … list`,
 `describe`, `get-iam-policy`, `config list` and `auth list` are silent for you when an active
 configuration exists; they read the live project and nothing else is silent. Never
 `print-access-token`, never `secrets versions access`, never `get-credentials`; never pass an
@@ -33,13 +24,13 @@ environment assignment or `--kubeconfig` on a read (the gate would ask, and it w
    reusable module; binding and member on the same role; grants to `allUsers` or
    `allAuthenticatedUsers` (buckets, Cloud Run, Pub/Sub); default service accounts used by node
    pools, Cloud Build triggers or functions; missing `roles/iam.serviceAccountUser` scoping.
-4. **Universe portability** (`references/universe.md`): run the audit greps; classify every
+4. **Universe portability** (`skills/expert-gcp/references/universe.md`): run the audit greps; classify every
    `googleapis.com` hit (endpoint, service name, scope, agent email); a hand-built
    `service-…@…gserviceaccount.com`; project IDs split on `:`; a provider block inside a module.
 5. **GKE and workloads.** `workload_identity_config` and `GKE_METADATA` present; pods with a
    `serviceAccountName` bound by principal; `enable_legacy_abac`; public endpoint without
    authorised networks; node pools on the default service account; Autopilot-incompatible
-   specs (hand the manifests to `consult-kubernetes`).
+   specs (hand the manifests to the kubernetes domain).
 6. **Data and logs.** Buckets without uniform access or with public members; CMEK absent where
    CONTEXT.md names regulated data; `google_project_iam_audit_config` absent on the services
    that hold data (profile `service` or `infra`); `_Default` retention untouched when the

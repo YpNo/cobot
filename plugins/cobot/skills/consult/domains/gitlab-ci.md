@@ -1,19 +1,8 @@
----
-name: consult-gitlab-ci
-description: >-
-  Read-only GitLab CI audit by the consultant agent against expert-gitlab-ci: duplicate pipelines,
-  only/except, unpinned images, missing timeouts and interruptible, token and variable hygiene,
-  job token allowlist, release path. Uses glab ci lint when available. Returns at most ten
-  findings with file, line and fix.
-argument-hint: [path]
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: gitlab-ci
 
-# consult-gitlab-ci
+Paths below start at the plugin root your prompt names.
 
-Read-only. Change nothing, commit nothing, run no pipeline. Read `../expert-gitlab-ci/SKILL.md`
+Read-only. Change nothing, commit nothing, run no pipeline. Read `skills/expert-gitlab-ci/SKILL.md`
 and its references first; they are the baseline. Network use is limited to `glab` reads and
 documentation fetches.
 

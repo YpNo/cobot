@@ -2,6 +2,7 @@
 name: rules
 description: Inspect and dry-run the cobot rules gate. show lists the merged never/ask/allow rules with their layer; check "<cmd>" gives the decision for a command (add --tool Edit or --agent consultant); explain "<cmd>" lists every matching rule per segment; sync renders the permissions.deny hard wall (plain and rtk forms) and the owner's allow lines as a diff against ~/.claude/settings.json for the owner to apply by hand. Use when a command was denied or asked, before adding a rule, or when setting up a machine.
 argument-hint: show | check "<cmd>" | explain "<cmd>" | sync
+disable-model-invocation: true
 ---
 
 # /cobot:rules

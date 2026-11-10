@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Design and write the delivery pipeline of a repository at the end of a work stream, from its verified commands and profile. Writes ci.yml (PR, merge and weekly triggers with one aggregator job), release.yml (verify, attest, publish without rerunning tests) and, for a service with a Dockerfile, the image workflow (buildx, metadata tags, SBOM, cosign, Trivy), every action pinned by SHA from expert-gha, every command run locally first, then audited by consult-gha. Invoke deliberately, never at the start of a project; it changes workflow files only and proposes nothing outward.
+description: Design and write the delivery pipeline of a repository at the end of a work stream, from its verified commands and profile. Writes ci.yml (PR, merge and weekly triggers with one aggregator job), release.yml (verify, attest, publish without rerunning tests) and, for a service with a Dockerfile, the image workflow (buildx, metadata tags, SBOM, cosign, Trivy), every action pinned by SHA from expert-gha, every command run locally first, then audited by /cobot:consult gha. Invoke deliberately, never at the start of a project; it changes workflow files only and proposes nothing outward.
 argument-hint: [ci | release | image | all]
 ---
 
@@ -19,7 +19,7 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    `references/snippets.md` and `versions.md` (image digests younger than 30 days; a digest you
    did not resolve today is not written). In foreign mode (memory outside the tree) stop: the workflows belong
    to the maintainers and changes to them travel through `/cobot:contribute`. A repository
-   that already has workflows gets a `consult-gha` audit and a proposed patch to the existing
+   that already has workflows gets a `/cobot:consult gha` audit and a proposed patch to the existing
    files (the diff shown, the owner approves), never a rewrite or a second pipeline beside the
    first; say what you keep. Rows in `actions.md` older than 30 days (the brief flags them) are
    re-resolved with `gh api repos/<o>/<r>/releases/latest` and `git/ref/tags/<tag>` before use;
@@ -64,7 +64,7 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
 6. **Prove.** `cobot-memory stamp` must answer `ok`: the pipeline describes a tree the last wrap
    verified. Then run every command the workflows run, locally, from the verified table; a command
    that fails locally does not ship. Run `zizmor --offline` and `actionlint` when present. Then
-   fork `consult-gha` (and `consult-containers` when an image workflow was written) on the
+   run `/cobot:consult gha` (with `containers` when an image workflow was written) on the
    result and fold the findings.
 7. **Report** and remember:
 

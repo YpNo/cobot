@@ -1,13 +1,10 @@
 ---
 name: expert-gha
 description: >-
-  GitHub Actions CI/CD, release engineering and CI supply-chain security. Loads on
-  .github/workflows/**, .github/actions/**, action.yml or action.yaml, and when the task is a CI
-  pipeline, a tag-driven release, OIDC to Google Cloud, artifact attestations, Dependabot or
-  Renovate for actions, or a zizmor finding. Gives the non-negotiables (full-SHA pins,
-  least-privilege permissions, persist-credentials false, concurrency, timeouts, no untrusted ${{
-  }} in run, zizmor), workflow shapes, release and SLSA guidance, cost levers, pitfalls. SHAs:
-  references/actions.md; workflows: references/snippets.md.
+  GitHub Actions CI/CD and supply-chain security: full-SHA pins, least-privilege permissions,
+  persist-credentials false, concurrency, timeouts, no untrusted ${{ }} in run, zizmor, releases,
+  attestations, OIDC. Use on .github/workflows/, .github/actions/, action.yml, and for a CI
+  pipeline, a tag-driven release, Dependabot or a zizmor finding.
 paths:
   - ".github/workflows/**"
   - ".github/actions/**"
@@ -150,7 +147,8 @@ spec (decision 20) already cuts the number of runs; this matrix cuts what each r
 
 - [verified 2026-11-06 · src: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax] skipped (path/branch filtered) workflows leave their checks `Pending`.
 - [verified 2026-11-06 · src: https://github.blog/changelog/2025-11-07-actions-pull_request_target-and-environment-branch-protections-changes/] `pull_request_target` default-branch source and env rule change, effective 2025-12-08.
-- [verified 2026-11-06 · src: https://docs.zizmor.sh/audits/] audits `artipacked`, `bot-conditions`, `github-env`, `cache-poisoning`, `secrets-inherit`, `ref-version-mismatch` exist; `impostor-commit`, `known-vulnerable-actions`, `ref-confusion` need online mode.
+- [verified 2026-11-06 · src: https://docs.zizmor.sh/audits/] audits `artipacked`, `bot-conditions`, `github-env`, `cache-poisoning`, `secrets-inherit`, `ref-version-mismatch` exist; `impostor-commit`, `known-vulnerable-actions`, `ref-confusion`, `stale-action-refs` need online mode; `secrets-outside-env` runs only under the auditor persona.
+- [verified 2026-11-06 · src: https://docs.zizmor.sh/usage/] exit codes 0 clean, 1 error, 2 bad args, 3 no inputs, 11–14 findings by max severity; `--gh-token` or `GH_TOKEN` enables online mode, `--offline` forces it off.
 
 ## Do not
 

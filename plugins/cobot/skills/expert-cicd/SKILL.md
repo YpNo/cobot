@@ -1,12 +1,10 @@
 ---
 name: expert-cicd
 description: >-
-  Platform-neutral delivery pipeline principles, current as of 2026-11-08: the trigger matrix,
-  one aggregator as the only required check, pinning by digest or SHA, least privilege and OIDC,
-  environments with approvals, SLSA provenance, SBOM and Sigstore signing, caching, timeouts,
-  secrets hygiene, reproducible builds, DORA metrics, with a table of what each forge calls each
-  thing. Loads for forges without their own expert (Gitea, Woodpecker, Azure, Bitbucket,
-  CircleCI, Jenkins); expert-gha and expert-gitlab-ci apply these principles to their platform.
+  Platform-neutral CI/CD principles: the trigger matrix, one aggregator check, pinning by digest or
+  SHA, least privilege and OIDC, environments, SLSA provenance, SBOM and signing, caching, timeouts,
+  secrets. Use for forges without their own expert (Gitea, Woodpecker, Azure, Bitbucket, CircleCI,
+  Jenkins) and when designing any pipeline.
 paths:
   - ".gitea/workflows/**"
   - ".woodpecker*"

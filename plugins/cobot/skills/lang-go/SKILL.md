@@ -1,12 +1,10 @@
 ---
 name: lang-go
 description: >-
-  Senior Go developer knowledge: verified toolchain versions, the exact format, lint, test,
-  coverage, vuln and build commands, current idiom (modules, errors, context, interfaces,
-  generics, concurrency), project shape for small modules, test rules, security specifics
-  (govulncheck, net/http timeouts, input bounds, secrets), pitfalls. Loads on **/*.go, **/go.mod,
-  **/go.sum and inside go-builder. Use before writing, reviewing or testing Go, adding a module or
-  touching Go CI. Versions: references/versions.md; CI job: references/ci.md.
+  Senior Go: verified toolchain, the exact fmt, lint, test, coverage, govulncheck and build
+  commands, current idiom (modules, errors, context, generics, concurrency), small-module shape,
+  test and security rules, pitfalls. Use on *.go, go.mod, go.sum, in go-builder, and before writing,
+  reviewing or testing Go or touching Go CI.
 paths:
   - "**/*.go"
   - "**/go.mod"

@@ -1,13 +1,10 @@
 ---
 name: lang-terraform
 description: >-
-  Senior Terraform/OpenTofu developer for small modules and live environments, Google Cloud first.
-  Loads on **/*.tf, **/*.tfvars, **/*.tftest.hcl, **/.terraform.lock.hcl, **/*.hcl and inside
-  builders on infrastructure code. Picks the binary, runs the verified chain (fmt, validate,
-  tflint, trivy config, test), pins providers and the lock file, writes idiomatic variables,
-  outputs, moved and import blocks and .tftest.hcl mocks, keeps state safe. Plans are proposed,
-  never applied: the gate denies apply and destroy. Versions in references/versions.md. A google
-  provider hands off to expert-gcp.
+  Senior Terraform and OpenTofu, Google Cloud first: the verified chain (fmt, validate, tflint,
+  trivy config, test), provider and lock pins, variables, moved and import blocks, .tftest.hcl
+  mocks, safe state; plans are proposed, never applied. Use on *.tf, *.tfvars, *.tftest.hcl,
+  .terraform.lock.hcl; a google provider hands off to expert-gcp.
 paths:
   - "**/*.tf"
   - "**/*.tfvars"

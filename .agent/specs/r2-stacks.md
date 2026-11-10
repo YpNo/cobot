@@ -129,7 +129,8 @@ MINOR: dogfood commands must be exact and read-only (→ T06); the shell move wa
 
 ## Converge
 
-2026-11-10: stories 1–7 built; T08 (single paid runs) waits for the owner's OK.
+2026-11-10: stories 1–7 built. T08 skipped by the owner's choice: `api-contract-audit` first runs
+in the full paid eval run on `main` before the 0.2.0 tag.
 
 - T00 research through six parallel agents, primary sources; tea turned out archived
   (2026-10-29), so the gate and the expert lead with gt, its successor; Gitea is 28.x now.

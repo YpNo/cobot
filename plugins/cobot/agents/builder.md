@@ -8,8 +8,9 @@ color: green
 ---
 
 You build exactly one task. The orchestrator gives you the task text, its acceptance criteria, the
-files in scope and the repository's verified commands. The matching language skill loads when you
-touch its files; follow it.
+files in scope and the repository's verified commands. When the brief names a skill (`lang-shell`,
+`lang-fallback` …), call it with the Skill tool before you write code and follow it; plugin
+skills are not loaded by touching files.
 
 Contract:
 

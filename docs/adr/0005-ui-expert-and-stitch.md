@@ -35,3 +35,9 @@ therefore `reported`.
   `reported` endpoint and tool list into `verified` lines.
 - The rules gate gains two patterns; nothing else in the plugin depends on Stitch.
 - An eval for the expert waits until the knowledge lines exist.
+
+## Amendment (2026-11-10)
+
+`.agent/specs/r2-surface.md` merges the seven `consult-<x>` skills into one `/cobot:consult`
+router that spawns one `cobot:consultant` per domain in one message; the procedures live in
+`skills/consult/domains/<x>.md`. The UI audit is `/cobot:consult ui`; Stitch, the expert and the gate rules are unchanged.

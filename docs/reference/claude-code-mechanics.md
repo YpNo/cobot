@@ -38,7 +38,8 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
 ## Skills (`SKILL.md`)
 - Fields: `name`, `description`, `when_to_use`, `argument-hint`, `disable-model-invocation`,
   `user-invocable`, `allowed-tools` (grants, does not restrict), `disallowed-tools`, `model`,
-  `effort`, `context: fork` + `agent`, `background`, `paths` (globs gating auto-activation),
+  `effort`, `context: fork` + `agent`, `background`, `paths` (globs gating auto-activation of
+  project and user skills; plugin skills ignore it, see 2026-11-10 below),
   `hooks`, `shell`, `metadata`.
 - `description` + `when_to_use` truncated at 1 536 chars in the listing. Keep SKILL.md under
   500 lines; detail in sibling files loaded on demand; `scripts/` executed, not loaded.
@@ -209,3 +210,20 @@ eval exit code 2 for partial runs.
   an install.
 - `claude plugin validate --strict` accepts `context: fork` with `agent: cobot:learner` in a
   skill whose agent file is in the same plugin.
+
+## Found while building the R2 surface (2026-11-10, Claude Code 2.1.311)
+
+Spikes with a throwaway plugin and `claude -p --output-format stream-json`, haiku, about 0.05 USD.
+
+- Forked skills (`context: fork`) run **one at a time**: two Skill calls in one assistant message,
+  to the same skill or to two different skills, finished 11 s apart around an 8 s sleep. Two
+  `Agent` calls in one message finished 1 s apart: **agents run in parallel**. Fan-out therefore
+  goes through `Agent` calls (the `/cobot:consult` router), never through forked skills.
+- A forked skill receives `$ARGUMENTS`, and `${CLAUDE_PLUGIN_ROOT}` is expanded in a skill body;
+  a file the agent reads afterwards is raw text, so its paths must start at the plugin root.
+- `paths:` gates project skills only. A plugin skill with `paths:` was listed before any matching
+  file was touched; the same skill in `.claude/skills/` appeared only after a matching file was
+  read. A plugin skill's description is its only trigger, and every plugin skill costs listing
+  space in every session.
+- `disable-model-invocation: true` removes a skill from the model's listing (the owner still
+  types it); `user-invocable: false` hides it from the menu but keeps it listed.

@@ -77,7 +77,7 @@ or `--dev` to try cobot for one session without installing anything.
 | `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
 | `/cobot:contribute` | prepares a pull request to someone else's project, under their rules |
 | `/cobot:security-sweep` | audits the whole repository, read-only |
-| `/cobot:consult-<domain>` | expert audit: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui` |
+| `/cobot:consult [domain]` | expert audits in parallel: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`; with no domain, every one found here |
 
 Language skills, experts and builders load on their own when your files need them.
 

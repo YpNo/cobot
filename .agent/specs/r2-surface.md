@@ -128,4 +128,19 @@ ten-finding cap and delta format; knowledge refresh never names consult; decisio
 
 ## Converge
 
-pending
+2026-11-10: every story built; T08 (paid single runs) waits for the owner's OK.
+
+- Story 1: seven domain procedures moved by `git mv`, paths from the plugin root; plugin
+  validation passes; the four consult cases call `/cobot:consult <domain>` and check a consultant
+  ran (single runs pending, T08).
+- Story 2: the router audits every detected domain with no argument; `consult-fan-out` added
+  (single run pending, T08).
+- Story 3: spec, wrap, protocol and the consultant agent use the router's prompt; the parallelism
+  is the spike's measured `Agent` behaviour.
+- Story 4: the three skills are user-only; the protocol, the brief and wrap say so;
+  `foreign-onboard` starts with the slash command (single run pending, T08).
+- Story 5: `check-plugin` counts the model-visible listing and caps expert and lang descriptions:
+  8 142 listed characters, contract ok.
+- T00 found `paths:` inert for plugin skills, so T06 kept short globs in every description.
+- Not done here: the protocol is 3 362 characters, over the 3 000 its docs state (it was 3 276
+  before this branch); a trim is a separate change.

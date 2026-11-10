@@ -130,6 +130,7 @@ def test_consultCases_takeTheDomainArgument_andSpawnAConsultant():
         ("k8s-workload-audit", "kubernetes"),
         ("mesh-mtls-audit", "service-mesh"),
         ("ui-contrast", "ui"),
+        ("api-contract-audit", "api"),
     ):
         found = graders(case)
         assert re.search(

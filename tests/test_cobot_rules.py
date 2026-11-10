@@ -816,6 +816,43 @@ def test_makeTarget_reasonAndTraceNameOrigin(rules, make_repo):
     assert verdict.reason() == "cobot gate: opaque command 'make client'"
 
 
+@pytest.mark.parametrize(
+    ("command", "reason"),
+    [
+        (
+            "python3 - <<'PY'\nprint(1)\nPY\ncat .agent/JOURNAL.md",
+            "cobot gate: opaque command 'python3 -'",
+        ),
+        (
+            'cd /x && echo "v=$(git rev-parse HEAD)"; ls | tail -1',
+            "cobot gate: command substitution '$(git rev-parse HEAD)'",
+        ),
+        (
+            "for m in a b; do echo $(basename $(dirname $m)); done | head -14",
+            "cobot gate: command substitution '$(basename $(dirname $m))'",
+        ),
+        ("echo `date` | head -3", "cobot gate: command substitution '`date`'"),
+        ("ls; bash -n bin/init.sh; tail -2", "cobot gate: opaque command 'bash -n bin/init.sh'"),
+        ("python3 - <<'PY'\nx\nPY\necho $(id -u)", "cobot gate: command substitution '$(id -u)'"),
+        ("echo $(" + "a" * 80, "cobot gate: command substitution '$(" + "a" * 58 + "'"),
+    ],
+)
+def test_judgeBash_opaqueReason_namesTheConstructNotTheLastSegment(rules, tmp_path, command, reason):
+    verdict, _ = judge_in(rules, command, tmp_path)
+    assert verdict.decision == "ask"
+    assert verdict.reason() == reason
+
+
+def test_judgeBash_protectedFileWithSubstitution_keepsProtectedReason(rules, tmp_path):
+    verdict, _ = judge_in(rules, "cat ~/.claude/settings.json; echo $(date)", tmp_path)
+    assert verdict.decision == "ask" and "protected file" in verdict.reason()
+
+
+def test_judgeBash_ruleBackedAskAfterOpaque_reportsTheRule(rules, tmp_path):
+    verdict, _ = judge_in(rules, "python3 - <<'PY'\nx\nPY\nrm -rf build", tmp_path)
+    assert verdict.reason() == "cobot rule: ask Bash(rm -rf*) (default layer)"
+
+
 def test_makeTarget_noMakefileOrUnreadable_staysOpaque(rules, tmp_path):
     assert judge_in(rules, "make test", tmp_path)[0].decision == "ask"
     (tmp_path / "Makefile").write_text("include deps.mk\ntest:\n\tgo test ./...\n")

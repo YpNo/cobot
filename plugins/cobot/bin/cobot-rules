@@ -605,8 +605,25 @@ def strip_global_options(tokens: list[str]) -> list[str]:
     return out + rest
 
 
+SUBSTITUTION_OPENERS = ("$(", "`", "<(", ">(")
+
+
 def has_substitution(command: str) -> bool:
-    return "$(" in command or "`" in command or "<(" in command or ">(" in command
+    return any(opener in command for opener in SUBSTITUTION_OPENERS)
+
+
+def substitution_excerpt(command: str, limit: int = 60) -> str:
+    """The first ``$(…)``, ``<(…)``, ``>(…)`` or backtick span, matched to its close and capped."""
+    start = min(i for i in (command.find(o) for o in SUBSTITUTION_OPENERS) if i >= 0)
+    if command[start] == "`":
+        end = command.find("`", start + 1)
+        return command[start : end + 1 if end > 0 else len(command)][:limit]
+    depth = 0
+    for i in range(start + 1, len(command)):
+        depth += {"(": 1, ")": -1}.get(command[i], 0)
+        if depth == 0:
+            return command[start : i + 1][:limit]
+    return command[start:][:limit]
 
 
 def is_opaque(plain: list[str]) -> bool:
@@ -1133,6 +1150,16 @@ def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: li
     return None
 
 
+def outranks(new: Verdict, best: Verdict) -> bool:
+    """The stricter decision wins. On a tie a rule-backed verdict replaces a ruleless one, and the
+    first ruleless ask keeps its reason: it names what made the command opaque or protected."""
+    if RANK[new.decision] != RANK[best.decision]:
+        return RANK[new.decision] > RANK[best.decision]
+    if best.rule is not None:
+        return False
+    return new.rule is not None or best.decision is None
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -1148,6 +1175,11 @@ def judge_bash(
         best = Verdict(ASK, None, f"shell access to a protected file '{touched[:60]}'")
     for segment, origin in segments:
         forms = candidates(segment)
+        opaque_note = (
+            f"command substitution '{substitution_excerpt(command)}'"
+            if opaque_all
+            else f"opaque command '{forms[0][:60]}'"
+        )
         foreign = executes_foreign(segment)
         matched = [
             r
@@ -1157,13 +1189,11 @@ def judge_bash(
         verdict = resolve(matched, "no rule matched")
         if (opaque_all or is_opaque(strip_wrappers(segment))) and verdict.decision != DENY:
             allowed = any(allow_counts(r) for r in matched)
-            verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{forms[0][:60]}'")
+            verdict = verdict if allowed else Verdict(ASK, None, opaque_note)
         if origin:
             verdict = replace(verdict, via=origin)
         trace.append((forms[0] + (f"  <- {origin}" if origin else ""), matched))
-        if RANK[verdict.decision] > RANK[best.decision] or (
-            verdict.decision == best.decision and best.rule is None
-        ):
+        if outranks(verdict, best):
             best = verdict
     return best, trace
 

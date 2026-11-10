@@ -1,20 +1,9 @@
----
-name: consult-ui
-description: >-
-  Read-only UI/UX audit by the consultant agent against expert-ui: contrast computed with jq, focus
-  and keyboard paths, target sizes, reflow, motion and colour-scheme handling, semantics, token
-  drift, and the handheld profile's pixel-grid rules. Invoke before a release, after a redesign,
-  or on a theme. Returns at most ten findings with file, line, criterion and fix.
-argument-hint: [path]
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: ui
 
-# consult-ui
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, commit nothing, run no formatter or build. Read the sibling skill
-`../expert-ui/SKILL.md` and its references first: they are the baseline and carry the status of
+`skills/expert-ui/SKILL.md` and its references first: they are the baseline and carry the status of
 every fact. The argument narrows the audit to one path.
 
 ## Procedure

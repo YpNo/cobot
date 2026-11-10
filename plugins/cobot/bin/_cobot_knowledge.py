@@ -45,7 +45,7 @@ HISTORY_RE = re.compile(
     r"\b(?:since|stable in|introduced|added in|deprecated in|removed in)\b|\(\w{3} \d{4}\)", re.I
 )
 VERSION_FILES = frozenset({"versions", "actions", "ci"})
-KNOWLEDGE_SKILL_PREFIXES = ("lang-", "expert-", "consult-")
+KNOWLEDGE_SKILL_PREFIXES = ("lang-", "expert-")  # consult procedures hold no dated lines (check-plugin)
 STATUSES = ("verified", "reported", "assumed")
 MARKETPLACE = "cobot"
 

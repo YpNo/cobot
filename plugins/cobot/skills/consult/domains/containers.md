@@ -1,21 +1,9 @@
----
-name: consult-containers
-description: >-
-  Read-only audit of a repository's Dockerfiles, Containerfiles, compose files and image
-  workflows by the consultant agent. Invoke before publishing an image, after changing a base
-  image or a build stage, when a scanner or a reviewer flags the image, or from /cobot:ship
-  after writing the image workflow. Checks every non-negotiable of expert-containers, runs
-  hadolint, docker build --check and Trivy when present, and returns at most ten ranked findings
-  plus a knowledge_delta for anything newly verified.
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: containers
 
-# consult-containers
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, build nothing that pushes, log in nowhere. Read the sibling skill
-`../expert-containers/SKILL.md` and its `references/versions.md` first: they are the baseline.
+`skills/expert-containers/SKILL.md` and its `references/versions.md` first: they are the baseline.
 
 ## Procedure
 

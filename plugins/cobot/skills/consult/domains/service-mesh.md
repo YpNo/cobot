@@ -1,18 +1,9 @@
----
-name: consult-service-mesh
-description: >-
-  Read-only Istio and Cloud Service Mesh audit by the consultant: mTLS mode, default deny,
-  allow-all and IP-based AuthorizationPolicies, DestinationRule DISABLE, JWT without
-  requestPrincipals, EnvoyFilters, mixed revisions, ambient without a waypoint, egress.
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: service-mesh
 
-# consult-service-mesh
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, install nothing. Read the sibling skill
-`../expert-service-mesh/SKILL.md` and its `references/` first: they are the baseline.
+`skills/expert-service-mesh/SKILL.md` and its `references/` first: they are the baseline.
 `istioctl analyze --use-kube=false <files>` is silent for you; `istioctl analyze`,
 `proxy-status`, `proxy-config` and `kubectl get` against the current context are silent too,
 but you use them only when the audit is about a live mesh and the owner's request says so.
@@ -75,7 +66,7 @@ Confidence: `high` = seen in the file and confirmed by `istioctl analyze` or the
 summary: <one line — namespaces and policies audited, analyze run or not, worst severity>
 
 findings:
-1. <severity> · <file>:<line> · <what> · fix: <exact resource and field, from references/policies.md> · confidence: <high|medium|low>
+1. <severity> · <file>:<line> · <what> · fix: <exact resource and field, from skills/expert-service-mesh/references/policies.md> · confidence: <high|medium|low>
 …
 
 knowledge_delta:            # optional — only facts verified during this audit and absent from expert-service-mesh

@@ -1,18 +1,9 @@
----
-name: consult-kubernetes
-description: >-
-  Read-only Kubernetes audit by the consultant: manifests, kustomizations, charts and values
-  against expert-kubernetes (resources, probes, image pins, restricted pod security, token
-  mounting, NetworkPolicy, PDB, Gateway over Ingress, secrets as literals, Autopilot fit).
-context: fork
-agent: cobot:consultant
-user-invocable: true
----
+# Consult: kubernetes
 
-# consult-kubernetes
+Paths below start at the plugin root your prompt names.
 
 Read-only. Change nothing, apply nothing. Read the sibling skill
-`../expert-kubernetes/SKILL.md` and its `references/` first: they are the baseline. Renders
+`skills/expert-kubernetes/SKILL.md` and its `references/` first: they are the baseline. Renders
 (`kustomize build`, `helm template`, `helm lint`, `kubeconform`) are silent for you; so are
 `kubectl get|describe|logs|diff` against the current context, but you use them only when the
 audit is about a live cluster and the owner's request says so. Never `kubectl get secret`,
@@ -69,7 +60,7 @@ inferred.
 summary: <one line — overlays and charts rendered, kubeconform run or not, worst severity>
 
 findings:
-1. <severity> · <file>:<line> · <what> · fix: <exact field and value, from references/manifests.md> · confidence: <high|medium|low>
+1. <severity> · <file>:<line> · <what> · fix: <exact field and value, from skills/expert-kubernetes/references/manifests.md> · confidence: <high|medium|low>
 …
 
 knowledge_delta:            # optional — only facts verified during this audit and absent from expert-kubernetes

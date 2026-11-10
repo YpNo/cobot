@@ -129,4 +129,16 @@ MINOR: dogfood commands must be exact and read-only (→ T06); the shell move wa
 
 ## Converge
 
-pending
+2026-11-10: stories 1–7 built; T08 (single paid runs) waits for the owner's OK.
+
+- T00 research through six parallel agents, primary sources; tea turned out archived
+  (2026-10-29), so the gate and the expert lead with gt, its successor; Gitea is 28.x now.
+- T00b: an eval's `tool_used` grader sees a subagent's Skill call (spike, 0.003 USD).
+- Dogfood, read-only: `vue-tsc --noEmit` exit 0 on demo-profil-matching; `oxlint` on headplane
+  (one existing warning); `shellcheck` on server-automation's ten scripts, exit 0, no finding;
+  gitea's two generated documents (Swagger 2.0 and OpenAPI 3.0.3, 35k and 37k lines) detected with
+  their Makefile targets; docs detected as Gitea (`.gitea/workflows`, gitea.com origin). Two
+  command lessons folded (oxlint, `vue-tsc -b` writes). shfmt, bats, gt, tea, spectral and redocly
+  are not installed here: recorded, not installed.
+- Not proven yet: `api-contract-audit` on a live model (T08); a builder loading a framework skill
+  on a live model (T08, an eval would need a builder run).

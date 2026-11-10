@@ -18,14 +18,15 @@ remembers each repository, and asks before anything leaves your machine.**
 
 - **A plan before code.** Bigger changes start with a short spec that a fresh, independent
   reviewer attacks before anything is built.
-- **Work with proof.** Rust, Go, Python, TypeScript and Terraform builders work in isolation and
-  report the commands they ran with their exit codes; a report without proof goes back.
+- **Work with proof.** Rust, Go, Python, TypeScript (with React, Next.js and Vue), shell and
+  Terraform work goes to builders that work in isolation and report the commands they ran with
+  their exit codes; a report without proof goes back.
 - **Memory per repository.** Context, verified commands, a journal and open findings live in
   `.agent/`, so each session starts where the last one stopped.
 - **A rules gate.** Every shell command, file edit and MCP call passes `never`, `ask` and `allow`
   rules: force pushes, `terraform apply` and publishing never run on their own.
-- **Experts on call.** GitHub Actions, GitLab CI, containers, Google Cloud, Kubernetes, service
-  mesh and UI experts audit your files read-only.
+- **Experts on call.** GitHub Actions, GitLab CI, Gitea, containers, Google Cloud, Kubernetes,
+  service mesh, UI and API experts; most audit your files read-only.
 
 ## How it works
 
@@ -77,7 +78,7 @@ or `--dev` to try cobot for one session without installing anything.
 | `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
 | `/cobot:contribute` | prepares a pull request to someone else's project, under their rules |
 | `/cobot:security-sweep` | audits the whole repository, read-only |
-| `/cobot:consult [domain]` | expert audits in parallel: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`; with no domain, every one found here |
+| `/cobot:consult [domain]` | expert audits in parallel: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api`; with no domain, every one found here |
 
 Language skills, experts and builders load on their own when your files need them.
 

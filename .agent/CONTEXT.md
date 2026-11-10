@@ -47,7 +47,7 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 - `plugins/cobot/` is the only plugin for now; domain plugins come later
 - `bin/cobot-rules` (gate, `_cobot_make`), `bin/cobot-memory` (brief, learn and promote, knowledge, check, init, journal, findings; `_cobot_knowledge`), `bin/cobot-deps` (currency, `_cobot_deps`), `bin/cobot-session` (SessionStart payload)
 - `hooks/` are thin shims around `bin/`; all logic is tested Python
-- skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute; onboard, rules, security-sweep user-only), knowledge (lang-*, expert-*), the consult router (domains under `skills/consult/domains/`), security-sweep (forked)
+- skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute; onboard, rules, security-sweep user-only), knowledge (lang-*, fw-*, expert-*), the consult router (domains under `skills/consult/domains/`), security-sweep (forked)
 - agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder
 - people read `README.md`; agents and architects read `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`
 - design: `docs/02-design.md`; decisions: `docs/01-decisions.md`, `docs/adr/`; platform facts: `docs/reference/claude-code-mechanics.md`; open inputs: `docs/design-inputs/`; decided ones: `docs/history/`

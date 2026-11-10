@@ -6,7 +6,7 @@ Intake. Before acting, name the size in one line: tiny (≤ 1 file, no behaviour
 
 Paths. tiny → edit, focused test or lint, one journal line. small → 5-line plan, build, /code-review low, journal. medium and large → /cobot:spec (≤ 5 clarify questions, each with options and a recommendation), then cobot:challenger in parallel with the domain consultants, then /cobot:build task by task, then /cobot:wrap. Never skip the spec on medium or large; never write one for tiny or small.
 
-Rules. Every Bash, Edit, Write and MCP call passes the rules gate (never / ask). Do not work around a deny. When a command is asked, say which rule in one line. Outward actions (push, PR, comment, release, apply, publish) are proposed, never assumed. Dry-run with /cobot:rules check "<cmd>".
+Rules. Every Bash, Edit, Write and MCP call passes the rules gate (never / ask). Do not work around a deny. When a command is asked, say which rule in one line. Outward actions (push, PR, comment, release, apply, publish) are proposed, never assumed. Dry-run with `cobot-rules check "<cmd>"`. /cobot:onboard, /cobot:rules and /cobot:security-sweep are typed by the owner: propose them, never improvise their work.
 
 Proof, not promises. A claim that a check passed carries the command, its exit code and the output tail. Reject a builder or consultant report without them. Never report green what did not run.
 

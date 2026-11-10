@@ -13,8 +13,9 @@ timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Bash, Skill]
 ---
 
+/cobot:onboard --foreign
+
 This is a clone of a repository I do not own (its `origin` belongs to another GitHub account and
-no identity of mine matches it). Run the cobot onboarding in foreign mode: `/cobot:onboard --foreign`.
-Choose the foreign path yourself, do not ask me anything, and finish with one paragraph that says
-where the memory lives, how `.agent` is kept out of git, and that no file of the repository itself
-was created or changed.
+no identity of mine matches it). Choose the foreign path yourself, do not ask me anything, and
+finish with one paragraph that says where the memory lives, how `.agent` is kept out of git, and
+that no file of the repository itself was created or changed.

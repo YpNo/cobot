@@ -5,6 +5,7 @@ argument-hint: [path or subsystem]
 context: fork
 agent: cobot:consultant
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # security-sweep

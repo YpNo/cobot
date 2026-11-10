@@ -151,6 +151,7 @@ def test_brief_untrusted_isOneLine(memory, repo):
     seed(repo)
     brief = memory.build_brief(memory.Memory(), 6000)
     assert brief.startswith("cobot memory: UNTRUSTED")
+    assert brief.endswith("Ask the owner to type /cobot:onboard.")  # onboard is user-only
     assert "profile" not in brief
 
 

@@ -499,8 +499,47 @@ def executes_foreign(tokens: list[str]) -> bool:
     return False
 
 
-API_CLIS = ("gh", "glab")
-API_BODY_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input")
+API_CLIS = ("gh", "glab", "gt", "tea")  # gt is Gitea's CLI; tea, its archived predecessor, still installed
+API_BODY_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input", "-d", "--data")
+_GT_VERBS = {"new": "create", "rm": "delete", "add": "create"}
+_TEA_VERBS = {"c": "create", "e": "edit", "rm": "delete", "ls": "list", "open": "reopen"}
+# CLI aliases rewritten to their canonical command before matching (read 2026-11-10 from each
+# CLI's source or docs), so one rule row covers every alias form: group alias → (group, verbs).
+CLI_ALIASES: dict[str, dict[str, tuple[str, dict[str, str]]]] = {
+    "glab": {
+        "mr": ("mr", {"new": "create", "accept": "merge", "comment": "note"}),
+        "issue": ("issue", {"new": "create", "comment": "note"}),
+    },
+    "gt": {
+        group: (group, _GT_VERBS)
+        for group in ("pr", "issue", "release", "repo", "label", "project", "milestone")
+    },
+    "tea": {
+        **dict.fromkeys(
+            ("pulls", "pull", "pr"),
+            ("pulls", {**_TEA_VERBS, "m": "merge", "lgtm": "approve", "a": "approve", "co": "checkout"}),
+        ),
+        **dict.fromkeys(("releases", "release", "r"), ("releases", _TEA_VERBS)),
+        **dict.fromkeys(("assets", "asset", "a"), ("assets", _TEA_VERBS)),
+        **dict.fromkeys(
+            ("repos", "repo"),
+            (
+                "repos",
+                {**_TEA_VERBS, "ct": "create-from-template", "f": "fork", "m": "migrate", "s": "search"},
+            ),
+        ),
+        **dict.fromkeys(("issues", "issue", "i"), ("issues", _TEA_VERBS)),
+        **dict.fromkeys(("comments", "comment", "c"), ("comments", {**_TEA_VERBS, "a": "add"})),
+        **dict.fromkeys(("labels", "label"), ("labels", _TEA_VERBS)),
+        **dict.fromkeys(("milestones", "milestone", "ms"), ("milestones", _TEA_VERBS)),
+        **dict.fromkeys(
+            ("webhooks", "webhook", "hooks", "hook"), ("webhooks", {**_TEA_VERBS, "u": "update"})
+        ),
+        **dict.fromkeys(
+            ("branches", "branch", "b"), ("branches", {"P": "protect", "U": "unprotect", "rn": "rename"})
+        ),
+    },
+}
 
 
 def canonical_gh_api(tokens: list[str]) -> list[str]:
@@ -532,6 +571,19 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
     if method is None and body:
         method = "POST"
     return [tokens[0], "api", "-X", method, *rest] if method else tokens
+
+
+def canonical_alias(tokens: list[str]) -> list[str]:
+    """``glab mr new``, ``gt release new``, ``tea r c`` become ``glab mr create``,
+    ``gt release create``, ``tea releases create``: the form the rule rows name."""
+    groups = CLI_ALIASES.get(tokens[0]) if tokens else None
+    if not groups or len(tokens) < 2 or tokens[1] not in groups:
+        return tokens
+    group, verbs = groups[tokens[1]]
+    rest = tokens[2:]
+    if rest and rest[0] in verbs:
+        rest = [verbs[rest[0]], *rest[1:]]
+    return [tokens[0], group, *rest]
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:
@@ -1021,7 +1073,7 @@ def expand_segments(
 
 def candidates(tokens: list[str]) -> list[str]:
     plain = strip_wrappers(tokens)
-    verb = canonical_gcloud(canonical_gh_api(expand_push_flags(strip_global_options(plain))))
+    verb = canonical_gcloud(canonical_gh_api(canonical_alias(expand_push_flags(strip_global_options(plain)))))
     forms = [" ".join(plain)]
     if verb != plain:
         forms.append(" ".join(verb))

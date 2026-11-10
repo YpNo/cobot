@@ -3,8 +3,8 @@ name: expert-cicd
 description: >-
   Platform-neutral CI/CD principles: the trigger matrix, one aggregator check, pinning by digest or
   SHA, least privilege and OIDC, environments, SLSA provenance, SBOM and signing, caching, timeouts,
-  secrets. Use for forges without their own expert (Gitea, Woodpecker, Azure, Bitbucket, CircleCI,
-  Jenkins) and when designing any pipeline.
+  secrets. Use for forges without their own expert (Woodpecker, Azure, Bitbucket, CircleCI, Jenkins;
+  Gitea with expert-gitea) and to design any pipeline.
 paths:
   - ".gitea/workflows/**"
   - ".woodpecker*"

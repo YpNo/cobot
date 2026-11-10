@@ -1740,3 +1740,75 @@ def test_mcp_readOfANounThatLooksLikeAVerb_staysSilent(rules):
         assert verdict_of(rules, f"mcp__srv__{name}") is None, name
     for name in ("get_then_delete", "read_plus_write"):
         assert verdict_of(rules, f"mcp__srv__{name}") == "ask", name
+
+
+# ---------------------------------------------------------------- CLI aliases (0.2.0 PR 5)
+
+
+def test_canonicalAlias_glab_rewritesAliasesToTheirCommand(rules):
+    assert rules.canonical_alias(["glab", "mr", "new", "--fill"]) == ["glab", "mr", "create", "--fill"]
+    assert rules.canonical_alias(["glab", "mr", "accept", "12"]) == ["glab", "mr", "merge", "12"]
+    assert rules.canonical_alias(["glab", "mr", "comment", "12"]) == ["glab", "mr", "note", "12"]
+    assert rules.canonical_alias(["glab", "issue", "new"]) == ["glab", "issue", "create"]
+    assert rules.canonical_alias(["glab", "mr", "view", "12"]) == ["glab", "mr", "view", "12"]
+    assert rules.canonical_alias(["git", "mr", "new"]) == ["git", "mr", "new"]
+
+
+def test_gate_glabAliases_getTheirCommandsVerdict(rules):
+    expect = {
+        "glab mr new --fill": "ask",
+        "glab mr new --fill --description 'Generated with X'": "deny",
+        "glab mr accept 12": "ask",
+        "glab mr note 12 -m hi": "ask",
+        "glab mr comment 12 -m hi": "ask",
+        "glab mr approve 12": "ask",
+        "glab issue create -t x": "ask",
+        "glab issue new -t x": "ask",
+        "glab issue note 3 -m hi": "ask",
+    }
+    for command, decision in expect.items():
+        out = rules.gate(payload(command))
+        assert out and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == decision, command
+
+
+def test_canonicalAlias_teaAndGt_groupsAndVerbs(rules):
+    assert rules.canonical_alias(["tea", "r", "c", "v1"]) == ["tea", "releases", "create", "v1"]
+    assert rules.canonical_alias(["tea", "pr", "m", "3"]) == ["tea", "pulls", "merge", "3"]
+    assert rules.canonical_alias(["tea", "repo", "m", "url"]) == ["tea", "repos", "migrate", "url"]
+    assert rules.canonical_alias(["tea", "c", "a", "3", "hi"]) == ["tea", "comments", "add", "3", "hi"]
+    assert rules.canonical_alias(["gt", "release", "new", "v1"]) == ["gt", "release", "create", "v1"]
+    assert rules.canonical_alias(["gt", "repo", "rm", "o/r"]) == ["gt", "repo", "delete", "o/r"]
+
+
+def test_gate_giteaClis_mirrorGhAndGlab(rules):
+    expect = {
+        "gt pr create --title x": "ask",
+        "gt pr new --title x": "ask",
+        "gt pr create --title x --body 'Generated with X'": "deny",
+        "gt pr merge 3": "ask",
+        "gt pr review 3 --approve": "ask",
+        "gt pr comment create 3 --body hi": "ask",
+        "gt issue new --title x": "ask",
+        "gt release create v1": "deny",
+        "gt release new v1": "deny",
+        "gt release publish v1": "deny",
+        "gt repo delete o/r": "deny",
+        "gt repo rm o/r": "deny",
+        "gt api repos/o/r -X DELETE": "deny",
+        "gt api repos/o/r/issues -f title=x": "ask",
+        "tea pulls c --title x": "ask",
+        "tea pr create --title x --description 'Generated with X'": "deny",
+        "tea pr m 3": "ask",
+        "tea pr lgtm 3": "ask",
+        "tea r c v1": "deny",
+        "tea release create v1": "deny",
+        "tea repo rm o/r": "deny",
+        "tea c a 3 hi": "ask",
+        "tea i c --title x": "ask",
+        "tea api /repos/o/r -X DELETE": "deny",
+    }
+    for command, decision in expect.items():
+        out = rules.gate(payload(command))
+        assert out and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == decision, command
+    for command in ("gt pr list", "gt pr view 3", "gt release view v1", "tea pr ls", "tea releases list"):
+        assert rules.gate(payload(command)) is None, command

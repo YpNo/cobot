@@ -1,11 +1,10 @@
 ---
 name: expert-service-mesh
 description: >-
-  Service mesh with Istio: ambient and sidecar modes, mesh-wide STRICT mTLS, AuthorizationPolicy
-  (default deny, allow by principal, empty-rule trap), RequestAuthentication, Telemetry API,
-  egress, canary revisions, Cloud Service Mesh on GKE, istioctl forms that ask. Loads on
-  **/istio/**, **/istio-system/**, **/mesh/**/*.y*ml, **/*istio*.y*ml, **/*-mesh*.y*ml,
-  **/*peerauthentication*.y*ml, **/*authorizationpolicy*.y*ml.
+  Istio and Cloud Service Mesh: ambient and sidecar modes, STRICT mTLS, AuthorizationPolicy (default
+  deny, by principal, the empty-rule trap), RequestAuthentication, Telemetry, egress, canary
+  revisions, the istioctl forms that ask. Use on istio/ and mesh/ folders and PeerAuthentication or
+  AuthorizationPolicy files.
 paths:
   - "**/istio/**"
   - "**/istio-system/**"

@@ -1,13 +1,10 @@
 ---
 name: lang-python
 description: >-
-  Senior Python developer knowledge: verified interpreter and tool versions, the exact uv, ruff,
-  pytest, type-check and audit commands, current idiom (3.12+ typing, pathlib, dataclasses,
-  exceptions, async), pyproject.toml and uv.lock shape, test rules, security specifics
-  (subprocess, deserialisation, secrets), Home Assistant custom components, pitfalls. Loads on
-  **/*.py, **/pyproject.toml, **/uv.lock, **/requirements*.txt and inside python-builder. Use
-  before writing, reviewing or testing Python, adding a package or touching Python CI. Versions:
-  references/versions.md; CI job: references/ci.md.
+  Senior Python: verified interpreter and tools, the exact uv, ruff, pytest, type-check and audit
+  commands, 3.12+ idiom, pyproject and uv.lock shape, test and security rules, Home Assistant custom
+  components. Use on *.py, pyproject.toml, uv.lock, requirements*.txt, in python-builder, and before
+  writing, reviewing or testing Python.
 paths:
   - "**/*.py"
   - "**/pyproject.toml"

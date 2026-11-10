@@ -1,9 +1,7 @@
 ---
 name: {{SKILL}}
 description: >-
-  {{DESCRIPTION}} Use {{WHEN}}. Skeleton created by /cobot:learn on {{DATE}}: every line in
-  references/learned.md carries its status, source and date; the skill stays reported until it
-  has served twice, then the owner promotes it to a full expert.
+  {{DESCRIPTION}} Use {{WHEN}}. Learned skeleton ({{DATE}}), reported until promoted.
 paths:
 {{PATHS}}
 user-invocable: false

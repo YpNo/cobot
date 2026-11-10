@@ -1,13 +1,10 @@
 ---
 name: expert-ui
 description: >-
-  UI/UX design knowledge for web interfaces and for constrained devices such as the Miyoo Mini
-  Plus (640×480, D-pad, OnionOS themes), current as of 2026-11-08. Loads when stylesheets,
-  components, Tailwind config, token files or theme folders are touched, and when a request asks
-  for a screen, layout, theme, token sheet or accessibility fix. Gives WCAG 2.2 AA by criterion,
-  the token discipline, the type scale, the component-system choice, device profiles, the brief →
-  tokens → screens procedure (Google Stitch under the gate when the owner registered it) and
-  pitfalls. Facts and versions live in references/.
+  UI/UX for web interfaces and small devices such as the Miyoo Mini Plus (640×480, D-pad, OnionOS
+  themes): WCAG 2.2 AA, tokens, type scale, components, device profiles, Google Stitch under the
+  gate. Use on stylesheets, components, Tailwind config, tokens and themes, and for a screen,
+  layout, theme or accessibility fix.
 paths:
   - "**/*.css"
   - "**/*.scss"

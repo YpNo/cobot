@@ -1,13 +1,10 @@
 ---
 name: expert-gha
 description: >-
-  GitHub Actions CI/CD, release engineering and CI supply-chain security. Loads on
-  .github/workflows/**, .github/actions/**, action.yml or action.yaml, and when the task is a CI
-  pipeline, a tag-driven release, OIDC to Google Cloud, artifact attestations, Dependabot or
-  Renovate for actions, or a zizmor finding. Gives the non-negotiables (full-SHA pins,
-  least-privilege permissions, persist-credentials false, concurrency, timeouts, no untrusted ${{
-  }} in run, zizmor), workflow shapes, release and SLSA guidance, cost levers, pitfalls. SHAs:
-  references/actions.md; workflows: references/snippets.md.
+  GitHub Actions CI/CD and supply-chain security: full-SHA pins, least-privilege permissions,
+  persist-credentials false, concurrency, timeouts, no untrusted ${{ }} in run, zizmor, releases,
+  attestations, OIDC. Use on .github/workflows/, .github/actions/, action.yml, and for a CI
+  pipeline, a tag-driven release, Dependabot or a zizmor finding.
 paths:
   - ".github/workflows/**"
   - ".github/actions/**"

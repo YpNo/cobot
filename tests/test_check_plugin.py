@@ -65,3 +65,13 @@ def test_check_consultProcedureWithADatedKnowledgeLine_fails(contract, plugin):
     assert any("consult" in p and "dated knowledge line" in p for p in contract.check(plugin))
     (folder / "domains" / "gha.md").write_text("Procedure only.\n")
     assert not any("dated knowledge line" in p for p in contract.check(plugin))
+
+
+def test_learnSkeleton_fixedDescriptionLeavesRoomUnderTheCap(contract):
+    # a promoted skeleton is an expert-* skill: its description must fit 350 with the learner's text
+    template = SCRIPT.parents[1] / "plugins" / "cobot" / "skills" / "learn" / "templates" / "expert-SKILL.md"
+    description = contract.frontmatter(template.read_text())["description"]
+    fixed = (
+        description.replace("{{DESCRIPTION}}", "").replace("{{WHEN}}", "").replace("{{DATE}}", "2026-11-10")
+    )
+    assert len(fixed) <= 80, fixed

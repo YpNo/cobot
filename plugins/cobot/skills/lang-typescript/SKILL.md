@@ -1,13 +1,10 @@
 ---
 name: lang-typescript
 description: >-
-  Senior TypeScript developer knowledge: verified Node, TypeScript and tool versions, the exact
-  pnpm, tsc, vitest and lint commands, strict tsconfig, current idiom (ESM, narrowing, errors,
-  async), project shape, test rules, supply-chain and runtime security, pitfalls. Loads on
-  **/*.ts, **/*.tsx, **/package.json, **/tsconfig*.json, **/pnpm-lock.yaml, **/package-lock.json
-  and inside typescript-builder. Use before writing, reviewing or testing TypeScript, adding a
-  package or touching Node CI. React, Next and Vue are separate skills; versions:
-  references/versions.md; CI job: references/ci.md.
+  Senior TypeScript: verified Node, TypeScript and tools, the exact pnpm, tsc, vitest and lint
+  commands, strict tsconfig, ESM idiom, test, supply-chain and runtime security rules. Use on *.ts,
+  *.tsx, package.json, tsconfig*.json and lockfiles, in typescript-builder, and before writing,
+  reviewing or testing TypeScript or touching Node CI.
 paths:
   - "**/*.ts"
   - "**/*.tsx"

@@ -438,7 +438,7 @@ def test_writeLines_dedupesRedatesCapsAndSkeleton(tmp_path):
         and '  - "**/*.yaml"\n  - "esphome/**"' in head
         and "ESPHome firmware YAML." in head
     )
-    assert "Use when an esphome/ folder exists." in head and "stays reported" in head
+    assert "Use when an esphome/ folder exists." in head and "reported until promoted" in head
     explicit = knowledge.write_lines(
         plugin,
         "zwave",

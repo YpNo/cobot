@@ -1,6 +1,6 @@
 ---
 type: tool_used
 tool: Skill
-input_match: "consult-service-mesh"
+input_match: "consult[\\s\\S]{0,40}service-mesh"
 min: 1
 ---

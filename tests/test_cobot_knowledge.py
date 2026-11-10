@@ -136,13 +136,14 @@ def test_scanPlugin_knowledgeSkillsOnly_andMemoryTopics(tmp_path):
                 "references/versions.md": [dated(40, claim="tool 2.0 current"), dated(100)],
             },
             "expert-y": {"references/a.md": [dated(5, status="reported")]},
+            "fw-z": {"references/versions.md": [dated(6, claim="framework 2.0")]},
             "consult-y": {"SKILL.md": ["---\nname: consult-y\ndescription: d\n---", dated(2)]},
             "spec": {"SKILL.md": ["---\nname: spec\ndescription: d\n---", dated(400, claim="never counted")]},
             "lang-empty": {"references/none.md": ["no dated line here"]},
         },
     )
     groups = knowledge.scan_plugin(plugin)
-    assert sorted(groups) == ["expert-y", "lang-x"]  # consult procedures hold no dated lines (check-plugin)
+    assert sorted(groups) == ["expert-y", "fw-z", "lang-x"]  # consult procedures hold no dated lines
     assert [line.file.name for line in groups["lang-x"]] == ["SKILL.md", "versions.md", "versions.md"]
     memory = tmp_path / ".agent"
     (memory / "knowledge").mkdir(parents=True)
@@ -328,6 +329,10 @@ def test_skillName_mapping(tmp_path):
     plugin = make_plugin(tmp_path, {"lang-go": {}, "expert-gha": {}})
     assert knowledge.skill_name("go", None, plugin) == ("lang-go", True)
     assert knowledge.skill_name("gha", None, plugin) == ("expert-gha", True)
+    assert knowledge.skill_name("react", None, make_plugin(tmp_path / "fw", {"fw-react": {}})) == (
+        "fw-react",
+        True,
+    )
     assert knowledge.skill_name("github-actions", "expert-gha", plugin) == ("expert-gha", True)
     assert knowledge.skill_name("esphome", None, plugin) == ("expert-esphome", False)
     assert knowledge.skill_name("esphome", "expert-home", plugin) == ("expert-home", False)

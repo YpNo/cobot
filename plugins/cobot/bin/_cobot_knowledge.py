@@ -45,7 +45,8 @@ HISTORY_RE = re.compile(
     r"\b(?:since|stable in|introduced|added in|deprecated in|removed in)\b|\(\w{3} \d{4}\)", re.I
 )
 VERSION_FILES = frozenset({"versions", "actions", "ci"})
-KNOWLEDGE_SKILL_PREFIXES = ("lang-", "expert-")  # consult procedures hold no dated lines (check-plugin)
+# consult procedures hold no dated lines (check-plugin caps and checks these same prefixes)
+KNOWLEDGE_SKILL_PREFIXES = ("lang-", "expert-", "fw-")
 STATUSES = ("verified", "reported", "assumed")
 MARKETPLACE = "cobot"
 
@@ -413,8 +414,8 @@ def marketplace_path() -> str | None:
 
 def skill_name(topic: str, requested: str | None, plugin: Path) -> tuple[str, bool]:
     """The skill a general entry belongs to and whether it exists: the requested name, or an
-    exact ``lang-<topic>`` / ``expert-<topic>`` / ``<topic>`` match."""
-    for name in [requested] if requested else [f"lang-{topic}", f"expert-{topic}", topic]:
+    exact ``lang-<topic>`` / ``expert-<topic>`` / ``fw-<topic>`` / ``<topic>`` match."""
+    for name in [requested] if requested else [f"lang-{topic}", f"expert-{topic}", f"fw-{topic}", topic]:
         if name and (plugin / "skills" / name / "SKILL.md").is_file():
             return name, True
     return (requested or f"expert-{topic}"), False

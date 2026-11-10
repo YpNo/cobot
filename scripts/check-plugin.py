@@ -13,10 +13,10 @@ from pathlib import Path
 SKILL_MAX_LINES = 500
 DESCRIPTION_MAX = 1536
 SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every model-visible skill sits in the system prompt of every turn
-KNOWLEDGE_DESCRIPTION_MAX = (
-    350  # expert-* and lang-*: plugin skills are always listed, paths: does not gate them
-)
+# knowledge skills: plugin skills are always listed and paths: does not gate them
+KNOWLEDGE_DESCRIPTION_MAX = 350
 AGENT_BUDGET_TOKENS = 600
+KNOWLEDGE_PREFIXES = ("lang-", "expert-", "fw-")  # the prefixes _cobot_knowledge tracks for staleness
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
@@ -72,7 +72,7 @@ def check(plugin: Path) -> list[str]:
             problems.append(
                 f"{skill}: description {len(fields['description'])} chars (max {DESCRIPTION_MAX})"
             )
-        if skill.parent.name.startswith(("lang-", "expert-")):
+        if skill.parent.name.startswith(KNOWLEDGE_PREFIXES):
             length = len(fields.get("description", ""))
             if length > KNOWLEDGE_DESCRIPTION_MAX:
                 problems.append(f"{skill}: description {length} chars (max {KNOWLEDGE_DESCRIPTION_MAX})")

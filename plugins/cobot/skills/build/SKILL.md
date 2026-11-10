@@ -18,8 +18,10 @@ verified commands, run `/code-review low` for small, then one journal line throu
    - `risk` → you do it yourself, in the main thread, test first.
    - otherwise pick the builder by the files in scope: `Cargo.toml` or `*.rs` →
      `cobot:rust-builder`; `go.mod` or `*.go` → `cobot:go-builder`; `pyproject.toml` or `*.py`
-     → `cobot:python-builder`; `package.json`, `*.ts` or `*.tsx` → `cobot:typescript-builder`;
-     `*.tf` → `cobot:terraform-builder`; else `cobot:builder`. A task that spans two stacks
+     → `cobot:python-builder`; `package.json`, `*.ts`, `*.tsx`, `*.jsx` or `*.vue` →
+     `cobot:typescript-builder`; `*.tf` → `cobot:terraform-builder`; else `cobot:builder`. For the
+     TypeScript builder, name the framework skill in the brief from the nearest `package.json`
+     dependencies: `react` → `fw-react`, `next` → `fw-next` (with `fw-react`), `vue` → `fw-vue`. A task that spans two stacks
      (headplane has `package.json` and `go.mod`) is split into one task per stack, or goes to the
      builder of the files it changes most with the other skill named in the brief. Brief = the
      task row, its acceptance, the files in scope, the verified commands, nothing more (not the

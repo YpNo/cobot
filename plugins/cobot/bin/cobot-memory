@@ -131,7 +131,7 @@ class Memory:
         if roots and roots & trusted:
             return True, "root commit listed in ~/.claude/cobot/trusted"
         if not remote_map and not roots:
-            return False, "no remote and no commit: onboard with --trust-root once the first commit exists"
+            return False, "no remote and no commit: /cobot:onboard starts it"
         detail = f" ({', '.join(strangers)})" if strangers else ""
         return False, f"no identity matches every remote{detail} and the root commit is not trusted"
 
@@ -324,11 +324,32 @@ def other_agent_files(mem: Memory) -> list[str]:
     return sorted(n for n in names if n not in KNOWN_AGENT_FILES and AGENT_FILE_RE.fullmatch(n))
 
 
+ONBOARD_ASK = "Ask the owner to type /cobot:onboard."
+
+
+def no_memory_line(mem: Memory) -> str | None:
+    """The brief of a folder without CONTEXT.md, by tree state; None when memory exists."""
+    if (mem.dir / "CONTEXT.md").is_file():
+        return None
+    state = tree_state(mem.cwd)
+    if state == TREE_NOT_REPOSITORY:
+        return "cobot memory: not a git repository; nothing loaded."
+    if state == TREE_INSIDE_ANOTHER:
+        return f"cobot memory: none yet (inside another repository: {mem.root}). {ONBOARD_ASK}"
+    label = "new project" if state.startswith("new") else "existing repository"
+    return f"cobot memory: none yet ({label}). {ONBOARD_ASK}"
+
+
 def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
+    missing = no_memory_line(mem)
+    if missing and missing.endswith("nothing loaded."):
+        return missing
     if trust_check:
         trusted, reason = mem.trust()
         if not trusted:
-            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Ask the owner to type /cobot:onboard."
+            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. {ONBOARD_ASK}"
+    if missing:
+        return missing
     entries = mem.journal_entries()[:2]
     journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
     findings = mem.open_findings()
@@ -390,6 +411,11 @@ def write_never_push_rules(mem: Memory, external: Path) -> list[str]:
 
 
 def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
+    if "trust-root" in flags and not root_commits(mem.root):
+        return (
+            "init: --trust-root needs a commit; nothing written. Make the first commit "
+            '(git commit --allow-empty -m "chore: initial commit"), then run init --trust-root again.'
+        )
     lines = []
     if "foreign" in flags:
         external = mem.external_path()

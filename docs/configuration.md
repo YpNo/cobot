@@ -53,9 +53,14 @@ judges its tools.
   `claude mcp add stitch --transport http https://stitch.googleapis.com/mcp --header "X-Goog-Api-Key: …" -s user`.
   Generate and edit tools ask, list and get tools are silent.
 - **Google Cloud remote MCP servers** (`https://<service>.googleapis.com/mcp`) for
-  `expert-gcp`: setup lands with the 0.2.0 GCP proof (release spec, PR 6). Read tools are
-  silent; every other tool asks, and a principal limited to read-only tools by IAM is the
-  recommended identity.
+  `expert-gcp`: register each one as `gcp-<service>` with a Desktop OAuth client, from inside
+  the repository:
+  `claude mcp add --transport http --client-id … --client-secret --callback-port 8765 -H "x-goog-user-project: <project>" -s local gcp-logging https://logging.googleapis.com/mcp`,
+  then sign in with `/mcp` from the CLI. Under a `gcp-*` name, read tools are silent,
+  write tools with a known verb (`create_`, `delete_`, `apply_`, …) are refused (`never`) and any
+  other tool asks; under any other name, every tool that is not a read asks. The full setup,
+  including the IAM deny policy for projects in an organisation and the SSH tunnel for a remote
+  host, is in `plugins/cobot/skills/expert-gcp/references/mcp.md`.
 
 ## Cloud read lists
 

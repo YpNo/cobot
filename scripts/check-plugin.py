@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Plugin contract check (CI): SKILL.md sizes, description lengths, agent listing budget, knowledge lines.
+"""Plugin contract check (CI): SKILL.md sizes, description lengths, agent listing budget, protocol size,
+knowledge lines.
 
 Usage: python3 scripts/check-plugin.py [plugin dir]   exit 1 on any violation.
 """
@@ -16,6 +17,7 @@ SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every model-visible skill sits in the sy
 # knowledge skills: plugin skills are always listed and paths: does not gate them
 KNOWLEDGE_DESCRIPTION_MAX = 350
 AGENT_BUDGET_TOKENS = 600
+PROTOCOL_MAX_CHARS = 3000  # protocol.md is injected into every session (docs/02-design.md)
 KNOWLEDGE_PREFIXES = ("lang-", "expert-", "fw-")  # the prefixes _cobot_knowledge tracks for staleness
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
@@ -92,8 +94,17 @@ def check(plugin: Path) -> list[str]:
     tokens = total_chars // 4
     if tokens > AGENT_BUDGET_TOKENS:
         problems.append(f"agents: listing ≈ {tokens} tokens (budget {AGENT_BUDGET_TOKENS})")
+    protocol = plugin / "protocol.md"
+    protocol_chars = len(protocol.read_text(encoding="utf-8")) if protocol.is_file() else 0
+    if not protocol.is_file():
+        problems.append("protocol.md: missing")
+    elif protocol_chars > PROTOCOL_MAX_CHARS:
+        problems.append(f"protocol.md: {protocol_chars} chars (max {PROTOCOL_MAX_CHARS})")
     skills = list((plugin / "skills").glob("*/SKILL.md"))
-    print(f"agents listing ≈ {tokens} tokens; skills: {len(skills)}, listed {skill_chars} chars")
+    print(
+        f"agents listing ≈ {tokens} tokens; skills: {len(skills)}, listed {skill_chars} chars; "
+        f"protocol {protocol_chars} chars"
+    )
     return problems
 
 

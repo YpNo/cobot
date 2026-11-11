@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Google Cloud remote MCP servers in `expert-gcp` (`references/mcp.md`, 0.2.0 PR 6, decision 28
+  amended): the owner registers them as `gcp-<service>` with a Desktop OAuth client, signs in
+  with `/mcp` from the CLI (an SSH tunnel for the callback on a remote host), and the main
+  thread reads logs, events and cluster state through them; consultants keep auditing files.
+  Proven on gcp-platform with `list_log_entries` and `list_clusters`; the deny-policy guard needs
+  an organisation, so a personal project relies on the gate's refusals.
 - R2 slice 4 (`.agent/specs/r2-stacks.md`): `fw-react` (React 19.3, the Compiler, React Router 8,
   TanStack Query), `fw-next` (Next.js 16.4, every line reported until a repository exercises it),
   `fw-vue` (Vue 3.5, Pinia 4, vue-router 5), `lang-shell` promoted from `lang-fallback`,
@@ -152,6 +158,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The protocol is back under its stated 3 000 characters (2 995, was 3 484) with no rule
+  dropped, and its delegation line names builders by pattern (`cobot:<language>-builder`, else
+  `cobot:builder`) instead of three of the six.
+  `scripts/check-plugin.py` now fails CI when the protocol passes 3 000 characters.
 - **Breaking: one `/cobot:consult [domain]` replaces the seven `consult-<domain>` skills.** It
   spawns one read-only consultant per domain in one message, so audits run in parallel (forked
   skills ran one at a time, measured 2026-11-10); with no domain it audits every domain it
@@ -203,6 +213,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `cobot-memory stamp` reads HEAD in the worktree it runs from, not the main checkout: a wrap
+  done in a worktree, where branch work happens, read as `missing — HEAD moved since the stamp`
+  in `contribute`, `ship` and the gate's `git push` reason.
 - The gate's ask reason names what made a command opaque: the first `$(…)` or backtick span, or
   the first opaque segment, instead of whichever segment came last (`opaque command 'head -14'`
   for a loop with a substitution, seen 20 times in the gcp-platform proof). A shell access to a
@@ -265,6 +278,14 @@ All notable changes to this project are documented here. The format follows
   joined to it as in `get_or_create`); an owner or project `ask` outranks it. Browser servers,
   `fetch` and context7's `resolve-library-id` now ask until the owner adds
   `allow mcp__<server>__*`; `update_plan`, which asked on every call, is silent.
+- Google Cloud MCP servers registered as `gcp-*` lose their known write tools: 23 default `never`
+  rules refuse them by first verb (`create_`, `update_`, `delete_`, `apply_`, `deploy_`,
+  `cancel_`, `set_`, `publish` and the rest, `execute_sql` exactly, since `execute_sql_readonly`
+  is a read), and an owner `allow mcp__gcp-<server>__*` cannot lift them. A tool with another
+  first word that is not a read still asks; none runs silently. A personal project with
+  no organisation cannot hold the IAM deny policy that would refuse them server-side (the
+  gcp-platform spike, 2026-11-11). `cobot-rules sync` lists a glob inside an MCP name as not
+  expressible instead of writing it into settings; a trailing `__*` is still written.
 
 ## [0.1.0] - 2026-11-06
 

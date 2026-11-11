@@ -77,6 +77,8 @@ MCP tools are judged by name: a read (`list`, `get`, `describe`, `search`, `read
 write word joined to it as in `get_or_create`) and the desktop app's own UI tools are silent;
 every other MCP tool asks, a browser server's clicks and navigation included, since it acts with
 the owner's sign-ins. An owner or project `ask` outranks a read; `never` outranks everything.
+On Google Cloud servers registered as `gcp-*`, default `never` rules refuse the write tools by
+verb, since a personal project cannot hold the IAM deny policy that would refuse them.
 
 Hooks run as the user. An untrusted repository's `.agent/` is never injected into the session;
 that protection is advisory for the model's own reads.

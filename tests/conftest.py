@@ -40,6 +40,14 @@ def session():
     return load_script("cobot-session", "cobot_session")
 
 
+@pytest.fixture(autouse=True)
+def isolated_owner_layer(tmp_path_factory, monkeypatch):
+    """No test reads the owner's real rules layer (F-15): an empty one, unless a test sets its own."""
+    owner = tmp_path_factory.mktemp("owner") / "cobot.rules"
+    owner.write_text("")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+
+
 @pytest.fixture(scope="session")
 def rules():
     loader = importlib.machinery.SourceFileLoader("cobot_rules", str(GATE_SCRIPT))

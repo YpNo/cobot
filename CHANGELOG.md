@@ -158,6 +158,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The protocol is back under its stated 3 000 characters (2 995, was 3 484) with no rule
+  dropped, and its delegation line names builders by pattern (`cobot:<language>-builder`, else
+  `cobot:builder`) instead of three of the six.
 - **Breaking: one `/cobot:consult [domain]` replaces the seven `consult-<domain>` skills.** It
   spawns one read-only consultant per domain in one message, so audits run in parallel (forked
   skills ran one at a time, measured 2026-11-10); with no domain it audits every domain it

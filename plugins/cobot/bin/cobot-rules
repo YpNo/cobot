@@ -38,7 +38,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_make  # noqa: E402
-from _cobot_common import config_dir, plugin_root, repo_root  # noqa: E402
+from _cobot_common import HelpRequested, UsageError, config_dir, parse_cli, plugin_root, repo_root  # noqa: E402
 
 ASK, DENY = "ask", "deny"
 DECISION_OF = {"never": DENY, "ask": ASK, "allow": "allow"}
@@ -1428,17 +1428,13 @@ def gate(stdin: str) -> str | None:
     return hook_output(verdict.decision, reason)
 
 
+VALUE_OPTIONS = {"check": {"tool", "agent"}, "explain": {"tool", "agent"}, "sync": {"settings"}}
+SWITCHES: dict[str, set[str]] = {}
+
+
 def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:
-    positional: list[str] = []
-    options: dict[str, str] = {}
-    i = 0
-    while i < len(argv):
-        if argv[i].startswith("--") and i + 1 < len(argv):
-            options[argv[i][2:]] = argv[i + 1]
-            i += 2
-        else:
-            positional.append(argv[i])
-            i += 1
+    """Raises HelpRequested or UsageError (see _cobot_common.parse_cli); the gate takes no option."""
+    positional, options, _ = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
     return positional, options
 
 
@@ -1535,7 +1531,14 @@ def cmd_sync(options: dict[str, str]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    positional, options = parse_options(argv)
+    try:
+        positional, options = parse_options(argv)
+    except HelpRequested:
+        print(__doc__.strip())
+        return 0
+    except UsageError as error:
+        print(f"cobot-rules: {error}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
     command = positional[0] if positional else ""
     if command == "gate":
         output = gate(sys.stdin.read())

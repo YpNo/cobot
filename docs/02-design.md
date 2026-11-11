@@ -363,7 +363,7 @@ condense what carries a decision. A saving that forces a second run is a loss.
 | Technique | Mechanism | Guard |
 |---|---|---|
 | rtk | the owner's hook stays; the gate strips the prefix, patterns exist in both forms; subagents inherit the hook | `rtk proxy` whenever exact output matters: a version to pin, an eval report, a diff under review, a failure that goes into a proof line, a spec or a knowledge entry |
-| brief, not files | SessionStart injects `cobot-memory brief` (≤ 6k chars), skills ask for slices (`brief --spec <slug>`, `--knowledge <topic>`) | nothing re-reads a file already in context; the protocol says so |
+| brief, not files | SessionStart injects `cobot-memory brief` (≤ 6k chars), skills read slices (one spec section, one knowledge topic), not whole files | nothing re-reads a file already in context; the protocol says so |
 | lazy knowledge | `paths:`-gated lang and expert skills; `references/` loaded by the skill on demand; SKILL.md ≈ 150 lines | SKILL.md < 500 lines checked in CI |
 | isolation for bulk reading | consultant, learner, built-in Explore return structured output; ≤ 10 findings, ≤ 1 200 tokens per report; builders receive the task section of the spec, not the spec | report caps in the agent prompts and the SubagentStop check (R2) |
 | routing | §9; haiku for extraction, sonnet for builders and consults, the owner's model only where judgment decides | per-call aliases; routing changes need `cobot-usage` evidence |

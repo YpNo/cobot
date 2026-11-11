@@ -14,6 +14,50 @@ SECRET_RE = re.compile(
     r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
 )
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+HELP_ARGS = ("-h", "--help")
+
+
+class HelpRequested(Exception):
+    """``-h`` or ``--help`` anywhere: print the usage, run nothing."""
+
+
+class UsageError(Exception):
+    """An option the command does not take, or one missing its value."""
+
+
+def parse_cli(
+    argv: list[str], values: dict[str, set[str]], switches: dict[str, set[str]]
+) -> tuple[list[str], dict[str, str], set[str]]:
+    """Split argv into positionals, ``--name value`` options and ``--name`` switches, per command.
+
+    The command is the first positional. Raises HelpRequested before anything else is looked at,
+    and UsageError for an option the command's tables do not name: a typo or ``--help`` must
+    never fall through to the command (``init --help`` once wrote the memory files).
+    """
+    if any(arg in HELP_ARGS for arg in argv):
+        raise HelpRequested
+    command = next((arg for arg in argv if not arg.startswith("--")), "")
+    takes_value, takes_switch = values.get(command, set()), switches.get(command, set())
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    flags: set[str] = set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        name = arg[2:]
+        if not arg.startswith("--"):
+            positional.append(arg)
+        elif name in takes_value:
+            if i + 1 >= len(argv):
+                raise UsageError(f"{arg} needs a value")
+            options[name] = argv[i + 1]
+            i += 1
+        elif name in takes_switch:
+            flags.add(name)
+        else:
+            raise UsageError(f"unknown option {arg} for '{command or '(no command)'}'")
+        i += 1
+    return positional, options, flags
 
 
 def plugin_root() -> Path:

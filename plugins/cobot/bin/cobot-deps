@@ -18,13 +18,23 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
-from _cobot_common import repo_root  # noqa: E402
+from _cobot_common import HelpRequested, UsageError, parse_cli, repo_root  # noqa: E402
 from _cobot_deps import brief, cache_path, check, report  # noqa: E402
 
 
+VALUE_OPTIONS: dict[str, set[str]] = {}
+SWITCHES = {"check": {"fresh", "json"}}
+
+
 def main(argv: list[str]) -> int:
-    flags = {arg[2:] for arg in argv if arg.startswith("--")}
-    positional = [arg for arg in argv if not arg.startswith("--")]
+    try:
+        positional, _, flags = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
+    except HelpRequested:
+        print(__doc__.strip())
+        return 0
+    except UsageError as error:
+        print(f"cobot-deps: {error}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
     command = positional[0] if positional else ""
     root = repo_root(os.getcwd())
     today = date.today()

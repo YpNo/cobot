@@ -40,6 +40,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _cobot_common import (  # noqa: E402
     SECRET_RE,
+    HelpRequested,
+    UsageError,
     checkout_root,
     cobot_config_dir,
     config_dir,
@@ -47,6 +49,7 @@ from _cobot_common import (  # noqa: E402
     git,
     host_owner_repo,
     memory_dir,
+    parse_cli,
     plugin_root,
     remotes,
     repo_root,
@@ -758,27 +761,42 @@ def cmd_check(mem: Memory) -> str:
 # ---------------------------------------------------------------- CLI
 
 
+VALUE_OPTIONS = {
+    "init": {"profile"},
+    "brief": {"budget"},
+    "findings": {"goes-to"},
+    "learn": {"source"},
+    "compact": {"keep", "summary"},
+    "risks": {"why", "by", "days"},
+}
+SWITCHES = {
+    "init": {"foreign", "add-identity", "trust-root"},
+    "brief": {"no-trust-check"},
+    "findings": {"open"},
+    "learn": {"dry-run", "keep-assumed", "promote", "in-place"},
+    "knowledge": {"stale", "json", "brief"},
+    "compact": {"dry-run", "force"},
+}
+PROFILES = ("spike", "script", "cli", "library", "service", "infra")
+
+
 def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
-    positional: list[str] = []
-    options: dict[str, str] = {}
-    flags: set[str] = set()
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in ("--profile", "--budget", "--goes-to", "--source", "--keep", "--summary", "--why", "--by", "--days") and i + 1 < len(argv):
-            options[arg[2:]] = argv[i + 1]
-            i += 2
-            continue
-        if arg.startswith("--"):
-            flags.add(arg[2:])
-        else:
-            positional.append(arg)
-        i += 1
+    """Raises HelpRequested or UsageError; see parse_cli."""
+    positional, options, flags = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
+    if positional[:1] == ["init"] and options.get("profile", "library") not in PROFILES:
+        raise UsageError(f"profile must be one of {', '.join(PROFILES)}")
     return positional, options, flags
 
 
 def main(argv: list[str]) -> int:
-    positional, options, flags = parse(argv)
+    try:
+        positional, options, flags = parse(argv)
+    except HelpRequested:
+        print(__doc__.strip())
+        return 0
+    except UsageError as error:
+        print(f"cobot-memory: {error}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
     mem = Memory()
     command = positional[0] if positional else ""
     sub = positional[1] if len(positional) > 1 else ""

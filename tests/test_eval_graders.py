@@ -144,3 +144,30 @@ def test_consultFanOut_wantsTwoConsultantsAndNoEdit():
     found = graders("consult-fan-out")
     assert found["two-consultants"]["min"] == "2" and found["two-consultants"]["tool"] == "Agent"
     assert found["no-edit"]["max"] == "0" and found["no-write"]["max"] == "0"
+
+
+def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
+    found = graders("new-project-onboard")
+    good = "Wrote .agent/ for a cli project; the language is left to the spec. Next: /cobot:spec <goal>."
+    bad = "Once you confirm the language and the first commit lands, re-run `/cobot:onboard`."
+    assert matches(found["next-is-spec"], good) and matches(found["no-second-onboard"], good)
+    assert not matches(found["no-second-onboard"], bad)
+    profile = found["init-with-profile"]["input_match"]
+    assert re.search(profile, '{"command": "cobot-memory init --profile cli --trust-root"}')
+    assert not re.search(profile, '{"command": "cobot-memory init --help"}')
+
+
+def test_newProjectOnboard_fixtureRootCommitIsTheSameEveryRun(tmp_path):
+    roots = []
+    for run in ("a", "b"):
+        workspace = tmp_path / run
+        workspace.mkdir()
+        env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+        subprocess.run(
+            ["bash", str(EVALS / "new-project-onboard" / "fixture.sh")], cwd=workspace, env=env, check=True
+        )
+        out = subprocess.run(
+            ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=workspace, capture_output=True, text=True
+        )
+        roots.append(out.stdout.strip())
+    assert roots[0] and roots[0] == roots[1]

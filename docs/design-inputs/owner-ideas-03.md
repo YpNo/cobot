@@ -1,7 +1,7 @@
 # Owner ideas, fourth review — 2026-11-09 (input for 0.3.0)
 
 Three ideas the owner raised for 0.3.0, each researched from primary sources the same day and
-challenged. Nothing here is built yet: each section becomes a spec, and the spec's challenger
+challenged, and a fourth added on 2026-11-11 after the GCP proof (section 4). Nothing here is built yet: each section becomes a spec, and the spec's challenger
 gets the last word. Proposed order for 0.3.0: the shared evidence reference (R-1, R-2, R-8),
 then the debug path (it is useful at work and at home), then the Antigravity spike and adapter,
 then `cobot-reverse` with Home Assistant (design §15, R3).
@@ -216,6 +216,121 @@ branch.
 3. `SessionStart` `injectSteps` carries a 6 000-character brief.
 4. `agy plugin import claude` on this machine: what it carries of hooks and agents.
 
+## 4. Cloud writes: opt-in MCP for reads, CLI for writes, session grants (2026-11-11)
+
+### What was asked
+
+After the gcp-platform proof and the Google Cloud MCP spike (journal 2026-11-11, PR 24), the
+owner wants two things:
+
+1. **Opt-in MCP.** The agent asks whether to set up and use the Google Cloud MCP servers. If
+   yes, it guides the setup; if no, it uses `gcloud`, `kubectl` and the other usual tools.
+2. **Agents that can work alone with granted permission.** For example: "build and test a full
+   lab or demo on my GCP environment" needs creates, applies and destroys. `never` stays the
+   default for `terraform apply` and `destroy`, but it is too strong. When a write is needed,
+   the agent asks once, either for the whole session or for each command.
+
+### MCP opt-in (confirmed)
+
+- **Asked once per repository,** the first time Google Cloud work comes up: onboarding finds a
+  `google` provider, or the first `/cobot:consult gcp` or debug task. The agent knows whether
+  servers are registered, because `mcp__gcp-*` tools appear in its tool list.
+- **The answer is a CONTEXT.md line,** `gcp-mcp: yes | no`. The agent never asks again; the
+  owner edits the line to change it.
+- **Yes:** the agent guides `expert-gcp/references/mcp.md`. It checks enabled APIs and prepares
+  the commands; the owner does the console steps, runs `claude mcp add` (the secret is
+  prompted) and signs in with `/mcp`.
+- **No:** `gcloud logging read`, `container clusters describe`, `kubectl get events` and so on.
+  Those reads are silent already, and consultants can use them, which they cannot with MCP.
+- **Neither available** (no `gcloud`, no credentials): the agent gives the commands and asks the
+  owner to paste the output. It never guesses.
+
+### Reads through MCP, writes through the CLI (confirmed)
+
+MCP write tools stay `never` on `gcp-*` servers, even under a grant. Writes go through
+`gcloud`, `kubectl`, `helm` and Terraform:
+
+- **The gate can judge a command.** It sees the verb, the resource and `--project`, but not an
+  inline payload such as `apply_k8s_manifest`'s manifest (decision 25).
+- **Commands can be undone.** Each one is logged with its inverse, and Terraform has `destroy`.
+  An MCP write leaves nothing in the repository to replay or undo.
+- **One guard.** The 23-verb list never has to grow, because writes do not go through MCP.
+
+### Session grants (confirmed: the owner may let the gate emit `allow`)
+
+- **Two levels instead of three.**
+  - `never` stays hard and is never granted (the list below).
+  - Every other write is `ask`, and `ask` becomes grantable. This includes `terraform`,
+    `terragrunt` and `tofu` `apply` and `destroy`, which move from `never` to `ask`, plus
+    `gcloud`, `kubectl` and `helm` writes.
+- **One question per kind of write.** The first time a granted kind of write is needed, the
+  agent asks with three choices: this command only, every such command for this session on this
+  target, or no.
+- **Every grant names a target (confirmed).** The target is a `gcloud --project`, a `kubectl
+  --context` or a Terraform folder (`-chdir` or the working directory). A command without an
+  explicit target is not covered and still asks. A grant for `ypno-lab` never reaches
+  `ypno-family`.
+- **The owner gives the grant.** It is recorded by `cobot-rules grant <kind> --target <t>
+  --session`, a command the gate always asks about and that no grant covers. The grant file
+  lives in `~/.claude/cobot/grants/<session id>`, outside the repository. The model can neither
+  edit nor write it (`never` rows below). It ends with the session, or earlier with
+  `cobot-rules grant --revoke`.
+- **The contract change (ADR in the 0.3.0 spec).** The gate emits `allow` in exactly one case:
+  a command covered by an active grant. Silence would leave Claude Code's own permissions to
+  prompt, so "working alone" needs this.
+- **Terraform under a grant applies a saved plan only:** `plan -out <file>`, its summary
+  journaled, then `apply <file>`. Never `-auto-approve` on a fresh plan, so what changed can
+  always be read afterwards.
+- **Main thread only.** Builders and consultants never inherit a grant, so "risk tasks stay
+  with you" in the protocol holds.
+- **Logged and reversible.** Each granted command is logged with its exit code, and creates
+  with their inverse, in `.agent/labs/<slug>.md`. A lab ends with its teardown step, and the
+  agent proposes a budget alert on the sandbox project.
+
+### The hard `never` list
+
+Kept as they are today:
+
+- force-push in every form;
+- attribution trailers and generated-with footers;
+- publishes, releases and version tags;
+- repository deletes and API `DELETE`s;
+- edits to `~/.claude/settings*.json` and `.claude/settings*.json`;
+- MCP write tools on `gcp-*` servers;
+- the read-only agents' secret and kubeconfig reads.
+
+Added, because a grant must never reach them:
+
+- **State surgery:** `terraform`, `terragrunt` and `tofu` `state rm|mv|push|replace-provider`,
+  `force-unlock`, any `-lock=false`, and CLI `import` (use `import {}` blocks, reviewed in a
+  plan).
+- **Deleting the state:** `gcloud storage rm -r` or `gsutil rm -r` on a bucket named
+  `*tfstate*`, and `gcloud projects delete`.
+- **Authoritative IAM replacement:** `gcloud * set-iam-policy` replaces the whole policy and can
+  lock the owner out. `add-iam-policy-binding` stays a grantable `ask`.
+- **Credentials:** `gcloud iam service-accounts keys create` (no keys, expert-gcp's first rule);
+  `gcloud auth print-access-token` and `print-identity-token`, `gcloud secrets versions access`
+  and secret values from `kubectl get secret … -o yaml|json|jsonpath`. These would put a token or
+  a secret into the transcript, for every agent and the main thread.
+- **Cluster-wide wipes:** `kubectl delete … --all --all-namespaces` and `kubectl delete
+  namespace kube-system`.
+- **`rm -rf` of `/`, `~` or `$HOME`.**
+- **Self-escalation:** Edit or Write of the owner layer `~/.claude/cobot.rules` and of
+  `~/.claude/cobot/**` (grants, identities, trusted roots). A shell write to them already asks
+  as a protected file; with these rows it is refused.
+
+### Challenge for the spec
+
+- **A grant is a standing permission.** Its scope (kind × target × session) is what keeps it
+  safe, so the gate must parse the target from argv, never from config: `gcloud config` and the
+  current `kubectl` context are invisible to it. A command without an explicit target asks.
+- **Evals change.** `never-apply` becomes `apply-granted`: an apply asks; after a grant it runs
+  on the granted target and asks on any other. A second eval checks that a grant does not reach
+  a subagent.
+- **The legacy CLAUDE.md says "never deploy without a rollback plan".** The teardown log and the
+  saved-plan rule are that plan for a lab; production stays step by step unless the owner grants
+  otherwise.
+
 ## Owner decisions (2026-11-09)
 
 1. Debug: **the lead in the main thread (`/cobot:debug`) with a read-only `cobot:investigator`
@@ -225,3 +340,15 @@ branch.
    there. The repository goes public with 0.2.0, so work installs it by GitHub URL.
 3. `cobot-reverse`: not asked yet; the recommendation stands (rea's method as a cobot skill and
    reference, its MCP server at most an optional backend the owner registers).
+
+## Owner decisions (2026-11-11)
+
+1. Google Cloud MCP is **opt-in, asked once per repository** and recorded in CONTEXT.md. On
+   yes, the agent guides the setup; on no, it uses `gcloud` and the usual tools.
+2. **Reads through MCP, writes through the CLI.** MCP write tools stay `never` on `gcp-*`. The
+   23-verb list stays as it is; refusing every non-read is not needed, because writes do not go
+   through MCP.
+3. **Session grants,** asked once or per command, **each naming a target.** `apply` and
+   `destroy` move from `never` to grantable `ask`. **The gate may emit `allow`** for a granted
+   command (ADR in the 0.3.0 spec). The hard `never` list is section 4's, with additions left to
+   the spec's judgement.

@@ -13,6 +13,13 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    the build path handles it without a spec.
 2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
    read only what the spec needs. Note the verified commands that will prove each story.
+   **New project** (CONTEXT.md's Stack says `decided by the first spec`, or its verified table
+   holds only the `none yet` row): skip the cold read, there is nothing to read. The language is a
+   clarify question unless the owner's request names it; once chosen, call the
+   `lang-<language>` skill by name (its `paths:` cannot fire without source files) before writing
+   a version or a command, and write the profile, the Stack and the Applies lines into CONTEXT.md
+   now, so the build's brief is current. T01 is the scaffold: manifest, toolchain pin, lint,
+   format and test configuration, one passing test; its proof commands become the verified ones.
 3. **Draft** `.agent/specs/<slug>.md` from the template at
    `${CLAUDE_PLUGIN_ROOT}/skills/spec/template.md` (read it first; if the variable is not
    expanded, the same sections in the same order): goal,

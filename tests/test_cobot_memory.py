@@ -850,6 +850,27 @@ def test_memoryDir_trackedAgentInWorktree_usesTheWorktreesCopy(memory, repo, tmp
     assert "2026-02-02" not in (repo / ".agent" / "JOURNAL.md").read_text()
 
 
+def test_stamp_inWorktree_readsTheWorktreesHead(memory, repo, tmp_path):
+    # F-19: stamp read HEAD in the main checkout, so every wrap done in a worktree read as missing
+    remote(repo, "origin", "https://github.com/o/r.git")
+    write_config("identities", "github.com/o\n")
+    seed(repo)
+    subprocess.run(["git", "-C", str(repo), "add", ".agent"], check=True)
+    commit(repo)
+    tree = tmp_path / "tree"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "feat", str(tree)], check=True)
+    add_commit(tree, "src/main.py")
+    head = subprocess.run(
+        ["git", "-C", str(tree), "rev-parse", "HEAD"], capture_output=True, text=True
+    ).stdout
+    mem = memory.Memory(str(tree))
+    with open(mem.dir / "JOURNAL.md", "a") as handle:
+        handle.write(f"\n## 2026-11-11 — wrap\nChanged: x\nverified: {head.strip()[:7]} · pytest\n")
+    assert memory.cmd_stamp(mem) == f"ok {head.strip()[:7]}"
+    add_commit(tree, "src/other.py")
+    assert memory.cmd_stamp(mem) == "missing — HEAD moved since the stamp"
+
+
 def test_memoryDir_foreignSymlinkInMainCheckout_sharedByWorktrees(memory, repo, tmp_path):
     commit(repo)
     external = tmp_path / "external"

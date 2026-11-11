@@ -40,6 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _cobot_common import (  # noqa: E402
     SECRET_RE,
+    checkout_root,
     cobot_config_dir,
     config_dir,
     data_dir,
@@ -97,6 +98,7 @@ RISK_MAX_DAYS = 90
 class Memory:
     def __init__(self, cwd: str | None = None) -> None:
         self.root = repo_root(cwd)
+        self.checkout = checkout_root(cwd)  # HEAD of the branch at hand, a worktree's own
         self.dir = memory_dir(cwd)
 
     # ---------------------------------------------------------------- trust
@@ -693,15 +695,15 @@ def cmd_stamp(mem: Memory) -> str:
     sha, dirty, _ = matches[-1]
     if dirty:
         return "missing — dirty-tree stamp; commit, then wrap"
-    stamp = git(["rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], mem.root)
-    head = git(["rev-parse", "HEAD"], mem.root)
+    stamp = git(["rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], mem.checkout)
+    head = git(["rev-parse", "HEAD"], mem.checkout)
     if not stamp or not head:
         return "missing — stamp commit unknown"
     if stamp == head:
         return f"ok {head[:7]}"
     if mem.dir.is_symlink():
         return "missing — HEAD moved since the stamp"
-    changed = git(["diff", "--name-only", stamp, head], mem.root)
+    changed = git(["diff", "--name-only", stamp, head], mem.checkout)
     if changed is not None and all(path.startswith(DOC_ONLY_PREFIXES) for path in changed.splitlines() if path):
         return f"ok {head[:7]}"
     return "missing — HEAD moved since the stamp"

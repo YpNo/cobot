@@ -25,28 +25,44 @@ class UsageError(Exception):
     """An option the command does not take, or one missing its value."""
 
 
+def find_command(argv: list[str], values: dict[str, set[str]]) -> str:
+    """The first positional, skipping the value of any option that takes one; after ``--``, the next."""
+    takes_value = set().union(*values.values()) if values else set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            return argv[i + 1] if i + 1 < len(argv) else ""
+        if not arg.startswith("-"):
+            return arg
+        i += 2 if arg[2:] in takes_value else 1
+    return ""
+
+
 def parse_cli(
     argv: list[str], values: dict[str, set[str]], switches: dict[str, set[str]]
 ) -> tuple[list[str], dict[str, str], set[str]]:
     """Split argv into positionals, ``--name value`` options and ``--name`` switches, per command.
 
-    The command is the first positional. Raises HelpRequested before anything else is looked at,
-    and UsageError for an option the command's tables do not name: a typo or ``--help`` must
-    never fall through to the command (``init --help`` once wrote the memory files).
+    Raises HelpRequested for ``-h``/``--help`` and UsageError for an option the command's tables
+    do not name: a typo or ``--help`` must never fall through to the command (``init --help`` once
+    wrote the memory files). An option's value is data, and ``--`` ends the options, so a payload
+    may start with dashes.
     """
-    if any(arg in HELP_ARGS for arg in argv):
-        raise HelpRequested
-    command = next((arg for arg in argv if not arg.startswith("--")), "")
+    command = find_command(argv, values)
     takes_value, takes_switch = values.get(command, set()), switches.get(command, set())
     positional: list[str] = []
     options: dict[str, str] = {}
     flags: set[str] = set()
-    i = 0
+    i, ended = 0, False
     while i < len(argv):
-        arg = argv[i]
-        name = arg[2:]
-        if not arg.startswith("--"):
+        arg, name = argv[i], argv[i][2:]
+        if ended or not (arg.startswith("--") or arg in HELP_ARGS):
             positional.append(arg)
+        elif arg == "--":
+            ended = True
+        elif arg in HELP_ARGS:
+            raise HelpRequested
         elif name in takes_value:
             if i + 1 >= len(argv):
                 raise UsageError(f"{arg} needs a value")

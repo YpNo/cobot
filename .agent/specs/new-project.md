@@ -157,7 +157,7 @@ trust (identities, trusted roots, foreign mode), the gate's contract (one `ask` 
 | T03 | Brief without memory: the two `none yet` lines, `not a git repository`, the untrusted reason for a new project without remote; `init --trust-root` refuses before writing when there is no commit; `ask Bash(git init*)` in `default.rules` with a gate test; `test_brief_emptyMemory` changes from `""` to the line. Tests `brief_*noMemory*`, `brief_*newProject*`, `brief_*notARepository*`, `trustRoot_*` | a | — | T02 |
 | T04 | `skills/onboard/SKILL.md`: step 1 branches on `tree: new`; the new-project steps (goal, one question round without the language, init with profile, runtimes and disk, no fingerprint, the "none yet" row, no rules dry run, next step `/cobot:spec`); no commit: `ls-remote` first, fetch and switch when the remote has branches, else the empty first commit; a failed commit is handed to the owner, never bypassed; `git init` only on the owner's yes, also inside another repository; the push of the branch named before the first PR; `argument-hint: [--foreign] [what a new project is for]`; the description names new projects | b | — | T02 |
 | T05 | `skills/spec/SKILL.md` steps 1–3: new-project rules (keyed on `decided by the first spec` or the `none yet` row; no cold read, language clarify, `lang-*` by name, CONTEXT.md updated, T01 scaffold); `skills/build/SKILL.md` step 3: first verified commands and allow lines | b | — | — |
-| T06 | eval `new-project-onboard`: fixture `git init`, one commit with README.md only, no remote; fixture commits with fixed author, committer and dates so the root commit, and so its `~/.claude/cobot/trusted` line, is the same every run; prompt gives goal, profile, licence and forge (`other`), and says trust the root; graders: Bash `init .*--profile`, Bash `--trust-root`, CONTEXT.md names the goal's words and `decided by the first spec`, last message names `/cobot:spec`, no AskUserQuestion, no `pyproject.toml` or `src/` written. The run leaves one line in `~/.claude/cobot/trusted` (as onboard does), said in the eval description | — | — | T04 |
+| T06 | eval `new-project-onboard`: fixture `git init`, one commit with README.md only, no remote; fixture's README carries a random token, so each run's root commit (and its `~/.claude/cobot/trusted` line) is unique and unforgeable; prompt gives goal, profile, licence and forge (`other`), and says trust the root; graders: Bash `init .*--profile`, Bash `--trust-root`, CONTEXT.md names the goal's words and `decided by the first spec`, last message names `/cobot:spec`, no AskUserQuestion, no `pyproject.toml` or `src/` written. The run leaves one line in `~/.claude/cobot/trusted` (as onboard does), said in the eval description | — | — | T04 |
 | T07 | docs: README quick start (new project and existing repository), `docs/architecture.md` onboard flow, `docs/configuration.md` if a flag changed, CHANGELOG, journal, converge | — | — | T01–T06 |
 
 Lanes: a (`bin/`, `tests/`) and b (skills) touch disjoint files.
@@ -213,5 +213,16 @@ keeps `ls-files` short.
   included), markdownlint, `claude plugin validate --strict` (plugin and marketplace),
   `check-plugin` ok; `cobot-rules check "git init -b main"` → `ask`; `cobot-memory check` on this
   checkout → `tree: existing`.
+- Wrap (2026-11-11): `/code-review high` (8 findings) and a security review, all folded. HIGH:
+  the untracked scan ran before the trust check and would run a delivered repository's
+  `core.fsmonitor` program → the scan runs only after trust, and every tree git call sets
+  `core.fsmonitor=false` and `core.untrackedCache=false` (a test plants the program). MEDIUM: the
+  eval fixture's fixed root commit was public and, once trusted, would trust any repository
+  merging it → a random token makes each run's root unique. Others: a new module folder of a
+  monorepo read as `inside another repository` (now: nothing tracked nor untracked below);
+  `license.py` counted as bootstrap (names tightened, `COPYING` and `LICENSE-MIT` added);
+  `-h` as an option value and dash-led payloads (`--` ends the options); an option before the
+  command; the tree state computed once per check; the trust-root refusal names a git timeout;
+  usage says `-h/--help` and exit 2. 928 passed, 98 %.
 - Not proven yet: `new-project-onboard` on a live model (a paid run, the owner's); onboard,
   spec and build on a real new project (latex-resume-generator is the owner's to re-run).

@@ -120,3 +120,26 @@ def test_flagsInUse_sessionArgumentListsParse(scripts, session):
         argv = [a.strip().strip('"') for a in args.split(",")]
         argv = [a if not a.startswith("str(") else "1" for a in argv]
         common.parse_cli(argv, scripts[name].VALUE_OPTIONS, scripts[name].SWITCHES)
+
+
+def test_parseCli_doubleDashEndsOptions_payloadMayStartWithDashes():
+    positional, _, _ = common.parse_cli(["findings", "add", "--", "build", "--locked missing", "-h"], {}, {})
+    assert positional == ["findings", "add", "build", "--locked missing", "-h"]
+
+
+def test_parseCli_helpAsAnOptionValue_isData():
+    _, options, _ = common.parse_cli(["risks", "add", "--why", "-h"], {"risks": {"why"}}, {})
+    assert options == {"why": "-h"}
+
+
+def test_parseCli_optionBeforeTheCommand_findsTheCommand(scripts):
+    module = scripts["cobot-memory"]
+    positional, options, _ = common.parse_cli(
+        ["--budget", "3000", "brief"], module.VALUE_OPTIONS, module.SWITCHES
+    )
+    assert positional == ["brief"] and options == {"budget": "3000"}
+
+
+@pytest.mark.parametrize("name", BINS)
+def test_help_usageSaysHelpIsSafeAndUnknownOptionsExit2(scripts, name):
+    assert "-h/--help" in scripts[name].__doc__ and "exit 2" in scripts[name].__doc__

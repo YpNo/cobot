@@ -19,7 +19,7 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 ## Verified commands
 | purpose | command | result | verified |
 |---|---|---|---|
-| unit tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (909 passed, 98 %) | 2026-11-11 |
+| unit tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (928 passed, 98 %) | 2026-11-11 |
 | lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-11 |
 | shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-11 |
 | markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-11 |

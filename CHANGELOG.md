@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format follows
   and forge, leaves the language to the first spec and writes a `none yet` verified row; the first
   spec asks the language, loads its `lang-*` skill by name, keeps CONTEXT.md current and makes T01
   the scaffold, whose proof commands build records as the first verified commands. `git init`
-  asks in the default rules; eval `new-project-onboard`.
+  asks in the default rules; eval `new-project-onboard`. The tree scan never runs before the
+  trust check and runs git with `core.fsmonitor` and the untracked cache off, so a repository
+  delivered with its `.git/config` cannot run its own program at session start.
 - Google Cloud remote MCP servers in `expert-gcp` (`references/mcp.md`, 0.2.0 PR 6, decision 28
   amended): the owner registers them as `gcp-<service>` with a Desktop OAuth client, signs in
   with `/mcp` from the CLI (an SSH tunnel for the callback on a remote host), and the main
@@ -225,7 +227,8 @@ All notable changes to this project are documented here. The format follows
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six
-  profiles, and `init --trust-root` before any commit refuses without writing. `protocol.md` no
+  profiles, `--` ends the options and an option's value is data, and `init --trust-root` before
+  any commit refuses without writing. `protocol.md` no
   longer advertises a `brief --spec` that never existed.
 - `cobot-memory stamp` reads HEAD in the worktree it runs from, not the main checkout: a wrap
   done in a worktree, where branch work happens, read as `missing — HEAD moved since the stamp`

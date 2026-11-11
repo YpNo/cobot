@@ -7,6 +7,7 @@ Commands
   explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
   show                       the merged rule set with provenance
   sync   [--settings PATH]   permissions fragment and diff against settings.json; writes nothing
+  -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
 Contract: the gate never emits ``allow``; any internal error ends in ``ask``;
 silence means "no opinion" and Claude Code's own permission system decides.

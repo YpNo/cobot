@@ -5,6 +5,7 @@ Commands
   check [--fresh] [--json]   run the outdated and advisory tools (cached for 7 days while the lockfiles hold)
   brief                      one line from the cache, never runs a tool (the session brief)
   path                       the cache file
+  -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
 Reports, never upgrades (decision 21). Tools that are not installed are named, not installed.
 """

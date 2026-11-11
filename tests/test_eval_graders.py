@@ -157,17 +157,17 @@ def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
     assert not re.search(profile, '{"command": "cobot-memory init --help"}')
 
 
-def test_newProjectOnboard_fixtureRootCommitIsTheSameEveryRun(tmp_path):
+def test_newProjectOnboard_fixtureRootCommitIsUniquePerRun(tmp_path):
+    # a fixed root is public; once trusted, any repository merging it in would be trusted too
     roots = []
     for run in ("a", "b"):
         workspace = tmp_path / run
         workspace.mkdir()
         env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
-        subprocess.run(
-            ["bash", str(EVALS / "new-project-onboard" / "fixture.sh")], cwd=workspace, env=env, check=True
-        )
+        fixture = str(EVALS / "new-project-onboard" / "fixture.sh")
+        subprocess.run(["bash", fixture], cwd=workspace, env=env, check=True)
         out = subprocess.run(
             ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=workspace, capture_output=True, text=True
         )
         roots.append(out.stdout.strip())
-    assert roots[0] and roots[0] == roots[1]
+    assert all(roots) and roots[0] != roots[1]

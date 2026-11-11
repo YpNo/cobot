@@ -2,6 +2,14 @@
 
 Append-only, newest at the bottom. One entry per working session or task group.
 
+## 2026-11-11 — 0.3.0 input: Antigravity support, elephant-goldfish-model challenged
+
+Changed: docs/design-inputs/antigravity-0.3.0.md (replaces the shape of owner-ideas-03 §3).
+Why: the owner needs cobot under agy at work quickly and named google/elephant-goldfish-model as a source of ideas, every finding challenged first.
+Proof: agy 1.5.3 validate spikes on a scratch copy: the plugin as is loads 0 agents; with .antigravity-plugin/plugin.json and a root hooks.json, 29 then 30 skills (onboard's argument-hint is invalid YAML, quoting fixes it); agents/<n>/agent.md adapters also load in Claude Code as cobot:x:x (rejected); Claude agents listed by file in .claude-plugin/plugin.json replace agents/ (claude -p listing: exactly nine cobot agents), agy then validates with one warning. Challenger SOUND WITH CHANGES, fifteen points folded (fail open on python failure, bin not on PATH, allow means defer in agy, ask → force_ask, matcher .*, agent scopes vanish, agy settings ungated).
+Open: S3 (hooks in subagents, fail open, brief size, MCP names) and S4 need the owner's signed-in agy; four owner questions in the file.
+Next: owner answers, then the 0.3.0 spec.
+
 ## 2026-11-13 — compacted 2026-11-06 → 2026-11-13 (50 entries)
 - 2026-11-06 design v1.1, R0 bootstrap and R1 (0.1.0): manifests, challenger, gate shim and rules engine, cobot-memory and the protocol, agents, first skills and evals; dogfooded on cartridge-os; F-05 entry wrappers looked through.
 - 2026-11-07 owner decisions 17–26; headscale dogfood in foreign mode; make targets resolved from the Makefile (F-06); R1.1 slice 1 (learning, currency, learner, knowledge-refresh) and slice 2 (ship, contribute, security-sweep, compaction, python/typescript/terraform builders); private remote, eval harness, rename to cobot (ADR-0004).

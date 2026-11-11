@@ -170,3 +170,14 @@ version; the owner layer stays under `~/.claude`.
 4. Session grants under agy: agy's `allow` defers and only `auto_approve` stops a prompt, so a
    granted command would need cobot to emit the widening value. Leave grants Claude Code only
    in 0.3.0?
+
+## Owner decisions (2026-11-11)
+
+1. **0.2.0 is finished first**: `/cobot:ship` on gcp-platform and the paid eval run on `main`,
+   then the release cut (PR 8, public); Antigravity work builds on the tagged 0.2.0.
+2. **0.3.0 is Antigravity only.** Session grants (owner-ideas-03 §4), the debug path and
+   cobot-reverse move to 0.4.0.
+3. **Builders run under agy even if S3 shows a subagent's calls are not gated**, with the gap
+   written in the README and the agy brief.
+4. **Session grants cover both runtimes** when they land (0.4.0): their ADR includes agy's
+   `auto_approve` as the granted answer, the only widening value cobot would ever emit there.

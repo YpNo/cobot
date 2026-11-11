@@ -56,8 +56,9 @@ judges its tools.
   `expert-gcp`: register each one as `gcp-<service>` with a Desktop OAuth client, from inside
   the repository:
   `claude mcp add --transport http --client-id … --client-secret --callback-port 8765 -H "x-goog-user-project: <project>" -s local gcp-logging https://logging.googleapis.com/mcp`,
-  then sign in with `/mcp` from the CLI. Under a `gcp-*` name, read tools are silent and
-  write tools are refused (`never`); under any other name, write tools ask. The full setup,
+  then sign in with `/mcp` from the CLI. Under a `gcp-*` name, read tools are silent,
+  write tools with a known verb (`create_`, `delete_`, `apply_`, …) are refused (`never`) and any
+  other tool asks; under any other name, every tool that is not a read asks. The full setup,
   including the IAM deny policy for projects in an organisation and the SSH tunnel for a remote
   host, is in `plugins/cobot/skills/expert-gcp/references/mcp.md`.
 

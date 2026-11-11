@@ -297,8 +297,9 @@ allow mcp__visualize__show_widget
 
 # Google Cloud remote MCP servers registered as gcp-* (expert-gcp, "Google Cloud MCP servers"):
 # their writes are refused, not asked; writes stay with gcloud and Terraform under the rules
-# above. Verbs from tools/list of eleven servers, 2026-11-11; a write with another first word
-# still asks through the catch-all. execute is exact: execute_sql_readonly is a read.
+# above. Verbs from tools/list of logging, container, run, bigquery, compute, sqladmin, firestore,
+# pubsub, monitoring, cloudresourcemanager and iam, 2026-11-11 (GOOGLE_MCP_TOOLS in
+# tests/test_cobot_rules.py); a write with another first word still asks through the catch-all. execute is exact: execute_sql_readonly is a read.
 never mcp__gcp-*__add_*
 never mcp__gcp-*__apply_*
 never mcp__gcp-*__cancel_*

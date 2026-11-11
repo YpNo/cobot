@@ -200,3 +200,11 @@ Why: the owner's answers after the GCP proof: agents must be able to work alone 
 Proof: none, design input only; nothing built.
 Open: the 0.3.0 spec and its challenger; ADR for the gate's allow; evals never-apply → apply-granted and grant-not-inherited.
 Next: PR 8 (0.2.0 release) after the owner's full eval run; then the 0.3.0 spec.
+
+## 2026-11-11 — spec new-project written and challenged
+
+Changed: .agent/specs/new-project.md (medium; seven stories, T01–T07).
+Why: dogfooding on latex-resume-generator (empty repository, empty owner remote): onboard guessed the goal from the folder name and sent the owner back to onboard; the spec left CONTEXT.md stale and wrote versions without lang-rust; cobot-memory init --help ran init. Owner answers: Q1 a (no source yet), Q2 a (offer an empty first commit), Q3 b (the first spec always decides the language), Q4 a (--help fix in this PR).
+Proof: challenger pass 1 UNSOUND (unborn main breaks the PR base; no-commit codebase read as new; folder outside git; silent flag gaps) → folded; pass 2 SOUND WITH CHANGES (remote with commits; folder inside a parent repository; seven minors) → folded. check-plugin ok.
+Open: lang-rust versions.md lacks clap, serde, proptest, tempfile, assert_cmd (knowledge refresh, not this spec).
+Next: owner reviews the spec; /cobot:build new-project.

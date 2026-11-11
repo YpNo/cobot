@@ -10,6 +10,14 @@ Proof: agy 1.5.3 validate spikes on a scratch copy: the plugin as is loads 0 age
 Open: S3 (hooks in subagents, fail open, brief size, MCP names) and S4 need the owner's signed-in agy; four owner questions in the file.
 Next: owner answers, then the 0.3.0 spec.
 
+## 2026-11-12 — spec antigravity written and challenged
+
+Changed: .agent/specs/antigravity.md (large; eight stories, T01–T08) on feat/antigravity, which carries the design input's two commits.
+Why: owner decisions 2026-11-11 — 0.3.0 is Antigravity only, after the 0.2.0 tag.
+Proof: hook shapes read from antigravity.google/docs (hooks, build-plugins, mcp, subagents); challenger pass 1 SOUND WITH CHANGES (twelve points: workspace hooks file and installed copy writable, plugin-folder cwd, first-underscore MCP split, orchestration prompts, cap cut, userMessage framing, builders' skills, unsafe smoke) → folded; pass 2 SOUND WITH CHANGES (seven: Cwd chose the project layer, strictest split asked on reads, foreign subagent Workspace, agy ask carve-out, message shape, weak fail-open probe, line cap) → folded. Spec 299 lines.
+Open: build waits for the 0.2.0 tag; T08 needs the owner's signed-in agy; unverified: hooks in subagents, timeout behaviour, copy or link on install, eager MCP name form.
+Next: owner finishes 0.2.0 (ship on gcp-platform, paid eval run, PR 8), then /cobot:build antigravity.
+
 ## 2026-11-13 — compacted 2026-11-06 → 2026-11-13 (50 entries)
 - 2026-11-06 design v1.1, R0 bootstrap and R1 (0.1.0): manifests, challenger, gate shim and rules engine, cobot-memory and the protocol, agents, first skills and evals; dogfooded on cartridge-os; F-05 entry wrappers looked through.
 - 2026-11-07 owner decisions 17–26; headscale dogfood in foreign mode; make targets resolved from the Makefile (F-06); R1.1 slice 1 (learning, currency, learner, knowledge-refresh) and slice 2 (ship, contribute, security-sweep, compaction, python/typescript/terraform builders); private remote, eval harness, rename to cobot (ADR-0004).

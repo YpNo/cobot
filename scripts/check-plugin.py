@@ -94,8 +94,11 @@ def check(plugin: Path) -> list[str]:
     tokens = total_chars // 4
     if tokens > AGENT_BUDGET_TOKENS:
         problems.append(f"agents: listing ≈ {tokens} tokens (budget {AGENT_BUDGET_TOKENS})")
-    protocol_chars = len((plugin / "protocol.md").read_text(encoding="utf-8"))
-    if protocol_chars > PROTOCOL_MAX_CHARS:
+    protocol = plugin / "protocol.md"
+    protocol_chars = len(protocol.read_text(encoding="utf-8")) if protocol.is_file() else 0
+    if not protocol.is_file():
+        problems.append("protocol.md: missing")
+    elif protocol_chars > PROTOCOL_MAX_CHARS:
         problems.append(f"protocol.md: {protocol_chars} chars (max {PROTOCOL_MAX_CHARS})")
     skills = list((plugin / "skills").glob("*/SKILL.md"))
     print(

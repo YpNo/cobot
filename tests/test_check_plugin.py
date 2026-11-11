@@ -94,3 +94,8 @@ def test_check_protocolOverTheCharBudget_isReported(contract, plugin):
 def test_check_protocolExactlyAtTheCharBudget_passes(contract, plugin):
     (plugin / "protocol.md").write_text("é" * contract.PROTOCOL_MAX_CHARS, encoding="utf-8")
     assert not any("protocol.md" in p for p in contract.check(plugin))
+
+
+def test_check_protocolMissing_isReportedNotRaised(contract, plugin):
+    (plugin / "protocol.md").unlink()
+    assert "protocol.md: missing" in contract.check(plugin)

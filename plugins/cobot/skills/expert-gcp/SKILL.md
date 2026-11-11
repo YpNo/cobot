@@ -18,7 +18,7 @@ user-invocable: false
 
 Versions, dates and sources: `references/versions.md`. Roles, federation snippets and the
 service-agent table: `references/iam.md`. Universes (sovereign clouds, Google Cloud Dedicated):
-`references/universe.md`. Re-verify a line the brief flags stale (versions after 30 days, idiom
+`references/universe.md`. Google's remote MCP servers (setup, guard, proof): `references/mcp.md`. Re-verify a line the brief flags stale (versions after 30 days, idiom
 after 90). Terraform idiom and the check chain are `lang-terraform`'s; this skill is what the
 `google` provider needs on top. Plans are proposed, never applied; `gcloud` reads are silent,
 anything that creates, changes, deletes, deploys, enables, grants or logs in asks (decision 26).
@@ -171,6 +171,16 @@ provider "google" {
 - [verified 2026-11-08 · src: https://docs.cloud.google.com/logging/docs/audit] Admin Activity and System Event audit logs are always on and free; Data Access logs are off by default except BigQuery and cost when enabled.
 - [verified 2026-11-08 · src: https://cloud.google.com/stackdriver/pricing] Logging $0.50 per GiB after 50 GiB per project per month; retention $0.01 per GiB-month beyond 30 days; the `_Required` bucket is free.
 - [verified 2026-11-08 · src: https://docs.cloud.google.com/compute/docs/instances/committed-use-discounts-overview] Compute flexible CUDs give 28 % (one year) and 46 % (three years) on general-purpose series, GKE Standard and Autopilot and Cloud Run.
+
+## Google Cloud MCP servers
+
+The owner registers Google's remote servers (`https://<service>.googleapis.com/mcp`) as
+`gcp-<service>`; cobot ships none (`references/mcp.md`). Use their read tools from the main
+thread for live state: `list_log_entries`, `list_k8s_events`, `get_k8s_cluster_health`,
+`list_clusters`. Their write tools are refused by the gate under a `gcp-*` name, because a
+personal project without an organisation cannot hold the IAM deny policy that would refuse
+them server-side. Propose the change as a plan or a `gcloud` command instead. A consultant has
+no MCP tools: it audits files, and you query live data.
 
 ## gcloud: what asks
 

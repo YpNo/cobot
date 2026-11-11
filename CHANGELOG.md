@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Google Cloud remote MCP servers in `expert-gcp` (`references/mcp.md`, 0.2.0 PR 6, decision 28
+  amended): the owner registers them as `gcp-<service>` with a Desktop OAuth client, signs in
+  with `/mcp` from the CLI (an SSH tunnel for the callback on a remote host), and the main
+  thread reads logs, events and cluster state through them; consultants keep auditing files.
+  Proven on gcp-platform with `list_log_entries` and `list_clusters`; the deny-policy guard needs
+  an organisation, so a personal project relies on the gate's refusals.
 - R2 slice 4 (`.agent/specs/r2-stacks.md`): `fw-react` (React 19.3, the Compiler, React Router 8,
   TanStack Query), `fw-next` (Next.js 16.4, every line reported until a repository exercises it),
   `fw-vue` (Vue 3.5, Pinia 4, vue-router 5), `lang-shell` promoted from `lang-fallback`,

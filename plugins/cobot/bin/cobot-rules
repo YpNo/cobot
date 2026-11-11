@@ -1491,7 +1491,7 @@ def cmd_show() -> str:
 def permission_patterns(rule: Rule) -> list[str]:
     """Claude Code permission syntax: prefix patterns only; both plain and rtk forms for Bash."""
     if rule.tool == "mcp":
-        return [rule.pattern]
+        return [] if "*" in rule.pattern else [rule.pattern]  # no glob form in settings; the hook covers it
     if rule.tool != "Bash":
         return [f"{rule.tool}({rule.pattern})"]
     if "*" in rule.pattern[:-1]:

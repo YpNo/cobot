@@ -265,6 +265,13 @@ All notable changes to this project are documented here. The format follows
   joined to it as in `get_or_create`); an owner or project `ask` outranks it. Browser servers,
   `fetch` and context7's `resolve-library-id` now ask until the owner adds
   `allow mcp__<server>__*`; `update_plan`, which asked on every call, is silent.
+- Google Cloud MCP servers registered as `gcp-*` cannot write: 23 default `never` rules refuse
+  their write tools by first verb (`create_`, `update_`, `delete_`, `apply_`, `deploy_`,
+  `cancel_`, `set_`, `publish` and the rest, `execute_sql` exactly, since `execute_sql_readonly`
+  is a read), and an owner `allow mcp__gcp-<server>__*` cannot lift them. A personal project with
+  no organisation cannot hold the IAM deny policy that would refuse them server-side (the
+  gcp-platform spike, 2026-11-11). `cobot-rules sync` lists MCP globs as not expressible instead
+  of writing them into settings.
 
 ## [0.1.0] - 2026-11-06
 

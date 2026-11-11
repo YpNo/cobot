@@ -528,7 +528,7 @@ def test_cliInProcess_sync(rules, capsys, tmp_path, layers):
     )
     assert "Bash(git push --force:*)" in fragment["permissions"]["deny"]
     assert "mcp__" not in json.dumps(fragment["permissions"]["deny"])
-    assert "not expressible" in out
+    assert "not expressible" in out and "never mcp__gcp-*__apply_*" in out
     assert settings.read_text() == json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}})
     assert '"deny"' in cli(rules, ["sync", "--settings", str(tmp_path / "none.json")], capsys)[1].out
 
@@ -1584,7 +1584,8 @@ def test_decide_cloudMutatingRows(rules, command, decision):
 
 # ---------------------------------------------------------------- MCP: read verbs, host tools (0.2.0 PR 3)
 
-GOOGLE_MCP_TOOLS = {  # tools/list of Google's remote Cloud MCP servers, 2026-11-09: (readOnlyHint, the rest)
+# tools/list of Google's remote Cloud MCP servers, 2026-11-09 and 2026-11-11: (readOnlyHint, the rest)
+GOOGLE_MCP_TOOLS = {
     "run": (
         ("get_service", "list_services"),
         ("deploy_service_from_image", "deploy_service_from_archive", "deploy_service_from_file_contents"),
@@ -1606,6 +1607,10 @@ GOOGLE_MCP_TOOLS = {  # tools/list of Google's remote Cloud MCP servers, 2026-11
             "list_node_pools",
             "get_node_pool",
             "get_k8s_logs",
+            "diagnose_k8s_workload",
+            "get_k8s_cluster_health",
+            "get_k8s_log_summary",
+            "list_k8s_cluster_issues",
         ),
         (
             "create_cluster",
@@ -1685,7 +1690,102 @@ GOOGLE_MCP_TOOLS = {  # tools/list of Google's remote Cloud MCP servers, 2026-11
         ("create_bucket", "delete_bucket", "write_text", "delete_object"),
     ),
 }
-MCP_READ_TOOLS_THAT_ASK = {"check_k8s_auth"}  # read-only, but "check" is not a read verb (check_in_file)
+GOOGLE_MCP_TOOLS |= {  # added 2026-11-11 for the gcp-* never rules
+    "bigquery": (
+        (
+            "list_dataset_ids",
+            "get_dataset_info",
+            "list_table_ids",
+            "get_table_info",
+            "execute_sql_readonly",
+            "get_query_results",
+            "get_job",
+        ),
+        ("execute_sql", "cancel_job"),
+    ),
+    "sql": (
+        ("list_instances", "get_instance", "execute_sql_readonly", "get_operation", "list_users"),
+        (
+            "create_instance",
+            "execute_sql",
+            "create_user",
+            "update_user",
+            "clone_instance",
+            "update_instance",
+            "create_backup",
+            "restore_backup",
+            "import_data",
+            "postgres_upgrade_precheck",
+        ),
+    ),
+    "firestore": (
+        (
+            "get_document",
+            "list_documents",
+            "list_collections",
+            "get_database",
+            "list_databases",
+            "get_index",
+            "list_indexes",
+            "get_backup",
+            "list_backups",
+            "get_backup_schedule",
+            "list_backup_schedules",
+        ),
+        (
+            "add_document",
+            "update_document",
+            "delete_document",
+            "create_database",
+            "update_database",
+            "delete_database",
+            "create_index",
+            "delete_index",
+            "delete_backup",
+            "create_backup_schedule",
+            "update_backup_schedule",
+            "delete_backup_schedule",
+        ),
+    ),
+    "pubsub": (
+        (
+            "get_topic",
+            "list_topics",
+            "get_subscription",
+            "list_subscriptions",
+            "get_snapshot",
+            "list_snapshots",
+        ),
+        (
+            "create_topic",
+            "update_topic",
+            "delete_topic",
+            "create_subscription",
+            "update_subscription",
+            "delete_subscription",
+            "create_snapshot",
+            "delete_snapshot",
+            "publish",
+        ),
+    ),
+    "monitoring": (
+        (
+            "list_timeseries",
+            "query_range",
+            "get_alert_policy",
+            "list_alert_policies",
+            "get_alert",
+            "list_alerts",
+            "list_metric_descriptors",
+            "list_dashboards",
+            "get_dashboard",
+        ),
+        (),
+    ),
+}
+# read-only, but the first word is not a read verb (check_in_file, execute_sql, query_and_update)
+MCP_READ_TOOLS_THAT_ASK = {"check_k8s_auth", "diagnose_k8s_workload", "execute_sql_readonly", "query_range"}
+GCP_WRITES_THAT_ASK = {"postgres_upgrade_precheck"}  # no write verb first: the catch-all asks
 
 
 def verdict_of(rules, tool):
@@ -1693,13 +1793,22 @@ def verdict_of(rules, tool):
     return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
 
 
-def test_mcp_googleCloudTools_onlyReadOnlyOnesAreSilent(rules):
+def test_mcp_googleCloudTools_writesDeniedUnderGcpName_readsSilent(rules):
     for server, (read_only, others) in GOOGLE_MCP_TOOLS.items():
         for name in others:
-            assert verdict_of(rules, f"mcp__gcp-{server}__{name}") == "ask", name
+            expected = "ask" if name in GCP_WRITES_THAT_ASK else "deny"
+            assert verdict_of(rules, f"mcp__gcp-{server}__{name}") == expected, name
+            assert verdict_of(rules, f"mcp__{server}__{name}") == "ask", name  # not named gcp-*: asks
         for name in read_only:
             expected = "ask" if name in MCP_READ_TOOLS_THAT_ASK else None
             assert verdict_of(rules, f"mcp__gcp-{server}__{name}") == expected, name
+
+
+def test_mcp_gcpWriteNever_beatsAnOwnerAllowOfTheServer(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow mcp__gcp-gke__*\n")
+    assert decide_mcp(rules, "mcp__gcp-gke__apply_k8s_manifest").decision == "deny"
+    assert decide_mcp(rules, "mcp__gcp-gke__diagnose_k8s_workload").decision is None
 
 
 def test_mcp_readVerbWithAWriteWordOrAnotherFirstWord_asks(rules):

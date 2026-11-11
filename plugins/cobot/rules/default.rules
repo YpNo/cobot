@@ -295,6 +295,34 @@ allow mcp__ccd_view__set_transcript_view
 allow mcp__visualize__read_me
 allow mcp__visualize__show_widget
 
+# Google Cloud remote MCP servers registered as gcp-* (expert-gcp, "Google Cloud MCP servers"):
+# their writes are refused, not asked; writes stay with gcloud and Terraform under the rules
+# above. Verbs from tools/list of eleven servers, 2026-11-11; a write with another first word
+# still asks through the catch-all. execute is exact: execute_sql_readonly is a read.
+never mcp__gcp-*__add_*
+never mcp__gcp-*__apply_*
+never mcp__gcp-*__cancel_*
+never mcp__gcp-*__clone_*
+never mcp__gcp-*__create_*
+never mcp__gcp-*__delete_*
+never mcp__gcp-*__deploy_*
+never mcp__gcp-*__import_*
+never mcp__gcp-*__insert_*
+never mcp__gcp-*__patch_*
+never mcp__gcp-*__publish_*
+never mcp__gcp-*__remove_*
+never mcp__gcp-*__reset_*
+never mcp__gcp-*__restore_*
+never mcp__gcp-*__set_*
+never mcp__gcp-*__start_*
+never mcp__gcp-*__stop_*
+never mcp__gcp-*__undelete_*
+never mcp__gcp-*__update_*
+never mcp__gcp-*__upload_*
+never mcp__gcp-*__write_*
+never mcp__gcp-*__publish
+never mcp__gcp-*__execute_sql
+
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).
 ask Bash(*) @consultant

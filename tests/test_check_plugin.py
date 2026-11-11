@@ -30,6 +30,7 @@ def skill(root: Path, name: str, description: str, extra: str = "", body: str = 
 def plugin(tmp_path):
     (tmp_path / "agents").mkdir()
     (tmp_path / "agents" / "a.md").write_text("---\nname: a\ndescription: an agent\n---\nbody\n")
+    (tmp_path / "protocol.md").write_text("protocol\n")
     return tmp_path
 
 
@@ -82,3 +83,14 @@ def test_check_frameworkSkillsAreKnowledgeSkills(contract, plugin):
     problems = contract.check(plugin)
     assert any("fw-x" in p and "351 chars (max 350)" in p for p in problems)
     assert any("fw-x" in p and "without paths:" in p for p in problems)
+
+
+def test_check_protocolOverTheCharBudget_isReported(contract, plugin):
+    # characters, not bytes: "é" is two bytes but one character
+    (plugin / "protocol.md").write_text("é" * (contract.PROTOCOL_MAX_CHARS + 1), encoding="utf-8")
+    assert "protocol.md: 3001 chars (max 3000)" in contract.check(plugin)
+
+
+def test_check_protocolExactlyAtTheCharBudget_passes(contract, plugin):
+    (plugin / "protocol.md").write_text("é" * contract.PROTOCOL_MAX_CHARS, encoding="utf-8")
+    assert not any("protocol.md" in p for p in contract.check(plugin))

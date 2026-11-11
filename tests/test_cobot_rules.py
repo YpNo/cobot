@@ -514,6 +514,23 @@ def test_cliInProcess_show(rules, capsys, layers):
     assert "default: " in out and "never=" in out and "never Bash(git push --force*)" in out
 
 
+def test_sync_mcpGlobs_trailingKeptMidNameSkipped(rules, capsys, tmp_path, layers):
+    # F-16: a trailing __* is a permission form; only a * inside the name has none
+    owner, _ = layers
+    owner.write_text("allow mcp__claude-in-chrome__*\nnever mcp__vault__*\nnever mcp__x__get_secret\n")
+    out = cli(rules, ["sync", "--settings", str(tmp_path / "none.json")], capsys)[1].out
+    fragment = json.loads(out.split("# diff")[0].replace("# fragment", ""))
+    assert "mcp__claude-in-chrome__*" in fragment["permissions"]["allow"]
+    assert {"mcp__vault__*", "mcp__x__get_secret"} <= set(fragment["permissions"]["deny"])
+    assert not any("gcp-*" in p for p in fragment["permissions"]["deny"])
+    assert "never mcp__gcp-*__apply_*" in out.split("not expressible")[1]
+
+
+def test_rules_ownerLayer_isolatedFromTheRealFile(rules):
+    # F-15: no test reads the owner's real rules layer (conftest isolates it)
+    assert rules.layer_paths(None)["owner"] != rules.config_dir() / "cobot.rules"
+
+
 def test_cliInProcess_sync(rules, capsys, tmp_path, layers):
     owner, _ = layers
     owner.write_text("allow Bash(cargo test*)\nallow Bash(ls) @builder\n")

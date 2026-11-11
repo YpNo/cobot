@@ -193,3 +193,10 @@ Proof: headless /cobot:build (session 4c036e2b, 1.14 USD, --plugin-dir of this b
 Open: /cobot:ship on a service repository (spec row 6); refusing every non-read on gcp-* instead of a verb list is the owner's call for 0.3.0; the orchestrator's own rtk-prefixed and compound commands were denied in headless runs (allowedTools patterns), so /code-review low did not run at build time.
 Next: owner pushes feat/gcp-mcp and opens the PR; then the full eval run on main and PR 8.
 verified: 6dae393d216024b6b22cdc84cd24677d9f7fa9a9 · pytest+cov (864), ruff check, ruff format --check, shellcheck, check-plugin, markdownlint-cli2, claude plugin validate x2, cobot-memory check, cobot-deps check --fresh
+
+## 2026-11-11 — 0.3.0 input: cloud writes and session grants
+Changed: docs/design-inputs/owner-ideas-03.md section 4 and owner decisions 2026-11-11: Google Cloud MCP opt-in asked once per repository (CONTEXT gcp-mcp line), reads through MCP and writes through the CLI, session grants with a target, apply and destroy moved from never to grantable ask, the gate may emit allow for a granted command, the hard never list extended (state surgery, state bucket and project deletion, set-iam-policy, key and token and secret reads, cluster-wide wipes, rm -rf of / and home, self-escalation through the owner layer and ~/.claude/cobot/**).
+Why: the owner's answers after the GCP proof: agents must be able to work alone with granted permission; never on apply is too strong.
+Proof: none, design input only; nothing built.
+Open: the 0.3.0 spec and its challenger; ADR for the gate's allow; evals never-apply → apply-granted and grant-not-inherited.
+Next: PR 8 (0.2.0 release) after the owner's full eval run; then the 0.3.0 spec.

@@ -19,13 +19,13 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 ## Verified commands
 | purpose | command | result | verified |
 |---|---|---|---|
-| unit tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (795 passed, 98 %) | 2026-11-09 |
-| lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-09 |
-| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-09 |
-| markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-09 |
-| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-09 |
+| unit tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (928 passed, 98 %) | 2026-11-11 |
+| lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-11 |
+| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-11 |
+| markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-11 |
+| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-11 |
 | gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-09 |
-| plugin contract (sizes, descriptions, agent budget, knowledge lines) | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-09 |
+| plugin contract (sizes, descriptions, agent budget, knowledge lines) | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-11 |
 | memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-09 |
 | reinstall into a dogfood repository (uninstall + install; `claude plugin update` ignores same-version edits) | `./install.sh --refresh /path/to/repo` | carried over, not re-run | 2026-11-08 (journal) |
 | evals (paid sessions, owner's terminal) | `cd plugins/cobot && claude plugin eval . --runs 1 --ablation none --no-publish --allow-tools Bash Write Edit` | carried over, not re-run | 2026-11-08 (journal) |

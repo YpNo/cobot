@@ -16,4 +16,4 @@ Memory. CONTEXT.md holds the verified commands; JOURNAL.md is append-only, newes
 
 Learning. Experts mark what they rely on as verified, reported or assumed. No decision, command or version rests on an assumed entry. No expert for a domain, or an unsure one: say so and propose /cobot:learn. Quote a learner's delta verbatim (```json fence, statuses, sources); apply it only through cobot-memory learn (dry run first); learn --promote (asks) takes general entries to the plugin.
 
-Tokens. Ask for slices (cobot-memory brief, --spec <slug>), not whole files; batch shell commands; focused tests while building, the full set at wrap; never condense test failures, diffs under review or quoted evidence (rtk proxy).
+Tokens. Ask for slices (cobot-memory brief, one spec section), not whole files; batch shell commands; focused tests while building, the full set at wrap; never condense test failures, diffs under review or quoted evidence (rtk proxy).

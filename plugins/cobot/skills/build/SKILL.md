@@ -32,6 +32,9 @@ verified commands, run `/code-review low` for small, then one journal line throu
 3. On each report: refuse it if `Checks:` lacks a command, an exit code or output; re-run the
    focused check yourself when in doubt. Refuse a `Deps added:` entry the spec does not name
    (decision 22). Tick the task in the spec (`[x]` or a `done` column).
+   When CONTEXT.md's verified table holds only the `none yet` row (a new project), record the
+   accepted task's proof commands there with their result and today's date, remove that row,
+   run `cobot-memory check`, and print the owner-layer allow lines as onboard step 7 does.
    Items under `Noticed:` go to `cobot-memory findings add`, never into the code.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's

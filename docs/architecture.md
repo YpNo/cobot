@@ -10,7 +10,7 @@ For agents and architects. The README is for people; the full design and its rea
 |---|---|---|
 | Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/cobot/protocol.md` |
 | Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/cobot-rules`, `rules/default.rules` |
-| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree | `bin/cobot-memory`, `bin/cobot-session` |
+| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree; the tree state (new, existing, inside another repository, not a repository) picks onboard's path | `bin/cobot-memory`, `bin/cobot-session` |
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Report check | `PostToolUse` hook on Agent: a builder report without a command and an exit code goes back | `hooks/report.sh` → `bin/cobot-rules report` |

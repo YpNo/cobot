@@ -14,6 +14,66 @@ SECRET_RE = re.compile(
     r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
 )
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+HELP_ARGS = ("-h", "--help")
+
+
+class HelpRequested(Exception):
+    """``-h`` or ``--help`` anywhere: print the usage, run nothing."""
+
+
+class UsageError(Exception):
+    """An option the command does not take, or one missing its value."""
+
+
+def find_command(argv: list[str], values: dict[str, set[str]]) -> str:
+    """The first positional, skipping the value of any option that takes one; after ``--``, the next."""
+    takes_value = set().union(*values.values()) if values else set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            return argv[i + 1] if i + 1 < len(argv) else ""
+        if not arg.startswith("-"):
+            return arg
+        i += 2 if arg[2:] in takes_value else 1
+    return ""
+
+
+def parse_cli(
+    argv: list[str], values: dict[str, set[str]], switches: dict[str, set[str]]
+) -> tuple[list[str], dict[str, str], set[str]]:
+    """Split argv into positionals, ``--name value`` options and ``--name`` switches, per command.
+
+    Raises HelpRequested for ``-h``/``--help`` and UsageError for an option the command's tables
+    do not name: a typo or ``--help`` must never fall through to the command (``init --help`` once
+    wrote the memory files). An option's value is data, and ``--`` ends the options, so a payload
+    may start with dashes.
+    """
+    command = find_command(argv, values)
+    takes_value, takes_switch = values.get(command, set()), switches.get(command, set())
+    positional: list[str] = []
+    options: dict[str, str] = {}
+    flags: set[str] = set()
+    i, ended = 0, False
+    while i < len(argv):
+        arg, name = argv[i], argv[i][2:]
+        if ended or not (arg.startswith("--") or arg in HELP_ARGS):
+            positional.append(arg)
+        elif arg == "--":
+            ended = True
+        elif arg in HELP_ARGS:
+            raise HelpRequested
+        elif name in takes_value:
+            if i + 1 >= len(argv):
+                raise UsageError(f"{arg} needs a value")
+            options[name] = argv[i + 1]
+            i += 1
+        elif name in takes_switch:
+            flags.add(name)
+        else:
+            raise UsageError(f"unknown option {arg} for '{command or '(no command)'}'")
+        i += 1
+    return positional, options, flags
 
 
 def plugin_root() -> Path:

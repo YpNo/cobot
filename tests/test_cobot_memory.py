@@ -224,8 +224,9 @@ def test_brief_longContextIsCapped(memory, repo):
     assert "(truncated)" in brief and len(brief) <= 1500 + 200
 
 
-def test_brief_emptyMemory(memory, repo):
-    assert memory.build_brief(memory.Memory(), 6000, trust_check=False) == ""
+def test_brief_emptyMemory_namesOnboard(memory, repo):
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert brief == "cobot memory: none yet (new project). Ask the owner to type /cobot:onboard."
 
 
 # ---------------------------------------------------------------- journal and findings

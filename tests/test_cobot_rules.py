@@ -105,6 +105,8 @@ DEFAULT_DECISIONS = [
     ("git commit -m x", "ask"),
     ("git commit -m 'feat: x' -m 'Co-Authored-By: Claude <noreply@anthropic.com>'", "deny"),
     ("git commit -F msg.txt", "ask"),
+    ("git init -b main", "ask"),
+    ("git init", "ask"),
     ("gh pr create --title t --body 'Generated with Claude Code'", "deny"),
     ("gh pr create --title 'docs: Claude Code mechanics' --body 'plugin notes'", "ask"),
     ("cargo add serde", "ask"),

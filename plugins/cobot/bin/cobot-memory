@@ -25,6 +25,9 @@ Commands
   risks add RULE FILE SYMBOL --why TEXT [--by WHO] [--days N]   accept a sweep finding for at most 90 days
   risks list                       accepted risks with their expiry state
 
+-h/--help after any command prints this usage and runs nothing; an unknown option ends with exit 2;
+-- ends the options, so a payload may start with dashes.
+
 Project entries go to .agent/; general entries reach the plugin only through --promote (an ask action).
 """
 
@@ -40,6 +43,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 from _cobot_common import (  # noqa: E402
     SECRET_RE,
+    HelpRequested,
+    UsageError,
     checkout_root,
     cobot_config_dir,
     config_dir,
@@ -47,6 +52,7 @@ from _cobot_common import (  # noqa: E402
     git,
     host_owner_repo,
     memory_dir,
+    parse_cli,
     plugin_root,
     remotes,
     repo_root,
@@ -97,9 +103,17 @@ RISK_MAX_DAYS = 90
 
 class Memory:
     def __init__(self, cwd: str | None = None) -> None:
+        self.cwd = Path(os.environ.get("COBOT_RULES_PROJECT_DIR") or cwd or os.getcwd())
         self.root = repo_root(cwd)
         self.checkout = checkout_root(cwd)  # HEAD of the branch at hand, a worktree's own
         self.dir = memory_dir(cwd)
+        self._tree: str | None = None
+
+    def tree(self) -> str:
+        """tree_state of the working directory, computed once per Memory."""
+        if self._tree is None:
+            self._tree = tree_state(self.cwd)
+        return self._tree
 
     # ---------------------------------------------------------------- trust
 
@@ -127,7 +141,7 @@ class Memory:
         if roots and roots & trusted:
             return True, "root commit listed in ~/.claude/cobot/trusted"
         if not remote_map and not roots:
-            return False, "no remote and no commit: onboard with --trust-root once the first commit exists"
+            return False, "no remote and no commit: /cobot:onboard starts it"
         detail = f" ({', '.join(strangers)})" if strangers else ""
         return False, f"no identity matches every remote{detail} and the root commit is not trusted"
 
@@ -164,6 +178,76 @@ class Memory:
     def specs(self) -> list[str]:
         folder = self.dir / "specs"
         return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+
+# ---------------------------------------------------------------- tree state (new projects)
+
+TREE_NOT_REPOSITORY = "not a git repository"
+TREE_INSIDE_ANOTHER = "inside another repository"
+TREE_EXISTING = "existing"
+TREE_NEW_NO_COMMIT = "new (no commit)"
+TREE_NEW_BOOTSTRAP = "new (bootstrap files only)"
+BOOTSTRAP_DIRS = (".agent", ".claude")
+BOOTSTRAP_ROOT_FILE = re.compile(
+    r"(?i)\.gitignore|\.gitattributes|\.editorconfig|(readme|changelog)(\.(md|markdown|txt|rst|adoc))?"
+    r"|(licen[cs]e|copying)(-[a-z0-9.-]+)?(\.(md|txt))?"
+)
+# an untracked scan runs the repository's core.fsmonitor program; the tree is repository content
+NO_FSMONITOR = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
+UNTRACKED = ["--others", "--exclude-standard", "--directory", "--no-empty-directory"]
+
+
+def listed_paths(top: Path) -> list[str] | None:
+    """Tracked and untracked, non-ignored paths; an untracked directory is one ``dir/`` entry."""
+    out = git([*NO_FSMONITOR, "ls-files", "-z", "--cached", *UNTRACKED], top)
+    return None if out is None else sorted({path for path in out.split("\0") if path})
+
+
+def is_bootstrap(path: str) -> bool:
+    head = path.split("/", 1)[0]
+    if head in BOOTSTRAP_DIRS:
+        return True
+    return "/" not in path.rstrip("/") and BOOTSTRAP_ROOT_FILE.fullmatch(path) is not None
+
+
+def inside_some_repository(folder: Path) -> bool:
+    return any((parent / ".git").exists() for parent in (folder, *folder.parents))
+
+
+def repository_probe(here: Path) -> str | None:
+    """TREE_NOT_REPOSITORY, TREE_EXISTING when git did not answer inside a repository, or None for
+    a work tree. Cheap: no file scan, so it may run before the trust check."""
+    probe = git([*NO_FSMONITOR, "rev-parse", "--is-inside-work-tree"], here)
+    if probe is None:
+        return TREE_EXISTING if inside_some_repository(here) else TREE_NOT_REPOSITORY
+    return None if probe == "true" else TREE_NOT_REPOSITORY  # a bare repository, or inside .git
+
+
+def nothing_below(here: Path) -> bool:
+    """No tracked and no untracked, non-ignored file under a subfolder (a dotfiles repository at ~)."""
+    tracked = git([*NO_FSMONITOR, "ls-files", "--", "."], here)
+    untracked = git([*NO_FSMONITOR, "ls-files", *UNTRACKED, "--", "."], here)
+    return tracked == "" and untracked == ""
+
+
+def tree_state(cwd: Path) -> str:
+    """One fixed label (never a file name: the tree is repository content). New is decided on the
+    files alone: every listed path is a bootstrap file. Any git failure reads as existing, so a
+    slow or broken git never turns an existing codebase into a new project."""
+    here = Path(cwd).resolve()
+    early = repository_probe(here)
+    if early:
+        return early
+    top = git([*NO_FSMONITOR, "rev-parse", "--show-toplevel"], here)
+    if top is None:
+        return TREE_EXISTING
+    if Path(top).resolve() != here:
+        return TREE_INSIDE_ANOTHER if nothing_below(here) else TREE_EXISTING
+    paths = listed_paths(here)
+    if paths is None or not all(is_bootstrap(path) for path in paths):
+        return TREE_EXISTING
+    has_commit = git([*NO_FSMONITOR, "rev-parse", "--verify", "--quiet", "HEAD"], here) is not None
+    return TREE_NEW_BOOTSTRAP if has_commit else TREE_NEW_NO_COMMIT
 
 
 def read_lines(path: Path) -> list[str]:
@@ -269,11 +353,33 @@ def other_agent_files(mem: Memory) -> list[str]:
     return sorted(n for n in names if n not in KNOWN_AGENT_FILES and AGENT_FILE_RE.fullmatch(n))
 
 
+ONBOARD_ASK = "Ask the owner to type /cobot:onboard."
+
+
+NOT_A_REPOSITORY_LINE = "cobot memory: not a git repository; nothing loaded."
+
+
+def no_memory_line(mem: Memory) -> str:
+    """The brief of a folder without CONTEXT.md, by tree state."""
+    state = mem.tree()
+    if state == TREE_NOT_REPOSITORY:
+        return NOT_A_REPOSITORY_LINE
+    if state == TREE_INSIDE_ANOTHER:
+        return f"cobot memory: none yet (inside another repository: {mem.root}). {ONBOARD_ASK}"
+    label = "new project" if state.startswith("new") else "existing repository"
+    return f"cobot memory: none yet ({label}). {ONBOARD_ASK}"
+
+
 def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
+    has_context = (mem.dir / "CONTEXT.md").is_file()
+    if not has_context and repository_probe(mem.cwd.resolve()) == TREE_NOT_REPOSITORY:
+        return NOT_A_REPOSITORY_LINE
     if trust_check:
         trusted, reason = mem.trust()
-        if not trusted:
-            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. Ask the owner to type /cobot:onboard."
+        if not trusted:  # no file scan before trust
+            return f"cobot memory: UNTRUSTED repository ({reason}); .agent/ not loaded. {ONBOARD_ASK}"
+    if not has_context:
+        return no_memory_line(mem)
     entries = mem.journal_entries()[:2]
     journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
     findings = mem.open_findings()
@@ -335,6 +441,11 @@ def write_never_push_rules(mem: Memory, external: Path) -> list[str]:
 
 
 def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
+    if "trust-root" in flags and not root_commits(mem.root):
+        return (
+            "init: --trust-root found no commit (or git did not answer); nothing written. Make the first "
+            'commit (git commit --allow-empty -m "chore: initial commit"), then run init --trust-root again.'
+        )
     lines = []
     if "foreign" in flags:
         external = mem.external_path()
@@ -724,6 +835,7 @@ def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
     lines = [f"memory: {mem.dir}", f"mode: {mode}", f"trust: {'trusted' if trusted else 'untrusted'} ({reason})"]
+    lines.append(f"tree: {mem.tree()}")
     for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "ARCHITECTURE.md", "cobot.rules"):
         path = mem.dir / name
         if path.is_file():
@@ -758,27 +870,42 @@ def cmd_check(mem: Memory) -> str:
 # ---------------------------------------------------------------- CLI
 
 
+VALUE_OPTIONS = {
+    "init": {"profile"},
+    "brief": {"budget"},
+    "findings": {"goes-to"},
+    "learn": {"source"},
+    "compact": {"keep", "summary"},
+    "risks": {"why", "by", "days"},
+}
+SWITCHES = {
+    "init": {"foreign", "add-identity", "trust-root"},
+    "brief": {"no-trust-check"},
+    "findings": {"open"},
+    "learn": {"dry-run", "keep-assumed", "promote", "in-place"},
+    "knowledge": {"stale", "json", "brief"},
+    "compact": {"dry-run", "force"},
+}
+PROFILES = ("spike", "script", "cli", "library", "service", "infra")
+
+
 def parse(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
-    positional: list[str] = []
-    options: dict[str, str] = {}
-    flags: set[str] = set()
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in ("--profile", "--budget", "--goes-to", "--source", "--keep", "--summary", "--why", "--by", "--days") and i + 1 < len(argv):
-            options[arg[2:]] = argv[i + 1]
-            i += 2
-            continue
-        if arg.startswith("--"):
-            flags.add(arg[2:])
-        else:
-            positional.append(arg)
-        i += 1
+    """Raises HelpRequested or UsageError; see parse_cli."""
+    positional, options, flags = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
+    if positional[:1] == ["init"] and options.get("profile", "library") not in PROFILES:
+        raise UsageError(f"profile must be one of {', '.join(PROFILES)}")
     return positional, options, flags
 
 
 def main(argv: list[str]) -> int:
-    positional, options, flags = parse(argv)
+    try:
+        positional, options, flags = parse(argv)
+    except HelpRequested:
+        print(__doc__.strip())
+        return 0
+    except UsageError as error:
+        print(f"cobot-memory: {error}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
     mem = Memory()
     command = positional[0] if positional else ""
     sub = positional[1] if len(positional) > 1 else ""

@@ -200,3 +200,28 @@ Why: the owner's answers after the GCP proof: agents must be able to work alone 
 Proof: none, design input only; nothing built.
 Open: the 0.3.0 spec and its challenger; ADR for the gate's allow; evals never-apply → apply-granted and grant-not-inherited.
 Next: PR 8 (0.2.0 release) after the owner's full eval run; then the 0.3.0 spec.
+
+## 2026-11-11 — spec new-project written and challenged
+
+Changed: .agent/specs/new-project.md (medium; seven stories, T01–T07).
+Why: dogfooding on latex-resume-generator (empty repository, empty owner remote): onboard guessed the goal from the folder name and sent the owner back to onboard; the spec left CONTEXT.md stale and wrote versions without lang-rust; cobot-memory init --help ran init. Owner answers: Q1 a (no source yet), Q2 a (offer an empty first commit), Q3 b (the first spec always decides the language), Q4 a (--help fix in this PR).
+Proof: challenger pass 1 UNSOUND (unborn main breaks the PR base; no-commit codebase read as new; folder outside git; silent flag gaps) → folded; pass 2 SOUND WITH CHANGES (remote with commits; folder inside a parent repository; seven minors) → folded. check-plugin ok.
+Open: lang-rust versions.md lacks clap, serde, proptest, tempfile, assert_cmd (knowledge refresh, not this spec).
+Next: owner reviews the spec; /cobot:build new-project.
+
+## 2026-11-11 — spec new-project built
+
+Changed: T01–T07 of .agent/specs/new-project.md, one commit each: one per-command CLI parser for cobot-memory, cobot-rules and cobot-deps (--help never runs a command); tree_state and the check line; the brief without memory; init --trust-root refuses before a commit; ask Bash(git init*); onboard's New project path; spec and build new-project rules; eval new-project-onboard; README, design, architecture, changelog.
+Why: dogfooding on latex-resume-generator showed cobot had no path for an empty repository.
+Proof: full suite exit 0, 909 passed, 98 % coverage; ruff, shellcheck, markdownlint, plugin validate --strict (plugin and marketplace), check-plugin exit 0; cobot-rules check "git init -b main" → ask.
+Open: F-20 lang-rust versions gap (knowledge refresh); new-project-onboard not run on a live model yet (paid, owner's); protocol.md at 2 998 of 3 000 characters.
+Next: /cobot:wrap on feat/new-project, then the owner pushes and opens the PR.
+
+## 2026-11-11 — wrap new-project
+
+Changed: wrap of feat/new-project: /code-review high (8 findings) and a security review folded in one commit (no tree scan before trust, core.fsmonitor and the untracked cache off, unique eval root, monorepo module folder, bootstrap names, -- and option values, command past leading options, one tree state per check, usage text).
+Why: the security review reproduced the fsmonitor execution at session start; the fixed eval root would have made a public commit trusted.
+Proof: pytest with coverage exit 0 (928 passed, 98.08 %); ruff check and format exit 0; shellcheck (fixtures included) exit 0; markdownlint exit 0; claude plugin validate --strict plugin and marketplace exit 0; check-plugin exit 0; cobot-memory check exit 0; cobot-deps check --fresh: no supported lockfile; commit log has no attribution footer and no AI author.
+Open: F-20 lang-rust versions gap (knowledge refresh; an issue for the owner); new-project-onboard not run on a live model (paid, owner's); protocol.md 2 998 of 3 000 characters.
+Next: owner pushes feat/new-project and opens the PR.
+verified: afdf5479795093e7c2458915d5db6c913d0b94ec · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check

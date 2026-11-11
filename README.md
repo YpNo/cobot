@@ -60,7 +60,9 @@ or `--dev` to try cobot for one session without installing anything.
 ## First steps
 
 1. Open Claude Code in your repository and run `/cobot:onboard`. It checks the repository is
-   yours, finds the commands that build and test it, and writes the `.agent/` memory.
+   yours, finds the commands that build and test it, and writes the `.agent/` memory. In a new,
+   empty repository, run `/cobot:onboard <what the project is for>` instead: it asks you for the
+   profile, licence and forge, and the first `/cobot:spec` picks the language and scaffolds it.
 2. Ask for small changes as usual. cobot names the size and skips the ceremony.
 3. For a bigger change: `/cobot:spec <what you want>`, then `/cobot:build <spec>`, then
    `/cobot:wrap` to run every check and record the result.
@@ -69,7 +71,7 @@ or `--dev` to try cobot for one session without installing anything.
 
 | Command | What it does |
 |---|---|
-| `/cobot:onboard` | first contact with a repository: trust, verified commands, memory |
+| `/cobot:onboard [what a new project is for]` | first contact with a repository: trust, verified commands, memory; a new project is asked, not fingerprinted |
 | `/cobot:spec <what>` | writes the spec and has it challenged |
 | `/cobot:build <spec>` | builds the spec task by task, with proof |
 | `/cobot:wrap` | full checks, reviews, journal; ready for a pull request |

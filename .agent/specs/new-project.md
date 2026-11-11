@@ -202,4 +202,16 @@ keeps `ls-files` short.
 
 ## Converge
 
-pending
+2026-11-11: stories 1–7 built, T01–T07, one commit each.
+
+- T01 found a second false flag: `protocol.md` and `docs/02-design.md` advertised `cobot-memory
+  brief --spec <slug>`, which never existed (the old parser ignored it); the wording now says
+  "one spec section", and the protocol is 2 998 of 3 000 characters.
+- The untrusted reason reads `no remote and no commit: /cobot:onboard starts it`, as story 2 says;
+  the brief's own line still ends `Ask the owner to type /cobot:onboard.`
+- Proof: full suite exit 0, 909 passed, 98 % coverage; ruff, shellcheck (the new fixture
+  included), markdownlint, `claude plugin validate --strict` (plugin and marketplace),
+  `check-plugin` ok; `cobot-rules check "git init -b main"` → `ask`; `cobot-memory check` on this
+  checkout → `tree: existing`.
+- Not proven yet: `new-project-onboard` on a live model (a paid run, the owner's); onboard,
+  spec and build on a real new project (latex-resume-generator is the owner's to re-run).

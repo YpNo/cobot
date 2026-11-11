@@ -208,3 +208,11 @@ Why: dogfooding on latex-resume-generator (empty repository, empty owner remote)
 Proof: challenger pass 1 UNSOUND (unborn main breaks the PR base; no-commit codebase read as new; folder outside git; silent flag gaps) → folded; pass 2 SOUND WITH CHANGES (remote with commits; folder inside a parent repository; seven minors) → folded. check-plugin ok.
 Open: lang-rust versions.md lacks clap, serde, proptest, tempfile, assert_cmd (knowledge refresh, not this spec).
 Next: owner reviews the spec; /cobot:build new-project.
+
+## 2026-11-11 — spec new-project built
+
+Changed: T01–T07 of .agent/specs/new-project.md, one commit each: one per-command CLI parser for cobot-memory, cobot-rules and cobot-deps (--help never runs a command); tree_state and the check line; the brief without memory; init --trust-root refuses before a commit; ask Bash(git init*); onboard's New project path; spec and build new-project rules; eval new-project-onboard; README, design, architecture, changelog.
+Why: dogfooding on latex-resume-generator showed cobot had no path for an empty repository.
+Proof: full suite exit 0, 909 passed, 98 % coverage; ruff, shellcheck, markdownlint, plugin validate --strict (plugin and marketplace), check-plugin exit 0; cobot-rules check "git init -b main" → ask.
+Open: F-20 lang-rust versions gap (knowledge refresh); new-project-onboard not run on a live model yet (paid, owner's); protocol.md at 2 998 of 3 000 characters.
+Next: /cobot:wrap on feat/new-project, then the owner pushes and opens the PR.

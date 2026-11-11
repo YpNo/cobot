@@ -216,3 +216,12 @@ Why: dogfooding on latex-resume-generator showed cobot had no path for an empty 
 Proof: full suite exit 0, 909 passed, 98 % coverage; ruff, shellcheck, markdownlint, plugin validate --strict (plugin and marketplace), check-plugin exit 0; cobot-rules check "git init -b main" → ask.
 Open: F-20 lang-rust versions gap (knowledge refresh); new-project-onboard not run on a live model yet (paid, owner's); protocol.md at 2 998 of 3 000 characters.
 Next: /cobot:wrap on feat/new-project, then the owner pushes and opens the PR.
+
+## 2026-11-11 — wrap new-project
+
+Changed: wrap of feat/new-project: /code-review high (8 findings) and a security review folded in one commit (no tree scan before trust, core.fsmonitor and the untracked cache off, unique eval root, monorepo module folder, bootstrap names, -- and option values, command past leading options, one tree state per check, usage text).
+Why: the security review reproduced the fsmonitor execution at session start; the fixed eval root would have made a public commit trusted.
+Proof: pytest with coverage exit 0 (928 passed, 98.08 %); ruff check and format exit 0; shellcheck (fixtures included) exit 0; markdownlint exit 0; claude plugin validate --strict plugin and marketplace exit 0; check-plugin exit 0; cobot-memory check exit 0; cobot-deps check --fresh: no supported lockfile; commit log has no attribution footer and no AI author.
+Open: F-20 lang-rust versions gap (knowledge refresh; an issue for the owner); new-project-onboard not run on a live model (paid, owner's); protocol.md 2 998 of 3 000 characters.
+Next: owner pushes feat/new-project and opens the PR.
+verified: afdf5479795093e7c2458915d5db6c913d0b94ec · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check

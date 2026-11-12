@@ -10,6 +10,10 @@ on:
         description: "Run the plugin evals (paid Claude sessions)"
         type: boolean
         default: false
+      cases:
+        description: "Only the eval cases matching this one glob, * wildcards (empty = all)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -84,7 +88,7 @@ jobs:
   evals:
     if: github.event_name == 'workflow_dispatch' && inputs.evals
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60 # the full suite took 40 minutes; a timeout loses every result
     # no stored key: workload identity federation through the federation identifiers set on this
     # environment (scripts/github-settings.sh creates it, deployable from main only)
     environment: evals
@@ -105,12 +109,16 @@ jobs:
           ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
           ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          CASES: ${{ inputs.cases }}
         run: |
           . scripts/anthropic-federation.sh
           cd plugins/cobot
-          claude plugin eval . --trust-plugin --scaffold --no-publish --runs 3 --threshold 1.0 \
+          # --keep-temp keeps each run's trace, the only record of what the session did
+          set -- --trust-plugin --scaffold --no-publish --keep-temp --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \
             --allow-tools Bash Write Edit --json ../../eval-result.json
+          if [ -n "$CASES" ]; then set -- "$@" --case "$CASES"; fi
+          claude plugin eval . "$@"
       # a failed threshold is the run worth reading: upload unless the run was cancelled
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
@@ -119,5 +127,13 @@ jobs:
           path: |
             eval-result.json
             plugins/cobot/evals/results/
+          if-no-files-found: warn
+          retention-days: 14
+      # eval-result.json maps each run to its trace (tracePath)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: eval-traces
+          path: /tmp/claude-eval-*/out/trace.jsonl
           if-no-files-found: warn
           retention-days: 14

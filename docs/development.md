@@ -34,8 +34,8 @@ claude plugin validate plugins/cobot --strict && claude plugin validate . --stri
 
 ## Evals
 
-Evals run as Claude sessions under the logged-in account (an API key in CI), so every run costs
-money. `tests/test_eval_graders.py` checks the suite for free first: every grader pattern
+Evals run as Claude sessions under the logged-in account (workload identity federation in CI),
+so every run costs money. `tests/test_eval_graders.py` checks the suite for free first: every grader pattern
 compiles, no case has more than one judge, every fixture runs clean.
 
 ```bash
@@ -69,7 +69,7 @@ pinned to a commit SHA and tokens are read-only except the release job.
 `knowledge-refresh.yml` runs weekly (and on dispatch): it picks the two stalest knowledge skills
 without an open `learn/<skill>` branch, runs the learner read-only under a dollar budget, applies
 the delta with `learn --promote --in-place`, runs the plugin checks and opens one pull request per
-skill for the owner to review. Its secrets live in the `knowledge-refresh` environment; with only
+skill for the owner to review. Its settings live in the `knowledge-refresh` environment; with only
 `GITHUB_TOKEN` the PR gets no CI run (the checks ran in the job), a fine-grained PAT in
 `KNOWLEDGE_REFRESH_TOKEN` restores it.
 
@@ -77,9 +77,19 @@ The repository settings those workflows rely on are code: `scripts/github-settin
 prints wanted against current and `--apply` sets what differs (delete branch on merge, no squash,
 SHA-pinned actions required, read-only default token, Dependabot alerts and security PRs, the
 `evals` and `knowledge-refresh` environments deployable from `main` only, and the `main` ruleset
-with `ci-ok` as the one required check where the plan allows rulesets). Secrets are never
-handled by the script: it prints the `gh secret set` commands, one `ANTHROPIC_API_KEY` per
-environment and none at repository level. `.github/dependabot.yml` groups the weekly action
+with `ci-ok` as the one required check where the plan allows rulesets). Credentials are never
+handled by the script.
+
+No Anthropic API key is stored. The eval job and the learner source
+`scripts/anthropic-federation.sh`, which exchanges the job's GitHub OIDC token (workload identity
+federation) and refreshes it every minute: a GitHub token lives 300 s, an Anthropic token at
+most 600 s, an eval run up to 45 minutes. Each environment has its own Claude Console rule,
+whose subject is GitHub's immutable form with numeric IDs
+(`repo:<owner>@<id>/<repo>@<id>:environment:<name>`, exact) plus the claim
+`ref = refs/heads/main`; its four identifiers are environment variables, not secrets. The
+settings script prints both rule subjects and the `gh variable set` commands. A rule written
+from the repository's name, or one that also requires `event_name = push`, answers 401
+`match_subject_prefix`; the Console's authentication history names the failed check. `.github/dependabot.yml` groups the weekly action
 updates into one PR.
 
 ## Releasing

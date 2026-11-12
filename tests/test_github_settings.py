@@ -14,6 +14,7 @@ FAKE_GH = """#!/bin/sh
 echo "$*" >> "$GH_LOG"
 case "$*" in
   "repo view --json nameWithOwner --jq .nameWithOwner") echo "o/r" ;;
+  *"repos/o/r/actions/oidc/customization/sub"*) echo "repo:o@1/r@2" ;;
   *"-X PUT"*|*"-X POST"*|"repo edit "*) exit 0 ;;
   *"repos/o/r/actions/permissions/workflow")
     echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}' ;;
@@ -52,7 +53,10 @@ def test_check_withDefaults_reportsDiffsAndWritesNothing(run):
     assert proc.returncode == 0, proc.stderr
     assert "10 change(s) pending" in proc.stdout
     assert "rulesets unavailable" in proc.stdout
-    assert "gh secret set ANTHROPIC_API_KEY --repo o/r --env evals" in proc.stdout
+    assert "rule  subject repo:o@1/r@2:environment:evals (exact), claim ref = refs/heads/main" in proc.stdout
+    rule_id_hint = "gh variable set ANTHROPIC_FEDERATION_RULE_ID --repo o/r --env knowledge-refresh"
+    assert rule_id_hint in proc.stdout
+    assert "ANTHROPIC_API_KEY" not in proc.stdout
     assert "-X PUT" not in log and "-X POST" not in log and "repo edit" not in log
 
 

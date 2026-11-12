@@ -233,3 +233,12 @@ Why: the evals and the knowledge refresh hold ANTHROPIC_API_KEY; Anthropic's wor
 Proof: YAML parses (5 steps); zizmor 1.32.0 offline: 0 medium or higher (one low: the version-pinned npm install, as in ci.yml). The spike itself is not run: it needs main and the evals environment.
 Open: the owner's federation rule must match repo:YpNo/cobot:environment:evals (and ref refs/heads/main); the untracked draft in the main checkout must be removed before pulling the merge.
 Next: owner merges, dispatches the spike, sends the run; then ci.yml and knowledge-refresh.yml switch (or the key stays).
+
+## 2026-11-12 — CI switches to workload identity federation (owner: WIF before the 0.2.0 eval run)
+
+Changed: scripts/anthropic-federation.sh (sourced by the eval step and the learner: checks the four identifiers, writes the GitHub OIDC token to ANTHROPIC_IDENTITY_TOKEN_FILE, refreshes it every 60 s, drops ANTHROPIC_API_KEY); ci.yml evals and knowledge-refresh.yml learn get id-token: write, the identifiers from environment variables, Claude Code 2.1.322; github-settings.sh prints the rule subjects and gh variable set commands; the spike workflow is removed; tests/test_anthropic_federation.py.
+Why: the spike passed (run 43301630937 attempt 5: exchange 200, 597 s, workspace:developer; one session OK; two parallel sessions on one GitHub token OK). Three earlier attempts failed on match_subject_prefix: the repo uses GitHub's immutable subject (repo:YpNo@883643/cobot@1449690492:...), and the first rule held the URL in the repository field and event_name = push.
+Proof: pytest with coverage exit 0 (936 passed, 98.08 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; zizmor 1.32.0 offline, 0 medium or higher; claude plugin validate --strict and check-plugin exit 0.
+Open: a single Claude Code session longer than one Anthropic token (about 10 min) renewing from the refreshed file is unproven; the first eval run shows it. The quality job still installs 2.1.318 (2.1.323 is a day old). The knowledge-refresh environment needs its own rule.
+Next: owner creates the knowledge-refresh rule, sets the variables on both environments, pushes and merges, deletes both ANTHROPIC_API_KEY secrets, then dispatches the paid eval run.
+verified: 6b95fd6 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin

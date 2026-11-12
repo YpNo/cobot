@@ -81,9 +81,11 @@ with `ci-ok` as the one required check where the plan allows rulesets). Credenti
 handled by the script.
 
 No Anthropic API key is stored. The eval job and the learner source
-`scripts/anthropic-federation.sh`, which exchanges the job's GitHub OIDC token (workload identity
-federation) and refreshes it every minute: a GitHub token lives 300 s, an Anthropic token at
-most 600 s, an eval run up to 45 minutes. Each environment has its own Claude Console rule,
+`scripts/anthropic-federation.sh` (workload identity federation). Anthropic accepts a GitHub
+token's `jti` once, and Claude Code reads `ANTHROPIC_IDENTITY_TOKEN_FILE` for every exchange
+(keying its on-disk token cache by that token), so the script serves the file as a named pipe
+that mints a fresh GitHub OIDC token for each read; a file refreshed on a timer failed
+`jti_reused` once sessions started faster than the timer. Each environment has its own Claude Console rule,
 whose subject is GitHub's immutable form with numeric IDs
 (`repo:<owner>@<id>/<repo>@<id>:environment:<name>`, exact) plus the claim
 `ref = refs/heads/main`; its four identifiers are environment variables, not secrets. The

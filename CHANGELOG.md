@@ -287,13 +287,14 @@ All notable changes to this project are documented here. The format follows
 ### Security
 
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
-  workload identity federation (`scripts/anthropic-federation.sh`): the job's GitHub OIDC token,
-  refreshed every minute, is exchanged for a short-lived Anthropic token under a Console rule
+  workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
+  GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code
+  reads the file for every exchange (a timer-refreshed file failed `jti_reused` mid-run), and
+  each is exchanged for a short-lived Anthropic token under a Console rule
   pinned to the environment's immutable subject and `refs/heads/main`. The identifiers are
   environment variables; `github-settings.sh` prints the rules and the `gh variable set`
   commands instead of a `gh secret set` for a key. Proven by a manual spike (exchange, one
-  session, two parallel sessions on one GitHub token, Claude Code 2.1.322), now removed; both
-  jobs move to Claude Code 2.1.322.
+  session, Claude Code 2.1.322), now removed; both jobs move to Claude Code 2.1.322.
 - Every MCP tool asks unless it is a read or one of the desktop app's UI tools. The gate asked on
   seven write verbs only, so Google's Cloud MCP servers' `deploy_service_from_image`,
   `start_instance`, `stop_instance`, `reset_instance`, `set_instance_machine_type`,

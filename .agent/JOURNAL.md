@@ -242,3 +242,12 @@ Proof: pytest with coverage exit 0 (936 passed, 98.08 %); ruff check and format 
 Open: a single Claude Code session longer than one Anthropic token (about 10 min) renewing from the refreshed file is unproven; the first eval run shows it. The quality job still installs 2.1.318 (2.1.323 is a day old). The knowledge-refresh environment needs its own rule.
 Next: owner creates the knowledge-refresh rule, sets the variables on both environments, pushes and merges, deletes both ANTHROPIC_API_KEY secrets, then dispatches the paid eval run.
 verified: 6b95fd6 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin
+
+## 2026-11-12 — federation: one fresh GitHub token per exchange (eval run 43316107022)
+
+Changed: scripts/anthropic-federation.sh serves ANTHROPIC_IDENTITY_TOKEN_FILE as a named pipe minting a GitHub OIDC token per read (fail-fast probe first, 3 attempts per read, 0.5 s gap so a reader sees end of file before the pipe reopens); tests rewritten (fresh token per read, server survives GitHub failures); development.md and CHANGELOG.
+Why: the first eval run on federation ($4.69, 20 min) lost 10 of 19 cases to 401 after 17 minutes; the Console reason was jti_reused. Anthropic accepts a jti once per issuer (check_jti, issuer-wide, on by default); Claude Code 2.1.322 reads the file for every exchange and caches the access token under ~/.config/anthropic/credentials/federation/<hash of the token>.json, so a 60 s timer handed one token to every session started in that minute. The spike's "two parallel sessions" step passed only on the previous step's cached token.
+Proof: local, Claude Code 2.1.322 against a fake token endpoint: a regular file gave 1 exchange for 3 sessions, the pipe 3 exchanges with 3 jti; the real helper served 4 sessions, 4 exchanges, 4 distinct well-formed tokens, step ended cleanly. pytest with coverage exit 0 (938 passed, 98.08 %); ruff, shellcheck, markdownlint exit 0; zizmor 0 medium or higher.
+Open: six cases failed on their own before the 401s (actions-pinning, builder-routing, foreign-onboard, gitlab-ci-shape, learn-unknown-domain, consult-fan-out 1/3); two readers opening the pipe at the same instant would split one token (evals run at concurrency 1).
+Next: owner pushes, merges, re-dispatches the evals; then the six failing cases.
+verified: 65c751e · pytest+cov, ruff, shellcheck, markdownlint, zizmor, local Claude Code 2.1.322 pipe check

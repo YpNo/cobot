@@ -111,7 +111,13 @@ jobs:
           claude plugin eval . --trust-plugin --scaffold --no-publish --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \
             --allow-tools Bash Write Edit --json ../../eval-result.json
+      # a failed threshold is the run worth reading: upload unless the run was cancelled
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
           name: eval-result
-          path: eval-result.json
+          path: |
+            eval-result.json
+            plugins/cobot/evals/results/
+          if-no-files-found: warn
+          retention-days: 14

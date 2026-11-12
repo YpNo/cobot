@@ -2,7 +2,8 @@
 # Repository settings for the GitHub remote, as code. Idempotent.
 #   scripts/github-settings.sh --check   print wanted vs current, change nothing (default)
 #   scripts/github-settings.sh --apply   set every setting that differs
-# Secrets are never handled here: the script prints the `gh secret set` commands the owner runs.
+# Credentials are never handled here: the script prints the federation rules to create and the
+# `gh variable set` / `gh secret set` commands the owner runs.
 # REPO=owner/name overrides the remote's repository.
 set -euo pipefail
 
@@ -104,11 +105,23 @@ ruleset() { # main: no deletion, no force push, PR with the aggregator green
   rm -f ruleset.err
 }
 
-secrets_hint() {
-  echo "secrets (owner, by hand; one per environment, none at repository level)"
+FEDERATION_VARS="ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID"
+
+# No API key: each environment exchanges its GitHub OIDC token for a short-lived Anthropic token
+# (scripts/anthropic-federation.sh). GitHub's immutable subject carries numeric IDs, so the rule's
+# subject is read from the repository rather than spelled from its name.
+federation_hint() {
+  local prefix env var
+  prefix=$(api "repos/$REPO/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty' 2> /dev/null) || prefix=""
+  [ -n "$prefix" ] || prefix="repo:$REPO"
+  echo "federation (owner, by hand: one Claude Console rule per environment, ids as environment variables)"
   for env in $ENVIRONMENTS; do
-    echo "  gh secret set ANTHROPIC_API_KEY --repo $REPO --env $env"
+    echo "  rule  subject $prefix:environment:$env (exact), claim ref = refs/heads/main"
+    for var in $FEDERATION_VARS; do
+      echo "  gh variable set $var --repo $REPO --env $env --body <id>"
+    done
   done
+  echo "secrets (owner, by hand; none at repository level)"
   echo "  gh secret set KNOWLEDGE_REFRESH_TOKEN --repo $REPO --env knowledge-refresh   # optional PAT: CI on learn/* PRs"
 }
 
@@ -119,5 +132,5 @@ security_flags
 echo "environments"
 for env in $ENVIRONMENTS; do environment "$env"; done
 ruleset
-secrets_hint
+federation_hint
 if [ "$APPLY" = 1 ]; then echo "applied $DIFFS change(s)"; else echo "$DIFFS change(s) pending; apply with: $0 --apply"; fi

@@ -66,12 +66,13 @@ jobs:
     if: needs.select.outputs.skills != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # the secrets (API key, optional PAT) are only exposed inside this environment;
+    # the federation identifiers and the optional PAT live only in this environment;
     # scripts/github-settings.sh creates it, deployable from main only
     environment: knowledge-refresh
     permissions:
       contents: write # push the learn/<skill> branch
       pull-requests: write # open the pull request
+      id-token: write # the GitHub OIDC token Anthropic exchanges for a short-lived access token
     strategy:
       max-parallel: 1
       fail-fast: false
@@ -86,13 +87,17 @@ jobs:
           python-version: "3.13"
       - name: Install Claude Code and the checks
         run: |
-          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.318
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
           python -m pip install --quiet ruff==0.17.4
       - name: Run the learner (read-only, budget-capped)
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           SKILL: ${{ matrix.skill }}
         run: |
+          . scripts/anthropic-federation.sh
           # the prompt comes before --allowedTools: that flag is variadic and swallows what follows it
           claude -p "/cobot:learn $SKILL" --plugin-dir plugins/cobot --model claude-sonnet-5-5 \
             --max-budget-usd "$BUDGET_USD" --max-turns 40 --output-format json \

@@ -85,8 +85,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.evals
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # the API key is exposed only inside this environment (scripts/github-settings.sh creates it)
+    # no stored key: workload identity federation through the federation identifiers set on this
+    # environment (scripts/github-settings.sh creates it, deployable from main only)
     environment: evals
+    permissions:
+      contents: read
+      id-token: write # the GitHub OIDC token Anthropic exchanges for a short-lived access token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -94,11 +98,15 @@ jobs:
       - name: Install Claude Code and the sandbox backend
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q bubblewrap socat
-          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.318
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
       - name: Run evals
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
         run: |
+          . scripts/anthropic-federation.sh
           cd plugins/cobot
           claude plugin eval . --trust-plugin --scaffold --no-publish --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \

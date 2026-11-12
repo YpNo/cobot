@@ -225,3 +225,11 @@ Proof: pytest with coverage exit 0 (928 passed, 98.08 %); ruff check and format 
 Open: F-20 lang-rust versions gap (knowledge refresh; an issue for the owner); new-project-onboard not run on a live model (paid, owner's); protocol.md 2 998 of 3 000 characters.
 Next: owner pushes feat/new-project and opens the PR.
 verified: afdf5479795093e7c2458915d5db6c913d0b94ec · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check
+
+## 2026-11-12 — WIF spike workflow (owner: WIF before the 0.2.0 eval run)
+
+Changed: .github/workflows/anthropic-wif-test.yml, a manual spike in the evals environment, hardened from the owner's draft (dispatch only, permissions {} then id-token: write on the job, no third-party action, nothing secret printed).
+Why: the evals and the knowledge refresh hold ANTHROPIC_API_KEY; Anthropic's workload identity federation could replace it, but Claude Code's support is not documented, the run outlives one minted token (600 s rule lifetime vs a 45-minute job) and GitHub tokens may be single-use (jti).
+Proof: YAML parses (5 steps); zizmor 1.32.0 offline: 0 medium or higher (one low: the version-pinned npm install, as in ci.yml). The spike itself is not run: it needs main and the evals environment.
+Open: the owner's federation rule must match repo:YpNo/cobot:environment:evals (and ref refs/heads/main); the untracked draft in the main checkout must be removed before pulling the merge.
+Next: owner merges, dispatches the spike, sends the run; then ci.yml and knowledge-refresh.yml switch (or the key stays).

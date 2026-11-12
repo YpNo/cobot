@@ -2,11 +2,13 @@ name: anthropic-wif-test
 
 # Spike: can the evals and the knowledge refresh drop the stored ANTHROPIC_API_KEY for workload
 # identity federation (GitHub OIDC -> Anthropic token)? Run by hand on main, in the `evals`
-# environment, so the federation rule can require `repo:YpNo/cobot:environment:evals`.
+# environment. GitHub now writes the subject with numeric IDs, so the rule's subject_prefix is
+# `repo:YpNo@883643/cobot@1449690492:environment:evals` (plus `claims.ref: refs/heads/main`);
+# the plain `repo:YpNo/cobot:...` form matches nothing and the exchange answers 401.
 # It answers four questions in the job summary: does the exchange work, what the GitHub token
 # carries (claim names, lifetime, whether it has a single-use `jti`), does Claude Code
 # authenticate from the federation variables alone, and do two sessions sharing one GitHub token
-# collide. Costs two one-word replies. Remove once ci.yml and knowledge-refresh.yml are switched.
+# collide. Costs three one-word replies. Remove once ci.yml and knowledge-refresh.yml are switched.
 
 on:
   workflow_dispatch:
@@ -66,6 +68,7 @@ jobs:
           test "$code" = 200
 
       - name: Install Claude Code
+        id: install
         env:
           VERSION: ${{ inputs.claude_version }}
         run: npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@$VERSION"
@@ -86,7 +89,8 @@ jobs:
           exit "$rc"
 
       - name: Two sessions sharing one GitHub token (single-use jti collision?)
-        if: always()
+        # runs even when the single session fails, but not when Claude Code never installed
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           set -uo pipefail
           unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN

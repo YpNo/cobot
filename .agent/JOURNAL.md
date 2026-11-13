@@ -326,3 +326,12 @@ Proof: pytest with coverage exit 0 (98.44 %); ruff check and format exit 0; the 
 Open: data-dependent arithmetic on a variable's value stays out of scope, wherever the value comes from (`read x < f; echo $((x))` is silent today too).
 Next: docs and CHANGELOG.
 verified: 72661ce · pytest+cov, ruff, differential
+
+## 2026-11-13 — gate-substitution: code review folds
+
+Changed: _cobot_shell.py (escape pieces never start a word or a comment, backslash-newline removed, trailing backslash an error, here-document delimiters join continuation lines, backticks and $'…' skipped when counting $(( parens, param mode for unquoted ${…} keeps <(…) and >(…), ) ends a redirection target); cobot-rules (wrapper options getopt style with --, nohup/builtin/chronic, unknown option leaves the wrapper opaque; judge_holed straight steps); test rows for each case; changelog and spec converge.
+Why: an independent code review of the branch found five bypasses (four silent where bash runs a ruled command, three of them regressions for commands without a substitution) and wrapper option gaps.
+Proof: pytest with coverage exit 0 (98.46 %, scanner 100 %); ruff, shellcheck, markdownlint, plugin validate (plugin and marketplace), check-plugin exit 0; the reviewer's fuzz script (200 000 scans, 30 000 judgements) raised nothing.
+Open: brace and glob expansion in a verb position (Q4 follow-up); git fetch cannot authenticate from this session, so the base is origin/main bde8ed5 as last fetched.
+Next: owner reviews and pushes feat/gate-substitution, opens the PR.
+verified: d9b9a54 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, fuzz

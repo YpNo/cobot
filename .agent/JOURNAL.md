@@ -317,3 +317,12 @@ Changed: default.rules replaces ask Bash(*cobot-memory learn *--promote*) by thr
 Why: owner answer Q1; with substitutions judged, a leading * matches any substituted argument. Landed before T03 because T03's tests need it and it holds on its own.
 Proof: pytest exit 0.
 verified: 7216b90 · pytest
+
+## 2026-11-13 — gate-substitution T03: judge_bash on scanned units
+
+Changed: cobot-rules judges the command and every substitution body (scan_units, judge_segment, judge_holed, structural_key, verb_zone, viable, covers, quoted_code, known_values, path_may_match, globs_meet; command_parts for runner bodies); strip_heredocs, has_substitution, substitution_excerpt removed; tests: story, judged, bypass, reason, allow, protected-path rows and tests/test_gate_differential.py (corpus under bash 5.2 with logging stubs).
+Why: spec revision 3. Build-time decisions: verb-dispatching wrappers (docker, podman, nix, distrobox, toolbox, flatpak, kubectl) take group and verb as their zone, plus the whole segment when opaque with the verb as written; chroot, nix-shell and distrobox-enter take the whole segment. A first stub version called basename from inside a stub and recursed until killed (about 40 000 processes, all removed); stubs now use builtins only.
+Proof: pytest with coverage exit 0 (98.44 %); ruff check and format exit 0; the oracle flags `terraform {apply,}` (the Q4 follow-up), so it can fail.
+Open: data-dependent arithmetic on a variable's value stays out of scope, wherever the value comes from (`read x < f; echo $((x))` is silent today too).
+Next: docs and CHANGELOG.
+verified: 72661ce · pytest+cov, ruff, differential

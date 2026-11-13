@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import itertools
 import re
+import shlex
 
 import _cobot_shell as sh
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def fresh_keys(monkeypatch):
+    """Sentinel numbers start at 0 in every test (the scanner shares one counter per process)."""
+    monkeypatch.setattr(sh, "_COUNTER", itertools.count())
 
 
 def plain(text: str) -> str:
@@ -316,3 +324,136 @@ def test_scan_hereDocumentDelimiter_joinsContinuationLines():
 )
 def test_scan_backtickAndAnsiInsideDollarParens_doNotCountParens(command):
     assert "git push" in bodies(sh.scan(command))[0]
+
+
+# ---------------------------------------------------------------- brace and glob expansion (gate-expansion)
+
+
+def words(command: str) -> list[str]:
+    """bash's words for a command without operators: scanned, split, braces expanded, each hole
+    shown as ``<kind:span>``."""
+    result = sh.scan(command)
+    assert result.error is None, result.error
+    shown = []
+    for word in sh.expand_braces(shlex.split(result.outer)):
+        for key in sh.sentinels(word):
+            hole = sh.REGISTRY[key]
+            word = word.replace(key, f"<{hole.kind}:{hole.span}>")
+        shown.append(word)
+    return shown
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cargo {publish,}", ["cargo", "publish"]),
+        ("{terraform,} apply", ["terraform", "apply"]),
+        ("p {,}", ["p"]),
+        ("p a{,}b", ["p", "ab", "ab"]),
+        ("p {a,b}{c,d}", ["p", "ac", "ad", "bc", "bd"]),
+        ("p {a,{b,c}d}e", ["p", "ae", "bde", "cde"]),
+        ("p {{a,b}}", ["p", "{a}", "{b}"]),
+        ("p {a,b}}", ["p", "a}", "b}"]),
+        (
+            "p {1..3} {a..c} {1..7..3} {7..1..2} {1..4..0}",
+            ["p", "1", "2", "3", "a", "b", "c", "1", "4", "7"] + ["7", "5", "3", "1", "1", "2", "3", "4"],
+        ),
+        ("p {05..1..2} {1..-01} {+1..2}", ["p", "05", "03", "01", "001", "000", "-01", "1", "2"]),
+        ('p "{a,b}" \\{a,b} {a\\,b} {"a b",c}', ["p", "{a,b}", "{a,b}", "{a,b}", "a b", "c"]),
+        (
+            "p {} {a} {a,b {a..} stash@{0} ${x:-{a,b}}",
+            ["p", "{}", "{a}", "{a,b", "{a..}", "stash@{0}", "${x:-{a,b}}"],
+        ),
+        ("p {~,x}/a {$,}x", ["p", "~/a", "x/a", "$x", "x"]),
+        ("p {a,b", ["p", "{a,b"]),
+        ('p {$(echo ")"),b}', ["p", '<substitution:$(echo ")")>', "b"]),
+        ("p {$(echo x),y}", ["p", "<substitution:$(echo x)>", "y"]),
+        ("cargo publis? publi[s]h *.py", ["cargo", "publis<glob:?>", "publi<glob:[s]>h", "<glob:*>.py"]),
+        ("p settings.[]j]son a[[:alpha:]]b", ["p", "settings.<glob:[]j]>son", "a<glob:[[:alpha:]]>b"]),
+        (
+            "p ~/.[c]laude/settings.jso[n] ~/.claude[/]x",
+            ["p", "~/.<glob:[c]>laude/settings.jso<glob:[n]>", "~/.claude[/]x"],
+        ),
+        ("p {a,b}*", ["p", "a<glob:*>", "b<glob:*>"]),
+        ("[ -f x ] [[ ]]", ["[", "-f", "x", "]", "[[", "]]"]),
+        ("echo $* $? $# $@ $1 \"*\" '?' \\*", ["echo", "$*", "$?", "$#", "$@", "$1", "*", "?", "*"]),
+    ],
+)
+def test_expandBraces_andGlobHoles_matchBash(command, expected):
+    assert words(command) == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "error"),
+    [
+        ("cargo publi{[,x}s{],y}h", "brackets and braces in one word"),
+        ("cat settings.[{j],x}son", "brackets and braces in one word"),
+        ("cat a]{b,c}", "brackets and braces in one word"),
+        ("cat {b,c}x]", "brackets and braces in one word"),
+        ("cargo +(publish)", "extended glob"),
+        ("cargo @(publish) ?(a) *(b)", "extended glob"),
+        ("!(zzz) apply", "extended glob"),
+        ("if !(grep -q x f); then :; fi", "extended glob"),
+        ('echo a["$(git push)"]', "expansion inside a bracket expression"),
+        ("echo a[`git push`]", "expansion inside a bracket expression"),
+        ("echo a[${x}]", "expansion inside a bracket expression"),
+        ("echo {1..300}", "brace expansion too large"),
+        ("echo " + "{a,b}" * 9, "brace expansion too large"),
+        ("echo {a,b}{c,d} " * 70, "brace expansion too large"),
+        ("echo {1..99999999999}", "brace expansion too large"),
+        ("echo {Z..b}", "brace sequence builds punctuation"),
+    ],
+)
+def test_scan_expansionOutsideTheModel_isAnError(command, error):
+    assert sh.scan(command).error == error
+
+
+def test_scan_braceWithAnUnclosedSubstitution_isRefusedByTheSubstitution():
+    assert sh.scan("p {$(x,b}").error == "unclosed substitution"
+
+
+def test_scan_negatedSubshellWithABlank_staysCommands():
+    assert sh.scan("! (git push)").error is None
+
+
+def test_scan_globInsideQuotesOrArithmeticOrParameter_isNoHole():
+    assert not sh.scan('echo "*" "$((2*3))" ${x#*} $((4*(5)))').holes.keys() - {
+        k for k, h in sh.REGISTRY.items() if h.kind == "substitution"
+    }
+
+
+def test_scan_substitutionAfterABracket_endsTheBracketAndRuns():
+    assert bodies(sh.scan("echo a[$(git push)]")) == ["git push"]
+
+
+def test_scan_braceAlternative_runsItsSubstitution():
+    assert bodies(sh.scan("p {$(git push),y}")) == ["git push"]
+
+
+def test_scan_braceAlternative_hashIsNotAComment():
+    assert words("p {#,a}") == ["p", "#", "a"]
+
+
+def test_scan_redirectionTargetGlob_isAHoleInTheTarget():
+    (target,) = sh.scan("echo x > ~/.claude/settings.js?").targets
+    assert sh.kind_of(sh.sentinels(target)[0]) == "glob"
+
+
+def test_join_leavesSentinelsBare_andScanAcceptsThemIssued():
+    first = sh.scan("uv run pytest tests/test_*.py")
+    tokens = shlex.split(first.outer)[2:]
+    text = sh.join(tokens)
+    key = sh.sentinels(text)[0]
+    assert text == f"pytest tests/test_{key}.py"
+    assert sh.join([f"a b{key}"]) == f"'a b'{key}"
+    again = sh.scan(text, frozenset({key}))
+    assert again.error is None and again.holes[key] is first.holes[key]
+    assert shlex.split(again.outer) == tokens
+    assert sh.join(["a b", ""]) == shlex.join(["a b", ""])
+
+
+def test_scan_sentinelNotIssued_isAnError():
+    key = sh.sentinels(sh.scan("ls *").outer)[0]
+    assert sh.scan(f"ls {key}").error == "reserved character in the command"
+    assert sh.scan(f"ls {key}", frozenset({"9"})).error == "reserved character in the command"
+    assert sh.scan("ls ", frozenset({key})).error == "reserved character in the command"

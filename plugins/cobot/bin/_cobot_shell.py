@@ -13,8 +13,16 @@ a Bash command are words of the command, which run as commands of their own, whi
 - ``targets``: redirection target words, for the protected-file check;
 - ``error``: set on anything the scanner does not model exactly, so the caller asks.
 
-Soundness target: a hole in the command's words is never silent where some text in its place
-would change which program runs, or make a rule match the form that names what runs. Code that
+Expansion (.agent/specs/gate-expansion.md): an unquoted brace expression is a ``brace`` hole whose
+alternatives ``expand_braces`` turns into bash's words after splitting; an unquoted ``*``, ``?``
+or bracket expression is a ``glob`` hole, zero or more file names. Every hole is kept in
+``REGISTRY`` under a key unique in the process, so a runner's inner command, scanned again with
+``issued`` keys, shares them.
+
+Soundness target: a hole in the command's words, a substitution or a glob, is never silent where
+some text in its place, for a glob some set of file names, would change which program runs, or
+make a rule match the form that names what runs; brace expansion is computed, not approximated.
+Code that
 reaches execution from a variable's value (arithmetic on it, ``${x@P}``) is not a hole: the
 caller's quoted-code rule and the ``@P`` error cover what the command text shows.
 """
@@ -23,6 +31,7 @@ from __future__ import annotations
 
 import itertools
 import re
+import shlex
 from dataclasses import dataclass, field
 
 OPEN, CLOSE = "", ""  # private-use characters: never in a command, never NUL
@@ -33,6 +42,14 @@ METACHARS = frozenset(" \t\n;&|()<>")
 QUOTING_MODES = ("top", "sub", "arith", "param")  # where quotes quote; not inside "…" or a body
 FD_PREFIX_RE = re.compile(r"(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
 CAT_HEREDOC_RE = re.compile(r"^\s*cat\s*$")
+EXPANDING_MODES = ("top", "sub")  # where bash expands braces and globs in a word
+EXTGLOB_CHARS = "?*+@!"  # before ``(``: an extended glob when ``extglob`` is on
+SPECIAL_PARAMETERS = "*?@#-!$"  # ``$*``, ``$?`` … : a parameter, never a glob
+MAX_BRACE_WORDS = 256  # words brace expansion may build in one command before it asks
+BRACKET_CODE_RE = re.compile(r"\$[({]|`")
+SEQUENCE_RE = re.compile(r"^(?:([-+]?\d+)\.\.([-+]?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.([-+]?\d+))?$")
+_COUNTER = itertools.count()  # one key space per process: inner scans share the outer holes
+REGISTRY: dict[str, Hole] = {}  # every hole by key; the gate reads kinds and spans here
 
 
 @dataclass(frozen=True)
@@ -40,8 +57,10 @@ class Hole:
     key: str  # the sentinel standing for it in the outer text
     span: str  # the original text, capped, for reasons and traces
     quoted: bool  # exactly one word (inside double quotes, a process substitution, ``$'…'``)
-    body: Scan | None  # the command it runs; None for arithmetic and ``$'…'``
+    body: Scan | None  # the command it runs; None for arithmetic, ``$'…'``, braces and globs
     value: str | None = None  # the text a bare ``cat <<'D'`` here-document prints
+    kind: str = "substitution"  # or ``glob`` (file names) or ``brace`` (``alternatives``)
+    alternatives: tuple[str, ...] = ()  # a brace's alternatives, scanned, quotes kept
 
 
 @dataclass(frozen=True)
@@ -66,15 +85,63 @@ class ShellError(Exception):
     """Text the scanner does not model exactly; the caller asks."""
 
 
-def scan(command: str) -> Scan:
-    """Scan a whole command. Never raises: a construct outside the model sets ``error``."""
-    if OPEN in command or CLOSE in command or "\0" in command:
+def scan(command: str, issued: frozenset[str] = frozenset()) -> Scan:
+    """Scan a whole command. Never raises: a construct outside the model sets ``error``. A sentinel
+    in ``issued`` (one the gate put in a runner's inner command) stands for its registered hole;
+    any other sentinel character is an error."""
+    if "\0" in command or not set(OPEN + CLOSE).isdisjoint(SENTINEL_RE.sub(_drop_issued(issued), command)):
         return Scan(outer=command, error="reserved character in the command")
-    scanner = _Scanner(command, 0, itertools.count(), "top")
+    scanner = _Scanner(command, 0, "top", issued)
     try:
         return scanner.run()
     except ShellError as error:
         return Scan(outer=command, error=str(error))
+
+
+def _drop_issued(issued: frozenset[str]):
+    return lambda match: "" if match.group() in issued and match.group() in REGISTRY else match.group()
+
+
+def kind_of(key: str) -> str | None:
+    hole = REGISTRY.get(key)
+    return hole.kind if hole else None
+
+
+def join(tokens: list[str]) -> str:
+    """``shlex.join`` that leaves hole sentinels bare, so scanning the text again with them issued
+    gives back the same words and holes."""
+    return " ".join(_join_word(token) for token in tokens)
+
+
+def _join_word(token: str) -> str:
+    pieces = re.split(f"({SENTINEL_RE.pattern})", token)
+    joined = "".join(p if SENTINEL_RE.fullmatch(p) else shlex.quote(p) if p else "" for p in pieces)
+    return joined or "''"
+
+
+def expand_braces(tokens: list[str]) -> list[str]:
+    """Bash's words for tokens holding brace holes: the cartesian product of the alternatives, left
+    to right, nested ones recursively; a word expansion leaves empty is dropped (stricter than
+    bash, which keeps a quoted one). The scanner capped the count at MAX_BRACE_WORDS."""
+    out: list[str] = []
+    for token in tokens:
+        words = _expand_word(token)
+        out.extend(words if words == [token] else [word for word in words if word])
+    return out
+
+
+def _expand_word(token: str) -> list[str]:
+    for key in sentinels(token):
+        hole = REGISTRY.get(key)
+        if hole is not None and hole.kind == "brace":
+            head, tail = token.split(key, 1)
+            return [word for alt in hole.alternatives for word in _expand_word(head + _dequote(alt) + tail)]
+    return [token]
+
+
+def _dequote(alternative: str) -> str:
+    """Quote removal on one alternative, which holds no unquoted blank."""
+    return "".join(shlex.split(alternative)) if alternative else ""
 
 
 def sentinels(text: str) -> list[str]:
@@ -89,13 +156,19 @@ class _Scanner:
     """One level of text: ``top`` (a command), ``sub`` (until its ``)``), ``dq`` (inside double
     quotes), ``heredoc`` (an unquoted body), ``arith`` (arithmetic: no here-documents, comments
     or redirections), ``param`` (an unquoted ``${…}``: like ``arith``, but ``<(…)`` and ``>(…)``
-    still run)."""
+    still run). Braces and globs expand in ``top`` and ``sub`` only."""
 
-    def __init__(self, text: str, depth: int, counter: itertools.count, mode: str, start: int = 0):
+    def __init__(
+        self, text: str, depth: int, mode: str, issued: frozenset[str], start: int = 0, in_word: bool = False
+    ):
         if depth > MAX_DEPTH:
             raise ShellError(f"more than {MAX_DEPTH} nested substitutions")
-        self.text, self.depth, self.counter, self.mode = text, depth, counter, mode
+        self.text, self.depth, self.mode, self.issued = text, depth, mode, issued
         self.i = start
+        self.in_word = in_word  # a brace alternative: its first character does not start a word
+        self.word_brace = self.word_bracket = False  # the current word holds a brace, a bracket
+        self.word_product = 1  # words the current word's braces build
+        self.brace_words = 0  # words built so far by braces in this text
         self.out: list[str] = []
         self.scan = Scan()
         self.parens = 0
@@ -113,12 +186,15 @@ class _Scanner:
             if self.mode == "sub":
                 raise ShellError("unclosed substitution")
         self.end_capture()  # a here-document still pending has no body: bash reads nothing
+        self.end_word()
         self.scan.outer = "".join(self.out)
         return self.scan
 
     def step(self) -> bool:
         """Handle the text at ``self.i``; True when this level ends."""
         c = self.text[self.i]
+        if c == OPEN:
+            return self.issued_hole()
         if c == "\\":
             return self.backslash()
         if c == "'" and self.mode in QUOTING_MODES:
@@ -146,7 +222,18 @@ class _Scanner:
         self.i += 2
         return False
 
+    def issued_hole(self) -> bool:
+        """A sentinel ``scan`` accepted as issued: the same hole, the same word."""
+        end = self.text.index(CLOSE, self.i) + 1
+        key = self.text[self.i : end]
+        self.scan.holes[key] = REGISTRY[key]
+        self.emit(key)
+        self.i = end
+        return False
+
     def unquoted(self, c: str) -> bool:
+        if c in METACHARS:
+            self.end_word()
         if c in " \t\n" or c in ";&|":
             self.end_capture()
         if c == "\n":
@@ -162,6 +249,8 @@ class _Scanner:
             self.process_substitution()
             return False
         if c in "<>&" and self.mode in ("top", "sub") and self.redirection():
+            return False
+        if self.mode in EXPANDING_MODES and self.expansion(c):
             return False
         if c == "(":
             return self.open_paren()
@@ -179,20 +268,95 @@ class _Scanner:
         self.out.append(piece)
 
     def at_word_start(self) -> bool:
-        return not self.out or ends_word(self.out[-1])
+        return not self.in_word if not self.out else ends_word(self.out[-1])
 
     def word_is(self, word: str) -> bool:
         end = self.i + len(word)
         return self.text[self.i : end] == word and (end == len(self.text) or self.text[end] in METACHARS)
 
-    def hole(self, span: str, quoted: bool, body: Scan | None, value: str | None = None) -> None:
-        key = f"{OPEN}{next(self.counter)}{CLOSE}"
-        self.scan.holes[key] = Hole(key, span[:SPAN_LIMIT], quoted, body, value)
+    def hole(
+        self,
+        span: str,
+        quoted: bool,
+        body: Scan | None,
+        value: str | None = None,
+        kind: str = "substitution",
+        alternatives: tuple[str, ...] = (),
+    ) -> None:
+        key = f"{OPEN}{next(_COUNTER)}{CLOSE}"
+        hole = Hole(key, span[:SPAN_LIMIT], quoted, body, value, kind, alternatives)
+        self.scan.holes[key] = REGISTRY[key] = hole
         self.emit(key)
 
-    def child(self, mode: str, start: int, text: str | None = None) -> _Scanner:
+    def child(self, mode: str, start: int, text: str | None = None, in_word: bool = False) -> _Scanner:
         source = self.text if text is None else text
-        return _Scanner(source, self.depth + 1, self.counter, mode, start)
+        return _Scanner(source, self.depth + 1, mode, self.issued, start, in_word)
+
+    # ------------------------------------------------------------ braces and globs
+
+    def end_word(self) -> None:
+        """A blank or an operator ends the word: count what its braces built."""
+        if self.word_product > 1:
+            self.brace_words += self.word_product
+            if self.brace_words > MAX_BRACE_WORDS:
+                raise ShellError("brace expansion too large")
+        self.word_brace = self.word_bracket = False
+        self.word_product = 1
+
+    def expansion(self, c: str) -> bool:
+        """An unquoted glob character, bracket or brace in a word; True when one was read. Bash
+        globs the words braces build, so a word with both a brace and a bracket is refused."""
+        if c in EXTGLOB_CHARS and self.text[self.i + 1 : self.i + 2] == "(":
+            raise ShellError("extended glob")
+        if c in "*?":
+            self.hole(c, False, None, kind="glob")
+            self.i += 1
+            return True
+        if c in "[]":
+            self.word_bracket = True
+            if self.word_brace:
+                raise ShellError("brackets and braces in one word")
+            end = bracket_end(self.text, self.i) if c == "[" else None
+            if end is None:
+                return False
+            self.hole(self.text[self.i : end], False, None, kind="glob")
+            self.i = end
+            return True
+        return c == "{" and self.brace()
+
+    def brace(self) -> bool:
+        found = brace_end(self.text, self.i)
+        if found is None:
+            return False
+        end, commas = found
+        if self.word_bracket:
+            raise ShellError("brackets and braces in one word")
+        if commas:
+            cuts = [self.i, *commas, end - 1]
+            pieces = [self.text[a + 1 : b] for a, b in itertools.pairwise(cuts)]
+            alternatives, count = self.alternatives(pieces)
+        else:
+            alternatives = sequence(self.text[self.i + 1 : end - 1])
+            count = len(alternatives)
+        self.word_brace = True
+        self.word_product *= count
+        if self.word_product > MAX_BRACE_WORDS:
+            raise ShellError("brace expansion too large")
+        self.hole(self.text[self.i : end], False, None, kind="brace", alternatives=alternatives)
+        self.i = end
+        return True
+
+    def alternatives(self, pieces: list[str]) -> tuple[tuple[str, ...], int]:
+        """Each alternative scanned as part of a word (its substitutions and globs become holes of
+        their own, nested braces too) and the words they build together."""
+        scanned, count = [], 0
+        for piece in pieces:
+            inner = self.child("top", 0, piece, in_word=True)
+            result = inner.run()
+            self.adopt(result)
+            scanned.append(result.outer)
+            count += inner.brace_words or 1
+        return tuple(scanned), count
 
     def adopt(self, inner: Scan) -> None:
         """Holes found in arithmetic or a here-string still run: keep them for judging."""
@@ -235,6 +399,10 @@ class _Scanner:
 
     def dollar(self) -> bool:
         nxt = self.text[self.i + 1 : self.i + 2]
+        if nxt and (nxt in SPECIAL_PARAMETERS or nxt.isdigit()):
+            self.emit("$" + nxt)  # ``$*``, ``$?``: a parameter, not a glob
+            self.i += 2
+            return False
         if nxt == "'" and self.mode in QUOTING_MODES:
             return self.ansi_c()
         if nxt == "(":
@@ -475,6 +643,105 @@ def ends_word(piece: str) -> bool:
     ``\\;``) is part of a word."""
     escaped = len(piece) == 2 and piece[0] == "\\"
     return bool(piece) and piece[-1] in METACHARS and not escaped
+
+
+def bracket_end(text: str, i: int) -> int | None:
+    """Index after the last unquoted ``]`` of the path component a ``[`` at ``i`` opens; None when
+    there is none, and bash reads the ``[`` as itself. The longest span holds every bracket form
+    bash reads (``[]j]``, ``[[:alpha:]]``); a bracket never holds ``/``. A substitution inside one,
+    or a brace, is refused: its code or its words would hide in the glob."""
+    j, last = i + 1, None
+    while j < len(text) and text[j] not in METACHARS and text[j] != "/":
+        c = text[j]
+        if c == "{" and text[j - 1] != "$":
+            raise ShellError("brackets and braces in one word")
+        if c in "\\'\"`":
+            j = skip_quoted(text, j)
+            continue
+        if c == "]":
+            last = j
+        j += 1
+    if last is None:
+        return None
+    if BRACKET_CODE_RE.search(text, i, last):  # quoted or not: ``a["$(x)"]`` runs ``x``
+        raise ShellError("expansion inside a bracket expression")
+    return last + 1
+
+
+def brace_end(text: str, i: int) -> tuple[int, list[int]] | None:
+    """Index after the ``}`` closing the brace at ``i`` within the word, and the indexes of its
+    top-level commas; None when bash reads it as literal text: unclosed in the word, no comma and
+    no sequence (``{}``, ``{a}``, ``stash@{0}``, ``{ cmd; }``). A bracket inside is refused."""
+    j, depth, commas = i + 1, 1, []
+    while j < len(text):
+        c = text[j]
+        if c in METACHARS:
+            return None
+        if c in "[]":
+            raise ShellError("brackets and braces in one word")
+        if c in "\\'\"" or c == "`" or text.startswith(("$(", "${"), j):
+            j = skip_expansion(text, j)
+            if j is None:
+                return None
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                inner = text[i + 1 : j]
+                return (j + 1, commas) if commas or SEQUENCE_RE.match(inner) else None
+        elif c == "," and depth == 1:
+            commas.append(j)
+        j += 1
+    return None
+
+
+def skip_expansion(text: str, j: int) -> int | None:
+    """Index after a quoted run, an escape, a backtick, ``$(…)`` or ``${…}`` at ``j``; None when it
+    is not closed (the scanner will refuse the text)."""
+    if text[j] in "\\'\"`":
+        end = skip_quoted(text, j)
+        return end if end <= len(text) else None
+    opener, closer = ("(", ")") if text[j + 1] == "(" else ("{", "}")
+    depth, k = 1, j + 2
+    while k < len(text):
+        c = text[k]
+        if c in "\\'\"`":
+            k = skip_quoted(text, k)
+            continue
+        depth += {opener: 1, closer: -1}.get(c, 0)
+        if depth == 0:
+            return k + 1
+        k += 1
+    return None
+
+
+def sequence(inner: str) -> tuple[str, ...]:
+    """The words of ``{x..y[..n]}``: integers (zero padded to the wider endpoint when one is
+    padded) or letters; a step of 0 is 1, its sign is ignored. Letters that would build
+    punctuation (``{Z..a}``) and more than MAX_BRACE_WORDS words are refused."""
+    match = SEQUENCE_RE.match(inner)
+    if match is None:  # brace_end matched it already
+        raise ShellError("not a brace sequence")
+    first, last, low, high, step_text = match.groups()
+    step = abs(int(step_text)) if step_text else 1
+    step = step or 1
+    if first is not None:
+        a, b = int(first), int(last)
+    else:
+        a, b = ord(low), ord(high)
+    if abs(b - a) // step + 1 > MAX_BRACE_WORDS:
+        raise ShellError("brace expansion too large")
+    values = range(a, b + (1 if b >= a else -1), step if b >= a else -step)
+    if first is None:
+        words = [chr(v) for v in values]
+        if not all(w.isalpha() for w in words):
+            raise ShellError("brace sequence builds punctuation")
+        return tuple(words)
+    padded = any(re.match(r"[-+]?0\d", end) for end in (first, last))
+    width = max(len(first.lstrip("+")), len(last.lstrip("+"))) if padded else 0
+    return tuple(f"{v:0{width}d}" for v in values)
 
 
 def skip_quoted(text: str, j: int, escapes: bool | None = None) -> int:

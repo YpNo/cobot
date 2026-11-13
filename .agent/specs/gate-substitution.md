@@ -265,4 +265,20 @@ Revision 2, second pass: **SOUND WITH CHANGES**, no BLOCKER. Folded into revisio
 
 ## Converge
 
-pending
+2026-11-13, built on `feat/gate-substitution`. Decisions taken during the build:
+
+- Plan steps 2 and 3 merged: `shlex` drops whitespace, so `cargo 2>/dev/null publish` and
+  `cargo 2 publish` tokenise alike; redirections are read in the scanner. T04 (promote rows)
+  landed before T03, whose tests need it. Commits: T01 `9f33a31`, scanner `42eff72`, rows
+  `7216b90`, judge `72661ce`.
+- Zones of verb-dispatching wrappers (`docker`, `podman`, `nix`, `distrobox`, `toolbox`,
+  `flatpak`) and `OPAQUE_SUBCOMMANDS` heads (`kubectl`, `cargo`, `npm` …) are head, global
+  options and verb (group and verb for the wrappers), plus the whole segment when opaque with
+  the verb as written; `chroot`, `nix-shell` and `distrobox-enter` take the whole segment. Without
+  it `kubectl apply -f $(ls x.yaml)` asked as structural under an owner allow.
+- Redirection targets are unquoted with `shlex` before the protected-file check.
+- A token of only `();&|` splits a segment (`f() { git push; }` was one segment).
+- Data-dependent arithmetic stays out of scope wherever the value comes from (`read x < f;
+  echo $((x))` is silent today as well).
+- The differential test's first stub called `basename`, itself a stub, and recursed until killed;
+  stubs use builtins only. The oracle flags `terraform {apply,}`, so it can fail (the Q4 case).

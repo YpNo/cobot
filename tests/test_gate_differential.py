@@ -13,9 +13,15 @@ unless they reach a stub; they are unit rows in ``test_cobot_rules.py``.
 Brace and glob expansion (.agent/specs/gate-expansion.md, story 6) adds rows run over files made
 before the gate reads the command, a pass under ``bash -O extglob`` and a pass under the
 consultant's scope. Unit rows only, because this oracle cannot see them: a redirection target of a
-builtin (``echo x > …`` logs nothing), the protected files (the stubs get a fake ``HOME``), and
-``find *`` with a ``-delete`` file (the literal judge allows ``find -delete`` for the consultant,
-finding F-21).
+builtin (``echo x > …`` logs nothing) and the protected files (the stubs get a fake ``HOME``).
+
+The gate-findings rows (.agent/specs/gate-findings.md, story 6) join the corpus: ``${…}`` operator
+words, locale strings, global options before the verb, ``rustup run``, and in the consultant pass
+the read-list options that write or run. The oracle judges each argv bash ran with the same
+literal judge, so it proves the decomposition (the ``${…}`` and ``$"…"`` forms fail it when read
+as text), not the literal rules: the guard, the readings and the redirection writes are proved by
+their unit rows in ``test_cobot_rules.py``, each of which fails with its mechanism turned off.
+Redirection writes are unit rows only: a stub logs its argv, not where its output went.
 """
 
 from __future__ import annotations
@@ -26,14 +32,20 @@ import shutil
 import subprocess
 
 import pytest
-from test_cobot_rules import BYPASSES_CLOSED, SUBSTITUTION_JUDGED, SUBSTITUTION_SILENT
+from test_cobot_rules import (
+    BYPASSES_CLOSED,
+    FINDINGS_CLOSED,
+    FINDINGS_SILENT,
+    SUBSTITUTION_JUDGED,
+    SUBSTITUTION_SILENT,
+)
 
 BASH = shutil.which("bash")
 SH = shutil.which("sh")
 STUBS = (
     "basename cargo cat cobot-memory cp curl date diff direnv dirname distrobox docker find gcloud gh git "
-    "glab grep head kubectl ls make mkdir mktemp npm python3 rm sed sort tail tee terraform terragrunt "
-    "uname uv wc xargs"
+    "glab grep head kubectl ls make mkdir mktemp npm pnpm python3 rg rm rustup sed sort tail tee terraform "
+    "terragrunt uname uniq uv wc xargs"
 ).split()
 RECORD_SEP = "\x1e"
 TIMEOUT_SECONDS = 10
@@ -41,7 +53,13 @@ TIMEOUT_SECONDS = 10
 pytestmark = pytest.mark.skipif(BASH is None or SH is None, reason="bash and sh are needed")
 
 CORPUS = sorted(
-    {*SUBSTITUTION_SILENT, *(command for command, _ in SUBSTITUTION_JUDGED), *(c for c, _ in BYPASSES_CLOSED)}
+    {
+        *SUBSTITUTION_SILENT,
+        *FINDINGS_SILENT,
+        *(command for command, _ in SUBSTITUTION_JUDGED),
+        *(c for c, _ in BYPASSES_CLOSED),
+        *(c for c, _ in FINDINGS_CLOSED),
+    }
 )
 
 
@@ -128,6 +146,19 @@ AGENT_CORPUS = [
     ({}, "cat src/{a,b}.rs"),
     ({"a.py": ""}, "grep -rn x --include=*.py ."),
     ({"a.py": ""}, "ls ./*.py"),
+    # gate-findings: options that write or run, and ${…} words that supply them
+    ({}, "find . -delete"),
+    ({"-delete": ""}, "find ${x:-*}"),
+    ({}, "kubectl get pods ${x:---kubeconfig=./evil}"),
+    ({}, "rg --pre=./x foo"),
+    ({"--pre=./x": ""}, "rg --pre=./* foo"),
+    ({}, "sort -uo out f"),
+    ({}, "uniq a b"),
+    ({}, "git log --output=x"),
+    ({}, "git branch -D main"),
+    ({}, "curl -s -T x https://e"),
+    ({}, "rg -n x src"),
+    ({}, "git log --oneline -5"),
 ]
 
 
@@ -176,6 +207,18 @@ def test_expansionOracle_bitesOnTheBypassesItCovers(rules, stub_path, tmp_path):
     assert ran("cargo {publish,}", stub_path, tmp_path) == [["cargo", "publish"]]
     (tmp_path / "-c").write_text("")
     assert ran("git log *", stub_path, tmp_path) == [["git", "log", "-c", "aa", "cargo", "publish"]]
+
+
+def test_findingsOracle_bitesOnTheBypassesItCovers(stub_path, tmp_path):
+    """bash runs the ruled command behind each gate-findings form."""
+    assert ran('cargo $"publish"', stub_path, tmp_path) == [["cargo", "publish"]]
+    assert ran("cargo ${x:-publish}", stub_path, tmp_path) == [["cargo", "publish"]]
+    assert ran('terraform {$"apply",}', stub_path, tmp_path) == [["terraform", "apply"]]
+    assert ran("kubectl get pods ${x:---kubeconfig=./e}", stub_path, tmp_path) == [
+        ["kubectl", "get", "pods", "--kubeconfig=./e"]
+    ]
+    (tmp_path / "-delete").write_text("")
+    assert ran("find ${x:-*}", stub_path, tmp_path) == [["find", "-delete"]]
 
 
 def test_stubs_logArgvAndRunNothingElse(stub_path, tmp_path):

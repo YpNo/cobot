@@ -459,3 +459,11 @@ Why: spec gate-findings story 6.
 Proof: pytest with coverage exit 0; ruff exit 0; mutations: ${…} and $"…" read as text fail the differential (kubectl ${x:---kubeconfig=…}); guard off, readings off and redirection writes off pass the differential (it judges each argv with the same literal judge) and each fails its unit rows in test_cobot_rules.py.
 Next: T06 docs, CHANGELOG, findings.
 verified: 1014792 · pytest+cov, ruff, mutations
+
+## 2026-11-13 — gate-findings T06: docs, changelog, findings
+
+Changed: CHANGELOG Unreleased Security (three bullets); docs/configuration.md (options before the verb, ${…} and $"…", What the read lists never cover); docs/02-design.md §6; docs/architecture.md security model; docs/01-decisions.md decision 28 amended (owner's Q1, the plain-variable residual named); agents/consultant.md one line; security-sweep references/rust.md uses cargo-audit audit; FINDINGS F-21 to F-24 closed, F-25 parked; spec converge with three corrected rows.
+Why: spec gate-findings T06.
+Proof: pytest with coverage exit 0 (98.66 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0 (117 files); claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: independent bypass-aimed review, fold.
+verified: 0c5572a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

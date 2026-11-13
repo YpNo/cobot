@@ -467,3 +467,11 @@ Why: spec gate-findings T06.
 Proof: pytest with coverage exit 0 (98.66 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0 (117 files); claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
 Next: independent bypass-aimed review, fold.
 verified: 0c5572a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — gate-findings T07: bypass review folds
+
+Changed: cobot-rules (word_bounded in matches_bash for agent-scoped allows; rustup and cargo +toolchain in executes_foreign; FOREIGN_BY_CLI for npm, pnpm, uv, cargo -C; READ_GUARDS rg --hostname-bin, cargo-deny check -g, cargo-audit audit --db; uniq counts a glob operand twice; branch_write takes the last of --list and --no-list; inner_rustup skips --install and --, a toolchain path is opaque; readings continue past a presumed value only when an option follows; flag tables for uv, pnpm, npm; NPM_COMMANDS, NPM_ALIASES, npm_command, PNPM_RECURSIVE, canonical_package_manager; git_alias_set makes git opaque; guard reason reworded); tests: FINDINGS_REVIEW_* rows; CHANGELOG, configuration.md, spec converge (trimmed to 300 lines).
+Why: owner's condition: an independent code-reviewer pass aimed at bypasses (bash 5.2.37, installed tools, 18 000 fuzzed commands, no crash): 4 BLOCKER (two regressions of this branch: rustup and cargo +path for agents), 5 MAJOR, 1 MINOR, all folded. Accepted, documented: a runner behind an option asks as opaque (pnpm -r build, npm --prefix web test).
+Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0; the reviewer's probes re-run, each item asks; 25 common read-list commands silent.
+Next: owner reviews security/gate-findings-21-24; nothing pushed.
+verified: f8c2d7b · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

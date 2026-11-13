@@ -9,6 +9,13 @@ the gate must not be silent on the whole command.
 Scope: this validates the decomposition into external argv only. Builtins and arithmetic that run
 code (``printf -v``, ``$((x))`` on a quoted subscript, ``${x@P}``) run inside bash and log nothing
 unless they reach a stub; they are unit rows in ``test_cobot_rules.py``.
+
+Brace and glob expansion (.agent/specs/gate-expansion.md, story 6) adds rows run over files made
+before the gate reads the command, a pass under ``bash -O extglob`` and a pass under the
+consultant's scope. Unit rows only, because this oracle cannot see them: a redirection target of a
+builtin (``echo x > …`` logs nothing), the protected files (the stubs get a fake ``HOME``), and
+``find *`` with a ``-delete`` file (the literal judge allows ``find -delete`` for the consultant,
+finding F-21).
 """
 
 from __future__ import annotations
@@ -24,8 +31,9 @@ from test_cobot_rules import BYPASSES_CLOSED, SUBSTITUTION_JUDGED, SUBSTITUTION_
 BASH = shutil.which("bash")
 SH = shutil.which("sh")
 STUBS = (
-    "basename cat cobot-memory curl date diff direnv dirname distrobox docker find gcloud gh git glab "
-    "grep head kubectl ls make mktemp python3 sed sort tail tee terraform terragrunt uname wc xargs"
+    "basename cargo cat cobot-memory cp curl date diff direnv dirname distrobox docker find gcloud gh git "
+    "glab grep head kubectl ls make mkdir mktemp npm python3 rm sed sort tail tee terraform terragrunt "
+    "uname uv wc xargs"
 ).split()
 RECORD_SEP = "\x1e"
 TIMEOUT_SECONDS = 10
@@ -51,13 +59,14 @@ def stub_path(tmp_path_factory):
     return directory
 
 
-def ran(command: str, stubs, workdir) -> list[list[str]]:
-    """The argv of every stub bash ran for the command."""
-    log = workdir / "stub.log"
+def ran(command: str, stubs, workdir, options: tuple[str, ...] = ()) -> list[list[str]]:
+    """The argv of every stub bash ran for the command. The log sits beside the directory, so a
+    glob in the command sees only the files the row made."""
+    log = workdir.parent / f"{workdir.name}.stub.log"
     log.write_text("")
     env = {"PATH": str(stubs), "STUB_LOG": str(log), "HOME": str(workdir)}
     subprocess.run(  # noqa: S603 - fixed bash, corpus strings under stubs only
-        [BASH, "--norc", "--noprofile", "-c", command],
+        [BASH, "--norc", "--noprofile", *options, "-c", command],
         cwd=workdir,
         env=env,
         stdin=subprocess.DEVNULL,
@@ -77,6 +86,96 @@ def test_gate_neverSilentWhereBashRanAJudgedCommand(rules, stub_path, tmp_path, 
         literal = rules.judge_bash(shlex.join(argv), loaded, None, str(tmp_path))[0].decision
         if literal is not None:
             assert whole is not None, f"bash ran {argv!r} ({literal}); the gate was silent on {command!r}"
+
+
+# ---------------------------------------------------------------- brace and glob expansion
+
+MAKEFILE = {"Makefile": "show:\n\t@echo value $(X)\n"}
+
+# (files made in the directory first, command): each can fail the oracle if the gate is silent
+EXPANSION_CORPUS = [
+    ({}, "cargo {publish,}"),
+    ({}, "terraform {apply,}"),
+    ({}, "{terraform,} apply"),
+    ({}, "git push origin {main,--force}"),
+    ({}, "git {push,} --force"),
+    ({}, "git pu{sh,ll}"),
+    ({}, "{git,echo} push"),
+    ({"publish": ""}, "cargo publis?"),
+    ({"publish": ""}, "cargo publi[s]h"),
+    ({"apply": ""}, "terraform appl*"),
+    ({"aa": "", "cargo": ""}, "uv run --with * publish"),
+    ({"publish": ""}, "uv run cargo publis?"),
+    ({**MAKEFILE, "X=;cargo publish": ""}, "make show X=*"),
+    ({"--force": ""}, "git push origin *"),
+    ({}, "ls *.py"),
+    ({"src/a": ""}, "git add src/*"),
+    ({}, "mkdir -p src/{a,b}"),
+    ({}, "cp f{,.bak}"),
+    ({}, "echo {1..3}"),
+    ({"pulls1state=all": ""}, "gh api repos/o/r/pulls?state=all"),
+    ({"a.md": ""}, 'for f in *.md; do wc -l "$f"; done'),
+    ({"tests/test_a.py": ""}, "uv run pytest tests/test_*.py"),
+]
+EXTGLOB_CORPUS = [
+    ({"publish": ""}, "cargo +(publish)"),
+    ({"publish": ""}, "cargo @(publish)"),
+    ({"terraform": ""}, "!(zzz) apply"),
+]
+AGENT_CORPUS = [
+    ({"-c": ""}, "git log *"),
+    ({"plugins/a/agents": ""}, "ls plugins/*/agents"),
+    ({}, "cat src/{a,b}.rs"),
+    ({"a.py": ""}, "grep -rn x --include=*.py ."),
+    ({"a.py": ""}, "ls ./*.py"),
+]
+
+
+def make_files(workdir, files: dict[str, str]) -> None:
+    for name, text in files.items():
+        path = workdir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+
+def oracle(rules, command: str, stubs, workdir, agent=None, options: tuple[str, ...] = ()) -> None:
+    loaded, _, _ = rules.load_rules(None)
+    whole = rules.judge_bash(command, loaded, agent, str(workdir))[0].decision
+    for argv in ran(command, stubs, workdir, options):
+        literal = rules.judge_bash(shlex.join(argv), loaded, agent, str(workdir))[0].decision
+        if literal is not None:
+            assert whole is not None, f"bash ran {argv!r} ({literal}); the gate was silent on {command!r}"
+
+
+@pytest.mark.parametrize(("files", "command"), EXPANSION_CORPUS)
+def test_expansion_neverSilentWhereBashRanAJudgedCommand(rules, stub_path, tmp_path, files, command):
+    make_files(tmp_path, files)
+    oracle(rules, command, stub_path, tmp_path)
+
+
+@pytest.mark.parametrize(("files", "command"), EXTGLOB_CORPUS)
+def test_extglob_neverSilentWhereBashRanAJudgedCommand(rules, stub_path, tmp_path, files, command):
+    make_files(tmp_path, files)
+    assert ran(command, stub_path, tmp_path, ("-O", "extglob")), f"bash ran no stub for {command!r}"
+    oracle(rules, command, stub_path, tmp_path, options=("-O", "extglob"))
+
+
+@pytest.mark.parametrize(("files", "command"), AGENT_CORPUS)
+def test_agentScope_neverSilentWhereBashRanAJudgedCommand(rules, stub_path, tmp_path, files, command):
+    make_files(tmp_path, files)
+    oracle(rules, command, stub_path, tmp_path, agent="cobot:consultant")
+
+
+def test_expansionOracle_bitesOnTheBypassesItCovers(rules, stub_path, tmp_path):
+    """The rows above can fail: bash really runs the ruled command for each."""
+    make_files(tmp_path, {"aa": "", "cargo": "", "publish": ""})
+    assert ran("uv run --with * publish", stub_path, tmp_path) == [
+        ["uv", "run", "--with", "aa", "cargo", "publish", "publish"]
+    ]
+    assert ran("cargo publis?", stub_path, tmp_path) == [["cargo", "publish"]]
+    assert ran("cargo {publish,}", stub_path, tmp_path) == [["cargo", "publish"]]
+    (tmp_path / "-c").write_text("")
+    assert ran("git log *", stub_path, tmp_path) == [["git", "log", "-c", "aa", "cargo", "publish"]]
 
 
 def test_stubs_logArgvAndRunNothingElse(stub_path, tmp_path):

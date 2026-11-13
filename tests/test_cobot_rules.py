@@ -229,6 +229,55 @@ def test_decide_defaultRules_returnsExpectedDecision(rules, command, expected):
     assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
 
 
+RESERVED_AND_WRAPPER_OPTIONS = [
+    ("! git push", "ask"),
+    ("{ git push; }", "ask"),
+    ("{ git push --force; }", "deny"),
+    ("for f in a b; do git push; done", "ask"),
+    ("for f in a b\ndo\n  git push --force\ndone", "deny"),
+    ("if true; then git push; fi", "ask"),
+    ("if false; then :; elif ! git push; then :; else git push --force; fi", "deny"),
+    ("while true; do git push; done", "ask"),
+    ("until false; do git push; done", "ask"),
+    ("function f { git push --force; }", "deny"),
+    ("function f() { git push; }", "ask"),
+    ("f() { git push; }", "ask"),
+    ("coproc git push", "ask"),
+    ("coproc worker { git push --force; }", "deny"),
+    ("time -p git push", "ask"),
+    ("command -p git push --force", "deny"),
+    ("exec -a name git push", "ask"),
+    ("exec -c -l git push --force", "deny"),
+    ("rtk proxy git push --force", "deny"),
+    ("trap 'git push --force' EXIT", "ask"),
+    ("for f in push; do echo $f; done", None),
+    ("select x in git push; do echo $x; done", None),
+    ("case x in git) echo push;; esac", None),
+    ("{ git status; }", None),
+    ("if true; then cargo test; fi", None),
+    ("command -v git", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), RESERVED_AND_WRAPPER_OPTIONS)
+def test_decide_reservedWordsAndWrapperOptions_judgeTheCommandBehind(rules, command, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
+
+
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["{", "git", "-c", "core.pager=./x", "log"],
+        ["time", "-p", "git", "-c", "core.pager=./x", "log"],
+        ["if", "!", "kubectl", "--kubeconfig", "./kc", "get", "pods"],
+        ["rtk", "proxy", "git", "--exec-path=./bin", "log"],
+    ],
+)
+def test_executesForeign_behindReservedWordsAndWrapperOptions_isForeign(rules, tokens):
+    assert rules.executes_foreign(tokens) is True
+
+
 def test_judgeBash_mostRestrictiveSegmentWins(rules):
     loaded, _, _ = rules.load_rules(None)
     verdict = rules.judge_bash("git push && git push --force", loaded, None)[0]

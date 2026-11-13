@@ -46,7 +46,18 @@ DECISION_OF = {"never": DENY, "ask": ASK, "allow": "allow"}
 RANK = {None: 0, "allow": 0, ASK: 1, DENY: 2}
 REASON_LIMIT = 200
 SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
+CONTROL_CHARS = frozenset("();&|")  # a token of these alone ends a segment
 WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
+# wrappers with options of their own: flags without a value, options that take one
+WRAPPER_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "time": (frozenset({"-p"}), frozenset()),
+    "command": (frozenset({"-p"}), frozenset()),
+    "exec": (frozenset({"-c", "-l", "-cl", "-lc"}), frozenset({"-a"})),
+}
+# shell reserved words that run the command after them, at a segment head
+RESERVED_HEADS = frozenset({"!", "{", "}", "do", "then", "else", "elif", "if", "while", "until"})
+# a segment with one of these heads runs nothing of its own: its words are data
+DATA_HEADS = frozenset({"for", "select", "case"})
 # prefix commands that run another command: options taking a value, then positional operands to skip
 PREFIX_COMMANDS: dict[str, tuple[frozenset[str], int]] = {
     "timeout": (frozenset({"-k", "-s", "--kill-after", "--signal"}), 1),
@@ -68,7 +79,8 @@ MCP_WRITE_WORDS = frozenset(
 )
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 OPAQUE = frozenset(
-    "sh bash zsh dash ksh fish eval source . xargs sudo doas su make gmake just task npx ssh mosh".split()
+    "sh bash zsh dash ksh fish eval source . trap "
+    "xargs sudo doas su make gmake just task npx ssh mosh".split()
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -340,7 +352,7 @@ def split_segments(command: str) -> list[list[str]]:
     lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
     segments: list[list[str]] = [[]]
     for token in lexer:
-        if token in SEPARATORS:
+        if token in SEPARATORS or (token and set(token) <= CONTROL_CHARS):  # ``()``, ``))``
             if segments[-1]:
                 segments.append([])
         else:
@@ -358,19 +370,48 @@ def strip_prefix_command(tokens: list[str]) -> list[str]:
     return rest[positional:]
 
 
+def drop_wrapper(tokens: list[str]) -> list[str] | None:
+    """The tokens after one leading reserved word, function header, wrapper (with its options) or
+    prefix command; None when the head is none of these."""
+    head = tokens[0]
+    if head in RESERVED_HEADS:
+        return tokens[1:]
+    if head == "function":  # ``function f { …; }``: the name is not a command
+        return tokens[2:]
+    if head == "coproc":  # ``coproc NAME { …; }`` or ``coproc cmd``
+        return tokens[2:] if tokens[2:3] == ["{"] else tokens[1:]
+    if head == "rtk" and tokens[1:2] == ["proxy"]:
+        return tokens[2:]
+    if head in WRAPPER_OPTIONS:
+        flags, with_value = WRAPPER_OPTIONS[head]
+        rest = tokens[1:]
+        while rest and (rest[0] in flags or rest[0] in with_value):
+            rest = rest[2:] if rest[0] in with_value else rest[1:]
+        return rest
+    if head in WRAPPERS:
+        return tokens[1:]
+    if head in PREFIX_COMMANDS:
+        return strip_prefix_command(tokens)
+    return None
+
+
 def strip_wrappers(tokens: list[str]) -> list[str]:
-    """Drop wrappers, assignments and prefix commands; basename the binary."""
+    """Drop reserved words, wrappers, assignments and prefix commands; basename the binary. A
+    ``for``, ``select`` or ``case`` head leaves nothing: those words are data."""
     tokens = list(tokens)
     while tokens:
         head = tokens[0]
         if head == "env" and len(tokens) > 1 and tokens[1].startswith("-"):
             break  # ``env -S cmd``, ``env -i cmd``: the real command is hidden behind env's options
-        if head in WRAPPERS or ("=" in head and not head.startswith("-")):
+        if head in DATA_HEADS:
+            return []
+        if "=" in head and not head.startswith("-"):
             tokens.pop(0)
-        elif head in PREFIX_COMMANDS:
-            tokens = strip_prefix_command(tokens)
-        else:
+            continue
+        rest = drop_wrapper(tokens)
+        if rest is None:
             break
+        tokens = rest
     if tokens and "/" in tokens[0] and not tokens[0].startswith("$"):
         tokens[0] = os.path.basename(tokens[0])
     return tokens
@@ -483,12 +524,11 @@ def executes_foreign(tokens: list[str]) -> bool:
             if head.split("=", 1)[0] not in COSMETIC_ENV:
                 return True
             rest.pop(0)
-        elif head in WRAPPERS:
-            rest.pop(0)
-        elif head in PREFIX_COMMANDS:
-            rest = strip_prefix_command(rest)
-        else:
+            continue
+        after = drop_wrapper(rest)
+        if after is None:
             break
+        rest = after
     if not rest:
         return False
     cli = os.path.basename(rest[0])

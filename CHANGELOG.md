@@ -169,6 +169,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The gate judges a command substitution by what it runs (`.agent/specs/gate-substitution.md`):
+  `$(…)`, backticks, `<(…)` and `>(…)` no longer ask on their own. A new quote-aware scanner
+  (`bin/_cobot_shell.py`) hands each body to the same rules; the substitution asks only where
+  its text could decide what runs or make a `never` or `ask` row match, and a `never` row that
+  matches anyway still denies. `for f in $(find …); do cat "$f"; done`,
+  `VIS=$(gh repo view …)` and `cobot-memory journal add "$(cat <<'EOF' … EOF)"` run without a
+  prompt; a `"$(cat <<'EOF' … EOF)"` body is also judged as its text, so an attribution line in
+  a heredoc commit or PR body is denied, not asked. The default promote rule is anchored on the
+  command word (`cobot-memory learn *--promote*` and its `python3`/`python` forms). An
+  agent-scoped `allow` never silences a segment holding a substitution. Unparseable commands
+  ask with a reason instead of a traceback in `cobot-rules check`.
 - The protocol is back under its stated 3 000 characters (2 995, was 3 484) with no rule
   dropped, and its delegation line names builders by pattern (`cobot:<language>-builder`, else
   `cobot:builder`) instead of three of the six.
@@ -301,6 +312,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Gate bypasses in the shell parsing, silent before and now judged: a line cut at `<<`
+  (`cat <<EOF > f; git push --force`), an unquoted here-document body's `$(…)`, a delimiter with
+  quotes in it (`<<E"O"F`), a quote inside a comment hiding the next line, redirections before
+  or inside a command (`</dev/null terraform apply`, `cargo 2>/dev/null publish`), reserved words
+  at a segment head (`!`, `{`, `do`, `then`, `else`, `function f {`, `coproc`), wrapper options
+  (`time -p`, `command -p`, `exec -a`, `rtk proxy`, `--` and combined flags such as
+  `exec -la x`; an option the gate does not know leaves the wrapper opaque), a backslash-newline
+  inside a word (`git pu\` ⏎ `sh --force`), and `trap '…'` (now opaque). Brace and glob
+  expansion in a verb position (`cargo {publish,}`) is still silent and has its own follow-up.
+  A substitution only in a leading assignment no longer hides the command after it
+  (`x=$(true) bash -c 'git push --force'` is denied, `x=$(true) make deploy` resolves the
+  target).
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

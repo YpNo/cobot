@@ -295,3 +295,61 @@ Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses, runs-on ubuntu-26
 Open: the missing bin/ under `claude plugin eval` is a Claude Code difference worth reporting upstream; the PATH prefix is the CI-side workaround only.
 Next: owner pushes, merges, dispatches `cases=never-apply`; then the full suite and the remaining failures.
 verified: fe03c5a · zizmor, yaml, markdownlint, local cobot-rules check on the prefixed PATH
+
+
+## 2026-11-13 — gate-substitution T01: reserved words and wrapper options
+
+Changed: cobot-rules drop_wrapper (reserved heads, function, coproc, time -p, command -p, exec -a/-c/-l, rtk proxy), for/select/case segments are data, trap opaque, a token of only ();&| splits; executes_foreign strips the same heads; tests.
+Why: spec .agent/specs/gate-substitution.md (owner answers 2026-11-13); `! git push`, `{ git push; }`, `do git push`, `rtk proxy git push --force` and the rest were silent.
+Proof: pytest with coverage exit 0 (98.13 %); ruff check and format exit 0.
+Next: T02 redirections.
+verified: 9f33a31 · pytest+cov, ruff
+
+## 2026-11-13 — gate-substitution T02: the shell scanner
+
+Changed: bin/_cobot_shell.py (scan, Hole, Scan, HereDoc, known_value, unescape_backtick) and tests/test_cobot_shell.py; not wired into the gate yet.
+Why: spec plan steps 2 and 3 merged: shlex drops whitespace, so `cargo 2>/dev/null publish` and `cargo 2 publish` look alike after splitting; redirections are read in the scanner, character by character.
+Proof: pytest on tests/test_cobot_shell.py exit 0, 100 % of the module; ruff check and format exit 0.
+Next: T03 judge_bash on scanned units.
+verified: 42eff72 · pytest (scanner, 100 %), ruff
+
+## 2026-11-13 — gate-substitution T04 (ahead of T03): promote rows anchored
+
+Changed: default.rules replaces ask Bash(*cobot-memory learn *--promote*) by three rows anchored on cobot-memory, python3 and python; promote tests.
+Why: owner answer Q1; with substitutions judged, a leading * matches any substituted argument. Landed before T03 because T03's tests need it and it holds on its own.
+Proof: pytest exit 0.
+verified: 7216b90 · pytest
+
+## 2026-11-13 — gate-substitution T03: judge_bash on scanned units
+
+Changed: cobot-rules judges the command and every substitution body (scan_units, judge_segment, judge_holed, structural_key, verb_zone, viable, covers, quoted_code, known_values, path_may_match, globs_meet; command_parts for runner bodies); strip_heredocs, has_substitution, substitution_excerpt removed; tests: story, judged, bypass, reason, allow, protected-path rows and tests/test_gate_differential.py (corpus under bash 5.2 with logging stubs).
+Why: spec revision 3. Build-time decisions: verb-dispatching wrappers (docker, podman, nix, distrobox, toolbox, flatpak, kubectl) take group and verb as their zone, plus the whole segment when opaque with the verb as written; chroot, nix-shell and distrobox-enter take the whole segment. A first stub version called basename from inside a stub and recursed until killed (about 40 000 processes, all removed); stubs now use builtins only.
+Proof: pytest with coverage exit 0 (98.44 %); ruff check and format exit 0; the oracle flags `terraform {apply,}` (the Q4 follow-up), so it can fail.
+Open: data-dependent arithmetic on a variable's value stays out of scope, wherever the value comes from (`read x < f; echo $((x))` is silent today too).
+Next: docs and CHANGELOG.
+verified: 72661ce · pytest+cov, ruff, differential
+
+## 2026-11-13 — gate-substitution: code review folds
+
+Changed: _cobot_shell.py (escape pieces never start a word or a comment, backslash-newline removed, trailing backslash an error, here-document delimiters join continuation lines, backticks and $'…' skipped when counting $(( parens, param mode for unquoted ${…} keeps <(…) and >(…), ) ends a redirection target); cobot-rules (wrapper options getopt style with --, nohup/builtin/chronic, unknown option leaves the wrapper opaque; judge_holed straight steps); test rows for each case; changelog and spec converge.
+Why: an independent code review of the branch found five bypasses (four silent where bash runs a ruled command, three of them regressions for commands without a substitution) and wrapper option gaps.
+Proof: pytest with coverage exit 0 (98.46 %, scanner 100 %); ruff, shellcheck, markdownlint, plugin validate (plugin and marketplace), check-plugin exit 0; the reviewer's fuzz script (200 000 scans, 30 000 judgements) raised nothing.
+Open: brace and glob expansion in a verb position (Q4 follow-up); git fetch cannot authenticate from this session, so the base is origin/main bde8ed5 as last fetched.
+Next: owner reviews and pushes feat/gate-substitution, opens the PR.
+verified: d9b9a54 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, fuzz
+
+## 2026-11-13 — gate-substitution rebased onto main
+
+Changed: feat/gate-substitution rebased from bde8ed5 onto origin/main e8e6669 (PRs 34–37); no code conflict, JOURNAL.md kept main's entries first, then this branch's; CHANGELOG entries still sit under Unreleased, Changed and Security.
+Why: the owner asked for the rebase before pushing; the earlier stamps name pre-rebase commits.
+Proof: pytest with coverage exit 0 (98.46 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
+Next: owner pushes and opens the PR.
+verified: 9397f77 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — gate-substitution: assignment holes no longer hide the command
+
+Changed: cobot-rules prefix_key split out of structural_key; holes_only_in_assignments lets expand_segments expand, and judge_holed judge with judge_words (agent allows left out), a segment whose holes all sit in leading NAME= values; seven bypass rows, five make rows, one agent row; CHANGELOG Security, spec Converge (and its review-fold sha, now c9d18aa after the rebase).
+Why: the gate-cd-runner session found x=$(true) bash -c 'git push --force' silent on this branch (denied on main), likewise eval, python3 -c, sudo and make targets behind an assignment hole.
+Proof: pytest with coverage exit 0 (98.46 %), the differential test over the new rows included; ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
+Next: security/gate-cd-runner rebases onto this; owner pushes and opens the PR.
+verified: 632b072 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

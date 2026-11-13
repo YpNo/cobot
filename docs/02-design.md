@@ -185,9 +185,19 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   push`, `terraform -chdir=envs/prod apply`, `env git push`, `( git push )` all resolve to their
   verb;
 - treats interpreters and task runners as **opaque** (`sh bash zsh python node just mise task
-  npm pnpm yarn cargo xtask`, `eval`, `xargs`, `$(…)`, backticks) and decides `ask`, except when
-  the owner layer allows that exact command line (then the gate stays silent and the permission
-  system decides);
+  npm pnpm yarn cargo xtask`, `eval`, `trap`, `xargs`) and decides `ask`, except when the owner
+  layer allows that exact command line (then the gate stays silent and the permission system
+  decides);
+- reads the command with a quote-aware scanner (`bin/_cobot_shell.py`, modelled on bash 5.2):
+  here-document bodies, comments and redirections leave the words, and every **substitution**
+  (`$(…)`, backticks, `<(…)`, `>(…)`, and an unquoted here-document's `$(…)`) is judged as a
+  command of its own. A segment holding one denies when a `never` row matches anyway, asks when
+  the substituted text could decide what runs (the command word, a wrapper's operands, a CLI's
+  global options and verb, `gh api`, an interpreter, shell or runner) or could make a `never` or
+  `ask` row match, and is silent otherwise or when an owner `allow` covers every value. Quoted
+  `$(…)` under an assignment or an evaluating builtin (`printf -v`, `test`, `declare`, `read`)
+  asks; anything the scanner does not model (an unbalanced quote, `case` inside a substitution,
+  `${…@P}`) asks (.agent/specs/gate-substitution.md);
 - resolves **mise tasks** before judging: `mise run <task>`, the `mise <task>` shorthand and
   `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
   first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a

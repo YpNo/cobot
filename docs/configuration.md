@@ -35,6 +35,10 @@ One rule per line: `decision Tool(pattern) [@agent]`, or `decision mcp__<server>
 MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`,
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
 
+Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
+`*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern
+that starts with `*` could match any command holding one, and every such command then asks.
+
 Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
 from the default layer) silences the gate; `ask` prompts; otherwise Claude Code's own
 permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's

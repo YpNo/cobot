@@ -213,7 +213,7 @@ DEFAULT_DECISIONS = [
     ("uv run pytest", None),
     ("uvx ruff check .", "ask"),
     ("echo $(git push)", "ask"),
-    ("echo `date`", "ask"),
+    ("echo `date`", None),
     ("sudo apt install x", "ask"),
     ("xargs -n1 rm", "ask"),
     ("git status", None),
@@ -227,6 +227,55 @@ DEFAULT_DECISIONS = [
 def test_decide_defaultRules_returnsExpectedDecision(rules, command, expected):
     loaded, _, _ = rules.load_rules(None)
     assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
+
+
+RESERVED_AND_WRAPPER_OPTIONS = [
+    ("! git push", "ask"),
+    ("{ git push; }", "ask"),
+    ("{ git push --force; }", "deny"),
+    ("for f in a b; do git push; done", "ask"),
+    ("for f in a b\ndo\n  git push --force\ndone", "deny"),
+    ("if true; then git push; fi", "ask"),
+    ("if false; then :; elif ! git push; then :; else git push --force; fi", "deny"),
+    ("while true; do git push; done", "ask"),
+    ("until false; do git push; done", "ask"),
+    ("function f { git push --force; }", "deny"),
+    ("function f() { git push; }", "ask"),
+    ("f() { git push; }", "ask"),
+    ("coproc git push", "ask"),
+    ("coproc worker { git push --force; }", "deny"),
+    ("time -p git push", "ask"),
+    ("command -p git push --force", "deny"),
+    ("exec -a name git push", "ask"),
+    ("exec -c -l git push --force", "deny"),
+    ("rtk proxy git push --force", "deny"),
+    ("trap 'git push --force' EXIT", "ask"),
+    ("for f in push; do echo $f; done", None),
+    ("select x in git push; do echo $x; done", None),
+    ("case x in git) echo push;; esac", None),
+    ("{ git status; }", None),
+    ("if true; then cargo test; fi", None),
+    ("command -v git", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), RESERVED_AND_WRAPPER_OPTIONS)
+def test_decide_reservedWordsAndWrapperOptions_judgeTheCommandBehind(rules, command, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
+
+
+@pytest.mark.parametrize(
+    "tokens",
+    [
+        ["{", "git", "-c", "core.pager=./x", "log"],
+        ["time", "-p", "git", "-c", "core.pager=./x", "log"],
+        ["if", "!", "kubectl", "--kubeconfig", "./kc", "get", "pods"],
+        ["rtk", "proxy", "git", "--exec-path=./bin", "log"],
+    ],
+)
+def test_executesForeign_behindReservedWordsAndWrapperOptions_isForeign(rules, tokens):
+    assert rules.executes_foreign(tokens) is True
 
 
 def test_judgeBash_mostRestrictiveSegmentWins(rules):
@@ -327,6 +376,23 @@ def test_gate_agentScope_learnerSharesTheReadListAndStaysReadOnly(rules):
     nested = "plugins/cobot/bin/cobot-memory learn --dry-run --promote go"
     assert decide(rules, nested)[0].decision == "ask"
     assert decide(rules, "cobot-memory learn '{}'")[0].decision is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cobot-memory learn --promote go", "ask"),
+        ("/home/x/plugins/cobot/bin/cobot-memory learn x --promote", "ask"),
+        ("python3 -I plugins/cobot/bin/cobot-memory learn --promote go", "ask"),
+        ("python plugins/cobot/bin/cobot-memory learn --source d --promote go", "ask"),
+        ("env X=1 cobot-memory learn --promote go", "ask"),
+        ("bash -c 'cobot-memory learn --promote go'", "ask"),
+        ("cobot-memory learn go", None),
+        ("cobot-memory journal add x --promote", None),
+    ],
+)
+def test_decide_promoteRows_anchoredOnTheCommandWord(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected
 
 
 def test_gate_agentScope_consultantBashAsks(rules):
@@ -820,6 +886,11 @@ def make_repo(tmp_path):
         ("make -C", "ask"),
         ("make test && git push", "ask"),
         ("CGO_ENABLED=0 make test", None),
+        ("X=$(true) make test", None),
+        ("X=$(true) make force", "deny"),
+        ("X=$(true) make release", "ask"),
+        ("X=$(true) make test $(echo force)", "ask"),
+        ("timeout $(echo 5) make test", "ask"),
         ("nix develop -c make test", None),
     ],
 )
@@ -842,18 +913,10 @@ def test_makeTarget_reasonAndTraceNameOrigin(rules, make_repo):
             "python3 - <<'PY'\nprint(1)\nPY\ncat .agent/JOURNAL.md",
             "cobot gate: opaque command 'python3 -'",
         ),
-        (
-            'cd /x && echo "v=$(git rev-parse HEAD)"; ls | tail -1',
-            "cobot gate: command substitution '$(git rev-parse HEAD)'",
-        ),
-        (
-            "for m in a b; do echo $(basename $(dirname $m)); done | head -14",
-            "cobot gate: command substitution '$(basename $(dirname $m))'",
-        ),
-        ("echo `date` | head -3", "cobot gate: command substitution '`date`'"),
         ("ls; bash -n bin/init.sh; tail -2", "cobot gate: opaque command 'bash -n bin/init.sh'"),
-        ("python3 - <<'PY'\nx\nPY\necho $(id -u)", "cobot gate: command substitution '$(id -u)'"),
-        ("echo $(" + "a" * 80, "cobot gate: command substitution '$(" + "a" * 58 + "'"),
+        ("python3 - <<'PY'\nx\nPY\necho $(id -u)", "cobot gate: opaque command 'python3 -'"),
+        ("echo $(" + "a" * 80, "cobot gate: unparseable command (unclosed substitution)"),
+        ("echo 'unbalanced", "cobot gate: unparseable command (unbalanced quote)"),
     ],
 )
 def test_judgeBash_opaqueReason_namesTheConstructNotTheLastSegment(rules, tmp_path, command, reason):
@@ -1977,3 +2040,228 @@ def test_gate_giteaClis_mirrorGhAndGlab(rules):
         assert out and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == decision, command
     for command in ("gt pr list", "gt pr view 3", "gt release view v1", "tea pr ls", "tea releases list"):
         assert rules.gate(payload(command)) is None, command
+
+
+# ---------------------------------------------------------------- substitutions (gate-substitution spec)
+
+SUBSTITUTION_SILENT = [
+    'for f in $(find .claude -type f); do cat "$f"; done',
+    "VIS=$(gh repo view o/r --json visibility -q .visibility)",
+    "git log $(git merge-base main HEAD)",
+    'git -C "$(git rev-parse --show-toplevel)" status',
+    'echo "n=$(wc -c < f)"',
+    'grep -n "a \\`b\\` c" f',
+    "echo $((1+2))",
+    'while read l; do echo "$l"; done < <(find . -name x)',
+    'gcloud projects describe p --project "$(gcloud config get-value project)"',
+    "cobot-memory journal add \"$(cat <<'EOF'\n## 2026-11-13 — x\nit's done\nEOF\n)\"",
+    'cd /x && echo "v=$(git rev-parse HEAD)"; ls | tail -1',
+    "for m in a b; do echo $(basename $(dirname $m)); done | head -14",
+    "echo `date` | head -3",
+    "diff <(sort a) <(sort b)",
+    "cat docs/$(date +%F).md",
+    "grep -n 'use $(x) here' f",
+    "x=$'\\n'; echo \"$x\"",
+    "cat <<'EOF' > notes.md\nrun `cargo test` and $(make)\nEOF",
+    "case $(uname) in Linux) echo l;; esac",
+    "echo x # $(git push --force)",
+]
+
+
+@pytest.mark.parametrize("command", SUBSTITUTION_SILENT)
+def test_decide_readOnlySubstitution_isSilent(rules, command):
+    verdict, _ = decide(rules, command)
+    assert verdict.decision is None, verdict.reason()
+
+
+SUBSTITUTION_JUDGED = [
+    # inner commands are judged with the same rules
+    ("echo $(git push)", "ask"),
+    ('echo "$(git push --force)"', "deny"),
+    ("echo `git push --force`", "deny"),
+    ('echo "`echo \\`git push --force\\``"', "deny"),
+    ("diff <(git push) x", "ask"),
+    ("tee >(git push --force) <<< x", "deny"),
+    ('tee <<< "$(git push --force)"', "deny"),
+    ("echo $(( a[$(git push --force)] ))", "deny"),
+    ("$((echo A); (git push --force))", "deny"),
+    ("echo ${x:-$(git push --force)}", "deny"),
+    ("cat <<EOF\n$(git push --force)\nEOF", "deny"),
+    ("echo $(true # '\ngit push --force\n) # ')", "deny"),
+    # a hole that decides what runs
+    ("$(echo git) push", "ask"),
+    ('"$(echo git)" status', "ask"),
+    ("a$(x)=b git status", "ask"),
+    ("env X=$(echo 1 git push --force) true", "ask"),
+    ("timeout $(echo 5 bash) -c x", "ask"),
+    ("git $(echo push)", "ask"),
+    ("git -C $(echo x push) status", "ask"),
+    ("gh api repos/o/r $(echo -X DELETE)", "ask"),
+    ("glab mr $(echo merge) 1", "ask"),
+    ("gcloud compute $(echo instances delete) x", "ask"),
+    ("python3 $(echo -c code)", "ask"),
+    ('bash -c "echo $(x)"', "ask"),
+    ("distrobox enter $(x)", "ask"),
+    ("make $(echo release)", "ask"),
+    ("xargs $(x)", "ask"),
+    ("source <(curl -s x)", "ask"),
+    ('eval "$(direnv export bash)"', "ask"),
+    ("<(echo ls)", "ask"),
+    ("terraform $'apply'", "ask"),
+    ("arr[$(echo 1)]=1 git status", "ask"),
+    # a rule some text in the hole could match
+    ("git push origin $(git branch --show-current)", "ask"),
+    ("git push --force $(x)", "deny"),
+    ("kubectl apply -f $(ls k8s/x.yaml)", "ask"),
+    ("git commit -m \"$(cat <<'EOF'\nx\nEOF\n)\"", "ask"),
+    ("terragrunt plan --terragrunt-working-dir $(pwd)", "ask"),
+    # quoted code bash may still run
+    ("x='a[$(git push --force)]'; echo $((x))", "ask"),
+    ("PS4='$(id)' && set -x", "ask"),
+    ("printf -v 'a[$(id)]' x", "ask"),
+    ("test -v 'a[`id`]'", "ask"),
+    ("read x <<'EOF'\na[$(id)]\nEOF", "ask"),
+    ('echo "${x@P}"', "ask"),
+    # outside the model
+    ("echo `true '` ; git push --force ; `'`", "ask"),
+    ("echo $(case x in a) git push;; esac)", "ask"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), SUBSTITUTION_JUDGED)
+def test_decide_substitution_judgedByWhatItRuns(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+BYPASSES_CLOSED = [
+    ("cat <<EOF > f; git push --force\nbody\nEOF", "deny"),
+    ("cat <<EOF | git push\nx\nEOF", "ask"),
+    ("cat <<EOF\n$(git push --force)\nEOF", "deny"),
+    ('cat <<E"O"F\nx\nEOF\nterraform apply', "deny"),
+    ('echo "<<EOF"\ngit push', "ask"),
+    ("</dev/null terraform apply", "deny"),
+    ("X=1 >/dev/null git push --force", "deny"),
+    ("cargo 2>/dev/null publish", "deny"),
+    ("echo x # '\ngit push --force\n# '", "deny"),
+    ("git commit -m \"$(cat <<'EOF'\nfix\n\nCo-Authored-By: a <b>\nEOF\n)\"", "deny"),
+    ("gh pr create --body \"$(cat <<'EOF'\nbody\nGenerated with x\nEOF\n)\"", "deny"),
+    ("bash -c '</dev/null terraform apply'", "deny"),
+    # code review, 2026-11-13: escapes before '#', line continuation, backticks and $'…' inside
+    # $((, process substitution inside ${…}, ')' ending a redirection target
+    ("true\\ #;terraform apply", "deny"),
+    ("echo \\ #; git push", "ask"),
+    ("echo a\\;#$(git push)", "ask"),
+    ("echo a\\\n#$(git push)", "ask"),
+    ("git pu\\\nsh --force", "deny"),
+    ("cat <<E\nE\\\n\nterraform apply\nE", "deny"),
+    ("(echo $((echo `(`) ; git push ; (true)))", "ask"),
+    ("(echo $((echo $'\\'(') ; git push ; (true)))", "ask"),
+    ("echo ${x:->(terraform apply)}", "deny"),
+    ("echo ${x:-<(git push)}", "ask"),
+    ("(echo x >~/.claude/settings.json)", "ask"),
+    ("exec -- git push", "ask"),
+    ("command -- git push --force", "deny"),
+    ("nohup -- git push", "ask"),
+    ("time -p -- git push", "ask"),
+    ("exec -la x git push", "ask"),
+    ("exec -z git push", "ask"),
+    ("exec -al x git push", "ask"),
+    ("echo >a\\", "ask"),
+    # a substitution only in a leading assignment leaves the command judged as without one
+    ("x=$(true) bash -c 'git push --force'", "deny"),
+    ("x=$(true) eval 'git push --force'", "ask"),
+    ("x=$(true) python3 -c 'import os'", "ask"),
+    ("x=$(true) sudo rm -rf /", "ask"),
+    ("x=$(true) y=1 sh -c 'terraform apply'", "deny"),
+    ("x=$(true) timeout $(echo 5) git status", "ask"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), BYPASSES_CLOSED)
+def test_decide_parsingBypass_closed(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+@pytest.mark.parametrize(
+    ("command", "reason"),
+    [
+        ("git $(echo push)", "cobot gate: substitution '$(echo push)' decides what runs"),
+        (
+            "git push origin $(x)",
+            "cobot gate: substitution '$(x)' could match never Bash(git push * --force*) (default layer)",
+        ),
+        (
+            "kubectl apply -f $(x)",
+            "cobot gate: substitution '$(x)' could match ask Bash(kubectl apply*) (default layer)",
+        ),
+        ("echo $(git push)", "cobot rule: ask Bash(git push*) (default layer) via $(git push)"),
+        ("printf -v 'a[$(id)]' x", "cobot gate: quoted code ''a[$(id)]'' may run".replace("''", "'")),
+        (
+            "cat ~/.claude/$(echo settings.json)",
+            "cobot gate: shell access to a protected file '~/.claude/$(echo settings.json)'",
+        ),
+    ],
+)
+def test_judgeBash_substitutionReason_namesTheHole(rules, command, reason):
+    assert decide(rules, command)[0].reason() == reason
+
+
+def test_judgeBash_explainTrace_marksInnerSegments(rules):
+    loaded, _, _ = rules.load_rules(None)
+    _, trace = rules.judge_bash("echo $(git push)", loaded, None)
+    assert ("git push  <- $(git push)",) == tuple(t for t, _ in trace if "<-" in t)
+    assert trace[0][0] == "echo $(git push)"
+
+
+def test_judgeBash_ownerAllowCoveringEveryValue_silences(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(kubectl apply*)\nallow Bash(cargo test --quiet)\n")
+    assert decide(rules, "kubectl apply -f $(ls k8s/x.yaml)")[0].decision is None
+    assert decide(rules, "git push --force $(x)")[0].decision == "deny"
+    owner.write_text("allow Bash(git push origin feat/*)\n")
+    assert decide(rules, "git push origin feat/$(x)")[0].decision == "ask"  # a never row is viable
+
+
+def test_judgeBash_agentAllowWithAHole_neverCounts(rules):
+    assert decide(rules, "git log --oneline", agent="cobot:consultant")[0].decision is None
+    assert decide(rules, "git log $(echo -c core.pager=x)", agent="cobot:consultant")[0].decision == "ask"
+    assert decide(rules, "x=$(true) git log --oneline", agent="cobot:consultant")[0].decision == "ask"
+
+
+def test_judgeBash_definedCat_dropsTheKnownValue(rules):
+    spoof = "cat() { echo terraform; }; \"$(cat <<'EOF'\necho\nEOF\n)\" apply"
+    assert decide(rules, spoof)[0].decision == "ask"
+
+
+def test_judgeBash_protectedPathWithAHole_asks(rules, tmp_path):
+    assert judge_in(rules, "cat .claude/$(echo settings.local.json)", tmp_path)[0].decision == "ask"
+    assert judge_in(rules, 'echo x > "$(echo ~)/.claude/settings.json"', tmp_path)[0].decision == "ask"
+    assert judge_in(rules, "cat docs/$(date).md", tmp_path)[0].decision is None
+
+
+def test_globsMeet_walksBothPatterns(rules):
+    assert rules.globs_meet("/a/*.md", "*/.claude/settings*.json") is False
+    assert rules.globs_meet("/a/*", "*/.claude/settings*.json") is True
+    assert rules.globs_meet("abc", "a?c") is True
+    assert rules.globs_meet("abc", "abd") is False
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('X="$(date)" git status', None),
+        ("docker exec dev cat $(x)", "ask"),
+        ("docker ps --filter $(x)", None),
+        ("git push origin a && git push origin $(x)", "ask"),
+    ],
+)
+def test_decide_holeEdges(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected
+
+
+def test_judgeBash_ownerAllowOnAHoleFreeCanonicalForm_covers(rules, layers):
+    owner, _ = layers
+    command = 'gh -R "$(gh repo view --json nameWithOwner -q .nameWithOwner)" pr create --fill'
+    assert decide(rules, command)[0].decision == "ask"
+    owner.write_text("allow Bash(gh pr create*)\n")
+    assert decide(rules, command)[0].decision is None

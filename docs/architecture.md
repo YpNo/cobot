@@ -68,8 +68,13 @@ session; this is the history a routing decision needs (design §10).
 ## Security model
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined
-obfuscation. Interpreters running code, task runners, remote execution and command substitution
-are opaque and ask. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
+obfuscation. Interpreters running code, task runners and remote execution are opaque and ask.
+A command substitution is judged by what it runs: a quote-aware scanner (`bin/_cobot_shell.py`)
+gives each `$(…)`, backtick and process substitution body to the same rules, and the
+substitution itself asks only where its text could decide which program runs or make a `never`
+or `ask` row match; anything outside the scanner's model asks. A substitution that is a whole
+argument is not resolved for the protected-file check, like a variable, and a variable's value
+reaching arithmetic is not followed (`read x < f; echo $((x))`). `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
 and container or sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`,
 `nix develop -c`, …) are looked through and the command behind them is judged.
 

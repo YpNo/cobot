@@ -129,10 +129,12 @@ jobs:
           # an installed plugin has bin/ on PATH; eval sessions do not get it (run 43494320182:
           # cobot-rules: command not found), and they inherit this PATH
           PATH="$PWD/bin:$PATH"
-          # --keep-temp keeps each run's trace, the only record of what the session did
+          # --keep-temp keeps each run's trace, the only record of what the session did; a grant
+          # applies to every case, and eval Bash reaches only the domains granted as WebFetch(domain:…)
           set -- --trust-plugin --scaffold --no-publish --keep-temp --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \
-            --allow-tools Bash Write Edit --json ../../eval-result.json
+            --allow-tools Bash Write Edit "WebFetch(domain:github.com)" "WebFetch(domain:api.github.com)" \
+            --json ../../eval-result.json
           if [ -n "$CASES" ]; then set -- "$@" --case "$CASES"; fi
           claude plugin eval . "$@"
       # a failed threshold is the run worth reading: upload unless the run was cancelled

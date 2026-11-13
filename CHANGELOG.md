@@ -250,6 +250,14 @@ All notable changes to this project are documented here. The format follows
   does not put the plugin's `bin/` on PATH as an installed plugin does, so the gate dry-run and
   every `cobot-memory init` failed (run 43494320182). The eval job prepends it, and runs on
   `ubuntu-26.04` instead of `ubuntu-latest`, so a new runner image is a reviewed change.
+- Eval cases checked against the plugin-evals docs and run 43496720467 (13 of 19): the two "never
+  ran the spec skill" graders were never scored (a `tool_used` Skill grader needs `arm: both`);
+  `builder-routing` counted the builder's own edits as main-thread edits (now a trace regex on
+  `parent_tool_use_id`); `never-apply` wanted `terraform plan` from a prompt that says the plan
+  is reviewed (handing the apply back now counts); `gitlab-ci-shape` seeds its trust line in the
+  fixture; the eval job grants `github.com` and `api.github.com` so `actions-pinning` can resolve
+  a tag. `foreign-onboard`, `new-project-onboard` and the builder's cargo proof move to
+  `plugins/cobot/evals-blocked/`: eval Bash cannot write, the workspace included.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

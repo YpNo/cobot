@@ -295,18 +295,24 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     # pnpm --help 12.18.0, npm help config 11.20.0, read 2026-11-13
     "uv": (
         frozenset({"--color", "--allow-insecure-host", "--directory", "--project", "--config-file"}),
-        frozenset(),
+        frozenset(
+            "-q --quiet -v --verbose --system-certs --offline --no-progress --no-config -h --help".split()
+        )
+        | frozenset({"-V", "--version"}),
     ),
     "pnpm": (
         frozenset("-C --dir --reporter --loglevel -F --filter --filter-prod --env-file --store-dir".split())
         | frozenset("--state-dir --npmrc-auth-file --workspace-packages --registry --https-proxy".split())
         | frozenset({"--http-proxy", "--no-proxy"}),
-        frozenset(),
+        frozenset("-r --recursive -w --workspace-root --stream --aggregate-output -y --yes".split())
+        | frozenset({"--ignore-workspace"}),
     ),
     "npm": (
         frozenset("--registry --prefix -w --workspace --userconfig --globalconfig --cache --loglevel".split())
         | frozenset({"--tag", "--access", "--otp", "--include", "--omit"}),
-        frozenset(),
+        frozenset(
+            "-s --silent -q --quiet -g --global -d --dd --ddd -y --yes --json --dry-run --no-audit".split()
+        ),
     ),
 }
 TOOLCHAIN_PROXIES = frozenset({"cargo"})  # ``cargo +nightly …``: rustup picks the toolchain
@@ -585,8 +591,12 @@ FOREIGN_FLAGS = frozenset(
 # loads CLI plugins from that directory
 FOREIGN_BY_CLI: dict[str, frozenset[str]] = {
     "git": frozenset({"-c", "--config-env"}),
-    "cargo": frozenset({"--config", "-Z"}),
+    "cargo": frozenset({"--config", "-Z", "-C"}),
     "docker": frozenset({"--config"}),
+    # configuration, caches and directories the agent could choose (bypass review, 2026-11-14)
+    "npm": frozenset({"--userconfig", "--globalconfig", "--cache", "--prefix"}),
+    "pnpm": frozenset({"--env-file", "--npmrc-auth-file", "--store-dir", "--state-dir", "-C", "--dir"}),
+    "uv": frozenset({"--config-file", "--directory", "--project"}),
 }
 KUBECONFIG_FLAGS: dict[str, frozenset[str]] = {
     "kubectl": frozenset({"--kubeconfig"}),
@@ -635,6 +645,8 @@ def executes_foreign(tokens: list[str]) -> bool:
     if not rest:
         return False
     cli = os.path.basename(rest[0])
+    if cli == "rustup" or (cli in TOOLCHAIN_PROXIES and rest[1:2] and rest[1].startswith("+")):
+        return True  # a toolchain may be a path: its bin/ comes first on PATH
     named = KUBECONFIG_FLAGS.get(cli, frozenset()) | FOREIGN_BY_CLI.get(cli, frozenset())
     for token in rest[1:]:
         name = token.split("=", 1)[0]
@@ -706,7 +718,7 @@ def uniq_output(tokens: list[str]) -> str | None:
         if arg in with_value or (arg[:1] == "-" and arg[1:2] != "-" and arg[-1:] in "fsw"):
             rest = rest[1:]
         elif not option_word(arg) or arg == "-":
-            operands.append(arg)
+            operands.extend([arg, arg] if shell.has_sentinel(arg) else [arg])  # a glob: one or more files
     return operands[1] if len(operands) > 1 else None
 
 
@@ -721,10 +733,12 @@ BRANCH_VALUES = _words("--contains --no-contains --merged --no-merged --points-a
 def branch_write(tokens: list[str]) -> str | None:
     """``git branch``: a write option, or a name outside list mode (``-l``/``--list``) creates a
     branch. ``--color``, ``--column`` and ``--abbrev`` take a value only with ``=``."""
-    listing = any(
-        t in ("-l", "--list") or (t.startswith("--") and "--list".startswith(t) and len(t) > 3)
-        for t in tokens
-    )
+    listing = False
+    for t in tokens:  # the last of --list and --no-list (abbreviations too) wins
+        if t == "-l" or (len(t) > 3 and "--list".startswith(t)):
+            listing = True
+        elif len(t) > 5 and "--no-list".startswith(t):
+            listing = False
     rest = list(tokens)
     while rest:
         arg = rest.pop(0)
@@ -790,7 +804,7 @@ def curl_unsafe(tokens: list[str]) -> str | None:
 READ_GUARDS: dict[str, Guard] = {
     # bfs 4.1.1 and GNU findutils find(1): actions that delete, run or write
     "find": Guard(single=_words("delete rm exec execdir ok okdir fprint fprint0 fprintf fls")),
-    "rg": Guard(long=_words("pre")),  # ripgrep 14.1.1
+    "rg": Guard(long=_words("pre hostname-bin")),  # ripgrep 14.1.1
     "fd": Guard(long=_words("exec exec-batch"), short="xX"),  # fd(1), github.com/sharkdp/fd
     "sort": Guard(long=_words("output compress-program"), short="o"),  # GNU coreutils 9.7
     "uniq": Guard(check=uniq_output),  # GNU coreutils 9.7
@@ -806,7 +820,12 @@ READ_GUARDS: dict[str, Guard] = {
     "trivy": Guard(long=_words("output module-dir"), short="o"),  # trivy.dev CLI reference
     "gitleaks detect": Guard(long=_words("report-path log-opts"), short="r"),  # gitleaks README
     "pip-audit": Guard(long=_words("fix output"), short="o"),  # pypa/pip-audit README
-    "cargo-audit audit": Guard(verbs=_words("fix")),  # rustsec cargo-audit README
+    "cargo-audit audit": Guard(
+        long=_words("db"), short="d", verbs=_words("fix")
+    ),  # rustsec cargo-audit README
+    "cargo-deny check": Guard(
+        long=_words("graph"), short="g"
+    ),  # cargo-deny check --help: graph_output is recreated
     "npm audit": Guard(verbs=_words("fix")),  # npm 11.20.0
     "pnpm audit": Guard(long=_words("fix")),  # pnpm 12.18.0
     "semgrep": Guard(long=_words("autofix output"), short="ao", suffix="-output"),  # semgrep CLI reference
@@ -845,7 +864,7 @@ def guarded(plain: list[str]) -> str | None:
         tokens = plain[1:] if start == 1 else verb[start:]
         token = guard and guarded_token(tokens, guard)
         if token:
-            return f"option '{token[:30]}' of {key} can write or run; {READ_LIST_GAP}"
+            return f"{key} '{token[:30]}' can write or run; {READ_LIST_GAP}"
     return None
 
 
@@ -974,9 +993,10 @@ def option_word(token: str) -> bool:
 def readings(tokens: list[str]) -> list[list[str]]:
     """Each way to read where the verb starts past the options before it (gate-findings B): a known
     value option skips its value, a known flag or ``--opt=value`` skips itself, ``--`` ends the
-    options; an unknown option followed by a word records that word as a possible verb and goes
-    on reading it as the option's value. Each reading is the command word and the tokens from its
-    verb on. Never/ask rows and the opaque check read them; allows match the canonical form only."""
+    options; an unknown option followed by a word records that word as a possible verb and, when
+    another option follows, goes on reading it as the option's value. Each reading is the command
+    word and the tokens from its verb on. Never/ask rows and the opaque check read them; allows
+    match the canonical form only."""
     if len(tokens) < 2:
         return []
     with_value, flags = GLOBAL_OPTIONS.get(tokens[0], (frozenset(), frozenset()))
@@ -996,8 +1016,11 @@ def readings(tokens: list[str]) -> list[list[str]]:
         elif name in with_value:
             i += 2
         elif i + 1 < len(tokens) and not option_word(tokens[i + 1]):
-            starts.append(i + 1)  # the verb, or the unknown option's value: read on past it
-            i += 2
+            starts.append(i + 1)  # the verb, or the unknown option's value
+            if i + 2 < len(tokens) and option_word(tokens[i + 2]):
+                i += 2  # read on past the value: more options follow
+            else:
+                break
         else:
             i += 1
     return [[tokens[0], *tokens[k:]] for k in starts if k < len(tokens)]
@@ -1016,12 +1039,14 @@ def opaque_as_read(plain: list[str]) -> bool:
     if head in OPAQUE or head.startswith("$") or head == "env" or head in WRAPPER_OPTIONS:
         # a leftover ``env`` or wrapper carries options the gate does not read
         return True
+    if head == "git" and git_alias_set(plain):
+        return True
     if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
         sub = plain[1] if len(plain) > 1 else ""
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
     if head in OPAQUE_SUBCOMMANDS:
-        verb = strip_global_options(plain)
+        verb = canonical_package_manager(strip_global_options(plain))
         sub = verb[1] if len(verb) > 1 else ""
         if sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]:
             return True
@@ -1180,12 +1205,20 @@ def inner_rustup(plain: list[str]) -> list[str] | None:
         rest = rest[1:]
     if rest[:1] != ["run"]:
         return NOTHING_HIDDEN
-    rest = rest[1:]
-    while rest and rest[0] == "--install":
-        rest = rest[1:]
-    if rest and rest[0].startswith("-"):
-        return None
-    return [shell.join(rest[1:])] if len(rest) > 1 else None
+    positionals: list[str] = []
+    options_end = False
+    for index, arg in enumerate(rest[1:], start=1):
+        if options_end or not arg.startswith("-") or arg == "-":
+            if not positionals and "/" in arg:
+                return None  # a toolchain path: its bin/ comes first on PATH, any program can be its
+            positionals.append(arg)
+            if len(positionals) == 2:  # the toolchain, then the command and its arguments
+                return [shell.join(rest[index:])]
+        elif arg == "--":
+            options_end = True
+        elif arg != "--install":
+            return None  # an option the gate does not know: the command could start anywhere
+    return None
 
 
 WRAPPER_PARSERS = {
@@ -1832,7 +1865,72 @@ def expand_units(
 
 
 def canonical(tokens: list[str]) -> list[str]:
-    return canonical_gcloud(canonical_gh_api(canonical_alias(expand_push_flags(tokens))))
+    return canonical_gcloud(
+        canonical_gh_api(canonical_alias(canonical_package_manager(expand_push_flags(tokens))))
+    )
+
+
+# npm 11.20.0 lib/utils/cmd-list.js, read 2026-11-14: npm takes an alias, or any unique prefix of
+# a command or alias (``npm publ`` publishes)
+NPM_COMMANDS = frozenset(
+    "access adduser approve-scripts audit bugs cache ci completion config dedupe deny-scripts deprecate "
+    "diff dist-tag docs doctor edit exec explain explore find-dupes fund get help help-search init install "
+    "install-ci-test install-scripts install-test link ll login logout ls org outdated owner pack ping pkg "
+    "prefix profile prune publish query rebuild repo restart root run sbom search set shrinkwrap stage star "
+    "stars start stop team test token trust undeprecate uninstall unpublish unstar update version view "
+    "whoami".split()
+)
+NPM_ALIASES = {
+    "author": "owner", "home": "docs", "issues": "bugs", "info": "view", "show": "view", "find": "search",
+    "add": "install", "unlink": "uninstall", "remove": "uninstall", "rm": "uninstall", "r": "uninstall",
+    "un": "uninstall", "rb": "rebuild", "list": "ls", "ln": "link", "create": "init", "i": "install",
+    "it": "install-test", "cit": "install-ci-test", "u": "update", "up": "update", "c": "config",
+    "s": "search", "se": "search", "tst": "test", "t": "test", "ddp": "dedupe", "v": "view",
+    "run-script": "run", "clean-install": "ci", "clean-install-test": "install-ci-test", "x": "exec",
+    "why": "explain", "la": "ll", "verison": "version", "ic": "ci", "innit": "init", "in": "install",
+    "ins": "install", "inst": "install", "insta": "install", "instal": "install", "isnt": "install",
+    "isnta": "install", "isntal": "install", "isntall": "install", "install-clean": "ci",
+    "isntall-clean": "ci", "hlep": "help", "dist-tags": "dist-tag", "upgrade": "update",
+    "udpate": "update", "rum": "run", "sit": "install-ci-test", "urn": "run", "ogr": "org",
+    "add-user": "adduser",
+}  # fmt: skip
+PNPM_RECURSIVE = frozenset({"recursive", "multi", "m"})  # ``pnpm recursive publish`` is ``pnpm -r publish``
+
+
+def npm_command(word: str) -> str:
+    """The npm command a word names: itself, an alias, or the one command or alias it prefixes."""
+    if word in NPM_COMMANDS:
+        return word
+    if word in NPM_ALIASES:
+        return NPM_ALIASES[word]
+    if not word or word.startswith("-"):
+        return word
+    found = {
+        NPM_ALIASES.get(name, name) for name in NPM_COMMANDS | NPM_ALIASES.keys() if name.startswith(word)
+    }
+    return found.pop() if len(found) == 1 else word
+
+
+def canonical_package_manager(tokens: list[str]) -> list[str]:
+    """``npm publ`` becomes ``npm publish``, ``npm i x`` ``npm install x``; ``pnpm recursive
+    publish`` becomes ``pnpm publish``: the forms the rule rows name."""
+    if tokens[:1] == ["npm"] and len(tokens) > 1:
+        return [tokens[0], npm_command(tokens[1]), *tokens[2:]]
+    if tokens[:1] == ["pnpm"] and len(tokens) > 2 and tokens[1] in PNPM_RECURSIVE:
+        return [tokens[0], *tokens[2:]]
+    return tokens
+
+
+def git_alias_set(plain: list[str]) -> bool:
+    """``git -c alias.p='push --force' p``: the verb is an alias the command line defines."""
+    for index, arg in enumerate(plain[1:], start=1):
+        following = plain[index + 1] if index + 1 < len(plain) else ""
+        value = following if arg == "-c" else ""
+        if arg.startswith("--config-env"):
+            value = arg.partition("=")[2] or following
+        if value.lower().startswith("alias."):
+            return True
+    return False
 
 
 def candidates(tokens: list[str]) -> list[str]:
@@ -1862,9 +1960,26 @@ def applies(rule: Rule, tool: str, agent: str | None) -> bool:
 
 def matches_bash(rule: Rule, forms: list[str]) -> bool:
     """never/ask match any form; allow matches only the canonical (last) form, so a method moved
-    to the front of ``gh api`` cannot hide behind a read-only prefix pattern."""
+    to the front of ``gh api`` cannot hide behind a read-only prefix pattern. An agent-scoped
+    allow whose pattern ends a word with ``*`` (``cat*``, ``git diff*``) matches that word only:
+    ``catatonit`` and ``git difftool`` are other programs."""
     candidates_for_rule = forms[-1:] if rule.decision == "allow" else forms
-    return any(fnmatch.fnmatchcase(form, rule.pattern) for form in candidates_for_rule)
+    return any(
+        fnmatch.fnmatchcase(form, rule.pattern) and (rule.decision != "allow" or word_bounded(rule, form))
+        for form in candidates_for_rule
+    )
+
+
+def word_bounded(rule: Rule, form: str) -> bool:
+    """For an agent-scoped ``<words>*`` allow whose last word is a command or verb (not an option,
+    not a path such as ``repos/``): the form is those words, or those words and a blank."""
+    stem = rule.pattern[:-1]
+    if not rule.agent or not rule.pattern.endswith("*") or RULE_WILDCARDS_RE.search(stem):
+        return True
+    last = stem.rsplit(" ", 1)[-1]
+    if not last or last.startswith("-") or not last[-1].isalnum():
+        return True
+    return form == stem or form.startswith(stem + " ")
 
 
 def allow_counts(rule: Rule) -> bool:

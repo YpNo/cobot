@@ -62,7 +62,11 @@ an `allow` matches only the canonical form. The gate knows the value options of 
 `npm`, `pnpm`, `uv`, `kubectl`, `helm` and a few more; after an option it does not know, the
 next word is read both as the verb and as that option's value. Known cost: an unknown option
 whose value is a ruled verb reads as that verb (`npm --zz publish test` is denied, and an owner
-`allow` cannot lift a `never`). A runner behind such an option (`uv -q run …`) asks.
+`allow` cannot lift a `never`). A runner behind such an option (`uv -q run …`, `pnpm -r build`,
+`npm --prefix web test`) asks, a prompt on common monorepo commands that the form without the
+option avoids. `npm` verbs are read as npm reads them (an alias or a unique prefix: `npm publ`
+is `npm publish`), `pnpm recursive <verb>` as `pnpm <verb>`, and `git -c alias.…` asks (the
+verb is an alias the line defines).
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's
@@ -110,19 +114,23 @@ ADR-0006).
 For the consultant and the learner, a read-list command loses its read list, and asks, when it
 could write a file or run a program (decision 28, `.agent/specs/gate-findings.md`):
 
+- a command word that only starts like a read row: `cat*` covers `cat` and `cat …`, never
+  `catatonit`; `git diff*` never `git difftool`;
 - an option the gate's guard table names: `find -delete -exec -execdir -ok -okdir -fprint
-  -fprint0 -fprintf -fls`, `rg --pre`, `fd -x -X`, `sort -o --compress-program`, a second
+  -fprint0 -fprintf -fls`, `rg --pre --hostname-bin`, `fd -x -X`, `sort -o --compress-program`, a second
   `uniq` operand, `tree -o -R`, `file -C`, `yq -i -s`, `git log|show|diff --output`, `git branch`
   with a write option or a branch name outside `--list`, `zizmor --fix`, `trivy -o
-  --module-dir`, `gitleaks -r --log-opts`, `pip-audit --fix -o`, `cargo-audit audit fix`, `npm
+  --module-dir`, `gitleaks -r --log-opts`, `pip-audit --fix -o`, `cargo-audit audit fix --db`, `cargo-deny check -g`, `npm
   audit fix`, `pnpm audit --fix`, `semgrep --autofix -o --*-output`, `docker build -o --push`,
   `docker compose config -o`, `cosign verify --output-file`, `actionlint -shellcheck -pyflakes`,
   `go list -toolexec -exec -mod -modfile`, `go env -w -u`, `terraform|tofu providers lock|mirror`,
   `kubectl kustomize -o`, `kustomize build -o`, `helm template --output-dir
   --dependency-update`, `kubeconform -cache`. Long options match any abbreviation, short ones
   any cluster (`sort -uo`), which can over-read a letter inside a value and ask;
-- `git --config-env`, `cargo --config` or `-Z`, `docker --config` (configuration that can run a
-  program), besides an environment assignment, `git -c` and the kubeconfig and plugin flags;
+- `git --config-env`, `cargo --config`, `-Z` or `-C`, `cargo +<toolchain>`, `rustup`, `docker
+  --config`, `npm --userconfig --globalconfig --cache --prefix`, `pnpm --env-file
+  --npmrc-auth-file --store-dir --state-dir -C --dir`, `uv --config-file --directory --project`
+  (configuration or a directory that can change what runs), besides an environment assignment, `git -c` and the kubeconfig and plugin flags;
 - a `curl` option outside its read set: `-s -S -L -f -I -i -v -k -g -4 -6 --compressed
   --http1.1 --http2 --fail-with-body`, and with a value `-H` (not `@file`), `-A`, `-e`, `-m`,
   `--connect-timeout`, `--retry*`, `-r`, `-X GET|HEAD`, `--url`, `-w` (not `@file`, no

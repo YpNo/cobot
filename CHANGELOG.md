@@ -378,6 +378,16 @@ All notable changes to this project are documented here. The format follows
   asks and `kubectl get pods ${x:---kubeconfig=./evil}` asks for the agents (the default word is
   text bash splits and globs); `cargo $"publish"` and `terraform {$"apply",}` are denied (the
   untranslated text), as `cargo publish` is.
+- The same branch's independent bypass review closed, for the agents: a word boundary on read
+  rows (`cat*` no longer covers `catatonit`, `git diff*` no longer `git difftool -x`, `fd*` no
+  longer `fdisk`), `rg --hostname-bin`, `cargo-deny check -g`, `cargo-audit audit --db`, a
+  `uniq` operand that is a glob, `git branch --list --no-list foo`, `rustup run <path>` and
+  `cargo +<path>` (a toolchain path puts its `bin/` first), and `npm --cache|--userconfig`,
+  `pnpm --env-file|-C`, `uv --config-file|--directory`, `cargo -C` before a read verb. On the
+  main thread: `rustup run nightly -- cargo publish`, `npm publ` (npm takes unique prefixes and
+  aliases), `pnpm recursive publish` are denied, and `git -c alias.p=… p` asks. An argument
+  after a verb is no longer read as a verb (`uv -q run publish.py` asks as a runner, never a
+  deny).
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

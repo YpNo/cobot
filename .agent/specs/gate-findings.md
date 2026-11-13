@@ -30,11 +30,9 @@ options (no read list there), owner-layer allows. These stay silent for `@consul
 `npm audit --json`, `cargo-audit audit`, `tree -L 2`, `yq '.a' f.yaml`.
 
 Out of scope, parked as **F-25**: read-list tools that load repository configuration or build
-repository code. A repository's `.cargo/config.toml` alias shadows `cargo audit` and `cargo deny`
-(checked: cargo 1.99 warns and runs the alias). Its `build.rustc-wrapper` reaches `cargo tree`
-and `cargo metadata`. Trivy loads `trivy.yaml` from the working directory. `docker build
---check` pulls the `# syntax=` frontend. `pip-audit -r` can build a local requirement. `cargo audit*` and `cargo deny check*` leave the
-read lists now (Q4); `cargo-audit audit*` and `cargo-deny check*` stay.
+repository code (`build.rustc-wrapper`, `trivy.yaml`, a `# syntax=` frontend, `pip-audit -r`).
+`cargo audit*` and `cargo deny check*` leave the read lists now (Q4): a repository alias shadows
+them (cargo 1.99 warns and runs it); `cargo-audit audit*` and `cargo-deny check*` stay.
 
 ## Principles check
 
@@ -223,24 +221,15 @@ covers. Inside a brace alternative it is scanned the same way (`terraform {$"app
 
 ## Clarify
 
-- Q1 Scope of F-21. a) the named options only (`find -delete -fprint -fls -fprintf`, `rg --pre`,
-  `sort --compress-program`, `git log --output`) · b) the whole class: every read-list command's
-  write and run options, plus redirection writes and the decision 28 amendment → recommended b),
-  because the bypass review would find the rest, and `cat a > b` is the widest hole. **answer:**
-  b) (owner, 2026-11-13)
-- Q2 Scope of F-24's global options. a) `cargo` only · b) readings for every command word, so
-  `npm`, `pnpm` and `uv` publish are covered too → recommended b), because it uses one mechanism
-  and needs no table per CLI. **answer:** b) (owner, 2026-11-13)
-- Q3 `curl` on the read lists. a) an allow-list of read options · b) drop `curl -s*` from both
-  lists (the agents have WebFetch) · c) a deny-list like the others → recommended a), because
-  skills use `curl -s … | jq` and curl's write and upload surface is too wide for a deny-list.
-  **answer:** a) (owner, 2026-11-13)
-- Q4 Repository configuration (F-25). a) park it as a finding · b) close the cheap part now:
-  drop `cargo audit*` and `cargo deny check*` from the read lists, keeping `cargo-audit audit*`
-  and `cargo-deny check*` → recommended b) for cargo plus a) for the rest, because a hostile
-  `.cargo/config.toml` alias makes `cargo audit` run `cargo publish`, and the direct binaries are
-  already on the list. **answer:** b) for cargo, a) for the rest (owner, 2026-11-13): `cargo
-  audit` now asks for both agents
+Answers from the owner, 2026-11-13; each recommended option was chosen.
+
+- Q1 Scope of F-21: a) the named options only · **b) the whole class**: every read-list
+  command's write and run options, redirection writes, decision 28 amended.
+- Q2 Scope of F-24: a) `cargo` only · **b) readings for every command word** (npm, pnpm and uv
+  publish too).
+- Q3 `curl`: **a) an allow-list of read options** · b) drop `curl -s*` · c) a deny-list.
+- Q4 Repository configuration: a) park all · **b) drop `cargo audit*` and `cargo deny check*`
+  now**, park the rest as F-25; `cargo audit` asks for both agents.
 
 ## Plan
 
@@ -270,17 +259,12 @@ After each code commit, a journal-only commit carries `verified: <sha> · …`, 
   row cites its dated source so a knowledge refresh can re-check it.
 - Over-reading options (abbreviations, letters in clusters) over parsing each tool exactly: a
   false ask costs one prompt, while a false silence costs the trust boundary.
-- Writes anywhere disable agent allows for the whole command, rather than per segment: the
-  scanner does not attach targets to segments, and a false ask is cheap.
-- `${…}` as an unknown hole rather than an alternative of value and default: the variable may be
-  set from the environment, so only the hole is sound.
+- Writes anywhere disable agent allows for the whole command, not per segment (a cheap ask).
 
 ## Challenger verdict
 
-2026-11-13, challenger: **SOUND WITH CHANGES**. No silent bypass in the design. Its checked-and-clear
-list: every redirection form, the curl allow-list, command-word guards, the dodge through
-global options before a verb-keyed guard, `${…}` classification, and the foreign options.
-Folded:
+2026-11-13, challenger: **SOUND WITH CHANGES**, no silent bypass in the design (checked clear:
+redirections, the curl allow-list, guards, `${…}`, foreign options). Folded:
 
 - MAJOR readings must continue past several unknown and `=` options: the walk records each
   possible verb and continues; story 4 rows `npm --registry=x --tag=y publish` and two others.
@@ -304,4 +288,13 @@ example is `curl -sfL`; abbreviations take any prefix (GNU sort accepts `--o`); 
 test` asks as an npm script, so the silent example is `npm -w publish ls`. The differential
 proves the decomposition (`${…}`, `$"…"`); the guard, readings and redirection writes are
 proved by unit rows, each failing with its mechanism off. F-21 to F-24 closed, F-25 parked.
-Bypass-aimed review: pending.
+Bypass-aimed review (code-reviewer, 2026-11-14, bash 5.2.37 and the installed tools, 18 000
+fuzzed commands, no crash): 4 BLOCKER, 5 MAJOR, 1 MINOR, all folded in T07. Agent read rows
+lacked a word boundary (`cat*` covered `catatonit`, `git diff*` `git difftool -x`); `rustup
+run <path>` and `cargo +<path>` ran a repository's `bin/`; `rg --hostname-bin`, `cargo-deny
+check -g`, `cargo-audit audit --db`, a globbed `uniq` operand and `--no-list` were unguarded;
+the new value tables widened the canonical form agents match (`npm --cache ./x audit`), now
+foreign; `rustup run nightly -- cargo publish`, `npm publ`, `pnpm recursive publish` and `git -c
+alias.p=…` hid a ruled verb; the readings read an argument as a verb (`uv -q run publish.py`
+denied) and now continue past a value only when an option follows. Accepted: a runner behind an
+option asks as opaque (`pnpm -r build`).

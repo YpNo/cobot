@@ -39,6 +39,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_make  # noqa: E402
+import _cobot_shell as shell  # noqa: E402
 from _cobot_common import HelpRequested, UsageError, config_dir, parse_cli, plugin_root, repo_root  # noqa: E402
 
 ASK, DENY = "ask", "deny"
@@ -77,7 +78,6 @@ MCP_WRITE_WORDS = frozenset(
     "rollback run save scale send set share shutdown start stop submit sync tag terminate transfer "
     "trigger truncate undelete uninstall unlock update upload upsert wipe write".split()
 )
-HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
     "xargs sudo doas su make gmake just task npx ssh mosh".split()
@@ -417,23 +417,6 @@ def strip_wrappers(tokens: list[str]) -> list[str]:
     return tokens
 
 
-def strip_heredocs(command: str) -> str:
-    """Remove here-document bodies: their text is data, not commands."""
-    out: list[str] = []
-    skip_until: str | None = None
-    for line in command.split("\n"):
-        if skip_until is not None:
-            if line.strip() == skip_until:
-                skip_until = None
-            continue
-        match = HEREDOC_RE.search(line)
-        if match:
-            skip_until = match.group(2)
-            line = line[: match.start()]
-        out.append(line)
-    return "\n".join(out)
-
-
 PUSH_VALUE_OPTIONS = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
 
 
@@ -644,27 +627,6 @@ def strip_global_options(tokens: list[str]) -> list[str]:
         else:
             break
     return out + rest
-
-
-SUBSTITUTION_OPENERS = ("$(", "`", "<(", ">(")
-
-
-def has_substitution(command: str) -> bool:
-    return any(opener in command for opener in SUBSTITUTION_OPENERS)
-
-
-def substitution_excerpt(command: str, limit: int = 60) -> str:
-    """The first ``$(…)``, ``<(…)``, ``>(…)`` or backtick span, matched to its close and capped."""
-    start = min(i for i in (command.find(o) for o in SUBSTITUTION_OPENERS) if i >= 0)
-    if command[start] == "`":
-        end = command.find("`", start + 1)
-        return command[start : end + 1 if end > 0 else len(command)][:limit]
-    depth = 0
-    for i in range(start + 1, len(command)):
-        depth += {"(": 1, ")": -1}.get(command[i], 0)
-        if depth == 0:
-            return command[start : i + 1][:limit]
-    return command[start:][:limit]
 
 
 def is_opaque(plain: list[str]) -> bool:
@@ -1106,26 +1068,39 @@ def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
         commands = WRAPPER_PARSERS[head](plain)
     else:
         return None
-    if commands and any(has_substitution(command) for command in commands):
-        return None
     return commands
 
 
+def command_parts(text: str) -> tuple[list[list[str]], list[str]] | None:
+    """The segments and redirection targets of a runner body; None when it holds a substitution or
+    anything the scanner refuses, so the runner stays opaque."""
+    scanned = shell.scan(text)
+    if scanned.error or scanned.holes:
+        return None
+    return split_segments(scanned.outer), scanned.targets
+
+
 def expand_segments(
-    segments: list[list[str]], cwd: str | None, depth: int = 0
+    segments: list[list[str]], cwd: str | None, depth: int = 0, paths: list[str] | None = None
 ) -> list[tuple[list[str], str]]:
     """Replace each resolvable runner or wrapper segment by the commands it runs, recursively up to
-    MAX_EXPANSION levels, tagged with the outermost origin."""
+    MAX_EXPANSION levels, tagged with the outermost origin. A segment holding a substitution is
+    never expanded: the substituted text could be the code the runner runs. Redirection targets of
+    the bodies go to ``paths``."""
     out: list[tuple[list[str], str]] = []
     for segment in segments:
         plain = strip_wrappers(segment)
-        commands = expand_runner(plain, cwd) if depth < MAX_EXPANSION and is_opaque(plain) else None
-        if not commands:
+        expandable = depth < MAX_EXPANSION and is_opaque(plain) and not hole_keys(segment)
+        commands = expand_runner(plain, cwd) if expandable else None
+        parts = [command_parts(command) for command in commands or []]
+        if not commands or None in parts:
             out.append((segment, ""))
             continue
         origin = " ".join(plain)[:MAX_ORIGIN]
-        inner = [sub for command in commands for sub in split_segments(command)]
-        out.extend((tokens, origin) for tokens, _ in expand_segments(inner, cwd, depth + 1))
+        inner = [sub for part in parts if part for sub in part[0]]
+        if paths is not None:
+            paths.extend(target for part in parts if part for target in part[1])
+        out.extend((tokens, origin) for tokens, _ in expand_segments(inner, cwd, depth + 1, paths))
     return out
 
 
@@ -1181,14 +1156,50 @@ def resolve(matched: list[Rule], note: str = "") -> Verdict:
 
 
 def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: list[Rule]) -> str | None:
-    """A shell token that names a file protected by a ``never`` Edit/Write rule."""
+    """A shell token that names, or with a substitution in it could name, a file protected by a
+    ``never`` Edit/Write rule. A token that is only a substitution is not resolved, like a variable."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
     for segment in segments:
         for token in segment:
-            if ("/" in token or token.startswith("~")) and not token.startswith("-"):
-                if any(matches_file(r, file_forms(token, cwd)) for r in protected):
+            if not ("/" in token or token.startswith("~")) or token.startswith("-"):
+                continue
+            if shell.has_sentinel(token):
+                if any(path_may_match(r, token, cwd) for r in protected):
                     return token
+            elif any(matches_file(r, file_forms(token, cwd)) for r in protected):
+                return token
     return None
+
+
+def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
+    """Whether some text in place of the token's substitutions makes it a path the rule protects."""
+    glob = shell.SENTINEL_RE.sub("*", os.path.expanduser(token))
+    forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
+    pattern = os.path.expanduser(rule.pattern)
+    return any(globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}") for form in forms)
+
+
+def globs_meet(left: str, right: str) -> bool:
+    """Whether two globs (``*`` and literal characters; ``?`` read as ``*``) match a common string:
+    a walk over pairs of positions."""
+    left, right = left.replace("?", "*"), right.replace("?", "*")
+    seen: set[tuple[int, int]] = set()
+    stack = [(0, 0)]
+    while stack:
+        i, j = stack.pop()
+        if (i, j) in seen:
+            continue
+        seen.add((i, j))
+        if i == len(left) and j == len(right):
+            return True
+        a, b = left[i : i + 1], right[j : j + 1]
+        if a == "*":
+            stack.extend([(i + 1, j)] + ([(i, j + 1)] if b else []))
+        if b == "*":
+            stack.extend([(i, j + 1)] + ([(i + 1, j)] if a else []))
+        if a and b and "*" not in (a, b) and a == b:
+            stack.append((i + 1, j + 1))
+    return False
 
 
 def outranks(new: Verdict, best: Verdict) -> bool:
@@ -1201,39 +1212,260 @@ def outranks(new: Verdict, best: Verdict) -> bool:
     return new.rule is not None or best.decision is None
 
 
+# ---------------------------------------------------------------- substitutions (gate-substitution spec)
+
+NAME_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# builtins and keywords that can evaluate quoted text as code (array subscripts, arithmetic, PS4)
+QUOTED_CODE_HEADS = frozenset(
+    "printf test [ [[ (( let declare typeset local export readonly read mapfile readarray set trap".split()
+)
+# wrappers whose inner command or ``--run`` string can sit anywhere: a hole in them decides what runs
+WHOLE_WRAPPERS = frozenset({"chroot", "nix-shell", "distrobox-enter"})
+CAT_DEFINITION_RE = re.compile(r"(?:^|[\s;&|(){}])(?:function\s+cat\b|cat\s*\(\s*\)|alias\s+cat=)")
+UNKNOWN_CHAR = "\x00"  # a hole read as one character nothing literal matches
+RULE_WILDCARDS_RE = re.compile(r"[*?\[]")
+
+
+def hole_keys(tokens: list[str]) -> list[str]:
+    return [key for token in tokens for key in shell.sentinels(token)]
+
+
+def show(text: str, holes: dict[str, shell.Hole]) -> str:
+    """Text with each sentinel put back as the substitution it stands for."""
+    for key in shell.sentinels(text):
+        text = text.replace(key, holes[key].span if key in holes else "$(…)")
+    return text
+
+
+def literal_prefix(text: str, stop: re.Pattern) -> str:
+    return stop.split(text, maxsplit=1)[0]
+
+
+def viable(rule: Rule, form: str) -> bool:
+    """Whether some text in place of the form's holes could make the rule match it: exact on a form
+    without a hole; on one with a hole, the literal prefixes of rule and form must be compatible
+    (a sound over-approximation of glob intersection)."""
+    if not shell.has_sentinel(form):
+        return fnmatch.fnmatchcase(form, rule.pattern)
+    rule_head = literal_prefix(rule.pattern, RULE_WILDCARDS_RE)
+    form_head = literal_prefix(form, shell.SENTINEL_RE)
+    return rule_head.startswith(form_head) or form_head.startswith(rule_head)
+
+
+def covers(rule: Rule, form: str) -> bool:
+    """Whether an allow matches the form whatever its holes hold: ``<literal>*`` whose literal is a
+    prefix of the form's text before its first hole, or an exact match on a form without one."""
+    if not shell.has_sentinel(form):
+        return fnmatch.fnmatchcase(form, rule.pattern)
+    head = rule.pattern[:-1]
+    exact_prefix = rule.pattern.endswith("*") and not RULE_WILDCARDS_RE.search(head)
+    return exact_prefix and literal_prefix(form, shell.SENTINEL_RE).startswith(head)
+
+
+def whole_segment_is_zone(plain: list[str]) -> bool:
+    """A head whose arguments an expander, an interpreter or a canonicaliser reads anywhere, decided
+    by name; or a segment that is opaque with its verb as written (``docker exec``, ``npm test``)."""
+    head = plain[0]
+    if any(head in group for group in (SHELLS, OPAQUE, INTERPRETERS, MAKE_NAMES, WHOLE_WRAPPERS)):
+        return True
+    if is_opaque(plain):
+        return True
+    verb = strip_global_options(plain)
+    return head in API_CLIS and verb[1:2] == ["api"]
+
+
+def verb_zone(plain: list[str], holes: dict[str, shell.Hole]) -> list[str]:
+    """The tokens that decide which rule rows can match: the command word, global options and the
+    verb (group and verb for alias CLIs and entry wrappers; through the first verb for ``gcloud``).
+    A quoted hole that is the value of a global option taking one is one word and stays out."""
+    head = plain[0]
+    verb = strip_global_options(plain)
+    options = plain[1 : len(plain) - len(verb) + 1]
+    with_value = GLOBAL_OPTIONS.get(head, (frozenset(), frozenset()))[0]
+    zone = [head] + [
+        token
+        for index, token in enumerate(options)
+        if not (index and options[index - 1] in with_value and is_quoted_hole(token, holes))
+    ]
+    if head == "gcloud":
+        cut = canonical_gcloud(verb)
+        return zone + (cut[1:] if cut != verb else verb[1:])
+    if head in CLI_ALIASES or head in WRAPPER_PARSERS:  # group and verb: ``docker compose exec``
+        return zone + verb[1:3]
+    return zone + verb[1:2] if head in GLOBAL_OPTIONS or head in OPAQUE_SUBCOMMANDS else zone
+
+
+def is_quoted_hole(token: str, holes: dict[str, shell.Hole]) -> bool:
+    """A token that is exactly one quoted substitution: one word, whatever it holds."""
+    return shell.SENTINEL_RE.fullmatch(token) is not None and token in holes and holes[token].quoted
+
+
+def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.Hole]) -> str | None:
+    """The first hole that could decide what runs: in a token ``strip_wrappers`` consumed (except
+    the value of a literal ``NAME=`` assignment before the first wrapper), in the verb zone, or
+    anywhere in a segment whose head reads its arguments as code or structure."""
+    in_prefix = True
+    for token in segment[: len(segment) - len(plain)]:
+        keys = shell.sentinels(token)
+        if token in RESERVED_HEADS:
+            continue
+        assignment = NAME_ASSIGNMENT_RE.match(token) if in_prefix else None
+        if assignment and not shell.has_sentinel(assignment.group()):
+            continue
+        in_prefix = False
+        if keys:
+            return keys[0]
+    zone = plain if whole_segment_is_zone(plain) else verb_zone(plain, holes)
+    keys = hole_keys(zone)
+    return keys[0] if keys else None
+
+
+def quoted_code(segment: list[str], inert: bool) -> str | None:
+    """Quoted ``$(…)`` or backtick text bash may still run: in an assignment, or under a builtin
+    that evaluates its arguments (``x='a[$(…)]'; echo $((x))``, ``printf -v 'a[$(…)]'``)."""
+
+    def holds_code(token: str) -> bool:
+        return "$(" in token or "`" in token
+
+    plain = strip_wrappers(segment)
+    assignments = segment[: len(segment) - len(plain)]
+    if any(NAME_ASSIGNMENT_RE.match(t) and holds_code(t) for t in assignments):
+        return next(t for t in assignments if holds_code(t))
+    if plain and plain[0] in QUOTED_CODE_HEADS:
+        if inert:
+            return plain[0]
+        return next((t for t in plain[1:] if holds_code(t)), None)
+    return None
+
+
+def judge_words(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
+    """A segment without a hole, judged as before the scanner."""
+    forms = candidates(segment)
+    foreign = executes_foreign(segment)
+    matched = [
+        r
+        for r in bash_rules
+        if matches_bash(r, forms) and not (foreign and r.decision == "allow" and r.agent)
+    ]
+    verdict = resolve(matched, "no rule matched")
+    if is_opaque(strip_wrappers(segment)) and verdict.decision != DENY:
+        allowed = any(allow_counts(r) for r in matched)
+        verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{show(forms[0], holes)[:60]}'")
+    return verdict, matched
+
+
+def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
+    """A segment with a hole: never matching anyway → deny; structural → ask; never viable → ask;
+    an owner allow covering every value → silence; ask viable → ask; else silence."""
+    plain = strip_wrappers(segment)
+    if not plain:  # ``for x in $(…)``: data
+        return judge_words(segment, bash_rules, holes)
+    forms = candidates(segment)
+    unknown = [shell.SENTINEL_RE.sub(UNKNOWN_CHAR, form) for form in forms]
+    nevers = [
+        r
+        for r in bash_rules
+        if r.decision == "never" and any(fnmatch.fnmatchcase(f, r.pattern) for f in unknown)
+    ]
+    if nevers:
+        return Verdict(DENY, nevers[0]), nevers
+    key = structural_key(segment, plain, holes)
+    if key:
+        return Verdict(ASK, None, f"substitution '{holes[key].span}' decides what runs"), []
+    tested = forms[-1:] if plain[0] == "gcloud" else forms
+    span = holes[hole_keys(segment)[0]].span
+    for decision in ("never", "allow", "ask"):
+        if decision == "allow":
+            covering = [r for r in bash_rules if allow_counts(r) and not r.agent and covers(r, forms[-1])]
+            if covering:
+                return Verdict(None, None, "allow rule"), covering
+            continue
+        found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in tested)]
+        if found:
+            rule = found[0]
+            note = f"substitution '{span}' could match {rule.text()} ({rule.layer} layer)"
+            return Verdict(ASK, None, note), found
+    return Verdict(None, None, "no rule matched"), []
+
+
+def known_values(segment: list[str], holes: dict) -> list[str] | None:
+    """The segment with each quoted known-value hole replaced by its text; None when there is none."""
+    valued = []
+    changed = False
+    for token in segment:
+        for key in shell.sentinels(token):
+            hole = holes.get(key)
+            if hole and hole.quoted and hole.value is not None:
+                token, changed = token.replace(key, hole.value), True
+        valued.append(token)
+    return valued if changed else None
+
+
+def judge_segment(
+    segment: list[str], unit: shell.Scan, bash_rules: list[Rule], holes: dict, with_values: bool
+) -> tuple[Verdict, list[Rule]]:
+    """Judge the segment, and again with known values put in (stricter wins); quoted code asks."""
+    variants = [segment]
+    valued = known_values(segment, holes) if with_values else None
+    if valued is not None:
+        variants.append(valued)
+    best: tuple[Verdict, list[Rule]] = (Verdict(None, None, "no rule matched"), [])
+    for variant in variants:
+        judge = judge_holed if hole_keys(variant) else judge_words
+        verdict, matched = judge(variant, bash_rules, holes)
+        code = quoted_code(variant, unit.inert_code)
+        if code and verdict.decision != DENY:
+            verdict = Verdict(ASK, None, f"quoted code '{show(code, holes)[:60]}' may run")
+        if outranks(verdict, best[0]):
+            best = (verdict, matched)
+    return best
+
+
+def scan_units(scanned: shell.Scan, origin: str = "") -> list[tuple[shell.Scan, str]]:
+    """The command and every substitution body it runs, each with the span it came from."""
+    units = [(scanned, origin)]
+    for hole in scanned.holes.values():
+        if hole.body is not None:
+            units.extend(scan_units(hole.body, hole.span))
+    return units
+
+
+def all_holes(scanned: shell.Scan) -> dict[str, shell.Hole]:
+    holes = dict(scanned.holes)
+    for hole in scanned.holes.values():
+        if hole.body is not None:
+            holes.update(all_holes(hole.body))
+    return holes
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
-    """Judge every segment; the most restrictive verdict wins. Also return the trace."""
+    """Judge every segment of the command and of every substitution body; the most restrictive
+    verdict wins. Also return the trace."""
     bash_rules = [r for r in rules if applies(r, "Bash", agent)]
-    command = strip_heredocs(command)
-    opaque_all = has_substitution(command)
+    scanned = shell.scan(command)
+    if scanned.error:
+        return Verdict(ASK, None, f"unparseable command ({scanned.error})"), [(command[:60], [])]
+    holes = all_holes(scanned)
+    with_values = not CAT_DEFINITION_RE.search(command)
+    paths: list[str] = []
+    entries: list[tuple[list[str], str, shell.Scan]] = []
+    for unit, origin in scan_units(scanned):
+        paths.extend(word for target in unit.targets for word in shlex.split(target))
+        for segment, via in expand_segments(split_segments(unit.outer), cwd, paths=paths):
+            entries.append((segment, via or origin, unit))
     best = Verdict(None, None, "no rule matched")
-    trace: list[tuple[str, list[Rule]]] = []
-    segments = expand_segments(split_segments(command), cwd)
-    touched = protected_file_touched([segment for segment, _ in segments], cwd, rules)
+    touched = protected_file_touched([segment for segment, _, _ in entries] + [paths], cwd, rules)
     if touched:
-        best = Verdict(ASK, None, f"shell access to a protected file '{touched[:60]}'")
-    for segment, origin in segments:
-        forms = candidates(segment)
-        opaque_note = (
-            f"command substitution '{substitution_excerpt(command)}'"
-            if opaque_all
-            else f"opaque command '{forms[0][:60]}'"
-        )
-        foreign = executes_foreign(segment)
-        matched = [
-            r
-            for r in bash_rules
-            if matches_bash(r, forms) and not (foreign and r.decision == "allow" and r.agent)
-        ]
-        verdict = resolve(matched, "no rule matched")
-        if (opaque_all or is_opaque(strip_wrappers(segment))) and verdict.decision != DENY:
-            allowed = any(allow_counts(r) for r in matched)
-            verdict = verdict if allowed else Verdict(ASK, None, opaque_note)
+        best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
+    trace: list[tuple[str, list[Rule]]] = []
+    for segment, origin, unit in entries:
+        verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values)
         if origin:
-            verdict = replace(verdict, via=origin)
-        trace.append((forms[0] + (f"  <- {origin}" if origin else ""), matched))
+            verdict = replace(verdict, via=origin[:MAX_ORIGIN])
+        form = show(" ".join(strip_wrappers(segment)), holes)
+        trace.append((form + (f"  <- {origin[:MAX_ORIGIN]}" if origin else ""), matched))
         if outranks(verdict, best):
             best = verdict
     return best, trace

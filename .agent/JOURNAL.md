@@ -362,3 +362,11 @@ Proof: pytest with coverage exit 0 (1419 passed, 98.51 %, after the rebase onto 
 Open: the review also found, outside this change, that a substitution in an assignment prefix silenced a runner (fixed on feat/gate-substitution in 632b072; this branch is rebased onto it and keeps that expansion condition); a package manager's directory option is silent (`npm --prefix sub run x`, `pnpm -C sub x`, `yarn --cwd sub x`, `uv --directory sub run x`); the protected-file check resolves relative paths from cwd and ignores cd too; entry wrappers into containers expand runners from host files. markdownlint-cli2 is not installed here.
 Next: owner reviews the branch security/gate-cd-runner (on feat/gate-substitution c95ad49).
 verified: 1619086 · pytest+cov, ruff, check-plugin, cd oracle
+
+## 2026-11-13 — gate-expansion T01: the scanner reads braces and globs
+
+Changed: _cobot_shell.py (brace holes with alternatives and exact sequences, expand_braces, MAX_BRACE_WORDS, glob holes for *, ? and bracket spans to the last ] before /, extended-glob, brace-and-bracket and bracket-code errors, special parameters, REGISTRY with one key counter, join, scan(text, issued)); tests/test_cobot_shell.py rows and a counter-reset fixture.
+Why: spec gate-expansion revision 3, owner Q1 (braces exact). Build-time catch: a double-quoted $(…) inside a bracket span would have hidden in the glob; the span text is now checked for code whatever its quoting.
+Proof: pytest tests/test_cobot_shell.py exit 0, module 99 % (one defensive line); full suite exit 0; ruff check and format exit 0.
+Next: T02 judging on brace words and glob holes.
+verified: 6fbb468 · pytest (scanner, full suite), ruff

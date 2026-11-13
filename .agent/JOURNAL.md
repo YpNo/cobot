@@ -386,3 +386,11 @@ Why: spec gate-expansion revision 3. Build-time decision: npm exec and toolbox r
 Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0.
 Next: T04 differential rows, the extglob and agent passes.
 verified: ddd1f69 · pytest+cov, ruff
+
+## 2026-11-13 — gate-expansion T04: differential rows
+
+Changed: tests/test_gate_differential.py (EXPANSION_CORPUS, EXTGLOB_CORPUS, AGENT_CORPUS with files made first, oracle helper, ran() options, stubs cargo cp mkdir npm rm uv, stub log beside the directory, a test that bash really runs each covered bypass); scope note names the unit-only cases.
+Why: spec gate-expansion story 6. Found while proving the rows can fail: the stub log inside the directory joined every * and moved uv run's words, so the guard's row passed with the guard removed.
+Proof: pytest with coverage exit 0 (98.60 %); mutations (no inner-word check, no extglob error, agent anchoring off) each fail their rows; ruff exit 0.
+Next: T05 agent prompts, T06 docs.
+verified: a4de1bf · pytest+cov, differential mutations, ruff

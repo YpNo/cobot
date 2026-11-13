@@ -2589,3 +2589,61 @@ def test_judgeBash_ownerAllowCoversAGlob(rules, layers):
     owner, _ = layers
     owner.write_text("allow Bash(kubectl apply*)\n")
     assert decide(rules, "kubectl apply -f k8s/*.yaml")[0].decision is None
+
+
+@pytest.fixture
+def runner_dir(tmp_path):
+    (tmp_path / "Makefile").write_text("show:\n\t@echo value $(X)\ntest:\n\tpytest\n")
+    (tmp_path / "package.json").write_text(
+        '{"scripts": {"test": "eslint src/*", "lint": "ruff check src/*"}}'
+    )
+    return tmp_path
+
+
+RUNNER_GLOBS = [
+    # argv runners: a glob that is a word of the inner command is judged there
+    ("uv run pytest tests/test_*.py", None),
+    ("docker exec dev ls /app/*", None),
+    ("nix develop -c ls src/*", None),
+    ("mise exec -- ls src/*", None),
+    ("chroot /x ls /y/*", None),
+    ("flatpak run --command=ls app src/*", None),
+    ("uv run car* publish", "ask"),
+    ("docker exec dev cargo publis?", "ask"),
+    # a glob the runner's parser consumes keeps the segment opaque
+    ("uv run --with * publish", "ask"),
+    ("uv run --with=* publish", "ask"),
+    ("docker compose exec * publish", "ask"),
+    ("docker exec * ls", "ask"),
+    # runners that resolve a name, read options anywhere or take a code string
+    ("npm test -- src/*", "ask"),
+    ("make show X=*", "ask"),
+    ("npm run te*", "ask"),
+    ("make t*", "ask"),
+    ("npm exec eslint src/*", "ask"),
+    ("nix-shell --run ls*", "ask"),
+    ("toolbox run ls *", "ask"),
+    # globs in a body read from disk, or in a quoted string
+    ("npm test", None),
+    ("npm run lint", None),
+    ("make test", None),
+    ("bash -c 'ls *.py'", None),
+    ("bash -c 'cargo publis?'", "ask"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), RUNNER_GLOBS)
+def test_judgeBash_runnerWithAGlob_expandsOnlyWhereTheGlobIsAnInnerWord(rules, runner_dir, command, expected):
+    assert judge_in(rules, command, runner_dir)[0].decision == expected, command
+
+
+def test_judgeBash_runnerOrigin_showsTheGlob(rules, runner_dir):
+    verdict = judge_in(rules, "uv run car* publish", runner_dir)[0]
+    assert verdict.reason() == "cobot gate: glob '*' decides what runs via uv run car* publish"
+
+
+def test_commandParts_plantedSentinelInABody_isRefused(rules):
+    key = rules.shell.sentinels(rules.shell.scan("ls *").outer)[0]
+    assert rules.command_parts(f"ls {key}") is None
+    assert rules.command_parts(f"ls {key}", frozenset({key})) is not None
+    assert rules.command_parts("echo $(date)") is None

@@ -770,7 +770,7 @@ def inner_compose(tokens: list[str]) -> list[str] | None:
     if rest[:1] not in (["exec"], ["run"]):
         return NOTHING_HIDDEN
     rest = split_options(rest[1:], COMPOSE_RUN_VALUE_OPTIONS, COMPOSE_RUN_FLAGS)
-    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+    return [shell.join(rest[1:])] if rest and len(rest) > 1 else None
 
 
 def inner_container(plain: list[str]) -> list[str] | None:
@@ -784,7 +784,7 @@ def inner_container(plain: list[str]) -> list[str] | None:
     if tokens[:1] != ["exec"]:
         return NOTHING_HIDDEN
     rest = split_options(tokens[1:], EXEC_VALUE_OPTIONS, EXEC_FLAGS)
-    return [shlex.join(rest[1:])] if rest and len(rest) > 1 else None
+    return [shell.join(rest[1:])] if rest and len(rest) > 1 else None
 
 
 def option_value(tokens: list[str], names: tuple[str, ...]) -> list[str] | None | bool:
@@ -812,7 +812,7 @@ def inner_nix(plain: list[str]) -> list[str] | None:
     for flag in ("-c", "--command"):
         if flag in plain:
             inner = plain[plain.index(flag) + 1 :]
-            return [shlex.join(inner)] if inner else None
+            return [shell.join(inner)] if inner else None
     return NOTHING_HIDDEN
 
 
@@ -834,14 +834,14 @@ def inner_flatpak(plain: list[str]) -> list[str] | None:
         rest = rest[1:]
     if command is None:
         return NOTHING_HIDDEN
-    return [shlex.join([command, *rest[1:]])]
+    return [shell.join([command, *rest[1:]])]
 
 
 def inner_chroot(plain: list[str]) -> list[str] | None:
     rest = plain[1:]
     while rest and rest[0].startswith("-"):  # chroot's own options all take ``=`` values
         rest = rest[1:]
-    return [shlex.join(rest[1:])] if len(rest) > 1 else NOTHING_HIDDEN
+    return [shell.join(rest[1:])] if len(rest) > 1 else NOTHING_HIDDEN
 
 
 WRAPPER_PARSERS = {
@@ -931,7 +931,7 @@ def expand_mise(plain: list[str], here: Path | None) -> tuple[list[str], Dirs] |
             or any(arg.startswith(("-C", "--cd")) for arg in args[: args.index("--")])
         ):
             return None  # without ``--`` the command is not known; ``-C``/``--cd`` runs it elsewhere
-        return [shlex.join(args[args.index("--") + 1 :])], directories_of(here)
+        return [shell.join(args[args.index("--") + 1 :])], directories_of(here)
     if sub in ("run", "r"):
         if not args:
             return None
@@ -1046,10 +1046,10 @@ def expand_uv(plain: list[str]) -> list[str] | None:
     if not rest or index > len(args):
         return None
     if module:
-        return [shlex.join(["python", "-m", *rest])]
+        return [shell.join(["python", "-m", *rest])]
     if script or rest[0].endswith((".py", ".pyw")):
-        return [shlex.join(["python", *rest])]
-    return [shlex.join(rest)]
+        return [shell.join(["python", *rest])]
+    return [shell.join(rest)]
 
 
 def package_scripts(here: Path | None) -> dict[str, str] | None:
@@ -1132,13 +1132,42 @@ def expand_runner(plain: list[str], here: Path | None) -> tuple[list[str], Dirs]
     return None if commands is None else (commands, directories_of(here))
 
 
-def command_parts(text: str) -> tuple[str, list[str]] | None:
+def command_parts(text: str, issued: frozenset[str] = frozenset()) -> tuple[str, list[str]] | None:
     """The scanned text and redirection targets of a runner body; None when it holds a substitution
-    or anything the scanner refuses, so the runner stays opaque."""
-    scanned = shell.scan(text)
-    if scanned.error or scanned.holes:
+    or anything the scanner refuses, so the runner stays opaque. Braces and globs are words: a
+    body read from disk gets holes of its own, an argv runner's inner command keeps the ``issued``
+    glob holes of the segment it came from, and any other sentinel is refused."""
+    scanned = shell.scan(text, issued)
+    if scanned.error or any(hole.kind not in EXPANSION_KINDS for hole in scanned.holes.values()):
         return None
     return scanned.outer, scanned.targets
+
+
+def argv_runner(plain: list[str]) -> bool:
+    """A runner whose inner command is the rest of its argv after options it reads only before it,
+    built with ``shell.join``: a glob hole there is a word of the inner command. Runners that
+    resolve a name (scripts, make targets, mise tasks), read options anywhere (``npm exec``), take a
+    code string (``nix-shell --run``, ``distrobox -e``) or parse flags the gate has not verified
+    (``toolbox``) are not."""
+    head = plain[0]
+    if head == "uv":
+        return plain[1:2] == ["run"]
+    if head == "mise":
+        return plain[1:2] in (["exec"], ["x"])
+    return head in GLOB_ARGV_RUNNERS
+
+
+def globs_reach_inner(plain: list[str], expansions: list[tuple[list[tuple[str, list[str]]], Dirs]]) -> bool:
+    """Every token of the segment holding a glob is a word of the inner commands: a glob is zero or
+    more words, so one the runner's parser consumed (an option value, a container slot) could move
+    every later word (``uv run --with * publish`` runs ``cargo publish`` when files ``aa`` and
+    ``cargo`` exist)."""
+    inner = {token for parts, _ in expansions for text, _ in parts for token in flatten(split_segments(text))}
+    return all(token in inner for token in plain if shell.has_sentinel(token))
+
+
+def flatten(segments: list[list[str]]) -> list[str]:
+    return [token for segment in segments for token in segment]
 
 
 # ---------------------------------------------------------------- directory in effect
@@ -1346,7 +1375,9 @@ def walk_directories(
 # ---------------------------------------------------------------- runner expansion
 
 
-def expand_everywhere(plain: list[str], here: Dirs) -> list[tuple[list[tuple[str, list[str]]], Dirs]] | None:
+def expand_everywhere(
+    plain: list[str], here: Dirs, issued: frozenset[str] = frozenset()
+) -> list[tuple[list[tuple[str, list[str]]], Dirs]] | None:
     """The runner's parsed commands for each directory it may run in, with the directories those
     commands start in; None when any of them cannot be known."""
     out = []
@@ -1355,7 +1386,7 @@ def expand_everywhere(plain: list[str], here: Dirs) -> list[tuple[list[tuple[str
         if expansion is None:
             return None
         commands, start = expansion
-        parts = [command_parts(command) for command in commands]
+        parts = [command_parts(command, issued) for command in commands]
         if not commands or None in parts:
             return None
         out.append(([part for part in parts if part], start))
@@ -1373,11 +1404,13 @@ def expand_segment(
     script); it runs in a new shell, so its state is read from its own text."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
-    expandable = depth < MAX_EXPANSION and is_opaque(plain) and literal
-    expansions = expand_everywhere(plain, here) if expandable else None
-    if not expansions:
+    globbed = not literal and all_glob(segment) and prefix_key(segment, plain) is None and argv_runner(plain)
+    expandable = depth < MAX_EXPANSION and is_opaque(plain) and (literal or globbed)
+    issued = frozenset(hole_keys(plain)) if globbed else frozenset()
+    expansions = expand_everywhere(plain, here, issued) if expandable else None
+    if not expansions or (globbed and not globs_reach_inner(plain, expansions)):
         return [(segment, "")]
-    origin = " ".join(plain)[:MAX_ORIGIN]
+    origin = show(" ".join(plain), shell.REGISTRY)[:MAX_ORIGIN]
     out: list[tuple[list[str], str]] = []
     for parts, start in expansions:
         paths.extend(target for _, targets in parts for target in targets)
@@ -1574,6 +1607,8 @@ CAT_DEFINITION_RE = re.compile(r"(?:^|[\s;&|(){}])(?:function\s+cat\b|cat\s*\(\s
 UNKNOWN_CHAR = "\x00"  # a hole read as one character nothing literal matches
 SEGMENT_STAR = "\x01"  # a glob hole in a path: any text without ``/``
 GLOBSTAR_MARK = "\x02"  # a ``*`` glob hole, until ``**`` runs are found
+EXPANSION_KINDS = frozenset({"glob", "brace"})  # holes a runner body may hold and stay readable
+GLOB_ARGV_RUNNERS = frozenset({"docker", "podman", "docker-compose", "nix", "flatpak", "chroot"})
 # ``NAME=`` or ``NAME[…]=`` (the subscript a bracket glob hole): an assignment in the prefix
 ARRAY_ASSIGNMENT_RE = re.compile(f"^[A-Za-z_][A-Za-z0-9_]*({shell.SENTINEL_RE.pattern})?\\+?=")
 RULE_WILDCARDS_RE = re.compile(r"[*?\[]")

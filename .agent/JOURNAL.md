@@ -310,3 +310,10 @@ Why: spec plan steps 2 and 3 merged: shlex drops whitespace, so `cargo 2>/dev/nu
 Proof: pytest on tests/test_cobot_shell.py exit 0, 100 % of the module; ruff check and format exit 0.
 Next: T03 judge_bash on scanned units.
 verified: 42eff72 · pytest (scanner, 100 %), ruff
+
+## 2026-11-13 — gate-substitution T04 (ahead of T03): promote rows anchored
+
+Changed: default.rules replaces ask Bash(*cobot-memory learn *--promote*) by three rows anchored on cobot-memory, python3 and python; promote tests.
+Why: owner answer Q1; with substitutions judged, a leading * matches any substituted argument. Landed before T03 because T03's tests need it and it holds on its own.
+Proof: pytest exit 0.
+verified: 7216b90 · pytest

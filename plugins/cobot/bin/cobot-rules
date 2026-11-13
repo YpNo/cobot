@@ -285,7 +285,31 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
         frozenset({"-D", "--debug"}),
     ),
     "podman": (frozenset({"--url", "--connection", "-c", "--log-level", "--root"}), frozenset()),
+    # cargo --help 1.99.0, read 2026-11-13; a leading ``+<toolchain>`` is rustup's proxy selector
+    "cargo": (
+        frozenset({"--color", "-C", "--config", "-Z", "--explain"}),
+        frozenset({"-v", "--verbose", "-q", "--quiet", "--locked", "--offline", "--frozen"})
+        | frozenset({"-h", "--help", "-V", "--version", "--list"}),
+    ),
+    # value options only, so their value is never read as a verb (readings): uv --help 0.12.23,
+    # pnpm --help 12.18.0, npm help config 11.20.0, read 2026-11-13
+    "uv": (
+        frozenset({"--color", "--allow-insecure-host", "--directory", "--project", "--config-file"}),
+        frozenset(),
+    ),
+    "pnpm": (
+        frozenset("-C --dir --reporter --loglevel -F --filter --filter-prod --env-file --store-dir".split())
+        | frozenset("--state-dir --npmrc-auth-file --workspace-packages --registry --https-proxy".split())
+        | frozenset({"--http-proxy", "--no-proxy"}),
+        frozenset(),
+    ),
+    "npm": (
+        frozenset("--registry --prefix -w --workspace --userconfig --globalconfig --cache --loglevel".split())
+        | frozenset({"--tag", "--access", "--otp", "--include", "--omit"}),
+        frozenset(),
+    ),
 }
+TOOLCHAIN_PROXIES = frozenset({"cargo"})  # ``cargo +nightly …``: rustup picks the toolchain
 FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#.*)?$")
 MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#.*)?$")
@@ -699,9 +723,12 @@ def canonical_alias(tokens: list[str]) -> list[str]:
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:
-    """``git -C x -c k=v push`` becomes ``git push`` for the verb form."""
+    """``git -C x -c k=v push`` becomes ``git push`` for the verb form; ``cargo +nightly`` loses
+    its toolchain selector."""
     if not tokens or tokens[0] not in GLOBAL_OPTIONS:
         return tokens
+    if tokens[0] in TOOLCHAIN_PROXIES and tokens[1:2] and tokens[1].startswith("+"):
+        tokens = [tokens[0], *tokens[2:]]
     with_value, flags = GLOBAL_OPTIONS[tokens[0]]
     out = [tokens[0]]
     rest = tokens[1:]
@@ -717,8 +744,49 @@ def strip_global_options(tokens: list[str]) -> list[str]:
     return out + rest
 
 
+def option_word(token: str) -> bool:
+    return len(token) > 1 and token[0] in "-+"
+
+
+def readings(tokens: list[str]) -> list[list[str]]:
+    """Each way to read where the verb starts past the options before it (gate-findings B): a known
+    value option skips its value, a known flag or ``--opt=value`` skips itself, ``--`` ends the
+    options; an unknown option followed by a word records that word as a possible verb and goes
+    on reading it as the option's value. Each reading is the command word and the tokens from its
+    verb on. Never/ask rows and the opaque check read them; allows match the canonical form only."""
+    if len(tokens) < 2:
+        return []
+    with_value, flags = GLOBAL_OPTIONS.get(tokens[0], (frozenset(), frozenset()))
+    starts: list[int] = []
+    i = 1
+    while i < len(tokens):
+        word = tokens[i]
+        if word == "--":
+            starts.append(i + 1)
+            break
+        if not option_word(word):
+            starts.append(i)
+            break
+        name = word.split("=", 1)[0]
+        if "=" in word or name in flags:
+            i += 1
+        elif name in with_value:
+            i += 2
+        elif i + 1 < len(tokens) and not option_word(tokens[i + 1]):
+            starts.append(i + 1)  # the verb, or the unknown option's value: read on past it
+            i += 2
+        else:
+            i += 1
+    return [[tokens[0], *tokens[k:]] for k in starts if k < len(tokens)]
+
+
 def is_opaque(plain: list[str]) -> bool:
-    """A runner or interpreter whose real command is hidden from argv matching."""
+    """A runner or interpreter whose real command is hidden from argv matching, as written or in
+    any reading past the options before its verb (``uv -q run …``)."""
+    return opaque_as_read(plain) or any(opaque_as_read(r) for r in readings(plain) if r != plain)
+
+
+def opaque_as_read(plain: list[str]) -> bool:
     if not plain:
         return False
     head = plain[0]
@@ -881,7 +949,24 @@ def inner_chroot(plain: list[str]) -> list[str] | None:
     return [shell.join(rest[1:])] if len(rest) > 1 else NOTHING_HIDDEN
 
 
+def inner_rustup(plain: list[str]) -> list[str] | None:
+    """``rustup [-v|-q] run [--install] <toolchain> <cmd…>`` (rustup run --help 1.29.2, read
+    2026-11-13); any other rustup command runs nothing of its own."""
+    rest = plain[1:]
+    while rest and rest[0] in ("-v", "--verbose", "-q", "--quiet"):
+        rest = rest[1:]
+    if rest[:1] != ["run"]:
+        return NOTHING_HIDDEN
+    rest = rest[1:]
+    while rest and rest[0] == "--install":
+        rest = rest[1:]
+    if rest and rest[0].startswith("-"):
+        return None
+    return [shell.join(rest[1:])] if len(rest) > 1 else None
+
+
 WRAPPER_PARSERS = {
+    "rustup": inner_rustup,
     "distrobox": inner_distrobox,
     "distrobox-enter": inner_distrobox,
     "toolbox": inner_toolbox,
@@ -1523,13 +1608,18 @@ def expand_units(
             expand_units(hole.body, hole.span, here, state, reached, entries)
 
 
+def canonical(tokens: list[str]) -> list[str]:
+    return canonical_gcloud(canonical_gh_api(canonical_alias(expand_push_flags(tokens))))
+
+
 def candidates(tokens: list[str]) -> list[str]:
+    """The forms rules match: as written, each reading past the options before the verb, and last
+    the canonical form, the only one an allow matches."""
     plain = strip_wrappers(tokens)
-    verb = canonical_gcloud(canonical_gh_api(canonical_alias(expand_push_flags(strip_global_options(plain)))))
-    forms = [" ".join(plain)]
-    if verb != plain:
-        forms.append(" ".join(verb))
-    return forms
+    written, last = " ".join(plain), " ".join(canonical(strip_global_options(plain)))
+    read = [" ".join(form) for reading in readings(plain) for form in (reading, canonical(reading))]
+    middle = [form for form in dict.fromkeys(read) if form not in (written, last)]
+    return [written, *middle, last] if middle or written != last else [written]
 
 
 def agent_matches(scope: str, agent: str | None) -> bool:

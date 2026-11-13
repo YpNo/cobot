@@ -443,3 +443,11 @@ Why: spec gate-findings B (F-24). Found while building: a runner verb behind an 
 Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0; cobot-rules check on 17 common commands (git --no-pager log, kubectl -n x get pods, uv run pytest, cargo +stable clippy, npm -g ls …) unchanged, silent.
 Next: T04 agent read guards.
 verified: c55624f · pytest+cov, ruff, cobot-rules check
+
+## 2026-11-13 — gate-findings T04: read-only agents cannot write or run
+
+Changed: cobot-rules (FOREIGN_BY_CLI in executes_foreign; Guard, getopt_hit, single_hit, guarded_token, uniq_output, branch_write, curl_unsafe with CURL_* allow-list, READ_GUARDS with a dated source per row, guard_keys, guarded, written_file; judge_words, judge_holed, agent_globs and judge_segment take refused, judge_bash reads Reached.writes); default.rules (cargo audit* and cargo deny check* dropped for @consultant, with the reason); tests: AGENT_GUARDED (about 140 rows), AGENT_READS, learner rows, reasons, a make recipe that writes, the main thread unchanged, the scanner-forms row for cargo deny.
+Why: spec gate-findings A (F-21, F-24 agent half), owner answers Q1 b), Q3 a), Q4 b). Two spec rows were wrong and are corrected in the converge: curl -fsSL does not match the curl -s* read row, and getopt abbreviations take any prefix (GNU sort accepts --o).
+Proof: pytest with coverage exit 0 (98.54 %, the new code fully covered); ruff check and format exit 0.
+Next: T05 differential rows.
+verified: afd6724 · pytest+cov, ruff

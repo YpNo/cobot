@@ -295,6 +295,8 @@ Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses, runs-on ubuntu-26
 Open: the missing bin/ under `claude plugin eval` is a Claude Code difference worth reporting upstream; the PATH prefix is the CI-side workaround only.
 Next: owner pushes, merges, dispatches `cases=never-apply`; then the full suite and the remaining failures.
 verified: fe03c5a · zizmor, yaml, markdownlint, local cobot-rules check on the prefixed PATH
+
+
 ## 2026-11-13 — gate-substitution T01: reserved words and wrapper options
 
 Changed: cobot-rules drop_wrapper (reserved heads, function, coproc, time -p, command -p, exec -a/-c/-l, rtk proxy), for/select/case segments are data, trap opaque, a token of only ();&| splits; executes_foreign strips the same heads; tests.
@@ -335,3 +337,11 @@ Proof: pytest with coverage exit 0 (98.46 %, scanner 100 %); ruff, shellcheck, m
 Open: brace and glob expansion in a verb position (Q4 follow-up); git fetch cannot authenticate from this session, so the base is origin/main bde8ed5 as last fetched.
 Next: owner reviews and pushes feat/gate-substitution, opens the PR.
 verified: d9b9a54 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, fuzz
+
+## 2026-11-13 — gate-substitution rebased onto main
+
+Changed: feat/gate-substitution rebased from bde8ed5 onto origin/main e8e6669 (PRs 34–37); no code conflict, JOURNAL.md kept main's entries first, then this branch's; CHANGELOG entries still sit under Unreleased, Changed and Security.
+Why: the owner asked for the rebase before pushing; the earlier stamps name pre-rebase commits.
+Proof: pytest with coverage exit 0 (98.46 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
+Next: owner pushes and opens the PR.
+verified: 9397f77 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

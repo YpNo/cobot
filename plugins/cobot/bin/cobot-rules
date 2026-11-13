@@ -177,6 +177,30 @@ YARN_BUILTINS = frozenset(
 )
 SCRIPT_SHORTHAND = {"pnpm": PNPM_BUILTINS, "yarn": YARN_BUILTINS}
 MAX_EXPANSION = 4  # nesting depth of runners and wrappers resolved before the rest stays opaque
+# cd tracking: a runner reads its Makefile, mise config or package.json in the directory in effect
+DIRECTORY_VERBS = frozenset({"cd", "pushd", "popd"})
+HIDDEN_VERB = "<hidden>"  # a cd behind a wrapper: a child process, or options the gate does not read
+IN_SHELL_PREFIXES = frozenset({"builtin", "command"})  # run the cd in this shell
+STRING_RUNNERS = frozenset({"alias", "eval", "trap", "source", ".", "enable"})  # may run a cd in a string
+CD_OPTIONS = frozenset({"-L", "-P", "-e", "-@"})
+COMPOUND_OPENERS = frozenset({"if", "while", "until", "for", "select", "case", "{"})
+COMPOUND_CLOSERS = frozenset({"fi", "done", "esac", "}"})
+LOOP_HEADS = frozenset({"while", "until", "for", "select"})
+REDIRECTS = frozenset({">", ">>", "<", "<<", "2>", "&>"})
+UNSURE_PATH_CHARS = frozenset("$`*?[{\\")  # expansions the gate does not perform
+PWD_NAMES = ("$PWD", "${PWD}")  # the shell's own directory, unless the script assigns PWD
+LINE = "\n"  # between the lines of a runner body (the shell items turn a newline into ``;``)
+# a script that may redefine cd or change how it resolves: the walk does not follow it
+UNTRACKABLE_RE = re.compile(
+    r"\b(?:CDPATH|shopt|alias|enable|eval|trap|source|function)\b|\w\s*\(\s*\)"
+    r"|(?:^|[\s;&|(){}])\.\s|\bset\s[^;&|\n]*(?:[-+][a-zA-Z]*P|physical)"
+)
+# a script that may assign PWD, by name or through a computed one: ``$PWD`` stays unknown
+PWD_UNKNOWN_RE = re.compile(
+    r"(?<!\$)(?<!\$\{)PWD|\$\{PWD[^}]|['\\]\$\{?PWD|\$\{!"  # quoted or escaped: a folder named $PWD
+    r"|\b(?:printf|read|declare|typeset|export|local|readonly|mapfile|readarray|getopts|unset|let)\b"
+)
+ANYWHERE = ""  # key of the directories any part of a script may run in (a sentinel is never empty)
 INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
 # mise tasks are resolved from the config (closest folder first, local files first)
 MISE_CONFIGS = (
@@ -348,20 +372,30 @@ def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]
 # ---------------------------------------------------------------- command analysis
 
 
-def split_segments(command: str) -> list[list[str]]:
-    """Split a shell command into argv-like segments at shell operators."""
+def shell_items(command: str) -> list[str | list[str]]:
+    """The argv-like segments of a shell command and the operator tokens between them, in order."""
     joined = command.replace("\\\n", " ").replace("\n", " ; ")
     lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
-    segments: list[list[str]] = [[]]
+    items: list[str | list[str]] = []
+    segment: list[str] = []
     for token in lexer:
         if token in SEPARATORS or (token and set(token) <= CONTROL_CHARS):  # ``()``, ``))``
-            if segments[-1]:
-                segments.append([])
+            if segment:
+                items.append(segment)
+                segment = []
+            items.append(token)
         else:
-            segments[-1].append(token)
-    return [segment for segment in segments if segment]
+            segment.append(token)
+    if segment:
+        items.append(segment)
+    return items
+
+
+def split_segments(command: str) -> list[list[str]]:
+    """Split a shell command into argv-like segments at shell operators."""
+    return [item for item in shell_items(command) if isinstance(item, list)]
 
 
 def strip_prefix_command(tokens: list[str]) -> list[str]:
@@ -861,11 +895,12 @@ def mise_task_lines(spec: object) -> list[str] | None:
     return lines
 
 
-def mise_task_commands(task: str, cwd: str | None) -> list[str] | None:
-    """The commands a mise task runs, from the closest config that defines it; None when unknown."""
-    if tomllib is None or not task or task.startswith("-"):
+def mise_task_commands(task: str, here: Path | None) -> tuple[list[str], Path] | None:
+    """The commands a mise task runs and the folder of the closest config that defines it; None when
+    unknown, or when ``here`` is."""
+    if tomllib is None or here is None or not task or task.startswith("-"):
         return None
-    start = Path(cwd or os.getcwd()).resolve()
+    start = here.resolve()
     for folder in (start, *start.parents):
         for name in MISE_CONFIGS:
             path = folder / name
@@ -876,18 +911,27 @@ def mise_task_commands(task: str, cwd: str | None) -> list[str] | None:
             except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
                 return None
             if isinstance(tasks, dict) and task in tasks:
-                return mise_task_lines(tasks[task])
+                lines = mise_task_lines(tasks[task])
+                return None if lines is None else (lines, folder)
     return None
 
 
-def expand_mise(plain: list[str], cwd: str | None) -> list[str] | None:
-    """The commands behind a mise invocation: ``mise run <task>`` (or the ``mise <task>`` shorthand)
-    from the mise config, ``mise exec … -- <cmd>`` from argv. None when they cannot be known."""
+def expand_mise(plain: list[str], here: Path | None) -> tuple[list[str], Dirs] | None:
+    """The commands behind a mise invocation and the directories they run in: ``mise run <task>``
+    (or the ``mise <task>`` shorthand) from the mise config, ``mise exec … -- <cmd>`` from argv. A
+    task runs in its config's folder or ``here`` (``dir`` stays opaque): both are followed. None when
+    the commands cannot be known."""
     if len(plain) < 2:
         return None
     sub, args = plain[1], plain[2:]
     if sub in ("exec", "x"):
-        return [shlex.join(args[args.index("--") + 1 :])] if "--" in args and args[-1] != "--" else None
+        if (
+            "--" not in args
+            or args[-1] == "--"
+            or any(arg.startswith(("-C", "--cd")) for arg in args[: args.index("--")])
+        ):
+            return None  # without ``--`` the command is not known; ``-C``/``--cd`` runs it elsewhere
+        return [shlex.join(args[args.index("--") + 1 :])], directories_of(here)
     if sub in ("run", "r"):
         if not args:
             return None
@@ -896,15 +940,14 @@ def expand_mise(plain: list[str], cwd: str | None) -> list[str] | None:
         return None
     else:
         task = sub
-    if ":::" in args:
+    found = mise_task_commands(task, here) if ":::" not in args else None
+    if found is None:
         return None
-    commands = mise_task_commands(task, cwd)
-    if commands is None:
-        return None
+    commands, folder = found
     extra = args[1:] if args[:1] == ["--"] else args
     if extra:
         commands[-1] = f"{commands[-1]} {shlex.join(extra)}"
-    return commands
+    return commands, frozenset({here, folder})
 
 
 def parse_make_argv(args: list[str]) -> tuple[str | None, str | None, list[str], dict[str, str]] | None:
@@ -959,25 +1002,19 @@ def parse_make_argv(args: list[str]) -> tuple[str | None, str | None, list[str],
     return directory, makefile, goals, overrides
 
 
-def expand_make(plain: list[str], cwd: str | None) -> list[str] | None:
+def expand_make(plain: list[str], here: Path | None) -> tuple[list[str], Dirs] | None:
     """The recipe lines behind ``make [options] [VAR=value] [goals]``, read from the Makefile
-    (``_cobot_make``); None when they cannot be known. A nested make inside a ``-C`` directory
-    stays opaque: its own Makefile would be read from the wrong folder."""
+    (``_cobot_make``), and the folder they run in (``here``, or its ``-C`` directory); None when
+    they cannot be known."""
     parsed = parse_make_argv(plain[1:])
-    if parsed is None:
+    if parsed is None or here is None:
         return None
     directory, makefile, goals, overrides = parsed
-    folder = Path(cwd or os.getcwd())
-    if directory:
-        folder = folder / os.path.expanduser(directory)
+    folder = (
+        Path(os.path.realpath(here / os.path.expanduser(directory))) if directory else here
+    )  # make chdir()s
     commands = _cobot_make.resolve(folder, makefile, goals, overrides)
-    if commands is None:
-        return None
-    if directory:
-        heads = [strip_wrappers(segment)[:1] for command in commands for segment in split_segments(command)]
-        if any(head and head[0] in MAKE_NAMES for head in heads):
-            return None
-    return commands
+    return None if commands is None else (commands, frozenset({folder}))
 
 
 def expand_uv(plain: list[str]) -> list[str] | None:
@@ -998,6 +1035,8 @@ def expand_uv(plain: list[str]) -> list[str] | None:
             module = True
         elif name in ("-s", "--script"):
             script = True
+        elif name == "--directory":
+            return None  # the command runs in another directory
         elif name in UV_RUN_VALUE_OPTIONS:
             index += 0 if has_value else 1
         elif name not in UV_RUN_FLAGS or has_value:
@@ -1013,8 +1052,10 @@ def expand_uv(plain: list[str]) -> list[str] | None:
     return [shlex.join(rest)]
 
 
-def package_scripts(cwd: str | None) -> dict[str, str] | None:
-    path = Path(cwd or os.getcwd()) / "package.json"
+def package_scripts(here: Path | None) -> dict[str, str] | None:
+    if here is None:
+        return None
+    path = here / "package.json"
     try:
         scripts = json.loads(path.read_text(encoding="utf-8")).get("scripts")
     except (OSError, ValueError, AttributeError):
@@ -1024,7 +1065,7 @@ def package_scripts(cwd: str | None) -> dict[str, str] | None:
     )
 
 
-def expand_node(plain: list[str], cwd: str | None) -> list[str] | None:
+def expand_node(plain: list[str], here: Path | None) -> list[str] | None:
     """The commands behind a package-manager launcher: ``exec <bin>`` from argv; ``run <script>``,
     the pnpm/yarn shorthand and npm's test/start aliases from package.json, with the script's
     ``pre``/``post`` hooks. None when the runner's own flags would change which scripts run."""
@@ -1054,7 +1095,7 @@ def expand_node(plain: list[str], cwd: str | None) -> list[str] | None:
         arg in SCRIPT_SELECT_FLAGS or arg.startswith(("--filter=", "-F=")) for arg in extra
     ):
         return None  # a regex of scripts, or a flag that changes which scripts run
-    scripts = package_scripts(cwd)
+    scripts = package_scripts(here)
     if scripts is None or name not in scripts:
         return None
     commands = []
@@ -1067,61 +1108,326 @@ def expand_node(plain: list[str], cwd: str | None) -> list[str] | None:
     return commands
 
 
-def expand_runner(plain: list[str], cwd: str | None) -> list[str] | None:
-    """The commands behind a runner, a shell ``-c`` string or an entry wrapper; None when unknown."""
+def expand_runner(plain: list[str], here: Path | None) -> tuple[list[str], Dirs] | None:
+    """The commands behind a runner, a shell ``-c`` string or an entry wrapper, run from ``here``
+    (None: a directory the gate cannot know), and the directories those commands start in; None
+    when unknown. A runner that reads a file from ``here`` stays unknown while ``here`` is."""
     if not plain:
         return None
     head = plain[0]
     if head == "mise":
-        commands = expand_mise(plain, cwd)
-    elif head in MAKE_NAMES:
-        commands = expand_make(plain, cwd)
-    elif head == "uv":
+        return expand_mise(plain, here)
+    if head in MAKE_NAMES:
+        return expand_make(plain, here)
+    if head == "uv":
         commands = expand_uv(plain)
     elif head in ("npm", "pnpm", "yarn", "bun"):
-        commands = expand_node(plain, cwd)
+        commands = expand_node(plain, here)
     elif head in SHELLS:
         commands = expand_shell(plain)
     elif head in WRAPPER_PARSERS:
         commands = WRAPPER_PARSERS[head](plain)
     else:
         return None
-    return commands
+    return None if commands is None else (commands, directories_of(here))
 
 
-def command_parts(text: str) -> tuple[list[list[str]], list[str]] | None:
-    """The segments and redirection targets of a runner body; None when it holds a substitution or
-    anything the scanner refuses, so the runner stays opaque."""
+def command_parts(text: str) -> tuple[str, list[str]] | None:
+    """The scanned text and redirection targets of a runner body; None when it holds a substitution
+    or anything the scanner refuses, so the runner stays opaque."""
     scanned = shell.scan(text)
     if scanned.error or scanned.holes:
         return None
-    return split_segments(scanned.outer), scanned.targets
+    return scanned.outer, scanned.targets
 
 
-def expand_segments(
-    segments: list[list[str]], cwd: str | None, depth: int = 0, paths: list[str] | None = None
-) -> list[tuple[list[str], str]]:
-    """Replace each resolvable runner or wrapper segment by the commands it runs, recursively up to
-    MAX_EXPANSION levels, tagged with the outermost origin. A segment holding a substitution is
-    expanded only when every hole sits in a leading assignment's value: elsewhere the substituted
-    text could be the code the runner runs. Redirection targets of
-    the bodies go to ``paths``."""
-    out: list[tuple[list[str], str]] = []
-    for segment in segments:
-        plain = strip_wrappers(segment)
-        literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
-        expandable = depth < MAX_EXPANSION and is_opaque(plain) and literal
-        commands = expand_runner(plain, cwd) if expandable else None
-        parts = [command_parts(command) for command in commands or []]
+# ---------------------------------------------------------------- directory in effect
+
+Dirs = frozenset[Path] | None  # the directories a segment may run in; None when the gate cannot know
+
+
+def directories_of(here: Path | None) -> Dirs:
+    return None if here is None else frozenset({here})
+
+
+def union(left: Dirs, right: Dirs) -> Dirs:
+    return None if left is None or right is None else left | right
+
+
+@dataclass(frozen=True)
+class ShellState:
+    """What a whole script lets the walk trust, read from its text (quotes included, so a mention
+    inside a string counts too)."""
+
+    trackable: bool  # nothing that redefines cd or how it resolves (function, alias, CDPATH, set -P)
+    pwd_known: bool  # nothing can assign PWD, so ``$PWD`` is the directory in effect
+
+
+def shell_state(text: str) -> ShellState:
+    return ShellState(not UNTRACKABLE_RE.search(text), not PWD_UNKNOWN_RE.search(text))
+
+
+def directory_verb(segment: list[str]) -> list[str] | None:
+    """The argv of the ``cd``, ``pushd`` or ``popd`` a segment runs in the shell itself, from the
+    verb on; ``[HIDDEN_VERB]`` when a directory verb sits anywhere else in it (behind ``nice``,
+    ``sudo``, ``time``, …) or the segment can run one from a string (``eval``, ``alias``, …);
+    None when it names none."""
+    tokens = segment
+    while tokens and (
+        tokens[0] in RESERVED_HEADS
+        or ("=" in tokens[0] and not tokens[0].startswith(("-", "=")))
+        or (tokens[0] in IN_SHELL_PREFIXES and len(tokens) > 1 and not tokens[1].startswith("-"))
+    ):
+        tokens = tokens[1:]
+    if tokens and tokens[0] in DIRECTORY_VERBS:
+        return tokens
+    hidden = tokens[:1] and tokens[0] in STRING_RUNNERS
+    return [HIDDEN_VERB] if hidden or any(os.path.basename(t) in DIRECTORY_VERBS for t in segment) else None
+
+
+def literal_directory(word: str) -> bool:
+    """A cd operand the gate can resolve: no expansion, option or stack index. A ``~`` stays
+    unknown: the split words do not show whether it was quoted (``"~/x"`` is a folder named ``~``)."""
+    if not word or word[0] in "-+~" or shell.has_sentinel(word):
+        return False
+    return not UNSURE_PATH_CHARS & set(word)
+
+
+def expand_pwd(word: str, here: Path) -> str:
+    """A cd operand with a leading ``$PWD``/``${PWD}`` put in as ``here``."""
+    for name in PWD_NAMES:
+        if word == name or word.startswith(name + "/"):
+            return str(here) + word[len(name) :]
+    return word
+
+
+def cd_target(here: Path | None, operands: list[str]) -> Path | None:
+    """Where ``cd``/``pushd`` with these operands lands from ``here`` (None: unknown), when the gate
+    can know it: one literal operand naming a directory the shell can enter. None for ``-``, a
+    variable, a glob, a substitution, a relative name ``CDPATH`` could send elsewhere, or a folder
+    that is not there now."""
+    physical = False
+    while operands[:1] and operands[0] in CD_OPTIONS:
+        physical = physical or operands[0] == "-P"
+        operands = operands[1:]
+    if operands[:1] == ["--"]:
+        operands = operands[1:]
+    if len(operands) != 1 or not literal_directory(operands[0]):
+        return None
+    target = operands[0]
+    if not os.path.isabs(target):
+        if here is None or (os.environ.get("CDPATH") and target.split("/")[0] not in (".", "..")):
+            return None
+        target = os.path.join(here, target)
+    path = os.path.realpath(target) if physical else os.path.normpath(target)  # -L is lexical
+    return Path(path) if os.path.isdir(path) and os.access(path, os.X_OK) else None
+
+
+def next_operator(items: list[str | list[str]], index: int) -> str:
+    """The operator after the segment at ``index``, past its redirections and their targets."""
+    for item in items[index + 1 :]:
+        if isinstance(item, str) and item not in REDIRECTS:
+            return item
+    return ";"
+
+
+def in_subshell(before: str, after: str) -> bool:
+    """A segment in a pipeline or sent to the background runs in a child shell."""
+    pipe = any("|" in op.replace("||", "") for op in (before, after))
+    return pipe or "&" in after.replace("&&", "").replace("&>", "")
+
+
+class DirectoryWalk:
+    """Follows ``cd``, ``pushd`` and ``popd`` through one shell script: the directories each segment
+    may run in. A cd may fail or be skipped, so it adds its target to the directories in effect;
+    only the ``&&`` chain it leads runs in the target alone (a cd that fails runs none of it). None
+    once the gate cannot know: a computed target, a ``popd``, a cd in a child shell, a loop around
+    one, or a script whose state the walk does not model (``ShellState``)."""
+
+    def __init__(self, start: Dirs, state: ShellState):
+        self.start = start
+        self.state = state
+        self.dirs = start if state.trackable else None
+        self.failed: Dirs = frozenset()  # where the current ``&&`` chain would be, had its cd failed
+        self.saved: list[tuple[Dirs, Dirs]] = []
+        self.compounds: list[str] = []
+        self.before = ";"
+
+    def end_chain(self) -> None:
+        self.dirs, self.failed = union(self.dirs, self.failed), frozenset()
+
+    def operator(self, token: str) -> None:
+        """``&&`` continues a chain, any other operator ends it; a line of a runner body may start
+        over in the runner's directory; parentheses open and close a subshell, except as ``case``
+        patterns."""
+        if "&&" not in token and token.strip("()"):  # a subshell is one command of the chain
+            self.end_chain()
+        if token == LINE:
+            self.dirs = union(self.dirs, self.start)
+        elif "case" not in self.compounds:
+            for char in token:
+                if char == "(":
+                    self.saved.append((self.dirs, self.failed))
+                    self.failed = frozenset()
+                elif char == ")" and self.saved:
+                    self.dirs, self.failed = self.saved.pop()
+                elif char == ")":
+                    self.dirs = None
+        self.before = token
+
+    def enter(self, tokens: list[str]) -> None:
+        """Open and close the compounds the segment's leading reserved words name."""
+        for token in tokens:
+            if token in COMPOUND_OPENERS:
+                self.compounds.append(token)
+                if token in LOOP_HEADS:  # a cd in the body changes where earlier commands rerun
+                    self.dirs = None
+            elif token in COMPOUND_CLOSERS:
+                if not self.compounds:
+                    self.dirs = None
+                self.compounds = self.compounds[:-1]
+            elif token not in RESERVED_HEADS:
+                break
+
+    def segment(self, tokens: list[str], after: str) -> Dirs:
+        """The directories the segment runs in; its own directory change applies after it."""
+        self.enter(tokens)
+        here = self.dirs
+        argv = directory_verb(tokens)
+        if argv:
+            negated = "!" in tokens[: len(tokens) - len(argv)]
+            leads = "&&" in after and "||" not in self.before and not negated
+            self.change(argv, in_subshell(self.before, after), leads)
+        return here
+
+    def change(self, argv: list[str], child: bool, leads: bool) -> None:
+        verb, operands = argv[0], argv[1:]
+        if verb in (HIDDEN_VERB, "popd") or child or not self.state.trackable:
+            self.dirs = None
+            return
+        heres = [None] if self.dirs is None else sorted(self.dirs)
+        targets = [self.target(here, operands) for here in heres]
+        landed = None if None in targets else frozenset(targets)
+        if leads:
+            self.failed = union(self.failed, self.dirs)
+            self.dirs = landed
+        else:
+            self.dirs = union(self.dirs, landed)
+
+    def target(self, here: Path | None, operands: list[str]) -> Path | None:
+        """``cd_target``, with ``$PWD`` put in while the script cannot have changed it."""
+        if self.state.pwd_known and here is not None:
+            operands = [expand_pwd(word, here) for word in operands]
+        return cd_target(here, operands)
+
+
+def walk_directories(
+    items: list[str | list[str]], start: Dirs, state: ShellState
+) -> tuple[list[tuple[list[str], Dirs]], Dirs]:
+    """Each segment of a script with the directories it may run in, and those in effect at its end.
+    A redirection target runs nothing: it shares its command's directory."""
+    segments = [item for item in items if isinstance(item, list)]
+    if not any(directory_verb(segment) for segment in segments):
+        return [(segment, start) for segment in segments], start
+    walk = DirectoryWalk(start, state)
+    placed: list[tuple[list[str], Dirs]] = []
+    target = False
+    for index, item in enumerate(items):
+        if isinstance(item, str):
+            target = item in REDIRECTS
+            if not target:
+                walk.operator(item)
+        else:
+            placed.append((item, walk.dirs if target else walk.segment(item, next_operator(items, index))))
+    walk.end_chain()
+    return placed, walk.dirs
+
+
+# ---------------------------------------------------------------- runner expansion
+
+
+def expand_everywhere(plain: list[str], here: Dirs) -> list[tuple[list[tuple[str, list[str]]], Dirs]] | None:
+    """The runner's parsed commands for each directory it may run in, with the directories those
+    commands start in; None when any of them cannot be known."""
+    out = []
+    for folder in [None] if here is None else sorted(here):
+        expansion = expand_runner(plain, folder)
+        if expansion is None:
+            return None
+        commands, start = expansion
+        parts = [command_parts(command) for command in commands]
         if not commands or None in parts:
-            out.append((segment, ""))
-            continue
-        origin = " ".join(plain)[:MAX_ORIGIN]
-        inner = [sub for part in parts if part for sub in part[0]]
-        if paths is not None:
-            paths.extend(target for part in parts if part for target in part[1])
-        out.extend((tokens, origin) for tokens, _ in expand_segments(inner, cwd, depth + 1, paths))
+            return None
+        out.append(([part for part in parts if part], start))
     return out
+
+
+def expand_segment(
+    segment: list[str], here: Dirs, depth: int, paths: list[str]
+) -> list[tuple[list[str], str]]:
+    """The segment, or the commands it runs when it is a resolvable runner or wrapper, tagged with
+    the outermost origin. A segment holding a substitution is expanded only when every hole sits in
+    a leading assignment's value: elsewhere the substituted text could be the code the runner runs.
+    A body is walked as one script whose lines may each start
+    over in the runner's directory (one shell or one per line: make's ``.ONESHELL``, a mise
+    script); it runs in a new shell, so its state is read from its own text."""
+    plain = strip_wrappers(segment)
+    literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
+    expandable = depth < MAX_EXPANSION and is_opaque(plain) and literal
+    expansions = expand_everywhere(plain, here) if expandable else None
+    if not expansions:
+        return [(segment, "")]
+    origin = " ".join(plain)[:MAX_ORIGIN]
+    out: list[tuple[list[str], str]] = []
+    for parts, start in expansions:
+        paths.extend(target for _, targets in parts for target in targets)
+        texts = [text for text, _ in parts]
+        entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, paths)
+        out.extend((tokens, origin) for tokens, _ in entries)
+    return out
+
+
+def expand_script(
+    texts: list[str],
+    dirs: Dirs,
+    state: ShellState,
+    depth: int,
+    paths: list[str],
+    starts: dict[str, Dirs] | None = None,
+) -> tuple[list[tuple[list[str], str]], Dirs]:
+    """Expand every segment of a script given as lines, recursively up to MAX_EXPANSION levels, each
+    from the directories in effect where it runs; return the directories in effect at the end too.
+    Redirection targets of the bodies go to ``paths``; ``starts`` gets the directories each
+    substitution sentinel sits in, and under ANYWHERE those of the whole script."""
+    items: list[str | list[str]] = []
+    for text in texts:
+        items.extend([LINE, *shell_items(text)] if items else shell_items(text))
+    placed, end = walk_directories(items, dirs, state)
+    out: list[tuple[list[str], str]] = []
+    anywhere = end
+    for segment, here in placed:
+        anywhere = union(anywhere, here)
+        if starts is not None:
+            starts.update(dict.fromkeys(hole_keys(segment), here))
+        out.extend(expand_segment(segment, here, depth, paths))
+    if starts is not None:
+        starts[ANYWHERE] = anywhere
+    return out, end
+
+
+def expand_units(
+    scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, paths: list[str], entries: list
+) -> None:
+    """Expand the command, then every substitution body it runs from the directories in effect
+    where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
+    subshell: it shares the whole command's state."""
+    paths.extend(word for target in scanned.targets for word in shlex.split(target))  # scanned: balanced
+    starts: dict[str, Dirs] = {}
+    placed, _ = expand_script([scanned.outer], dirs, state, 0, paths, starts)
+    entries.extend((segment, via or origin, scanned) for segment, via in placed)
+    for hole in scanned.holes.values():
+        if hole.body is not None:
+            expand_units(hole.body, hole.span, starts.get(hole.key, starts[ANYWHERE]), state, paths, entries)
 
 
 def candidates(tokens: list[str]) -> list[str]:
@@ -1471,15 +1777,6 @@ def judge_segment(
     return best
 
 
-def scan_units(scanned: shell.Scan, origin: str = "") -> list[tuple[shell.Scan, str]]:
-    """The command and every substitution body it runs, each with the span it came from."""
-    units = [(scanned, origin)]
-    for hole in scanned.holes.values():
-        if hole.body is not None:
-            units.extend(scan_units(hole.body, hole.span))
-    return units
-
-
 def all_holes(scanned: shell.Scan) -> dict[str, shell.Hole]:
     holes = dict(scanned.holes)
     for hole in scanned.holes.values():
@@ -1501,10 +1798,8 @@ def judge_bash(
     with_values = not CAT_DEFINITION_RE.search(command)
     paths: list[str] = []
     entries: list[tuple[list[str], str, shell.Scan]] = []
-    for unit, origin in scan_units(scanned):
-        paths.extend(word for target in unit.targets for word in shlex.split(target))  # scanned: balanced
-        for segment, via in expand_segments(split_segments(unit.outer), cwd, paths=paths):
-            entries.append((segment, via or origin, unit))
+    start = directories_of(Path(cwd or os.getcwd()))
+    expand_units(scanned, "", start, shell_state(command), paths, entries)
     best = Verdict(None, None, "no rule matched")
     touched = protected_file_touched([segment for segment, _, _ in entries] + [paths], cwd, rules)
     if touched:

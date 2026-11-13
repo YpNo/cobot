@@ -867,7 +867,7 @@ def make_repo(tmp_path):
         ("make --file=other.mk check", None),
         ("make -C sub test", None),
         ("make --directory sub test", None),
-        ("make -C sub again", "ask"),
+        ("make -C sub again", None),
         ("make", "ask"),
         ("make build", "ask"),
         ("make generate", "ask"),
@@ -1080,6 +1080,186 @@ def test_miseTask_nonStringRun_staysOpaque(rules, mise_repo):
 def test_miseTask_withoutTomllib_staysOpaque(rules, mise_repo, monkeypatch):
     monkeypatch.setattr(rules, "tomllib", None)
     assert judge_in(rules, "mise run test", mise_repo)[0].decision == "ask"
+
+
+# ---------------------------------------------------------------- cd before a runner
+
+ROOT_MAKEFILE = """\
+deploy:
+\techo deployed
+test:
+\tgo test ./...
+into:
+\tcd sub && $(MAKE) deploy
+twolines:
+\tcd sub
+\t$(MAKE) test
+twodeploy:
+\tcd sub
+\t$(MAKE) deploy
+release:
+\tgit push origin main
+"""
+
+
+@pytest.fixture
+def cd_repo(tmp_path, monkeypatch):
+    """A harmless ``deploy`` at the root; ``sub``'s ``deploy`` pushes."""
+    monkeypatch.delenv("CDPATH", raising=False)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (tmp_path / "Makefile").write_text(ROOT_MAKEFILE)
+    (sub / "Makefile").write_text("deploy:\n\tgit push origin main\ntest:\n\tcargo test\nrelease:\n\techo\n")
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"deploy": "echo ok", "lint": "oxlint"}}))
+    (sub / "package.json").write_text(json.dumps({"scripts": {"deploy": "git push", "lint": "oxlint"}}))
+    (tmp_path / "mise.toml").write_text('[tasks.deploy]\nrun = "echo ok"\n')
+    (sub / "mise.toml").write_text('[tasks.deploy]\nrun = "git push origin main"\n')
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("command", "decision"),
+    [
+        ("make deploy", None),
+        ("cd sub && make deploy", "ask"),
+        ("cd sub; make deploy", "ask"),
+        ("cd ./sub && make deploy", "ask"),
+        ("cd -P -- sub && make deploy", "ask"),
+        ("cd sub/ && npm run deploy", "ask"),
+        ("cd sub && mise run deploy", "ask"),
+        ("cd sub && bash -c 'make deploy'", "ask"),
+        ("cd sub && echo $(make deploy)", "ask"),
+        ("builtin cd sub && make deploy", "ask"),
+        ("pushd sub >/dev/null && make deploy", "ask"),
+        ("cd sub && make test", None),
+        ("X=$(true) cd sub && make deploy", "ask"),
+        ("cd sub && X=$(true) make test", None),
+        ("cd sub && npm run lint", None),
+        ("cd sub/.. && make deploy", None),
+        ("pushd sub >/dev/null && make test; popd >/dev/null; make deploy", "ask"),
+        ("pushd sub >/dev/null && make test", None),
+        ("(cd sub && make test); make deploy", None),
+        ("(cd sub); make deploy", None),
+        ("false && cd sub; make test", None),
+        ("true && cd sub; make deploy", "ask"),
+        ("make test || cd sub && make deploy", "ask"),
+        ("cd sub && make release", None),
+        ("(false)&&cd sub; make release", "ask"),
+        ("false || cd sub; make release", "ask"),
+        ("cd sub && (cd .. && make test) && make release", None),
+        ("cd sub; make release", "ask"),
+        ("mv sub gone; cd sub; make release", "ask"),
+        ("cd sub && make test; make release", "ask"),
+        ("! cd sub && make release", "ask"),
+        ("cd sub && make test || make release", "ask"),
+        ("if true; then cd sub; fi; make deploy", "ask"),
+        ("{ true; cd sub; }; make deploy", "ask"),
+        ("make into", "ask"),
+        ("make twolines", None),
+        ("make twodeploy", "ask"),
+        ("cd $(git rev-parse --show-toplevel) && make test", "ask"),
+        ('cd "$X" && make test', "ask"),
+        ("cd - && make test", "ask"),
+        ("cd && make test", "ask"),
+        ("cd ~someone && make test", "ask"),
+        ("cd su* && make test", "ask"),
+        ("cd sub extra && make test", "ask"),
+        ("cd nonesuch; make test", "ask"),
+        ("popd; make test", "ask"),
+        ("pushd; make test", "ask"),
+        ("cd sub | make test", "ask"),
+        ("cd sub & make test", "ask"),
+        ("nice cd sub; make test", "ask"),
+        ("time cd sub; make test", "ask"),
+        ("command time cd sub; make deploy", "ask"),
+        ("command -v cd; make deploy", "ask"),
+        ("pushd nonesuch; popd; make deploy", "ask"),
+        ("true && pushd sub; popd; make deploy", "ask"),
+        ("FOO=1 cd sub && make deploy", "ask"),
+        ("bash -c 'cd sub'; make deploy", None),
+        ("for d in a; do make test; cd sub; done", "ask"),
+        ("f() { cd sub; }; f; make test", "ask"),
+        ("function f { cd sub; }; f; make test", "ask"),
+        ("case x in x) cd sub;; esac; make deploy", "ask"),
+        ("cd sub); make test", "ask"),
+        ("cd sub && uv run pytest", None),
+        ("uv run --directory sub make deploy", "ask"),
+        ("mise exec -C sub -- make deploy", "ask"),
+        ("mise x --cd sub -- make deploy", "ask"),
+        ("mise exec -- make deploy", None),
+        ("CDPATH=x cd sub && make test", "ask"),
+        ("set -P; cd sub && make test", "ask"),
+        ("alias c=cd; cd sub && make test", "ask"),
+        ("f ( ) { cd sub; }; f; make test", "ask"),
+        ("cd '$PWD/sub' && make test", "ask"),
+        ("export X=1; cd $PWD && make test", "ask"),
+        ("cd $(mktemp -d) && npm run lint", "ask"),
+        ("cd $(mktemp -d) && mise run deploy", "ask"),
+        ("cd $(mktemp -d) && npm exec vitest", None),
+        ("cd $(mktemp -d) && mise exec -- cargo test", None),
+        ("cd sub && mise exec cargo test", "ask"),
+        ("cd $PWD && make deploy", None),
+        ("cd ${PWD} && make deploy", None),
+        ("cd $PWD/sub && make deploy", "ask"),
+        ("PWD=/tmp; cd $PWD && make test", "ask"),
+        ("cd $OLDPWD && make test", "ask"),
+        ("cd $(mktemp -d) && cd $PWD && make test", "ask"),
+    ],
+)
+def test_runner_afterCd_resolvedFromTheDirectoryInEffect(rules, cd_repo, command, decision):
+    assert judge_in(rules, command, cd_repo)[0].decision == decision, command
+
+
+def test_runner_afterCd_reasonNamesTheRecipeThatRuns(rules, cd_repo):
+    verdict, trace = judge_in(rules, "cd sub && make deploy", cd_repo)
+    assert verdict.reason() == "cobot rule: ask Bash(git push*) (default layer) via make deploy"
+    assert trace[-1][0] == "git push origin main  <- make deploy"
+
+
+def test_runner_afterAbsoluteCd_knownAgain(rules, cd_repo):
+    assert judge_in(rules, f"cd {cd_repo}/sub && make deploy", cd_repo)[0].decision == "ask"
+    assert judge_in(rules, f"cd {cd_repo}/sub && make test", cd_repo)[0].decision is None
+    unknown_then_absolute = f"cd $(mktemp -d); cd {cd_repo}/sub && make test"
+    assert judge_in(rules, unknown_then_absolute, cd_repo)[0].decision is None
+
+
+def test_runner_afterCdTilde_staysOpaque(rules, cd_repo, monkeypatch):
+    monkeypatch.setenv("HOME", str(cd_repo / "sub"))
+    assert judge_in(rules, "cd ~ && make test", cd_repo)[0].decision == "ask"
+    assert judge_in(rules, "cd ~/ && make test", cd_repo)[0].decision == "ask"
+
+
+def test_runner_makeDirectoryThroughSymlink_resolvedPhysically(rules, cd_repo):
+    (cd_repo / "sub" / "deep").mkdir()
+    (cd_repo / "sub" / "deep" / "Makefile").write_text("up:\n\tcd .. && $(MAKE) deploy\n")
+    (cd_repo / "link").symlink_to(cd_repo / "sub" / "deep")
+    assert judge_in(rules, "make -C link up", cd_repo)[0].decision == "ask"
+
+
+def test_runner_miseScriptAssigningPwd_staysOpaque(rules, cd_repo):
+    with (cd_repo / "mise.toml").open("a") as config:
+        config.write('[tasks.t]\nrun = """\nPWD=sub\ncd $PWD\nmake deploy\n"""\n')
+        config.write('[tasks.loop]\nrun = """\nwhile make test; do\ncd sub\ndone\n"""\n')
+    assert judge_in(rules, "mise run t", cd_repo)[0].decision == "ask"
+    assert judge_in(rules, "mise run loop", cd_repo)[0].decision == "ask"
+
+
+def test_runner_afterCdWithCdpath_bareNameStaysOpaque(rules, cd_repo, monkeypatch):
+    monkeypatch.setenv("CDPATH", "/elsewhere")
+    assert judge_in(rules, "cd sub && make test", cd_repo)[0].decision == "ask"
+    assert judge_in(rules, "cd ./sub && make test", cd_repo)[0].decision is None
+
+
+def test_runner_afterCdToUnreadableDirectory_staysOpaque(rules, cd_repo, monkeypatch):
+    monkeypatch.setattr(rules.os, "access", lambda *_: False)
+    assert judge_in(rules, "cd sub && make test", cd_repo)[0].decision == "ask"
+
+
+def test_runner_withoutCwd_resolvedFromProcessDirectory(rules, cd_repo, monkeypatch):
+    monkeypatch.chdir(cd_repo)
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash("cd sub && make deploy", loaded, None, None)[0].decision == "ask"
+    assert rules.judge_bash("make deploy", loaded, None, None)[0].decision is None
 
 
 # ---------------------------------------------------------------- entry wrappers

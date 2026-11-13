@@ -74,7 +74,13 @@ gives each `$(…)`, backtick and process substitution body to the same rules, a
 substitution itself asks only where its text could decide which program runs or make a `never`
 or `ask` row match; anything outside the scanner's model asks. A substitution that is a whole
 argument is not resolved for the protected-file check, like a variable, and a variable's value
-reaching arithmetic is not followed (`read x < f; echo $((x))`). `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
+reaching arithmetic is not followed (`read x < f; echo $((x))`). Brace expansion is computed
+as bash does it; a glob is a hole standing for zero or more file names, judged like a split
+substitution (.agent/specs/gate-expansion.md). The soundness target, in the scanner's module: a
+hole in the command's words, a substitution or a glob, is never silent where some text in its
+place, for a glob some set of file names, would change which program runs or make a rule match
+the form that names what runs. An agent-scoped allow counts on globs only when each is anchored
+by literal text that cannot be an option. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
 and container or sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`,
 `nix develop -c`, …) are looked through and the command behind them is judged.
 

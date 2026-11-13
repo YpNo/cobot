@@ -39,6 +39,20 @@ Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern
 that starts with `*` could match any command holding one, and every such command then asks.
 
+Braces and globs (.agent/specs/gate-expansion.md): the gate expands braces as bash does, so a rule
+matches the words bash runs (`cargo {publish,}` is `cargo publish`); more than 256 built words
+ask. A glob (`*`, `?`, `[…]`) is a hole for file names: in the command word or a CLI's verb it
+asks, elsewhere it asks only when a `never` or `ask` row could match. Under an agent scope a glob
+counts for the read list only when anchored by literal text (`./*.py`, `src/*`,
+`--include=*.py`); a bare `*.py` could expand to an option and asks. Known asks this costs: any
+glob after an interpreter (`python3 -m pytest tests/*`, `node --test test/*.js`), and for
+`python`/`python3` also the anchored promote rows; `terragrunt` with any glob; a glob read by a
+shell or a runner resolved by name (`bash scripts/*.sh`, `npm test -- src/*`, `make test
+FILES=src/*`), by `npm exec`, `toolbox`, `distrobox` or `nix-shell --run`, or by a runner's own
+options (`uv run --with * …`); `ls ~/.claude/*` (the protected files); `kubectl get pods x*`
+under an agent scope; `[[ $x == @(a|b) ]]` and `if !(grep -q x f)` (extended-glob syntax); a
+word mixing braces and brackets; `echo {1..300}`.
+
 Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
 from the default layer) silences the gate; `ask` prompts; otherwise Claude Code's own
 permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's

@@ -260,3 +260,11 @@ Proof: zizmor 0 medium or higher; YAML parses; markdownlint exit 0; --case behav
 Open: the causes of the ten failures; the full suite uses $9 of its $10 ceiling.
 Next: owner merges and dispatches the suite again; the traces decide each fix.
 verified: 5810cb0 · zizmor, yaml, markdownlint, local --case check
+
+## 2026-11-13 — consult brief names the repository
+
+Changed: skills/consult/SKILL.md step 2 brief gains "Repository: <absolute path of your working directory>; audit it and nothing else" and scopes paths under it; agents/consultant.md audits the named repository only; CHANGELOG.
+Why: in run 43389854358 consultants audited /home/runner/work/cobot/cobot (the checkout holding the plugin) instead of the eval workspace, since the brief named only the plugin root; consult-fan-out passed 1 of 3 and api-contract-audit 2 of 3. spec step 5 and wrap step 3 reuse this brief.
+Proof: check-plugin exit 0 (protocol 2998 chars); claude plugin validate --strict passed; markdownlint exit 0; pytest with coverage exit 0 (98.08 %). The behaviour is unproven until an eval run; the Bash sandbox fix (ci/eval-sandbox) has to land first for the consult cases to mean anything.
+Next: owner pushes, merges after ci/eval-sandbox, dispatches `cases=consult-fan-out`, then the full suite.
+verified: 7349032 · check-plugin, plugin validate, markdownlint, pytest+cov

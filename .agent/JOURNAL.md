@@ -410,3 +410,12 @@ Why: spec gate-expansion T06.
 Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0 (117 files); claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
 Next: independent bypass review (owner's condition), fold, verified commands again.
 verified: af6f0fd · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — gate-expansion: bypass review folds
+
+Changed: _cobot_shell.py (skip_piece, skip_double_quoted, skip_nested; unclosed pieces in braces and brackets are errors); cobot-rules (target_words for runner-body and command targets; GLOB_CODE_HEADS and GLOB_CODE_WITH_V in structural_key, unset in QUOTED_CODE_HEADS; fold for unquoted substitutions in path_glob; -X=METHOD in canonical_gh_api and no API exemption for anchored -flags; globstar tokens in protected_file_touched; array_assignments and closing_paren in shell_items); docs/configuration.md known asks, CHANGELOG, spec converge; tests: review rows, recipe and script targets, unclosed pieces; findings F-23, F-24.
+Why: owner's condition: an independent code-reviewer pass aimed at bypasses (bash 5.2.37 probes, 60 000 fuzzed commands, no crash). Three BLOCKERs, one MAJOR, three MINORs, all folded.
+Proof: pytest with coverage exit 0 (98.59 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Open: F-21 to F-24 (pre-existing gate gaps the reviews surfaced).
+Next: owner reviews feat/gate-expansion; nothing pushed.
+verified: f6daef2 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

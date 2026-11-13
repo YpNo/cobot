@@ -419,3 +419,11 @@ Proof: pytest with coverage exit 0 (98.59 %); ruff check and format exit 0; shel
 Open: F-21 to F-24 (pre-existing gate gaps the reviews surfaced).
 Next: owner reviews feat/gate-expansion; nothing pushed.
 verified: f6daef2 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — gate-findings T01: parameter operators and locale strings
+
+Changed: _cobot_shell.py (PLAIN_PARAMETER_RE; a ${…} with an operator word is an unknown substitution hole, quoted inside double quotes; locale() reads $"…" as a quoted hole whose value is the untranslated text); tests: scanner rows for plain and operator forms, locale values, literal $" in double quotes and here-documents, a brace alternative; gate rows FINDINGS_CLOSED, FINDINGS_SILENT, agent rows.
+Why: spec gate-findings C and D (F-22, F-23).
+Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0.
+Next: T02 redirection writes.
+verified: 7c55eec · pytest+cov, ruff

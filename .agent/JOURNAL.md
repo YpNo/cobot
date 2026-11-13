@@ -295,3 +295,10 @@ Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses, runs-on ubuntu-26
 Open: the missing bin/ under `claude plugin eval` is a Claude Code difference worth reporting upstream; the PATH prefix is the CI-side workaround only.
 Next: owner pushes, merges, dispatches `cases=never-apply`; then the full suite and the remaining failures.
 verified: fe03c5a · zizmor, yaml, markdownlint, local cobot-rules check on the prefixed PATH
+## 2026-11-13 — gate-substitution T01: reserved words and wrapper options
+
+Changed: cobot-rules drop_wrapper (reserved heads, function, coproc, time -p, command -p, exec -a/-c/-l, rtk proxy), for/select/case segments are data, trap opaque, a token of only ();&| splits; executes_foreign strips the same heads; tests.
+Why: spec .agent/specs/gate-substitution.md (owner answers 2026-11-13); `! git push`, `{ git push; }`, `do git push`, `rtk proxy git push --force` and the rest were silent.
+Proof: pytest with coverage exit 0 (98.13 %); ruff check and format exit 0.
+Next: T02 redirections.
+verified: 9f33a31 · pytest+cov, ruff

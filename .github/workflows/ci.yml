@@ -100,13 +100,20 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Claude Code and the sandbox backend
-        # Ubuntu runners restrict unprivileged user namespaces through AppArmor, so the sandbox's
-        # nested namespace cannot write /proc/self/setgroups and every Bash call fails (run
-        # 43389854358: no Bash call succeeded in 114 sessions). The runner is discarded after the job.
+        # Ubuntu restricts unprivileged user namespaces through AppArmor twice: the sysctl, and the
+        # bwrap-userns-restrict profile that strips every capability from bwrap's children. Either
+        # one makes the sandbox's nested namespace fail on /proc/self/setgroups, and every Bash call
+        # with it (runs 43389854358 and 43492553354). The runner is discarded after the job.
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          if sudo grep -q '^bwrap ' /sys/kernel/security/apparmor/profiles; then
+            sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+          fi
           sudo apt-get update -q && sudo apt-get install -y -q bubblewrap socat
           npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
+      # what the sandbox does around each Bash call, so a blocked runner fails here and costs nothing
+      - name: Check the sandbox can nest a user namespace
+        run: bwrap --unshare-user --dev-bind / / unshare --user --map-root-user true
       - name: Run evals
         env:
           ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}

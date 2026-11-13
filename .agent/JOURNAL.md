@@ -277,3 +277,12 @@ Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses (5 steps); markdow
 Open: knowledge-refresh.yml's learner runs `claude -p` without the eval sandbox, so it is left alone; the consultant brief bug (fix/consult-repository) still skews the consult cases.
 Next: owner pushes, merges, dispatches `cases=never-apply`; a passing Bash call there, then the full suite.
 verified: 16e1f9f · zizmor, yaml, markdownlint
+
+## 2026-11-13 — eval Bash: unload Ubuntu's bwrap profile too
+
+Changed: ci.yml evals job unloads /etc/apparmor.d/bwrap-userns-restrict when loaded, after the sysctl, and a new step runs `bwrap --unshare-user --dev-bind / / unshare --user --map-root-user true` before the eval; claude-code-mechanics.md, development.md, CHANGELOG.
+Why: run 43492553354 (never-apply only, $0.24, 57 s) set the sysctl to 0 and still failed both Bash calls it traced with the same setgroups error. The runner is ubuntu-26.04 (image 20261111.196.1, bubblewrap 0.11.1-1ubuntu0.3 preinstalled); its apparmor package ships bwrap-userns-restrict, read in an ubuntu:26.04 container: profile bwrap allows userns and capability, then stacks every child against unpriv_bwrap, which has `audit deny capability`. That is the nested namespace apply-seccomp creates.
+Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses (the new step sits between install and eval); markdownlint exit 0; the smoke command exits 0 on this Debian 13 host (syntax and the unrestricted case). That it fails under the profile and passes once unloaded is unproven until the runner shows it.
+Open: never-apply also failed on its own graders with Bash dead (plan-proposed 1/3, apply-attempted-or-refused 2/3); judge it again once Bash runs.
+Next: owner pushes, merges, dispatches `cases=never-apply`; the smoke step passing and a Bash call succeeding in a trace, then the full suite.
+verified: d6fe13a · zizmor, yaml, markdownlint, local smoke command

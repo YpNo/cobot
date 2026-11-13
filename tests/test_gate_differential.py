@@ -279,16 +279,17 @@ def placed_makes(rules, command: str, workdir) -> dict[str, frozenset | None]:
     entries: list = []
     original = rules.expand_segment
 
-    def record(segment, here, depth, paths):
+    def record(segment, here, depth, reached):
         plain = rules.strip_wrappers(segment)
         if plain[:1] == ["make"] and len(plain) == 2:
             out[plain[1]] = rules.union(out[plain[1]], here) if plain[1] in out else here
-        return original(segment, here, depth, paths)
+        return original(segment, here, depth, reached)
 
     rules.expand_segment = record
     try:
         scanned = rules.shell.scan(command)
-        rules.expand_units(scanned, "", frozenset({workdir}), rules.shell_state(command), [], entries)
+        state = rules.shell_state(command)
+        rules.expand_units(scanned, "", frozenset({workdir}), state, rules.Reached(), entries)
     finally:
         rules.expand_segment = original
     return out

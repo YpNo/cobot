@@ -530,3 +530,26 @@ def test_scan_localeStringInABraceAlternative_isScannedAsOne():
     words = sh.expand_braces(shlex.split(result.outer))
     (locale,) = [h for h in result.holes.values() if h.span.startswith('$"')]
     assert locale.value == "apply" and words == ["terraform", locale.key]
+
+
+@pytest.mark.parametrize(
+    ("command", "writes"),
+    [
+        ("cat a > b", ["b"]),
+        ("cat a >> b 2> e &> f &>> g >| h <> i {fd}> j", ["b", "e", "f", "g", "h", "i", "j"]),
+        ("ls 2>&1 >&2 1>&- 3>&4- <&0 < in <<< x", []),
+        ("ls >&out", ["out"]),
+        ("exec > log", ["log"]),
+        ("> out ls", ["out"]),
+        ("ls 2>/dev/null", ["/dev/null"]),
+        ("cat <<EOF > f\nbody\nEOF", ["f"]),
+        ("echo $(cat a > b)", []),
+    ],
+)
+def test_scan_writes_areTheTargetsARedirectionWrites(command, writes):
+    assert sh.scan(command).writes == writes
+
+
+def test_scan_writesInASubstitutionBody_belongToTheBody():
+    (hole,) = sh.scan("echo $(cat a > b)").holes.values()
+    assert hole.body.writes == ["b"]

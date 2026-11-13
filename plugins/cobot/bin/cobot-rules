@@ -30,7 +30,7 @@ import re
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 try:
@@ -1169,15 +1169,18 @@ def expand_runner(plain: list[str], here: Path | None) -> tuple[list[str], Dirs]
     return None if commands is None else (commands, directories_of(here))
 
 
-def command_parts(text: str, issued: frozenset[str] = frozenset()) -> tuple[str, list[str]] | None:
-    """The scanned text and redirection targets of a runner body; None when it holds a substitution
-    or anything the scanner refuses, so the runner stays opaque. Braces and globs are words: a
-    body read from disk gets holes of its own, an argv runner's inner command keeps the ``issued``
-    glob holes of the segment it came from, and any other sentinel is refused."""
+Part = tuple[str, list[str], list[str]]  # a runner body: scanned text, redirection targets, written ones
+
+
+def command_parts(text: str, issued: frozenset[str] = frozenset()) -> Part | None:
+    """The scanned text, redirection targets and written targets of a runner body; None when it
+    holds a substitution or anything the scanner refuses, so the runner stays opaque. Braces and
+    globs are words: a body read from disk gets holes of its own, an argv runner's inner command
+    keeps the ``issued`` glob holes of the segment it came from, and any other sentinel is refused."""
     scanned = shell.scan(text, issued)
     if scanned.error or any(hole.kind not in EXPANSION_KINDS for hole in scanned.holes.values()):
         return None
-    return scanned.outer, scanned.targets
+    return scanned.outer, scanned.targets, scanned.writes
 
 
 def argv_runner(plain: list[str]) -> bool:
@@ -1194,12 +1197,13 @@ def argv_runner(plain: list[str]) -> bool:
     return head in GLOB_ARGV_RUNNERS
 
 
-def globs_reach_inner(plain: list[str], expansions: list[tuple[list[tuple[str, list[str]]], Dirs]]) -> bool:
+def globs_reach_inner(plain: list[str], expansions: list[tuple[list[Part], Dirs]]) -> bool:
     """Every token of the segment holding a glob is a word of the inner commands: a glob is zero or
     more words, so one the runner's parser consumed (an option value, a container slot) could move
     every later word (``uv run --with * publish`` runs ``cargo publish`` when files ``aa`` and
     ``cargo`` exist)."""
-    inner = {token for parts, _ in expansions for text, _ in parts for token in flatten(split_segments(text))}
+    texts = [text for parts, _ in expansions for text, *_ in parts]
+    inner = {token for text in texts for token in flatten(split_segments(text))}
     return all(token in inner for token in plain if shell.has_sentinel(token))
 
 
@@ -1412,9 +1416,22 @@ def walk_directories(
 # ---------------------------------------------------------------- runner expansion
 
 
+@dataclass
+class Reached:
+    """What the redirections of a command and of the runner bodies it expands reach: every target
+    word (the protected-file check) and the words a redirection writes (the read-only agents)."""
+
+    paths: list[str] = field(default_factory=list)
+    writes: list[str] = field(default_factory=list)
+
+    def add(self, targets: list[str], writes: list[str]) -> None:
+        self.paths.extend(target_words(targets))
+        self.writes.extend(target_words(writes))
+
+
 def expand_everywhere(
     plain: list[str], here: Dirs, issued: frozenset[str] = frozenset()
-) -> list[tuple[list[tuple[str, list[str]]], Dirs]] | None:
+) -> list[tuple[list[Part], Dirs]] | None:
     """The runner's parsed commands for each directory it may run in, with the directories those
     commands start in; None when any of them cannot be known."""
     out = []
@@ -1431,7 +1448,7 @@ def expand_everywhere(
 
 
 def expand_segment(
-    segment: list[str], here: Dirs, depth: int, paths: list[str]
+    segment: list[str], here: Dirs, depth: int, reached: Reached
 ) -> list[tuple[list[str], str]]:
     """The segment, or the commands it runs when it is a resolvable runner or wrapper, tagged with
     the outermost origin. A segment holding a substitution is expanded only when every hole sits in
@@ -1450,9 +1467,9 @@ def expand_segment(
     origin = show(" ".join(plain), shell.REGISTRY)[:MAX_ORIGIN]
     out: list[tuple[list[str], str]] = []
     for parts, start in expansions:
-        paths.extend(target_words([target for _, targets in parts for target in targets]))
-        texts = [text for text, _ in parts]
-        entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, paths)
+        reached.add(flatten([targets for _, targets, _ in parts]), flatten([writes for *_, writes in parts]))
+        texts = [text for text, *_ in parts]
+        entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, reached)
         out.extend((tokens, origin) for tokens, _ in entries)
     return out
 
@@ -1462,12 +1479,12 @@ def expand_script(
     dirs: Dirs,
     state: ShellState,
     depth: int,
-    paths: list[str],
+    reached: Reached,
     starts: dict[str, Dirs] | None = None,
 ) -> tuple[list[tuple[list[str], str]], Dirs]:
     """Expand every segment of a script given as lines, recursively up to MAX_EXPANSION levels, each
     from the directories in effect where it runs; return the directories in effect at the end too.
-    Redirection targets of the bodies go to ``paths``; ``starts`` gets the directories each
+    Redirection targets of the bodies go to ``reached``; ``starts`` gets the directories each
     substitution sentinel sits in, and under ANYWHERE those of the whole script."""
     items: list[str | list[str]] = []
     for text in texts:
@@ -1479,7 +1496,7 @@ def expand_script(
         anywhere = union(anywhere, here)
         if starts is not None:
             starts.update(dict.fromkeys(hole_keys(segment), here))
-        out.extend(expand_segment(segment, here, depth, paths))
+        out.extend(expand_segment(segment, here, depth, reached))
     if starts is not None:
         starts[ANYWHERE] = anywhere
     return out, end
@@ -1491,18 +1508,19 @@ def target_words(targets: list[str]) -> list[str]:
 
 
 def expand_units(
-    scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, paths: list[str], entries: list
+    scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, reached: Reached, entries: list
 ) -> None:
     """Expand the command, then every substitution body it runs from the directories in effect
     where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
     subshell: it shares the whole command's state."""
-    paths.extend(target_words(scanned.targets))
+    reached.add(scanned.targets, scanned.writes)
     starts: dict[str, Dirs] = {}
-    placed, _ = expand_script([scanned.outer], dirs, state, 0, paths, starts)
+    placed, _ = expand_script([scanned.outer], dirs, state, 0, reached, starts)
     entries.extend((segment, via or origin, scanned) for segment, via in placed)
     for hole in scanned.holes.values():
         if hole.body is not None:
-            expand_units(hole.body, hole.span, starts.get(hole.key, starts[ANYWHERE]), state, paths, entries)
+            here = starts.get(hole.key, starts[ANYWHERE])
+            expand_units(hole.body, hole.span, here, state, reached, entries)
 
 
 def candidates(tokens: list[str]) -> list[str]:
@@ -1967,12 +1985,12 @@ def judge_bash(
         return Verdict(ASK, None, f"unparseable command ({scanned.error})"), [(command[:60], [])]
     holes = shell.REGISTRY  # every hole of the command, its bodies and its runners' inner commands
     with_values = not CAT_DEFINITION_RE.search(command)
-    paths: list[str] = []
+    reached = Reached()
     entries: list[tuple[list[str], str, shell.Scan]] = []
     start = directories_of(Path(cwd or os.getcwd()))
-    expand_units(scanned, "", start, shell_state(command), paths, entries)
+    expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
-    touched = protected_file_touched([segment for segment, _, _ in entries] + [paths], cwd, rules)
+    touched = protected_file_touched([segment for segment, _, _ in entries] + [reached.paths], cwd, rules)
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []

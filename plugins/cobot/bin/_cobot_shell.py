@@ -11,7 +11,9 @@ a Bash command are words of the command, which run as commands of their own, whi
   (.agent/specs/gate-findings.md), keyed by its sentinel, with its scanned body
   when it runs a command; a hole whose sentinel is not in ``outer`` (a redirection target, an
   unquoted here-document body, inside arithmetic) still runs and is judged by its body;
-- ``targets``: redirection target words, for the protected-file check;
+- ``targets``: redirection target words, for the protected-file check; ``writes``: those a
+  redirection writes (``>``, ``>>``, ``>|``, ``&>``, ``<>``, ``>&`` to a word that is no file
+  descriptor), for the read-only agents;
 - ``error``: set on anything the scanner does not model exactly, so the caller asks.
 
 Expansion (.agent/specs/gate-expansion.md): an unquoted brace expression is a ``brace`` hole whose
@@ -43,6 +45,8 @@ METACHARS = frozenset(" \t\n;&|()<>")
 QUOTING_MODES = ("top", "sub", "arith", "param")  # where quotes quote; not inside "…" or a body
 FD_PREFIX_RE = re.compile(r"(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
 CAT_HEREDOC_RE = re.compile(r"^\s*cat\s*$")
+WRITING_OPERATORS = frozenset({">", ">>", ">|", "&>", "&>>", "<>", ">&"})
+FD_WORD_RE = re.compile(r"^\d*-?$")  # ``>&2``, ``>&-``, ``>&3-``: a descriptor, not a file
 EXPANDING_MODES = ("top", "sub")  # where bash expands braces and globs in a word
 EXTGLOB_CHARS = "?*+@!"  # before ``(``: an extended glob when ``extglob`` is on
 SPECIAL_PARAMETERS = "*?@#-!$"  # ``$*``, ``$?`` … : a parameter, never a glob
@@ -80,6 +84,7 @@ class Scan:
     outer: str = ""
     holes: dict[str, Hole] = field(default_factory=dict)
     targets: list[str] = field(default_factory=list)
+    writes: list[str] = field(default_factory=list)  # targets a redirection writes
     heredocs: list[HereDoc] = field(default_factory=list)
     inert_code: bool = False  # data text (a quoted here-document, a here-string) holds ``$(`` or a backtick
     error: str | None = None
@@ -179,6 +184,7 @@ class _Scanner:
         self.pending: list[HereDoc] = []
         self.capture: int | None = None  # start of a redirection target in ``out``
         self.capture_data = False  # the target is a here-string: data, not a file
+        self.capture_operator = ""  # the operator of the pending target
 
     # ------------------------------------------------------------ driver
 
@@ -580,6 +586,7 @@ class _Scanner:
         self.emit(" ")
         self.capture = len(self.out)
         self.capture_data = operator == "<<<"
+        self.capture_operator = operator
         return True
 
     def drop_fd_prefix(self) -> None:
@@ -605,6 +612,10 @@ class _Scanner:
             self.scan.inert_code = self.scan.inert_code or ("$(" in word or "`" in word)
         else:
             self.scan.targets.append(word)
+            if self.capture_operator in WRITING_OPERATORS:
+                fd_dup = self.capture_operator == ">&" and FD_WORD_RE.match(word.strip())
+                if not fd_dup:
+                    self.scan.writes.append(word.strip())
         self.capture = None
         self.emit(" ")
 

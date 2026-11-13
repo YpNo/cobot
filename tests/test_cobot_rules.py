@@ -2744,3 +2744,17 @@ def test_decide_findingsSilent_stayOrdinary(rules, command):
 @pytest.mark.parametrize("agent", ["cobot:consultant", "cobot:learner"])
 def test_decide_parameterOperatorUnderAnAgent_asks(rules, command, agent):
     assert decide(rules, command, agent=agent)[0].decision == "ask", command
+
+
+def test_commandParts_returnsTheWritesOfARunnerBody(rules):
+    outer, targets, writes = rules.command_parts("cat a > b 2>/dev/null < c")
+    assert outer.split() == ["cat", "a"] and targets == ["b", "/dev/null", "c"]
+    assert writes == ["b", "/dev/null"]
+
+
+def test_expandUnits_reachedHoldsTheWritesOfRunnerBodies(rules, tmp_path):
+    (tmp_path / "Makefile").write_text("x:\n\tcat a > 'b c'\n")
+    reached, entries = rules.Reached(), []
+    scanned = rules.shell.scan("make x > {o,p}")
+    rules.expand_units(scanned, "", frozenset({tmp_path}), rules.shell_state("make x"), reached, entries)
+    assert reached.writes == ["o", "p", "b c"]

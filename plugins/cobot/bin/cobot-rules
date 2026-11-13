@@ -383,13 +383,13 @@ def shell_items(command: str) -> list[str | list[str]]:
     for token in lexer:
         if token in SEPARATORS or (token and set(token) <= CONTROL_CHARS):  # ``()``, ``))``
             if segment:
-                items.append(segment)
+                items.append(shell.expand_braces(segment))
                 segment = []
             items.append(token)
         else:
             segment.append(token)
     if segment:
-        items.append(segment)
+        items.append(shell.expand_braces(segment))  # after splitting: a brace never builds an operator
     return items
 
 
@@ -1421,7 +1421,7 @@ def expand_units(
     """Expand the command, then every substitution body it runs from the directories in effect
     where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
     subshell: it shares the whole command's state."""
-    paths.extend(word for target in scanned.targets for word in shlex.split(target))  # scanned: balanced
+    paths.extend(shell.expand_braces([w for target in scanned.targets for w in shlex.split(target)]))
     starts: dict[str, Dirs] = {}
     placed, _ = expand_script([scanned.outer], dirs, state, 0, paths, starts)
     entries.extend((segment, via or origin, scanned) for segment, via in placed)
@@ -1498,16 +1498,37 @@ def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: li
 
 
 def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
-    """Whether some text in place of the token's substitutions makes it a path the rule protects."""
-    glob = shell.SENTINEL_RE.sub("*", os.path.expanduser(token))
+    """Whether some text in place of the token's substitutions, or some file names for its globs,
+    makes it a path the rule protects."""
+    glob, fold = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     pattern = os.path.expanduser(rule.pattern)
+    if fold:
+        forms, pattern = [form.lower() for form in forms], pattern.lower()
     return any(globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}") for form in forms)
 
 
+def path_glob(token: str) -> tuple[str, bool]:
+    """The token as a glob for ``globs_meet``, and whether to compare without case. A substitution
+    is ``*``, which crosses ``/``, and a later ``]`` widens it (its output can open a bracket the
+    ``]`` closes); a glob hole is SEGMENT_STAR, which does not, except ``**`` (``globstar``). Shell
+    options the command does not show may be on: a token with a glob compares without case
+    (``nocaseglob``)."""
+    fold = False
+    for key in shell.sentinels(token):
+        if shell.kind_of(key) == "glob":
+            fold = True
+            star = GLOBSTAR_MARK if shell.REGISTRY[key].span == "*" else SEGMENT_STAR
+            token = token.replace(key, star)
+        else:
+            token = re.sub(re.escape(key) + r"(?:[^/]*\])?", "*", token)
+    token = re.sub(f"{GLOBSTAR_MARK}{{2,}}", "*", token).replace(GLOBSTAR_MARK, SEGMENT_STAR)
+    return token, fold
+
+
 def globs_meet(left: str, right: str) -> bool:
-    """Whether two globs (``*`` and literal characters; ``?`` read as ``*``) match a common string:
-    a walk over pairs of positions."""
+    """Whether two globs (``*`` and literal characters; ``?`` read as ``*``; on the left also
+    SEGMENT_STAR, any text without ``/``) match a common string: a walk over pairs of positions."""
     left, right = left.replace("?", "*"), right.replace("?", "*")
     seen: set[tuple[int, int]] = set()
     stack = [(0, 0)]
@@ -1521,9 +1542,11 @@ def globs_meet(left: str, right: str) -> bool:
         a, b = left[i : i + 1], right[j : j + 1]
         if a == "*":
             stack.extend([(i + 1, j)] + ([(i, j + 1)] if b else []))
+        if a == SEGMENT_STAR:
+            stack.extend([(i + 1, j)] + ([(i, j + 1)] if b and b != "/" else []))
         if b == "*":
             stack.extend([(i, j + 1)] + ([(i + 1, j)] if a else []))
-        if a and b and "*" not in (a, b) and a == b:
+        if a and b and not {a, b} & {"*", SEGMENT_STAR} and a == b:
             stack.append((i + 1, j + 1))
     return False
 
@@ -1549,6 +1572,10 @@ QUOTED_CODE_HEADS = frozenset(
 WHOLE_WRAPPERS = frozenset({"chroot", "nix-shell", "distrobox-enter"})
 CAT_DEFINITION_RE = re.compile(r"(?:^|[\s;&|(){}])(?:function\s+cat\b|cat\s*\(\s*\)|alias\s+cat=)")
 UNKNOWN_CHAR = "\x00"  # a hole read as one character nothing literal matches
+SEGMENT_STAR = "\x01"  # a glob hole in a path: any text without ``/``
+GLOBSTAR_MARK = "\x02"  # a ``*`` glob hole, until ``**`` runs are found
+# ``NAME=`` or ``NAME[…]=`` (the subscript a bracket glob hole): an assignment in the prefix
+ARRAY_ASSIGNMENT_RE = re.compile(f"^[A-Za-z_][A-Za-z0-9_]*({shell.SENTINEL_RE.pattern})?\\+?=")
 RULE_WILDCARDS_RE = re.compile(r"[*?\[]")
 
 
@@ -1634,13 +1661,43 @@ def prefix_key(segment: list[str], plain: list[str]) -> str | None:
         keys = shell.sentinels(token)
         if token in RESERVED_HEADS:
             continue
-        assignment = NAME_ASSIGNMENT_RE.match(token) if in_prefix else None
-        if assignment and not shell.has_sentinel(assignment.group()):
+        if in_prefix and is_assignment(token):
             continue
         in_prefix = False
         if keys:
             return keys[0]
     return None
+
+
+def is_assignment(token: str) -> bool:
+    """``NAME=…`` or ``NAME[…]=…`` with a literal name: bash sets a variable and globs nothing, so
+    the value's holes and a bracket glob in the subscript decide nothing."""
+    match = ARRAY_ASSIGNMENT_RE.match(token)
+    if match is None:
+        return False
+    subscript = match.group(1)
+    return subscript is None or (
+        shell.kind_of(subscript) == "glob" and shell.REGISTRY[subscript].span.startswith("[")
+    )
+
+
+def all_glob(tokens: list[str]) -> bool:
+    return all(shell.kind_of(key) == "glob" for key in hole_keys(tokens))
+
+
+def anchored(token: str) -> bool:
+    """A token whose glob words all start with its literal text before the first hole, and that
+    text is not an option name or a parameter: ``src/*``, ``./*.py``, ``--include=*.py``."""
+    head = literal_prefix(token, shell.SENTINEL_RE)
+    return bool(head) and (head[0] not in "-$" or (head[0] == "-" and "=" in head))
+
+
+def anchored_glob(token: str) -> bool:
+    return shell.has_sentinel(token) and all_glob([token]) and anchored(token)
+
+
+def hole_noun(key: str) -> str:
+    return "glob" if shell.kind_of(key) == "glob" else "substitution"
 
 
 def holes_only_in_assignments(segment: list[str], plain: list[str]) -> bool:
@@ -1656,6 +1713,8 @@ def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.
     if key:
         return key
     zone = plain if whole_segment_is_zone(plain) else verb_zone(plain, holes)
+    if plain[0] in API_CLIS and strip_global_options(plain)[1:2] == ["api"]:
+        zone = [token for token in zone if not anchored_glob(token)]  # file names, never a flag
     keys = hole_keys(zone)
     return keys[0] if keys else None
 
@@ -1708,14 +1767,25 @@ def never_anyway(forms: list[str], bash_rules: list[Rule]) -> list[Rule]:
 
 
 def could_match(
-    decision: str, forms: list[str], bash_rules: list[Rule], span: str
+    decision: str, forms: list[str], bash_rules: list[Rule], hole: str
 ) -> tuple[Verdict, list[Rule]] | None:
-    """An ask naming the first ``decision`` row some text in the holes could make match."""
+    """An ask naming the first ``decision`` row some text in the holes could make match; ``hole``
+    names the first hole (``substitution '$(x)'``, ``glob '*'``)."""
     found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in forms)]
     if not found:
         return None
-    note = f"substitution '{span}' could match {found[0].text()} ({found[0].layer} layer)"
+    note = f"{hole} could match {found[0].text()} ({found[0].layer} layer)"
     return Verdict(ASK, None, note), found
+
+
+def agent_globs(segment: list[str], plain: list[str]) -> str:
+    """How an agent-scoped allow meets the segment's holes: ``counts`` when every hole is an
+    anchored glob and nothing executes foreign code; ``anchor`` when only unanchored globs stop it;
+    ``never`` otherwise (a substitution could hold any option)."""
+    if not all_glob(segment) or executes_foreign(segment):
+        return "never"
+    globbed = [token for token in plain if shell.has_sentinel(token)]
+    return "counts" if all(anchored(token) for token in globbed) else "anchor"
 
 
 def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
@@ -1730,18 +1800,28 @@ def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
         return Verdict(DENY, nevers[0]), nevers
     key = structural_key(segment, plain, holes)
     if key:
-        return Verdict(ASK, None, f"substitution '{holes[key].span}' decides what runs"), []
+        return Verdict(ASK, None, f"{hole_noun(key)} '{holes[key].span}' decides what runs"), []
     if not hole_keys(plain):  # ``x=$(…) bash -c '…'``: the command is literal
-        return judge_words(segment, bash_rules, holes, agent_allows=False)
+        return judge_words(segment, bash_rules, holes, agent_allows=all_glob(segment))
     tested = forms[-1:] if plain[0] == "gcloud" else forms
-    span = holes[hole_keys(segment)[0]].span
-    never = could_match("never", tested, bash_rules, span)
+    first = hole_keys(plain)[0]
+    hole = f"{hole_noun(first)} '{holes[first].span}'"
+    never = could_match("never", tested, bash_rules, hole)
     if never:
         return never
-    covering = [r for r in bash_rules if allow_counts(r) and not r.agent and covers(r, forms[-1])]
+    agents = agent_globs(segment, plain)
+    covering = [
+        r
+        for r in bash_rules
+        if allow_counts(r) and (not r.agent or agents == "counts") and covers(r, forms[-1])
+    ]
     if covering:
         return Verdict(None, None, "allow rule"), covering
-    return could_match("ask", tested, bash_rules, span) or (Verdict(None, None, "no rule matched"), [])
+    if agents == "anchor" and any(allow_counts(r) and r.agent and covers(r, forms[-1]) for r in bash_rules):
+        token = show(next(t for t in plain if shell.has_sentinel(t) and not anchored(t)), holes)
+        note = f"glob '{token[:40]}' could expand to an option; anchor it: ./{token[:40]}"
+        return Verdict(ASK, None, note), []
+    return could_match("ask", tested, bash_rules, hole) or (Verdict(None, None, "no rule matched"), [])
 
 
 def known_values(segment: list[str], holes: dict) -> list[str] | None:
@@ -1777,14 +1857,6 @@ def judge_segment(
     return best
 
 
-def all_holes(scanned: shell.Scan) -> dict[str, shell.Hole]:
-    holes = dict(scanned.holes)
-    for hole in scanned.holes.values():
-        if hole.body is not None:
-            holes.update(all_holes(hole.body))
-    return holes
-
-
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -1794,7 +1866,7 @@ def judge_bash(
     scanned = shell.scan(command)
     if scanned.error:
         return Verdict(ASK, None, f"unparseable command ({scanned.error})"), [(command[:60], [])]
-    holes = all_holes(scanned)
+    holes = shell.REGISTRY  # every hole of the command, its bodies and its runners' inner commands
     with_values = not CAT_DEFINITION_RE.search(command)
     paths: list[str] = []
     entries: list[tuple[list[str], str, shell.Scan]] = []

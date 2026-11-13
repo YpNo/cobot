@@ -402,3 +402,11 @@ Why: owner answer Q2 a).
 Proof: python3 -I scripts/check-plugin.py exit 0 (agents listing about 523 tokens); claude plugin validate plugins/cobot --strict exit 0.
 Next: T06 docs and CHANGELOG.
 verified: f8cac97 · check-plugin, plugin validate
+
+## 2026-11-13 — gate-expansion T06: docs and changelog
+
+Changed: CHANGELOG Unreleased Security (brace and glob bullet; the follow-up note removed), docs/architecture.md (soundness target with globs, anchored agent globs), docs/configuration.md (braces and globs, known asks), docs/02-design.md §6 (expansion bullet), spec converge.
+Why: spec gate-expansion T06.
+Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0 (117 files); claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: independent bypass review (owner's condition), fold, verified commands again.
+verified: af6f0fd · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

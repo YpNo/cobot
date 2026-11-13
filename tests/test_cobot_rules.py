@@ -378,6 +378,23 @@ def test_gate_agentScope_learnerSharesTheReadListAndStaysReadOnly(rules):
     assert decide(rules, "cobot-memory learn '{}'")[0].decision is None
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cobot-memory learn --promote go", "ask"),
+        ("/home/x/plugins/cobot/bin/cobot-memory learn x --promote", "ask"),
+        ("python3 -I plugins/cobot/bin/cobot-memory learn --promote go", "ask"),
+        ("python plugins/cobot/bin/cobot-memory learn --source d --promote go", "ask"),
+        ("env X=1 cobot-memory learn --promote go", "ask"),
+        ("bash -c 'cobot-memory learn --promote go'", "ask"),
+        ("cobot-memory learn go", None),
+        ("cobot-memory journal add x --promote", None),
+    ],
+)
+def test_decide_promoteRows_anchoredOnTheCommandWord(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected
+
+
 def test_gate_agentScope_consultantBashAsks(rules):
     out = json.loads(rules.gate(payload("echo hi", agent_type="cobot:consultant")))
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"

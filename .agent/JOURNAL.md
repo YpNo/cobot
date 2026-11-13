@@ -378,3 +378,11 @@ Why: spec gate-expansion revision 3, owner Q2 (anchor reason).
 Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0; cobot-rules check on every Goal row gives the spec's verdict.
 Next: T03 runner expansion through glob holes.
 verified: 0412fc5 · pytest+cov, ruff, cobot-rules check
+
+## 2026-11-13 — gate-expansion T03: runner expansion through glob holes
+
+Changed: cobot-rules (command_parts with issued keys and EXPANSION_KINDS; argv_runner, GLOB_ARGV_RUNNERS, globs_reach_inner in expand_segment; argv expanders build with shell.join, name-resolved and code-string ones keep shlex.join, so a stray sentinel is refused; expansion origins show hole spans); tests: runner rows against a Makefile and package.json fixture, planted-sentinel row.
+Why: spec gate-expansion revision 3. Build-time decision: npm exec and toolbox run are not argv runners (npm reads flags after the command, challenger pass 2; toolbox's flag parsing unverified): a glob there asks.
+Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0.
+Next: T04 differential rows, the extglob and agent passes.
+verified: ddd1f69 · pytest+cov, ruff

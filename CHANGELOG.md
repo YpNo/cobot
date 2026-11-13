@@ -224,6 +224,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Consultants could audit cobot instead of the owner's repository: the consult brief (reused by
+  spec and wrap) named the plugin root but not the repository, and in the eval run the
+  consultants read the plugin's checkout around it. The brief now names the repository's absolute
+  path and the consultant audits it only.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

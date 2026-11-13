@@ -100,7 +100,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Claude Code and the sandbox backend
+        # Ubuntu runners restrict unprivileged user namespaces through AppArmor, so the sandbox's
+        # nested namespace cannot write /proc/self/setgroups and every Bash call fails (run
+        # 43389854358: no Bash call succeeded in 114 sessions). The runner is discarded after the job.
         run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo apt-get update -q && sudo apt-get install -y -q bubblewrap socat
           npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
       - name: Run evals

@@ -451,3 +451,11 @@ Why: spec gate-findings A (F-21, F-24 agent half), owner answers Q1 b), Q3 a), Q
 Proof: pytest with coverage exit 0 (98.54 %, the new code fully covered); ruff check and format exit 0.
 Next: T05 differential rows.
 verified: afd6724 · pytest+cov, ruff
+
+## 2026-11-13 — gate-findings T05: differential rows
+
+Changed: tests/test_gate_differential.py (FINDINGS_CLOSED and FINDINGS_SILENT in the corpus, 12 consultant rows, stubs pnpm rg rustup uniq, test_findingsOracle_bitesOnTheBypassesItCovers, the docstring's F-21 limitation replaced by the oracle's scope).
+Why: spec gate-findings story 6.
+Proof: pytest with coverage exit 0; ruff exit 0; mutations: ${…} and $"…" read as text fail the differential (kubectl ${x:---kubeconfig=…}); guard off, readings off and redirection writes off pass the differential (it judges each argv with the same literal judge) and each fails its unit rows in test_cobot_rules.py.
+Next: T06 docs, CHANGELOG, findings.
+verified: 1014792 · pytest+cov, ruff, mutations

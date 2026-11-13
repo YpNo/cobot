@@ -353,3 +353,12 @@ Why: the gate-cd-runner session found x=$(true) bash -c 'git push --force' silen
 Proof: pytest with coverage exit 0 (98.46 %), the differential test over the new rows included; ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
 Next: security/gate-cd-runner rebases onto this; owner pushes and opens the PR.
 verified: 632b072 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — security: cd before a runner
+
+Changed: cobot-rules follows cd and pushd through each script (shell_items, ShellState, directory_verb, cd_target, DirectoryWalk, walk_directories, expand_script, expand_segment, expand_units; scan_units removed); runners take a directory that may be unknown and report where their commands start (make -C physical, mise config folder and caller); uv run --directory and mise exec -C opaque; tests: cd rows in test_cobot_rules.py and a pwd-logging bash oracle in test_gate_differential.py; design §6 and changelog.
+Why: the gate-substitution cold read: `cd sub && make deploy` read the root Makefile, so a harmless root target hid sub's `git push` (silent). Decision 20, small security PR on top of feat/gate-substitution.
+Proof: pytest with coverage exit 0 (1419 passed, 98.51 %, after the rebase onto c95ad49); ruff check and format exit 0; check-plugin exit 0; the oracle catches a reinstated `)&&` bug and a cd in a pipeline taken as effective. An independent review found nine bypasses in the first version (a cd taken to succeed after `;`, popd, `f ( )`, CDPATH or set -P in the script, PWD assigned in a body or through a computed name, a body walked line by line, make -C through a symlink, uv --directory, mise exec -C); each is a row now.
+Open: the review also found, outside this change, that a substitution in an assignment prefix silenced a runner (fixed on feat/gate-substitution in 632b072; this branch is rebased onto it and keeps that expansion condition); a package manager's directory option is silent (`npm --prefix sub run x`, `pnpm -C sub x`, `yarn --cwd sub x`, `uv --directory sub run x`); the protected-file check resolves relative paths from cwd and ignores cd too; entry wrappers into containers expand runners from host files. markdownlint-cli2 is not installed here.
+Next: owner reviews the branch security/gate-cd-runner (on feat/gate-substitution c95ad49).
+verified: 1619086 · pytest+cov, ruff, check-plugin, cd oracle

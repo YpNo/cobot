@@ -302,3 +302,11 @@ Why: spec .agent/specs/gate-substitution.md (owner answers 2026-11-13); `! git p
 Proof: pytest with coverage exit 0 (98.13 %); ruff check and format exit 0.
 Next: T02 redirections.
 verified: 9f33a31 · pytest+cov, ruff
+
+## 2026-11-13 — gate-substitution T02: the shell scanner
+
+Changed: bin/_cobot_shell.py (scan, Hole, Scan, HereDoc, known_value, unescape_backtick) and tests/test_cobot_shell.py; not wired into the gate yet.
+Why: spec plan steps 2 and 3 merged: shlex drops whitespace, so `cargo 2>/dev/null publish` and `cargo 2 publish` look alike after splitting; redirections are read in the scanner, character by character.
+Proof: pytest on tests/test_cobot_shell.py exit 0, 100 % of the module; ruff check and format exit 0.
+Next: T03 judge_bash on scanned units.
+verified: 42eff72 · pytest (scanner, 100 %), ruff

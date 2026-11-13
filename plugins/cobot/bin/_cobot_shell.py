@@ -655,8 +655,8 @@ def bracket_end(text: str, i: int) -> int | None:
         c = text[j]
         if c == "{" and text[j - 1] != "$":
             raise ShellError("brackets and braces in one word")
-        if c in "\\'\"`":
-            j = skip_quoted(text, j)
+        if c in "\\'\"`" or text.startswith("$'", j):
+            j = skip_piece(text, j)
             continue
         if c == "]":
             last = j
@@ -679,10 +679,8 @@ def brace_end(text: str, i: int) -> tuple[int, list[int]] | None:
             return None
         if c in "[]":
             raise ShellError("brackets and braces in one word")
-        if c in "\\'\"" or c == "`" or text.startswith(("$(", "${"), j):
-            j = skip_expansion(text, j)
-            if j is None:
-                return None
+        if c in "\\'\"`" or text.startswith(("$(", "${", "$'"), j):
+            j = skip_piece(text, j)
             continue
         if c == "{":
             depth += 1
@@ -697,24 +695,47 @@ def brace_end(text: str, i: int) -> tuple[int, list[int]] | None:
     return None
 
 
-def skip_expansion(text: str, j: int) -> int | None:
-    """Index after a quoted run, an escape, a backtick, ``$(…)`` or ``${…}`` at ``j``; None when it
-    is not closed (the scanner will refuse the text)."""
-    if text[j] in "\\'\"`":
+def skip_piece(text: str, j: int) -> int:
+    """Index after the escape, quoted run, ``$'…'``, backtick, ``$(…)`` or ``${…}`` at ``j``, read
+    as the scanner reads it (escapes in ``$'…'``, substitutions nested in double quotes). An
+    unclosed one is an error: reading the rest as literal text would fail open."""
+    c = text[j]
+    if c == "\\":
+        end = j + 2
+    elif text.startswith("$'", j):
+        end = skip_quoted(text, j + 1, escapes=True)
+    elif c in "'`":
         end = skip_quoted(text, j)
-        return end if end <= len(text) else None
+    elif c == '"':
+        end = skip_double_quoted(text, j)
+    else:
+        end = skip_nested(text, j)
+    if end > len(text):
+        raise ShellError("unclosed quote or expansion")
+    return end
+
+
+def skip_double_quoted(text: str, j: int) -> int:
+    k = j + 1
+    while k < len(text) and text[k] != '"':
+        k = skip_piece(text, k) if text[k] in "\\`" or text.startswith(("$(", "${"), k) else k + 1
+    return k + 1
+
+
+def skip_nested(text: str, j: int) -> int:
+    """``$(…)`` or ``${…}`` at ``j``: to the closer at depth zero, quotes skipped."""
     opener, closer = ("(", ")") if text[j + 1] == "(" else ("{", "}")
     depth, k = 1, j + 2
     while k < len(text):
         c = text[k]
-        if c in "\\'\"`":
-            k = skip_quoted(text, k)
+        if c in "\\'\"`" or text.startswith(("$(", "${", "$'"), k):
+            k = skip_piece(text, k)
             continue
         depth += {opener: 1, closer: -1}.get(c, 0)
         if depth == 0:
             return k + 1
         k += 1
-    return None
+    return k + 1
 
 
 def sequence(inner: str) -> tuple[str, ...]:

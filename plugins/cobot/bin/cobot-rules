@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import difflib
 import fnmatch
+import itertools
 import json
 import os
 import re
@@ -48,6 +49,7 @@ RANK = {None: 0, "allow": 0, ASK: 1, DENY: 2}
 REASON_LIMIT = 200
 SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
 CONTROL_CHARS = frozenset("();&|")  # a token of these alone ends a segment
+ARRAY_OPEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=$")  # ``a=`` before ``(``
 WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
 # wrappers and their options: flags without a value, options that take one. ``--`` ends them;
 # short flags combine (``-la x``); an option not listed leaves the wrapper opaque.
@@ -390,7 +392,42 @@ def shell_items(command: str) -> list[str | list[str]]:
             segment.append(token)
     if segment:
         items.append(shell.expand_braces(segment))  # after splitting: a brace never builds an operator
-    return items
+    return array_assignments(items)
+
+
+def array_assignments(items: list[str | list[str]]) -> list[str | list[str]]:
+    """``files=(*.py)``, ``declare -a a=(…)``: the parenthesised words are an array's elements,
+    data, not a subshell (``x= (cmd)`` is a syntax error). Substitutions inside are still judged
+    as their own units."""
+    out: list[str | list[str]] = []
+    index = 0
+    while index < len(items):
+        item = items[index]
+        opens = index + 1 < len(items) and items[index + 1] == "("
+        if isinstance(item, list) and item and ARRAY_OPEN_RE.match(item[-1]) and opens:
+            close, rest = closing_paren(items, index + 2)
+            out.append([*item[:-1], item[-1] + "(…)"])
+            if rest:
+                out.append(rest)
+            index = close + 1
+            continue
+        out.append(item)
+        index += 1
+    return out
+
+
+def closing_paren(items: list[str | list[str]], start: int) -> tuple[int, str]:
+    """The index of the operator token closing a ``(`` opened before ``start``, and what follows the
+    ``)`` in that token (``);`` leaves ``;``); the end when it never closes."""
+    depth = 1
+    for index in range(start, len(items)):
+        item = items[index]
+        if isinstance(item, str):
+            for offset, char in enumerate(item):
+                depth += {"(": 1, ")": -1}.get(char, 0)
+                if depth == 0:
+                    return index, item[offset + 1 :]
+    return len(items), ""
 
 
 def split_segments(command: str) -> list[list[str]]:
@@ -633,7 +670,7 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
             method, i = tokens[i + 1].upper(), i + 2
             continue
         if token.startswith("-X") and len(token) > 2:
-            method = token[2:].upper()
+            method = token[2:].removeprefix("=").upper()  # pflag takes ``-X=DELETE`` too
         elif token.startswith("--method="):
             method = token.split("=", 1)[1].upper()
         else:
@@ -1413,7 +1450,7 @@ def expand_segment(
     origin = show(" ".join(plain), shell.REGISTRY)[:MAX_ORIGIN]
     out: list[tuple[list[str], str]] = []
     for parts, start in expansions:
-        paths.extend(target for _, targets in parts for target in targets)
+        paths.extend(target_words([target for _, targets in parts for target in targets]))
         texts = [text for text, _ in parts]
         entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, paths)
         out.extend((tokens, origin) for tokens, _ in entries)
@@ -1448,13 +1485,18 @@ def expand_script(
     return out, end
 
 
+def target_words(targets: list[str]) -> list[str]:
+    """Redirection targets as bash reads them: quotes removed, braces expanded (scanned: balanced)."""
+    return shell.expand_braces([word for target in targets for word in shlex.split(target)])
+
+
 def expand_units(
     scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, paths: list[str], entries: list
 ) -> None:
     """Expand the command, then every substitution body it runs from the directories in effect
     where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
     subshell: it shares the whole command's state."""
-    paths.extend(shell.expand_braces([w for target in scanned.targets for w in shlex.split(target)]))
+    paths.extend(target_words(scanned.targets))
     starts: dict[str, Dirs] = {}
     placed, _ = expand_script([scanned.outer], dirs, state, 0, paths, starts)
     entries.extend((segment, via or origin, scanned) for segment, via in placed)
@@ -1520,7 +1562,8 @@ def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: li
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
     for segment in segments:
         for token in segment:
-            if not ("/" in token or token.startswith("~")) or token.startswith("-"):
+            pathlike = "/" in token or token.startswith("~") or globstar(token)
+            if not pathlike or token.startswith("-"):
                 continue
             if shell.has_sentinel(token):
                 if any(path_may_match(r, token, cwd) for r in protected):
@@ -1528,6 +1571,16 @@ def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: li
             elif any(matches_file(r, file_forms(token, cwd)) for r in protected):
                 return token
     return None
+
+
+def globstar(token: str) -> bool:
+    """``**`` (two ``*`` glob holes in a row): under ``globstar`` it crosses folders, ``/`` or not."""
+    stars = [
+        key
+        for key in shell.sentinels(token)
+        if shell.kind_of(key) == "glob" and shell.REGISTRY[key].span == "*"
+    ]
+    return any(a + b in token for a, b in itertools.pairwise(stars))
 
 
 def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
@@ -1554,6 +1607,7 @@ def path_glob(token: str) -> tuple[str, bool]:
             star = GLOBSTAR_MARK if shell.REGISTRY[key].span == "*" else SEGMENT_STAR
             token = token.replace(key, star)
         else:
+            fold = fold or not shell.REGISTRY[key].quoted  # split output is globbed as well
             token = re.sub(re.escape(key) + r"(?:[^/]*\])?", "*", token)
     token = re.sub(f"{GLOBSTAR_MARK}{{2,}}", "*", token).replace(GLOBSTAR_MARK, SEGMENT_STAR)
     return token, fold
@@ -1599,8 +1653,13 @@ def outranks(new: Verdict, best: Verdict) -> bool:
 NAME_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # builtins and keywords that can evaluate quoted text as code (array subscripts, arithmetic, PS4)
 QUOTED_CODE_HEADS = frozenset(
-    "printf test [ [[ (( let declare typeset local export readonly read mapfile readarray set trap".split()
+    "printf test [ [[ (( let declare typeset local export readonly read mapfile readarray set trap "
+    "unset".split()
 )
+# heads that evaluate a word as a name or arithmetic (``let x=*``, a file ``x=a[$(…)]``);
+# printf, test and ``[`` only with ``-v``; ``[[`` and ``set`` glob or evaluate nothing
+GLOB_CODE_HEADS = frozenset("let unset read mapfile readarray declare typeset local export readonly".split())
+GLOB_CODE_WITH_V = frozenset({"printf", "test", "["})
 # wrappers whose inner command or ``--run`` string can sit anywhere: a hole in them decides what runs
 WHOLE_WRAPPERS = frozenset({"chroot", "nix-shell", "distrobox-enter"})
 CAT_DEFINITION_RE = re.compile(r"(?:^|[\s;&|(){}])(?:function\s+cat\b|cat\s*\(\s*\)|alias\s+cat=)")
@@ -1747,9 +1806,14 @@ def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.
     key = prefix_key(segment, plain)
     if key:
         return key
+    evaluates = plain[0] in GLOB_CODE_HEADS or (plain[0] in GLOB_CODE_WITH_V and "-v" in plain)
+    globbed = [k for k in hole_keys(plain) if shell.kind_of(k) == "glob"]
+    if evaluates and globbed:  # a file name becomes code: ``a[$(…)]``
+        return globbed[0]
     zone = plain if whole_segment_is_zone(plain) else verb_zone(plain, holes)
     if plain[0] in API_CLIS and strip_global_options(plain)[1:2] == ["api"]:
-        zone = [token for token in zone if not anchored_glob(token)]  # file names, never a flag
+        # file names, never a flag; ``-X=D*`` names its flag, so its glob picks the method
+        zone = [token for token in zone if not (anchored_glob(token) and not token.startswith("-"))]
     keys = hole_keys(zone)
     return keys[0] if keys else None
 

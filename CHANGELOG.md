@@ -343,8 +343,13 @@ All notable changes to this project are documented here. The format follows
   `--include=*.py`); a bare one (`ls *.py`, `find *`, `git log *`) asks, since a file named `-c`
   or `-delete` would become an option, and the reason says to write `./*.py`; both agent prompts
   say so. `ls *.py`, `git add src/*`, `mkdir -p src/{a,b}`, `gh api …?state=all`, `uv run pytest
-  tests/test_*.py` and npm scripts holding globs stay silent; a glob in an interpreter's, a
-  name-resolved runner's (`npm test -- src/*`, `make show X=*`) or `npm exec`'s argv asks.
+  tests/test_*.py`, `files=(*.py)` and npm scripts holding globs stay silent; a glob in an
+  interpreter's, a name-resolved runner's (`npm test -- src/*`, `make show X=*`) or `npm exec`'s
+  argv asks, and so does one after a builtin that evaluates names (`let x=*`, `unset *`,
+  `printf -v *`: a file named `a[$(…)]` would run). An independent review also closed, in the
+  same paths: a runner body's redirection target with quotes or braces (`bash -c 'echo x >
+  {~/.claude/settings.json,}'`), a brace whose `$'…'` or nested quote looked unclosed and was
+  read as literal, `gh api … -X=DELETE` (now read as `-X DELETE`), and `unset 'a[$(id)]'`.
   A substitution only in a leading assignment no longer hides the command after it
   (`x=$(true) bash -c 'git push --force'` is denied, `x=$(true) make deploy` resolves the
   target).

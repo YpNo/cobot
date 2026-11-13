@@ -409,7 +409,7 @@ def test_scan_expansionOutsideTheModel_isAnError(command, error):
 
 
 def test_scan_braceWithAnUnclosedSubstitution_isRefusedByTheSubstitution():
-    assert sh.scan("p {$(x,b}").error == "unclosed substitution"
+    assert sh.scan("p {$(x,b}").error == "unclosed quote or expansion"
 
 
 def test_scan_negatedSubshellWithABlank_staysCommands():

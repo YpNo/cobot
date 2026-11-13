@@ -50,8 +50,10 @@ glob after an interpreter (`python3 -m pytest tests/*`, `node --test test/*.js`)
 shell or a runner resolved by name (`bash scripts/*.sh`, `npm test -- src/*`, `make test
 FILES=src/*`), by `npm exec`, `toolbox`, `distrobox` or `nix-shell --run`, or by a runner's own
 options (`uv run --with * …`); `ls ~/.claude/*` (the protected files); `kubectl get pods x*`
-under an agent scope; `[[ $x == @(a|b) ]]` and `if !(grep -q x f)` (extended-glob syntax); a
-word mixing braces and brackets; `echo {1..300}`.
+under an agent scope; a glob after a builtin that evaluates names or arithmetic (`let`,
+`unset`, `read`, `declare`, `export`, `local`, `mapfile`, `printf -v`, `test -v`: a file named
+`a[$(…)]` would run), and `cat **` anywhere (`globstar` may be on); `[[ $x == @(a|b) ]]` and
+`if !(grep -q x f)` (extended-glob syntax); a word mixing braces and brackets; `echo {1..300}`.
 
 Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
 from the default layer) silences the gate; `ask` prompts; otherwise Claude Code's own

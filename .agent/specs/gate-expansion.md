@@ -293,9 +293,7 @@ scope like `cargo $V`, `if !(grep …)` is a known ask.
 
 ## Converge
 
-2026-11-13, built rebased onto `security/gate-cd-runner` `27b75fc` (owner's condition): scanner
-`6fbb468`, judging `0412fc5`, runners `ddd1f69`, differential `a4de1bf`. Build decisions: `npm
-exec` and `toolbox run` are not argv runners (npm reads flags after the command, toolbox
-unverified); holes share one process-wide registry; a quoted `$(…)` in a bracket span is an
-error; the differential log moved out of the globbed folder, which had hidden the `uv run
---with *` row, and each guard was removed once to see its row fail.
+2026-11-13 on `security/gate-cd-runner` `27b75fc`: `6fbb468` `0412fc5` `ddd1f69` `a4de1bf`. `npm exec`,
+`toolbox run` are not argv runners; one hole registry; quoted `$(…)` in a bracket is an error; the
+differential log left the globbed folder (it hid a row); review folds: runner-body targets, brace
+quote skipping, evaluating builtins, split-substitution case, `-X=`, `**`, arrays; F-23, F-24.

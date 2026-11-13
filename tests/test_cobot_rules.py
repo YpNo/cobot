@@ -2582,7 +2582,8 @@ def test_globsMeet_segmentStarStopsAtASlash(rules):
 
     assert rules.path_glob(token("~/**"))[0] == "~/*"
     assert rules.path_glob(token("a/*/b?")) == (f"a/{star}/b{star}", True)
-    assert rules.path_glob(token("a/$(x)]b/c")) == ("a/*b/c", False)
+    assert rules.path_glob(token("a/$(x)]b/c")) == ("a/*b/c", True)
+    assert rules.path_glob(token('a/"$(x)"]b/c')) == ("a/*b/c", False)
 
 
 def test_judgeBash_ownerAllowCoversAGlob(rules, layers):
@@ -2647,3 +2648,57 @@ def test_commandParts_plantedSentinelInABody_isRefused(rules):
     assert rules.command_parts(f"ls {key}") is None
     assert rules.command_parts(f"ls {key}", frozenset({key})) is not None
     assert rules.command_parts("echo $(date)") is None
+
+
+# ---------------------------------------------------------------- bypass review, 2026-11-13
+
+REVIEW_ROWS = [
+    # runner-body redirection targets: quotes removed, braces expanded
+    ("bash -c 'echo {} > {~/.claude/settings.json,}'", "ask"),
+    ("bash -c 'echo x > ~/.claude/\"settings.json\"'", "ask"),
+    # brace quote skipping as the scanner reads it, failing closed
+    ("cat ~/.claude/{settings.json,$'\\''}", "ask"),
+    ('cat ~/.claude/{settings.json,"$(echo "\'")"}', "ask"),
+    ("git push origin {main,--force,$'\\''}", "deny"),
+    # a file name becomes code under builtins that evaluate names or arithmetic
+    ("let x=*", "ask"),
+    ("unset *", "ask"),
+    ("read * <<< x", "ask"),
+    ("printf -v * %s x", "ask"),
+    ("test -v *", "ask"),
+    ("unset 'a[$(id)]'", "ask"),
+    # a split substitution's output is globbed without case too
+    ('cat ~/.claude/$(echo "[s]")ETTINGS.JSON', "ask"),
+    # gh api: -X=METHOD, and a glob in it
+    ("gh api repos/x -X=DELETE", "deny"),
+    ("gh api repos/x -X=D*", "ask"),
+    # ** reaches a protected file with no / in the token
+    ("cat **", "ask"),
+    # compound array assignments are data
+    ("files=(*.py)", None),
+    ("declare -a a=(*.py)", None),
+    ("a=($(git push)); ls", "ask"),
+    ("a=(x); git push", "ask"),
+    ("a=(x) && git push --force", "deny"),
+    # still silent
+    ("printf '%s\\n' *", None),
+    ("[ -f *.txt ]", None),
+    ("set -- *.txt", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), REVIEW_ROWS)
+def test_decide_bypassReviewRows(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+def test_judgeBash_makeRecipeTargetWithABrace_asks(rules, tmp_path):
+    (tmp_path / "Makefile").write_text("b:\n\techo x > {~/.claude/settings.json,}\n")
+    (tmp_path / "package.json").write_text('{"scripts": {"b": "echo x > {~/.claude/settings.json,}"}}')
+    assert judge_in(rules, "make b", tmp_path)[0].decision == "ask"
+    assert judge_in(rules, "npm run b", tmp_path)[0].decision == "ask"
+
+
+def test_scan_unclosedPieceInsideABrace_isAnError(rules):
+    assert rules.shell.scan("p {a,'b}").error is not None
+    assert rules.shell.scan('p {a,"$(echo "x)"}').error is not None

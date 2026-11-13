@@ -353,6 +353,31 @@ All notable changes to this project are documented here. The format follows
   A substitution only in a leading assignment no longer hides the command after it
   (`x=$(true) bash -c 'git push --force'` is denied, `x=$(true) make deploy` resolves the
   target).
+- The read-only agents' read lists no longer cover a write or a run
+  (`.agent/specs/gate-findings.md`, F-21, F-24, decision 28 amended). These were silent for the
+  consultant and the learner and now ask, naming the cause: `find . -delete` (and `-exec`,
+  `-ok`, `-fprint`, `-fls`), `rg --pre=./x`, `fd -x`, `sort -o` and `--compress-program`
+  (abbreviations such as `--o` too), `uniq a b`, `tree -o`, `yq -i`, `git log|show|diff
+  --output`, `git branch -D` or a new branch name, `zizmor --fix`, `trivy -o`, `gitleaks -r`,
+  `pip-audit --fix`, `npm audit … fix`, `semgrep --autofix`, `go env -w`, `go list -toolexec`,
+  `terraform providers lock`, `helm template --output-dir`, `kustomize build -o`, and `git
+  --config-env`, `cargo --config` and `docker --config`. A command, or a runner body it expands,
+  that redirects into a file (`cat a > b`, a make recipe holding one) asks too; `/dev/null` and
+  descriptor duplications (`2>&1`) stay silent. `curl` keeps its read list only with read
+  options (`-s`, `-S`, `-L`, `-f`, `-I`, `-H`, `-w` without `%output`, `-X GET` …): uploads,
+  data, file writes and `-K` ask. `cargo audit` and `cargo deny check` leave the read lists,
+  since a repository's `.cargo/config.toml` alias shadows them; `cargo-audit audit` and
+  `cargo-deny check` stay.
+- An option before the verb no longer hides it (F-24): `cargo +nightly publish`, `cargo --locked
+  publish`, `cargo -vv publish`, `npm --registry x publish`, `pnpm -r publish`, `uv --directory x
+  publish` and `rustup run nightly cargo publish` are denied, and a runner behind such an option
+  asks (`uv -q run cargo publish`, `pnpm -C x exec …`, `npm --prefix x test`). Each place the
+  verb could start past an option the gate does not know is read by `never` and `ask` rows;
+  allows keep the canonical form.
+- `${…}` with an operator word and locale strings are judged (F-22, F-23): `cargo ${x:-publish}`
+  asks and `kubectl get pods ${x:---kubeconfig=./evil}` asks for the agents (the default word is
+  text bash splits and globs); `cargo $"publish"` and `terraform {$"apply",}` are denied (the
+  untranslated text), as `cargo publish` is.
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

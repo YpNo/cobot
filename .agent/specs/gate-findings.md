@@ -26,7 +26,7 @@ What does not change: the precedence, the gate never emits `allow`, every row of
 options (no read list there), owner-layer allows. These stay silent for `@consultant` and
 `@learner`: `find . -name '*.py'`, `rg -n x src`, `sort -u f`, `uniq -c f`, `git log --oneline
 -5`, `git branch -a`, `git branch --contains HEAD`, `curl -s https://x | jq -r .tag_name`,
-`curl -fsSL -H 'Accept: application/json' https://x`, `ls x 2>/dev/null`, `cat a 2>&1`,
+`curl -sfL -H 'Accept: application/json' https://x`, `ls x 2>/dev/null`, `cat a 2>&1`,
 `npm audit --json`, `cargo-audit audit`, `tree -L 2`, `yq '.a' f.yaml`.
 
 Out of scope, parked as **F-25**: read-list tools that load repository configuration or build
@@ -73,8 +73,8 @@ stay as they are: a non-cosmetic assignment, `git -c`, `--exec-path`, kubeconfig
    --autofix`, where the verb lookup yields `--config`). A guard names
    what makes the command write a file or run a program, in one of three spellings:
    - **getopt** (GNU getopt_long, git parse-options, clap, pflag, click): a long name matches as
-     `--name`, `--name=…`, and as any abbreviation (`--outp` is `--output`; a token whose name
-     part is a strict prefix of a guarded long name of at least three characters after `--`).
+     `--name`, `--name=…`, and as any abbreviation (`--outp` is `--output`; any prefix of a
+     guarded long name, since GNU sort accepts `--o`).
      This over-reads tools that do not abbreviate, which is stricter. A short letter matches in
      any single-dash cluster (`-uo`, `-fsSLo`). This over-reads a letter inside an attached
      value (`-k1o`), also stricter.
@@ -166,7 +166,7 @@ or an ask. `rustup run [--install] <toolchain> <cmd…>` joins `WRAPPER_PARSERS`
 wrapper. A known cost, written in `docs/configuration.md` with a test row: an **unknown** value
 option whose value is a ruled verb reads as that verb. `npm --some-new-option publish test`
 denies, and the owner layer cannot lift a `never`. The tables above keep the known options out
-of it (`npm -w publish test` and `npm --loglevel publish test` stay silent).
+of it (`npm -w publish ls` and `npm --loglevel publish ls` stay silent).
 
 **C. `${…}` operator words are holes (F-22).** In `parameter()`, a `${…}` whose content is not
 plain becomes a `substitution` hole, with no body. `quoted` is set when it sits inside double
@@ -206,7 +206,7 @@ covers. Inside a brace alternative it is scanned the same way (`terraform {$"app
    *Goal* denies, as do `cargo --color always publish`, `cargo -C .. publish` and `pnpm --filter
    x publish`, `npm --registry=x --tag=y publish`, `pnpm --filter x -r publish`, `uv --config-file
    y --directory x publish` and `cargo +nightly --color=always -vv publish` deny; `cargo -C
-   publish build`, `npm -w publish test` and `npm --loglevel publish test` stay silent (known value
+   publish build`, `npm -w publish ls` and `npm --loglevel publish ls` stay silent (known value
    options); `npm --zz publish test` denies (the documented cost);
    `git -C x log` stays silent (`-k readings`).
 5. As a maintainer, the scanner matches bash. Accept: `tests/test_cobot_shell.py` rows for
@@ -296,4 +296,12 @@ Folded:
 
 ## Converge
 
-pending
+2026-11-13, T01–T06 built (`7c55eec`, `00d4c30`, `c55624f`, `afd6724`, `1014792` and the docs commit).
+Folded while building: a runner verb behind an option was invisible too (`uv -q run cargo
+publish`, `pnpm -C x exec …`, `npm --prefix x test`): `is_opaque` reads every reading, so these
+ask (T03). Spec rows corrected: `curl -fsSL` never matched the `curl -s*` read row, so the silent
+example is `curl -sfL`; abbreviations take any prefix (GNU sort accepts `--o`); `npm -w publish
+test` asks as an npm script, so the silent example is `npm -w publish ls`. The differential
+proves the decomposition (`${…}`, `$"…"`); the guard, readings and redirection writes are
+proved by unit rows, each failing with its mechanism off. F-21 to F-24 closed, F-25 parked.
+Bypass-aimed review: pending.

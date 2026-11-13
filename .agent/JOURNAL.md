@@ -427,3 +427,11 @@ Why: spec gate-findings C and D (F-22, F-23).
 Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0.
 Next: T02 redirection writes.
 verified: 7c55eec · pytest+cov, ruff
+
+## 2026-11-13 — gate-findings T02: redirection writes
+
+Changed: _cobot_shell.py (WRITING_OPERATORS, FD_WORD_RE, Scan.writes); cobot-rules (Part, command_parts returns writes, Reached with paths and writes threaded through expand_units, expand_script, expand_segment); tests: scanner write rows for every operator and descriptor duplication, command_parts and a make recipe's writes; the differential's expand_units call.
+Why: spec gate-findings A, redirection writes.
+Proof: pytest with coverage exit 0 (98.58 %); ruff check and format exit 0.
+Next: T03 readings past global options.
+verified: 00d4c30 · pytest+cov, ruff

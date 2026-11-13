@@ -280,5 +280,11 @@ Revision 2, second pass: **SOUND WITH CHANGES**, no BLOCKER. Folded into revisio
 - A token of only `();&|` splits a segment (`f() { git push; }` was one segment).
 - Data-dependent arithmetic stays out of scope wherever the value comes from (`read x < f;
   echo $((x))` is silent today as well).
+- Code review (2026-11-13, after the build) found five bypasses in the scanner, all folded in
+  `d9b9a54` with test rows: `#` after an escape read as a comment, here-document delimiters
+  without line continuation, backticks and `$'…'` counted as parens inside `$((`, `<(…)` inside
+  an unquoted `${…}`, `)` not ending a redirection target; plus wrapper `--` and combined flags.
+  A backslash-newline is now removed as bash does; a trailing backslash asks. 230 000 random
+  inputs raised nothing outside the scanner's error path.
 - The differential test's first stub called `basename`, itself a stub, and recursed until killed;
   stubs use builtins only. The oracle flags `terraform {apply,}`, so it can fail (the Q4 case).

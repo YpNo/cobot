@@ -317,7 +317,9 @@ All notable changes to this project are documented here. The format follows
   quotes in it (`<<E"O"F`), a quote inside a comment hiding the next line, redirections before
   or inside a command (`</dev/null terraform apply`, `cargo 2>/dev/null publish`), reserved words
   at a segment head (`!`, `{`, `do`, `then`, `else`, `function f {`, `coproc`), wrapper options
-  (`time -p`, `command -p`, `exec -a`, `rtk proxy`), and `trap '…'` (now opaque). Brace and glob
+  (`time -p`, `command -p`, `exec -a`, `rtk proxy`, `--` and combined flags such as
+  `exec -la x`; an option the gate does not know leaves the wrapper opaque), a backslash-newline
+  inside a word (`git pu\` ⏎ `sh --force`), and `trap '…'` (now opaque). Brace and glob
   expansion in a verb position (`cargo {publish,}`) is still silent and has its own follow-up.
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh

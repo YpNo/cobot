@@ -87,7 +87,9 @@ jobs:
 
   evals:
     if: github.event_name == 'workflow_dispatch' && inputs.evals
-    runs-on: ubuntu-latest
+    # pinned: the sandbox depends on the image's AppArmor profiles, and ubuntu-latest moving to
+    # 26.04 broke every Bash call unannounced; a new image is a reviewed change to this line
+    runs-on: ubuntu-26.04
     timeout-minutes: 60 # the full suite took 40 minutes; a timeout loses every result
     # no stored key: workload identity federation through the federation identifiers set on this
     # environment (scripts/github-settings.sh creates it, deployable from main only)
@@ -124,6 +126,9 @@ jobs:
         run: |
           . scripts/anthropic-federation.sh
           cd plugins/cobot
+          # an installed plugin has bin/ on PATH; eval sessions do not get it (run 43494320182:
+          # cobot-rules: command not found), and they inherit this PATH
+          PATH="$PWD/bin:$PATH"
           # --keep-temp keeps each run's trace, the only record of what the session did
           set -- --trust-plugin --scaffold --no-publish --keep-temp --runs 3 --threshold 1.0 \
             --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --max-cost-usd 10 \

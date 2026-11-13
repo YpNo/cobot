@@ -39,8 +39,11 @@ so every run costs money. `tests/test_eval_graders.py` checks the suite for free
 compiles, no case has more than one judge, every fixture runs clean.
 
 ```bash
-cd plugins/cobot && claude plugin eval . --trust-plugin --scaffold --allow-tools Bash Write Edit
+cd plugins/cobot && PATH="$PWD/bin:$PATH" claude plugin eval . --trust-plugin --scaffold --allow-tools Bash Write Edit
 ```
+
+Eval sessions do not get the plugin's `bin/` on PATH the way an installed plugin does, hence
+the prefix.
 
 A case's `allowed_tools` only lists what it may use; `Bash`, `Write` and `Edit` must also be
 granted on the command line, and `Bash` needs the sandbox backend (`bubblewrap` and `socat` on

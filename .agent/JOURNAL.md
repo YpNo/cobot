@@ -345,3 +345,11 @@ Why: the owner asked for the rebase before pushing; the earlier stamps name pre-
 Proof: pytest with coverage exit 0 (98.46 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
 Next: owner pushes and opens the PR.
 verified: 9397f77 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — gate-substitution: assignment holes no longer hide the command
+
+Changed: cobot-rules prefix_key split out of structural_key; holes_only_in_assignments lets expand_segments expand, and judge_holed judge with judge_words (agent allows left out), a segment whose holes all sit in leading NAME= values; seven bypass rows, five make rows, one agent row; CHANGELOG Security, spec Converge (and its review-fold sha, now c9d18aa after the rebase).
+Why: the gate-cd-runner session found x=$(true) bash -c 'git push --force' silent on this branch (denied on main), likewise eval, python3 -c, sudo and make targets behind an assignment hole.
+Proof: pytest with coverage exit 0 (98.46 %), the differential test over the new rows included; ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate --strict (plugin, marketplace) exit 0; check-plugin exit 0.
+Next: security/gate-cd-runner rebases onto this; owner pushes and opens the PR.
+verified: 632b072 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

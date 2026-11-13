@@ -277,3 +277,42 @@ def test_scan_caseInsideBackticks_isScannedWhole():
 def test_unescapeBacktick_quotesOnlyItsSpecialCharacters():
     assert sh.unescape_backtick('\\\\ \\` \\$ \\" \\n', False) == '\\ ` $ \\" \\n'
     assert sh.unescape_backtick('\\"', True) == '"'
+
+
+# ---------------------------------------------------------------- code review, 2026-11-13
+
+
+def test_scan_backslashNewline_isRemoved():
+    assert " ".join(sh.scan("git pu\\\nsh --force").outer.split()) == "git push --force"
+
+
+def test_scan_trailingBackslash_isAnError():
+    assert sh.scan("echo a\\").error == "trailing backslash"
+
+
+@pytest.mark.parametrize("command", ["true\\ #;terraform apply", "echo a\\;#x; ls"])
+def test_scan_hashAfterAnEscape_isNotAComment(command):
+    assert "#" in sh.scan(command).outer
+
+
+def test_scan_processSubstitutionInsideParameter_runs():
+    assert bodies(sh.scan("echo ${x:->(terraform apply)} ${y:-<(ls)}")) == ["terraform apply", "ls"]
+
+
+def test_scan_closingParen_endsARedirectionTarget():
+    result = sh.scan("(echo x >~/.claude/settings.json)")
+    assert result.targets == ["~/.claude/settings.json"] and result.outer.rstrip().endswith(")")
+
+
+def test_scan_hereDocumentDelimiter_joinsContinuationLines():
+    result = sh.scan("cat <<E\nE\\\n\nterraform apply\nE")
+    assert "terraform apply" in result.outer
+    quoted = sh.scan("cat <<'E'\nE\\\n\nterraform apply\nE")
+    assert "terraform apply" not in quoted.outer
+
+
+@pytest.mark.parametrize(
+    "command", ["(echo $((echo `(`) ; git push ; (true)))", "(echo $((echo $'\\'(') ; git push ; (true)))"]
+)
+def test_scan_backtickAndAnsiInsideDollarParens_doNotCountParens(command):
+    assert "git push" in bodies(sh.scan(command))[0]

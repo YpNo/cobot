@@ -2141,6 +2141,27 @@ BYPASSES_CLOSED = [
     ("git commit -m \"$(cat <<'EOF'\nfix\n\nCo-Authored-By: a <b>\nEOF\n)\"", "deny"),
     ("gh pr create --body \"$(cat <<'EOF'\nbody\nGenerated with x\nEOF\n)\"", "deny"),
     ("bash -c '</dev/null terraform apply'", "deny"),
+    # code review, 2026-11-13: escapes before '#', line continuation, backticks and $'…' inside
+    # $((, process substitution inside ${…}, ')' ending a redirection target
+    ("true\\ #;terraform apply", "deny"),
+    ("echo \\ #; git push", "ask"),
+    ("echo a\\;#$(git push)", "ask"),
+    ("echo a\\\n#$(git push)", "ask"),
+    ("git pu\\\nsh --force", "deny"),
+    ("cat <<E\nE\\\n\nterraform apply\nE", "deny"),
+    ("(echo $((echo `(`) ; git push ; (true)))", "ask"),
+    ("(echo $((echo $'\\'(') ; git push ; (true)))", "ask"),
+    ("echo ${x:->(terraform apply)}", "deny"),
+    ("echo ${x:-<(git push)}", "ask"),
+    ("(echo x >~/.claude/settings.json)", "ask"),
+    ("exec -- git push", "ask"),
+    ("command -- git push --force", "deny"),
+    ("nohup -- git push", "ask"),
+    ("time -p -- git push", "ask"),
+    ("exec -la x git push", "ask"),
+    ("exec -z git push", "ask"),
+    ("exec -al x git push", "ask"),
+    ("echo >a\\", "ask"),
 ]
 
 

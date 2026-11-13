@@ -30,7 +30,7 @@ SENTINEL_RE = re.compile(f"{OPEN}\\d+{CLOSE}")
 MAX_DEPTH = 8  # nesting of substitutions before the command is refused
 SPAN_LIMIT = 60
 METACHARS = frozenset(" \t\n;&|()<>")
-WORD_START_AFTER = frozenset(" \t\n;&|()<>")
+QUOTING_MODES = ("top", "sub", "arith", "param")  # where quotes quote; not inside "…" or a body
 FD_PREFIX_RE = re.compile(r"(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
 CAT_HEREDOC_RE = re.compile(r"^\s*cat\s*$")
 
@@ -88,7 +88,8 @@ def has_sentinel(text: str) -> bool:
 class _Scanner:
     """One level of text: ``top`` (a command), ``sub`` (until its ``)``), ``dq`` (inside double
     quotes), ``heredoc`` (an unquoted body), ``arith`` (arithmetic: no here-documents, comments
-    or redirections)."""
+    or redirections), ``param`` (an unquoted ``${…}``: like ``arith``, but ``<(…)`` and ``>(…)``
+    still run)."""
 
     def __init__(self, text: str, depth: int, counter: itertools.count, mode: str, start: int = 0):
         if depth > MAX_DEPTH:
@@ -117,14 +118,12 @@ class _Scanner:
 
     def step(self) -> bool:
         """Handle the text at ``self.i``; True when this level ends."""
-        c, text, i = self.text[self.i], self.text, self.i
+        c = self.text[self.i]
         if c == "\\":
-            self.emit(text[i : i + 2])
-            self.i += 2
-            return False
-        if c == "'" and self.mode in ("top", "sub", "arith"):
+            return self.backslash()
+        if c == "'" and self.mode in QUOTING_MODES:
             return self.single_quoted()
-        if c == '"' and self.mode in ("top", "sub", "arith"):
+        if c == '"' and self.mode in QUOTING_MODES:
             return self.double_quoted()
         if c == "$":
             return self.dollar()
@@ -136,6 +135,17 @@ class _Scanner:
             return False
         return self.unquoted(c)
 
+    def backslash(self) -> bool:
+        """A backslash-newline is removed, as bash does before anything else reads the line; any
+        other escape is one piece, which never starts a word or a comment."""
+        pair = self.text[self.i : self.i + 2]
+        if len(pair) < 2:
+            raise ShellError("trailing backslash")
+        if pair != "\\\n":
+            self.emit(pair)
+        self.i += 2
+        return False
+
     def unquoted(self, c: str) -> bool:
         if c in " \t\n" or c in ";&|":
             self.end_capture()
@@ -144,11 +154,14 @@ class _Scanner:
             self.i += 1
             self.read_heredocs()
             return False
-        if c == "#" and self.at_word_start() and self.mode != "arith":
+        if c == "#" and self.at_word_start() and self.mode in ("top", "sub"):
             end = self.text.find("\n", self.i)
             self.i = len(self.text) if end < 0 else end
             return False
-        if c in "<>&" and self.mode != "arith" and self.redirection():
+        if c in "<>" and self.mode == "param" and self.text[self.i + 1 : self.i + 2] == "(":
+            self.process_substitution()
+            return False
+        if c in "<>&" and self.mode in ("top", "sub") and self.redirection():
             return False
         if c == "(":
             return self.open_paren()
@@ -166,8 +179,7 @@ class _Scanner:
         self.out.append(piece)
 
     def at_word_start(self) -> bool:
-        tail = "".join(self.out[-1:])
-        return not tail or tail[-1] in WORD_START_AFTER
+        return not self.out or ends_word(self.out[-1])
 
     def word_is(self, word: str) -> bool:
         end = self.i + len(word)
@@ -223,12 +235,11 @@ class _Scanner:
 
     def dollar(self) -> bool:
         nxt = self.text[self.i + 1 : self.i + 2]
-        if nxt == "'" and self.mode in ("top", "sub", "arith"):
+        if nxt == "'" and self.mode in QUOTING_MODES:
             return self.ansi_c()
         if nxt == "(":
-            if self.text[self.i + 2 : self.i + 3] == "(" and self.arith_end(self.i + 3) is not None:
-                return self.arithmetic(self.i + 3, self.arith_end(self.i + 3), "$((")
-            return self.substitution()
+            end = self.arith_end(self.i + 3) if self.text[self.i + 2 : self.i + 3] == "(" else None
+            return self.arithmetic(self.i + 3, end, "$((") if end is not None else self.substitution()
         if nxt == "[":
             return self.bracket_arithmetic()
         if nxt == "{":
@@ -251,7 +262,10 @@ class _Scanner:
         depth, j = 2, start
         while j < len(self.text):
             c = self.text[j]
-            if c in "'\"\\":
+            if c == "$" and self.text[j + 1 : j + 2] == "'":
+                j = skip_quoted(self.text, j + 1, escapes=True)
+                continue
+            if c in "'\"`\\":
                 j = skip_quoted(self.text, j)
                 continue
             if c == "(":
@@ -284,8 +298,7 @@ class _Scanner:
     def parameter(self) -> bool:
         """``${…}``: no comments inside; a substitution inside is a hole; ``@P`` re-expands a
         value as a prompt, which runs ``$(…)`` held in it."""
-        mode = "dq" if self.mode == "dq" else "arith"  # arith: quotes count, no comments or redirections
-        inner = self.child(mode, self.i + 2)
+        inner = self.child("dq" if self.mode == "dq" else "param", self.i + 2)
         braces = 1
         while inner.i < len(self.text):
             c = self.text[inner.i]
@@ -332,8 +345,8 @@ class _Scanner:
         return False
 
     def close_paren(self) -> bool:
+        self.end_capture()  # ``(echo x >f)``: the target ends at the paren
         if self.mode == "sub" and self.parens == 0:
-            self.end_capture()
             self.i += 1
             return True
         self.parens = max(0, self.parens - 1)  # a ``case`` pattern's ``)`` at the top level
@@ -375,7 +388,7 @@ class _Scanner:
 
     def drop_fd_prefix(self) -> None:
         word: list[str] = []
-        while self.out and self.out[-1] and self.out[-1][-1] not in WORD_START_AFTER:
+        while self.out and self.out[-1] and not ends_word(self.out[-1]):
             word.insert(0, self.out.pop())
         joined = "".join(word)
         prefix = FD_PREFIX_RE.search(joined)
@@ -427,16 +440,27 @@ class _Scanner:
         for doc in self.pending:
             lines: list[str] = []
             while self.i < len(self.text):
-                end = self.text.find("\n", self.i)
-                end = len(self.text) if end < 0 else end
-                line = self.text[self.i : end]
-                self.i = min(end + 1, len(self.text))
+                line = self.read_line(joined=not doc.quoted)
                 if (line.lstrip("\t") if doc.strip_tabs else line) == doc.delimiter:
                     break
                 lines.append(line.lstrip("\t") if doc.strip_tabs else line)
             body = "\n".join(lines) + ("\n" if lines else "")
             self.heredoc_body(doc, body)
         self.pending = []
+
+    def read_line(self, joined: bool) -> str:
+        """The next line of a here-document; with ``joined`` (an unquoted delimiter) a line ending
+        in an odd number of backslashes continues on the next one, as bash reads it."""
+        parts: list[str] = []
+        while True:
+            end = self.text.find("\n", self.i)
+            end = len(self.text) if end < 0 else end
+            line = self.text[self.i : end]
+            self.i = min(end + 1, len(self.text))
+            trailing = len(line) - len(line.rstrip("\\"))
+            if not (joined and trailing % 2 and end < len(self.text)):
+                return "".join(parts) + line
+            parts.append(line[:-1])
 
     def heredoc_body(self, doc: HereDoc, body: str) -> None:
         self.scan.heredocs.append(HereDoc(doc.delimiter, doc.quoted, doc.strip_tabs, body))
@@ -446,14 +470,23 @@ class _Scanner:
         self.adopt(self.child("heredoc", 0, body).run())
 
 
-def skip_quoted(text: str, j: int) -> int:
-    """Index after a quoted run or escape starting at ``j`` (for paren counting only)."""
+def ends_word(piece: str) -> bool:
+    """Whether an output piece ends with a blank or an operator; an escape pair (``\\ ``,
+    ``\\;``) is part of a word."""
+    escaped = len(piece) == 2 and piece[0] == "\\"
+    return bool(piece) and piece[-1] in METACHARS and not escaped
+
+
+def skip_quoted(text: str, j: int, escapes: bool | None = None) -> int:
+    """Index after a quoted run (``'``, ``"``, a backtick, or ``$'`` with ``escapes``) or an escape
+    starting at ``j``, for paren counting only, as bash's matched-pair reader skips them."""
     c = text[j]
     if c == "\\":
         return j + 2
+    escapes = c in '"`' if escapes is None else escapes
     end = j + 1
     while end < len(text) and text[end] != c:
-        end += 2 if c == '"' and text[end] == "\\" else 1
+        end += 2 if escapes and text[end] == "\\" else 1
     return end + 1
 
 

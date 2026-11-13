@@ -49,11 +49,15 @@ REASON_LIMIT = 200
 SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
 CONTROL_CHARS = frozenset("();&|")  # a token of these alone ends a segment
 WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
-# wrappers with options of their own: flags without a value, options that take one
+# wrappers and their options: flags without a value, options that take one. ``--`` ends them;
+# short flags combine (``-la x``); an option not listed leaves the wrapper opaque.
 WRAPPER_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "time": (frozenset({"-p"}), frozenset()),
-    "command": (frozenset({"-p"}), frozenset()),
-    "exec": (frozenset({"-c", "-l", "-cl", "-lc"}), frozenset({"-a"})),
+    "command": (frozenset({"-p", "-v", "-V"}), frozenset()),
+    "exec": (frozenset({"-c", "-l"}), frozenset({"-a"})),
+    "nohup": (frozenset(), frozenset()),
+    "builtin": (frozenset(), frozenset()),
+    "chronic": (frozenset({"-e", "-v"}), frozenset()),
 }
 # shell reserved words that run the command after them, at a segment head
 RESERVED_HEADS = frozenset({"!", "{", "}", "do", "then", "else", "elif", "if", "while", "until"})
@@ -383,16 +387,29 @@ def drop_wrapper(tokens: list[str]) -> list[str] | None:
     if head == "rtk" and tokens[1:2] == ["proxy"]:
         return tokens[2:]
     if head in WRAPPER_OPTIONS:
-        flags, with_value = WRAPPER_OPTIONS[head]
-        rest = tokens[1:]
-        while rest and (rest[0] in flags or rest[0] in with_value):
-            rest = rest[2:] if rest[0] in with_value else rest[1:]
-        return rest
+        return skip_wrapper_options(tokens[1:], *WRAPPER_OPTIONS[head])
     if head in WRAPPERS:
         return tokens[1:]
     if head in PREFIX_COMMANDS:
         return strip_prefix_command(tokens)
     return None
+
+
+def skip_wrapper_options(
+    rest: list[str], flags: frozenset[str], with_value: frozenset[str]
+) -> list[str] | None:
+    """The tokens after a wrapper's options, getopt style; None on an option it does not take."""
+    while rest and rest[0].startswith("-") and rest[0] != "-":
+        option = rest[0]
+        if option == "--":
+            return rest[1:]
+        letters = [f"-{letter}" for letter in option[1:]]
+        if option.startswith("--") or any(flag not in flags | with_value for flag in letters):
+            return None
+        if any(flag in with_value for flag in letters[:-1]):
+            return None  # a value option must come last in a cluster
+        rest = rest[2:] if letters[-1] in with_value else rest[1:]
+    return rest
 
 
 def strip_wrappers(tokens: list[str]) -> list[str]:
@@ -634,7 +651,8 @@ def is_opaque(plain: list[str]) -> bool:
     if not plain:
         return False
     head = plain[0]
-    if head in OPAQUE or head.startswith("$") or head == "env":  # a leftover ``env`` carries options
+    if head in OPAQUE or head.startswith("$") or head == "env" or head in WRAPPER_OPTIONS:
+        # a leftover ``env`` or wrapper carries options the gate does not read
         return True
     if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
         sub = plain[1] if len(plain) > 1 else ""
@@ -1354,6 +1372,27 @@ def judge_words(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
     return verdict, matched
 
 
+def never_anyway(forms: list[str], bash_rules: list[Rule]) -> list[Rule]:
+    """``never`` rows that match with each hole read as one unknown character."""
+    unknown = [shell.SENTINEL_RE.sub(UNKNOWN_CHAR, form) for form in forms]
+    return [
+        r
+        for r in bash_rules
+        if r.decision == "never" and any(fnmatch.fnmatchcase(f, r.pattern) for f in unknown)
+    ]
+
+
+def could_match(
+    decision: str, forms: list[str], bash_rules: list[Rule], span: str
+) -> tuple[Verdict, list[Rule]] | None:
+    """An ask naming the first ``decision`` row some text in the holes could make match."""
+    found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in forms)]
+    if not found:
+        return None
+    note = f"substitution '{span}' could match {found[0].text()} ({found[0].layer} layer)"
+    return Verdict(ASK, None, note), found
+
+
 def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
     """A segment with a hole: never matching anyway → deny; structural → ask; never viable → ask;
     an owner allow covering every value → silence; ask viable → ask; else silence."""
@@ -1361,12 +1400,7 @@ def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
     if not plain:  # ``for x in $(…)``: data
         return judge_words(segment, bash_rules, holes)
     forms = candidates(segment)
-    unknown = [shell.SENTINEL_RE.sub(UNKNOWN_CHAR, form) for form in forms]
-    nevers = [
-        r
-        for r in bash_rules
-        if r.decision == "never" and any(fnmatch.fnmatchcase(f, r.pattern) for f in unknown)
-    ]
+    nevers = never_anyway(forms, bash_rules)
     if nevers:
         return Verdict(DENY, nevers[0]), nevers
     key = structural_key(segment, plain, holes)
@@ -1374,18 +1408,13 @@ def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
         return Verdict(ASK, None, f"substitution '{holes[key].span}' decides what runs"), []
     tested = forms[-1:] if plain[0] == "gcloud" else forms
     span = holes[hole_keys(segment)[0]].span
-    for decision in ("never", "allow", "ask"):
-        if decision == "allow":
-            covering = [r for r in bash_rules if allow_counts(r) and not r.agent and covers(r, forms[-1])]
-            if covering:
-                return Verdict(None, None, "allow rule"), covering
-            continue
-        found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in tested)]
-        if found:
-            rule = found[0]
-            note = f"substitution '{span}' could match {rule.text()} ({rule.layer} layer)"
-            return Verdict(ASK, None, note), found
-    return Verdict(None, None, "no rule matched"), []
+    never = could_match("never", tested, bash_rules, span)
+    if never:
+        return never
+    covering = [r for r in bash_rules if allow_counts(r) and not r.agent and covers(r, forms[-1])]
+    if covering:
+        return Verdict(None, None, "allow rule"), covering
+    return could_match("ask", tested, bash_rules, span) or (Verdict(None, None, "no rule matched"), [])
 
 
 def known_values(segment: list[str], holes: dict) -> list[str] | None:
@@ -1452,7 +1481,7 @@ def judge_bash(
     paths: list[str] = []
     entries: list[tuple[list[str], str, shell.Scan]] = []
     for unit, origin in scan_units(scanned):
-        paths.extend(word for target in unit.targets for word in shlex.split(target))
+        paths.extend(word for target in unit.targets for word in shlex.split(target))  # scanned: balanced
         for segment, via in expand_segments(split_segments(unit.outer), cwd, paths=paths):
             entries.append((segment, via or origin, unit))
     best = Verdict(None, None, "no rule matched")

@@ -168,7 +168,12 @@ eval exit code 2 for partial runs.
   `bubblewrap` and `socat` (`apt install bubblewrap socat`), otherwise every run is refused with
   "sandbox required but unavailable" and scores as failed at zero cost. Cases that only need
   `Write`/`Edit` run without it. The `gate-asks` case therefore needs the backend on the machine
-  that runs it (CI's ubuntu runner has to install it too).
+  that runs it (CI's ubuntu runner has to install it too). On Ubuntu runners the backend alone
+  is not enough: `kernel.apparmor_restrict_unprivileged_userns=1` leaves the sandbox's nested
+  user namespace without the capability to write `/proc/self/setgroups`, so every Bash call fails
+  with `apply-seccomp: … caller must provide CAP_SYS_ADMIN` while Read, Write and Edit work
+  (2.1.322, run 43389854358). `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`
+  before the eval lifts it; Claude Code's own error text suggests the same.
 - The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
   --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
   held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`

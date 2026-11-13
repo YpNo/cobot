@@ -224,6 +224,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The CI eval job ran no Bash command at all: Ubuntu runners restrict unprivileged user
+  namespaces through AppArmor, so the sandbox Claude Code puts around Bash failed on every call
+  and every case that needs a shell scored on what it could do without one (run 43389854358:
+  zero successful Bash calls in 114 sessions). The job lifts the restriction before the eval;
+  the runner is discarded afterwards.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

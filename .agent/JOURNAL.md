@@ -435,3 +435,11 @@ Why: spec gate-findings A, redirection writes.
 Proof: pytest with coverage exit 0 (98.58 %); ruff check and format exit 0.
 Next: T03 readings past global options.
 verified: 00d4c30 · pytest+cov, ruff
+
+## 2026-11-13 — gate-findings T03: readings past global options
+
+Changed: cobot-rules (GLOBAL_OPTIONS cargo, uv, pnpm, npm; TOOLCHAIN_PROXIES; strip_global_options drops cargo's +toolchain; option_word, readings, canonical; candidates keeps the written form first and the canonical last; is_opaque reads every reading through opaque_as_read; inner_rustup in WRAPPER_PARSERS); tests: FINDINGS_CLOSED and FINDINGS_SILENT rows for readings, runners behind options, rustup run.
+Why: spec gate-findings B (F-24). Found while building: a runner verb behind an option was invisible too (uv -q run cargo publish, pnpm -C x exec cargo publish, npm --prefix x test silent); folded as the opaque check over readings, so those ask.
+Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0; cobot-rules check on 17 common commands (git --no-pager log, kubectl -n x get pods, uv run pytest, cargo +stable clippy, npm -g ls …) unchanged, silent.
+Next: T04 agent read guards.
+verified: c55624f · pytest+cov, ruff, cobot-rules check

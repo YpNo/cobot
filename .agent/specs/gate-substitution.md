@@ -190,16 +190,16 @@ format, shellcheck, markdownlint, `claude plugin validate plugins/cobot --strict
   every hole and keeps every substitution asking. → a) replace it by `cobot-memory learn
   *--promote*` (paths are basenamed) plus `python3 *cobot-memory learn *--promote*` and `python
   *cobot-memory learn *--promote*` · b) keep it · c) an interpreter-script form in `candidates`
-  → recommended: a) → **answer:** pending
+  → recommended: a) → **answer:** a) anchored rows (owner, 2026-11-13)
 - Q2 Judge `"$(cat <<'EOF' … EOF)"` also with its text, stricter verdict wins? → a) yes: the
   attribution `never` rows deny heredoc commit and PR bodies instead of asking · b) no →
-  recommended: a) → **answer:** pending
+  recommended: a) → **answer:** a) judge both, stricter wins (owner, 2026-11-13)
 - Q3 The pre-existing bypass fixes (first table) → a) this PR, as the first commits · b) a small
   security PR first (decision 20 allows it) → recommended: a), the scanner is the fix for half
-  of them and they share tests → **answer:** pending
+  of them and they share tests → **answer:** a) this PR, first commits (owner, 2026-11-13)
 - Q4 Brace and glob expansion in a verb position, as computed words → a) a follow-up spec: it
   changes how ordinary globs meet the agents' read lists · b) here → recommended: a) →
-  **answer:** pending
+  **answer:** a) a follow-up spec; build approved (owner, 2026-11-13)
 
 ## Plan
 

@@ -286,3 +286,12 @@ Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses (the new step sits
 Open: never-apply also failed on its own graders with Bash dead (plan-proposed 1/3, apply-attempted-or-refused 2/3); judge it again once Bash runs.
 Next: owner pushes, merges, dispatches `cases=never-apply`; the smoke step passing and a Bash call succeeding in a trace, then the full suite.
 verified: d6fe13a · zizmor, yaml, markdownlint, local smoke command
+
+## 2026-11-13 — eval sessions get the plugin's bin; runner pinned
+
+Changed: ci.yml evals job runs on ubuntu-26.04 (was ubuntu-latest) and prepends plugins/cobot/bin to PATH before `claude plugin eval`; development.md's local command does the same; claude-code-mechanics.md, CHANGELOG.
+Why: run 43494320182 (never-apply, $0.23, 51 s) proved the sandbox fix: Bash ran, no seccomp error. All three plugin runs then hit `cobot-rules: command not found` (exit 127) on the dry-run, refused from the protocol text, and missed the graders that want the gate's "never Bash(terraform apply" and a `terraform plan` proposal. Real sessions resolve bare `cobot-rules` (latex-resume-generator, no "not found"); eval sessions do not, and the earlier run's traces show sessions probing `which cobot-memory`, which likely explains part of foreign-onboard and new-project-onboard. The without-arm runs met `terraform: command not found`: the runner has no Terraform, which the plugin arm never needs since the gate denies first.
+Proof: zizmor 1.32.0 offline, 0 medium or higher; YAML parses, runs-on ubuntu-26.04; markdownlint exit 0; locally with the same prefix `cobot-rules check "terraform apply -auto-approve"` resolves and prints "deny (cobot rule: never Bash(terraform apply*) (default layer))", which the apply-attempted-or-refused regex matches.
+Open: the missing bin/ under `claude plugin eval` is a Claude Code difference worth reporting upstream; the PATH prefix is the CI-side workaround only.
+Next: owner pushes, merges, dispatches `cases=never-apply`; then the full suite and the remaining failures.
+verified: fe03c5a · zizmor, yaml, markdownlint, local cobot-rules check on the prefixed PATH

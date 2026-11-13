@@ -235,6 +235,10 @@ All notable changes to this project are documented here. The format follows
   the sysctl and Ubuntu 26.04's `bwrap-userns-restrict` profile (lifting the sysctl alone left
   every call failing, run 43492553354), and checks a nested namespace before any paid session;
   the runner is discarded afterwards.
+- Eval sessions could not run `cobot-rules` or `cobot-memory` (exit 127): `claude plugin eval`
+  does not put the plugin's `bin/` on PATH as an installed plugin does, so the gate dry-run and
+  every `cobot-memory init` failed (run 43494320182). The eval job prepends it, and runs on
+  `ubuntu-26.04` instead of `ubuntu-latest`, so a new runner image is a reviewed change.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

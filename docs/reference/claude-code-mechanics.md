@@ -177,6 +177,11 @@ eval exit code 2 for partial runs.
   (2.1.322; run 43389854358 with both, run 43492553354 with the sysctl lifted only). The eval job
   sets the sysctl to 0, unloads the profile, then checks with
   `bwrap --unshare-user --dev-bind / / unshare --user --map-root-user true`.
+- `claude plugin eval` does not put the plugin's `bin/` on the session's PATH, unlike an
+  installed plugin: bare `cobot-rules` and `cobot-memory` exit 127 in eval sessions (2.1.322,
+  run 43494320182) while they resolve in an interactive session. The child inherits `PATH`, so
+  the eval job prepends `plugins/cobot/bin` before `claude plugin eval`; a local run needs the
+  same.
 - The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
   --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
   held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`

@@ -169,11 +169,14 @@ eval exit code 2 for partial runs.
   "sandbox required but unavailable" and scores as failed at zero cost. Cases that only need
   `Write`/`Edit` run without it. The `gate-asks` case therefore needs the backend on the machine
   that runs it (CI's ubuntu runner has to install it too). On Ubuntu runners the backend alone
-  is not enough: `kernel.apparmor_restrict_unprivileged_userns=1` leaves the sandbox's nested
-  user namespace without the capability to write `/proc/self/setgroups`, so every Bash call fails
-  with `apply-seccomp: … caller must provide CAP_SYS_ADMIN` while Read, Write and Edit work
-  (2.1.322, run 43389854358). `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`
-  before the eval lifts it; Claude Code's own error text suggests the same.
+  is not enough: AppArmor blocks the sandbox's nested user namespace twice, through
+  `kernel.apparmor_restrict_unprivileged_userns=1` and through the `bwrap-userns-restrict`
+  profile (shipped in Ubuntu 26.04's `apparmor`), which strips every capability from bwrap's
+  children whatever the sysctl says. Every Bash call then fails with `apply-seccomp: write
+  /proc/self/setgroups … caller must provide CAP_SYS_ADMIN` while Read, Write and Edit work
+  (2.1.322; run 43389854358 with both, run 43492553354 with the sysctl lifted only). The eval job
+  sets the sysctl to 0, unloads the profile, then checks with
+  `bwrap --unshare-user --dev-bind / / unshare --user --map-root-user true`.
 - The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
   --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
   held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`

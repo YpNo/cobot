@@ -44,7 +44,7 @@ cd plugins/cobot && claude plugin eval . --trust-plugin --scaffold --allow-tools
 
 A case's `allowed_tools` only lists what it may use; `Bash`, `Write` and `Edit` must also be
 granted on the command line, and `Bash` needs the sandbox backend (`bubblewrap` and `socat` on
-Linux). `--scaffold` runs each case's `fixture.sh` to seed the workspace; the default two-arm run
+Linux; on Ubuntu also `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`). `--scaffold` runs each case's `fixture.sh` to seed the workspace; the default two-arm run
 scores the plugin against a no-plugin baseline, `--ablation none` runs one arm, `--runs 1` and
 `--case <glob>` keep a check cheap.
 

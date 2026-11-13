@@ -43,7 +43,7 @@ def bodies(scan: sh.Scan) -> list[str]:
         ('echo "a \\$(b) \\`c\\`"', 'echo "a \\$(b) \\`c\\`"'),
         ("echo \\$(b)", "echo \\$(b)"),
         ("ls # don't", "ls"),
-        ("echo a#b $# ${#x} ${x:- #}", "echo a#b $# ${#x} ${x:- #}"),
+        ("echo a#b $# ${#x} ${!x} ${x[0]}", "echo a#b $# ${#x} ${!x} ${x[0]}"),
         ("nix develop .#dev -c cargo test", "nix develop .#dev -c cargo test"),
     ],
 )
@@ -362,7 +362,7 @@ def words(command: str) -> list[str]:
         ('p "{a,b}" \\{a,b} {a\\,b} {"a b",c}', ["p", "{a,b}", "{a,b}", "{a,b}", "a b", "c"]),
         (
             "p {} {a} {a,b {a..} stash@{0} ${x:-{a,b}}",
-            ["p", "{}", "{a}", "{a,b", "{a..}", "stash@{0}", "${x:-{a,b}}"],
+            ["p", "{}", "{a}", "{a,b", "{a..}", "stash@{0}", "<substitution:${x:-{a,b}}>"],
         ),
         ("p {~,x}/a {$,}x", ["p", "~/a", "x/a", "$x", "x"]),
         ("p {a,b", ["p", "{a,b"]),
@@ -457,3 +457,76 @@ def test_scan_sentinelNotIssued_isAnError():
     assert sh.scan(f"ls {key}").error == "reserved character in the command"
     assert sh.scan(f"ls {key}", frozenset({"9"})).error == "reserved character in the command"
     assert sh.scan("ls ", frozenset({key})).error == "reserved character in the command"
+
+
+# ---------------------------------------------------------------- parameter operators, locale strings
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["echo ${x}", "echo ${#x}", "echo ${!x}", "echo ${x[0]}", "echo ${#x[@]}", "echo ${#} ${?} ${10}"]
+    + ['echo "${x}"'],
+)
+def test_scan_plainParameter_staysText(command):
+    assert not sh.scan(command).holes
+
+
+@pytest.mark.parametrize(
+    ("command", "span", "quoted"),
+    [
+        ("kubectl get pods ${x:---kubeconfig=./evil}", "${x:---kubeconfig=./evil}", False),
+        ("find ${x:-*}", "${x:-*}", False),
+        ('cargo "${x:-publish}"', "${x:-publish}", True),
+        ("echo ${x#*} ", "${x#*}", False),
+        ("echo ${x@Q}", "${x@Q}", False),
+        ("echo ${x:0:2}", "${x:0:2}", False),
+        ("echo ${x/a/b}", "${x/a/b}", False),
+        ("echo ${!x*}", "${!x*}", False),
+    ],
+)
+def test_scan_parameterWithAnOperator_isAnUnknownHole(command, span, quoted):
+    (hole,) = sh.scan(command).holes.values()
+    assert (hole.span, hole.quoted, hole.body, hole.value) == (span, quoted, None, None)
+
+
+def test_scan_parameterOperatorWord_keepsItsSubstitutions_andHashIsNoComment():
+    result = sh.scan("echo ${x:- #$(git push)} ok")
+    assert bodies(result) == ["git push"] and plain(result.outer).endswith("ok")
+    assert [h.kind for h in result.holes.values()] == ["substitution", "substitution"]
+
+
+def test_scan_subscriptWithASubstitution_staysPlainAndRunsIt():
+    result = sh.scan("echo ${a[$(id)]}")
+    assert bodies(result) == ["id"] and "${a[" in result.outer
+
+
+@pytest.mark.parametrize(
+    ("command", "value"),
+    [
+        ('cargo $"publish"', "publish"),
+        ('git push $"--force"', "--force"),
+        ('echo $"a b"', "a b"),
+        ('echo $"$HOME"', None),
+        ('echo $"a\\b"', None),
+    ],
+)
+def test_scan_localeString_isAQuotedHoleWithItsUntranslatedValue(command, value):
+    (hole,) = sh.scan(command).holes.values()
+    assert hole.quoted and hole.body is None and hole.value == value
+
+
+def test_scan_localeString_runsItsSubstitutions():
+    result = sh.scan('echo $"x $(git push)"')
+    assert bodies(result) == ["git push"]
+
+
+@pytest.mark.parametrize("command", ['echo "$"', 'echo "a$"b', 'cat <<E\n$"x"\nE'])
+def test_scan_dollarQuoteInsideDoubleQuotesOrHereDocument_isLiteral(command):
+    assert not [h for h in sh.scan(command).holes.values() if h.span.startswith('$"')]
+
+
+def test_scan_localeStringInABraceAlternative_isScannedAsOne():
+    result = sh.scan('terraform {$"apply",}')
+    words = sh.expand_braces(shlex.split(result.outer))
+    (locale,) = [h for h in result.holes.values() if h.span.startswith('$"')]
+    assert locale.value == "apply" and words == ["terraform", locale.key]

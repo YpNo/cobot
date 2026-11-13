@@ -2702,3 +2702,45 @@ def test_judgeBash_makeRecipeTargetWithABrace_asks(rules, tmp_path):
 def test_scan_unclosedPieceInsideABrace_isAnError(rules):
     assert rules.shell.scan("p {a,'b}").error is not None
     assert rules.shell.scan('p {a,"$(echo "x)"}').error is not None
+
+
+# ---------------------------------------------------------------- gate findings F-21 to F-24 (gate-findings)
+
+# main-thread rows, run under bash by the differential test too
+FINDINGS_CLOSED = [
+    # F-22: an operator word in ${…} is text bash expands
+    ("cargo ${x:-publish}", "ask"),
+    ('cargo "${x:-publish}"', "ask"),
+    ("terraform ${x:+apply}", "ask"),
+    # F-23: a locale string is its untranslated text, or anything
+    ('cargo $"publish"', "deny"),
+    ('terraform {$"apply",}', "deny"),
+    ('git push $"--force"', "deny"),
+    ('cargo pub$"lish"', "deny"),
+    ('cat(){ :; }; cargo $"publish"', "ask"),
+]
+FINDINGS_SILENT = [
+    'echo "${x:-default}"',
+    'cd "${dir:-.}"',
+    "ls ${HOME}",
+    'echo $"hello"',
+    'echo "${#x}"',
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), FINDINGS_CLOSED)
+def test_decide_findingsClosed_judgedByWhatBashRuns(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+@pytest.mark.parametrize("command", FINDINGS_SILENT)
+def test_decide_findingsSilent_stayOrdinary(rules, command):
+    assert decide(rules, command)[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    "command", ["kubectl get pods ${x:---kubeconfig=./evil}", "find ${x:-*}", 'cat "${x:-/etc/passwd}"']
+)
+@pytest.mark.parametrize("agent", ["cobot:consultant", "cobot:learner"])
+def test_decide_parameterOperatorUnderAnAgent_asks(rules, command, agent):
+    assert decide(rules, command, agent=agent)[0].decision == "ask", command

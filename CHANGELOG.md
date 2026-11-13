@@ -224,6 +224,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Consultants could audit cobot instead of the owner's repository: the consult brief (reused by
+  spec and wrap) named the plugin root but not the repository, and in the eval run the
+  consultants read the plugin's checkout around it. The brief now names the repository's absolute
+  path and the consultant audits it only.
 - The CI eval job ran no Bash command at all: Ubuntu runners restrict unprivileged user
   namespaces through AppArmor, so the sandbox Claude Code puts around Bash failed on every call
   and every case that needs a shell scored on what it could do without one (run 43389854358:

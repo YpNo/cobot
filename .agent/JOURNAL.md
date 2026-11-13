@@ -362,3 +362,60 @@ Proof: pytest with coverage exit 0 (1419 passed, 98.51 %, after the rebase onto 
 Open: the review also found, outside this change, that a substitution in an assignment prefix silenced a runner (fixed on feat/gate-substitution in 632b072; this branch is rebased onto it and keeps that expansion condition); a package manager's directory option is silent (`npm --prefix sub run x`, `pnpm -C sub x`, `yarn --cwd sub x`, `uv --directory sub run x`); the protected-file check resolves relative paths from cwd and ignores cd too; entry wrappers into containers expand runners from host files. markdownlint-cli2 is not installed here.
 Next: owner reviews the branch security/gate-cd-runner (on feat/gate-substitution c95ad49).
 verified: 1619086 · pytest+cov, ruff, check-plugin, cd oracle
+
+## 2026-11-13 — gate-expansion T01: the scanner reads braces and globs
+
+Changed: _cobot_shell.py (brace holes with alternatives and exact sequences, expand_braces, MAX_BRACE_WORDS, glob holes for *, ? and bracket spans to the last ] before /, extended-glob, brace-and-bracket and bracket-code errors, special parameters, REGISTRY with one key counter, join, scan(text, issued)); tests/test_cobot_shell.py rows and a counter-reset fixture.
+Why: spec gate-expansion revision 3, owner Q1 (braces exact). Build-time catch: a double-quoted $(…) inside a bracket span would have hidden in the glob; the span text is now checked for code whatever its quoting.
+Proof: pytest tests/test_cobot_shell.py exit 0, module 99 % (one defensive line); full suite exit 0; ruff check and format exit 0.
+Next: T02 judging on brace words and glob holes.
+verified: 6fbb468 · pytest (scanner, full suite), ruff
+
+## 2026-11-13 — gate-expansion T02: judging brace words and glob holes
+
+Changed: cobot-rules (shell_items expands braces per segment, targets too; holes from shell.REGISTRY; hole_noun reasons; anchored, anchored_glob, agent_globs and the anchor reason in judge_holed; API-zone exception in structural_key; is_assignment for NAME[…]= in prefix_key; path_glob with SEGMENT_STAR, ** crossing, case folding and the ] widening in globs_meet; all_holes removed); tests: judged, silent, reason, agent, protected and globs_meet rows.
+Why: spec gate-expansion revision 3, owner Q2 (anchor reason).
+Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0; cobot-rules check on every Goal row gives the spec's verdict.
+Next: T03 runner expansion through glob holes.
+verified: 0412fc5 · pytest+cov, ruff, cobot-rules check
+
+## 2026-11-13 — gate-expansion T03: runner expansion through glob holes
+
+Changed: cobot-rules (command_parts with issued keys and EXPANSION_KINDS; argv_runner, GLOB_ARGV_RUNNERS, globs_reach_inner in expand_segment; argv expanders build with shell.join, name-resolved and code-string ones keep shlex.join, so a stray sentinel is refused; expansion origins show hole spans); tests: runner rows against a Makefile and package.json fixture, planted-sentinel row.
+Why: spec gate-expansion revision 3. Build-time decision: npm exec and toolbox run are not argv runners (npm reads flags after the command, challenger pass 2; toolbox's flag parsing unverified): a glob there asks.
+Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0.
+Next: T04 differential rows, the extglob and agent passes.
+verified: ddd1f69 · pytest+cov, ruff
+
+## 2026-11-13 — gate-expansion T04: differential rows
+
+Changed: tests/test_gate_differential.py (EXPANSION_CORPUS, EXTGLOB_CORPUS, AGENT_CORPUS with files made first, oracle helper, ran() options, stubs cargo cp mkdir npm rm uv, stub log beside the directory, a test that bash really runs each covered bypass); scope note names the unit-only cases.
+Why: spec gate-expansion story 6. Found while proving the rows can fail: the stub log inside the directory joined every * and moved uv run's words, so the guard's row passed with the guard removed.
+Proof: pytest with coverage exit 0 (98.60 %); mutations (no inner-word check, no extglob error, agent anchoring off) each fail their rows; ruff exit 0.
+Next: T05 agent prompts, T06 docs.
+verified: a4de1bf · pytest+cov, differential mutations, ruff
+
+## 2026-11-13 — gate-expansion T05: agents anchor their globs
+
+Changed: agents/consultant.md and agents/learner.md, one line each on anchoring globs.
+Why: owner answer Q2 a).
+Proof: python3 -I scripts/check-plugin.py exit 0 (agents listing about 523 tokens); claude plugin validate plugins/cobot --strict exit 0.
+Next: T06 docs and CHANGELOG.
+verified: f8cac97 · check-plugin, plugin validate
+
+## 2026-11-13 — gate-expansion T06: docs and changelog
+
+Changed: CHANGELOG Unreleased Security (brace and glob bullet; the follow-up note removed), docs/architecture.md (soundness target with globs, anchored agent globs), docs/configuration.md (braces and globs, known asks), docs/02-design.md §6 (expansion bullet), spec converge.
+Why: spec gate-expansion T06.
+Proof: pytest with coverage exit 0 (98.60 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0 (117 files); claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: independent bypass review (owner's condition), fold, verified commands again.
+verified: af6f0fd · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-13 — gate-expansion: bypass review folds
+
+Changed: _cobot_shell.py (skip_piece, skip_double_quoted, skip_nested; unclosed pieces in braces and brackets are errors); cobot-rules (target_words for runner-body and command targets; GLOB_CODE_HEADS and GLOB_CODE_WITH_V in structural_key, unset in QUOTED_CODE_HEADS; fold for unquoted substitutions in path_glob; -X=METHOD in canonical_gh_api and no API exemption for anchored -flags; globstar tokens in protected_file_touched; array_assignments and closing_paren in shell_items); docs/configuration.md known asks, CHANGELOG, spec converge; tests: review rows, recipe and script targets, unclosed pieces; findings F-23, F-24.
+Why: owner's condition: an independent code-reviewer pass aimed at bypasses (bash 5.2.37 probes, 60 000 fuzzed commands, no crash). Three BLOCKERs, one MAJOR, three MINORs, all folded.
+Proof: pytest with coverage exit 0 (98.59 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Open: F-21 to F-24 (pre-existing gate gaps the reviews surfaced).
+Next: owner reviews feat/gate-expansion; nothing pushed.
+verified: f6daef2 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

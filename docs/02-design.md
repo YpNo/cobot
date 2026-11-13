@@ -198,6 +198,14 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   `$(…)` under an assignment or an evaluating builtin (`printf -v`, `test`, `declare`, `read`)
   asks; anything the scanner does not model (an unbalanced quote, `case` inside a substitution,
   `${…@P}`) asks (.agent/specs/gate-substitution.md);
+- expands **braces** as bash does, after splitting (`cargo {publish,}` is judged as `cargo
+  publish`, capped at 256 words), and reads each unquoted `*`, `?` and bracket expression as a
+  **glob hole**, zero or more file names, judged like a split substitution; a glob reaching a
+  protected path asks (its star stops at `/`, `**` aside, without case); under an agent scope
+  only an anchored glob (`src/*`, `./*.py`) counts for the read list; an argv runner (`uv run`,
+  `docker exec`, `nix develop -c`, …) is looked through a glob only when the glob is a word of
+  the inner command; extended globs and words mixing braces and brackets ask
+  (.agent/specs/gate-expansion.md);
 - resolves **mise tasks** before judging: `mise run <task>`, the `mise <task>` shorthand and
   `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
   first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a

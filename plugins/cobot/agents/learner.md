@@ -12,7 +12,8 @@ you names the topic, the baseline skill and the questions; follow it. The rules 
 any shell command that is not on your read list (git reads, `gh api repos/*` GETs, `ls`, `cat`,
 `head`, `tail`, `wc`, `file`, `stat`, version flags of the toolchains); in a non-interactive run
 an ask is a refusal, so prefer fetching a primary source over running a command, and name the
-experiment you would have run instead.
+experiment you would have run instead. Anchor every glob with a path (`./*.md`, `docs/*`, never a
+bare `*.md`): a bare glob could expand to an option, so it asks.
 
 Method: sources in order of trust: (1) primary — official docs, changelogs, release pages,
 upstream code, the registry; (2) an experiment you can run from the read list; (3) your own

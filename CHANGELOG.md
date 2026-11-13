@@ -330,8 +330,26 @@ All notable changes to this project are documented here. The format follows
   at a segment head (`!`, `{`, `do`, `then`, `else`, `function f {`, `coproc`), wrapper options
   (`time -p`, `command -p`, `exec -a`, `rtk proxy`, `--` and combined flags such as
   `exec -la x`; an option the gate does not know leaves the wrapper opaque), a backslash-newline
-  inside a word (`git pu\` ⏎ `sh --force`), and `trap '…'` (now opaque). Brace and glob
-  expansion in a verb position (`cargo {publish,}`) is still silent and has its own follow-up.
+  inside a word (`git pu\` ⏎ `sh --force`), and `trap '…'` (now opaque).
+- Brace and glob expansion is judged by what bash runs (`.agent/specs/gate-expansion.md`); silent
+  before: `cargo {publish,}`, `{terraform,} apply` and `git push origin {main,--force}` are
+  denied (braces are expanded exactly, up to 256 words, as bash does); `cargo publis?` or
+  `cargo publi[s]h` with a file named `publish` asks (a glob in the command word or verb zone is
+  a hole, like a substitution); `cat ~/.claude/settings.js?`, its bracket, `**` and upper-case
+  forms ask as protected files; `uv run --with * publish`, which runs `cargo publish` when files
+  `aa` and `cargo` exist, asks. Extended globs (`+(…)`, `!(…)`), a word mixing braces and
+  brackets and code inside a bracket ask as unparseable. Under the consultant and learner, a
+  glob counts for their read lists only when anchored (`ls plugins/*/agents`, `src/*`,
+  `--include=*.py`); a bare one (`ls *.py`, `find *`, `git log *`) asks, since a file named `-c`
+  or `-delete` would become an option, and the reason says to write `./*.py`; both agent prompts
+  say so. `ls *.py`, `git add src/*`, `mkdir -p src/{a,b}`, `gh api …?state=all`, `uv run pytest
+  tests/test_*.py`, `files=(*.py)` and npm scripts holding globs stay silent; a glob in an
+  interpreter's, a name-resolved runner's (`npm test -- src/*`, `make show X=*`) or `npm exec`'s
+  argv asks, and so does one after a builtin that evaluates names (`let x=*`, `unset *`,
+  `printf -v *`: a file named `a[$(…)]` would run). An independent review also closed, in the
+  same paths: a runner body's redirection target with quotes or braces (`bash -c 'echo x >
+  {~/.claude/settings.json,}'`), a brace whose `$'…'` or nested quote looked unclosed and was
+  read as literal, `gh api … -X=DELETE` (now read as `-X DELETE`), and `unset 'a[$(id)]'`.
   A substitution only in a leading assignment no longer hides the command after it
   (`x=$(true) bash -c 'git push --force'` is denied, `x=$(true) make deploy` resolves the
   target).

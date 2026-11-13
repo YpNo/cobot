@@ -2445,3 +2445,260 @@ def test_judgeBash_ownerAllowOnAHoleFreeCanonicalForm_covers(rules, layers):
     assert decide(rules, command)[0].decision == "ask"
     owner.write_text("allow Bash(gh pr create*)\n")
     assert decide(rules, command)[0].decision is None
+
+
+# ---------------------------------------------------------------- brace and glob expansion (gate-expansion)
+
+EXPANSION_JUDGED = [
+    # braces: bash's words, judged exactly
+    ("cargo {publish,}", "deny"),
+    ("terraform {apply,}", "deny"),
+    ("{terraform,} apply", "deny"),
+    ("git push origin {main,--force}", "deny"),
+    ("git {push,} --force", "deny"),
+    ("{git,echo} push", None),  # bash runs ``git echo push``
+    ("git pu{sh,ll}", "ask"),
+    # globs in the command word or verb zone
+    ("cargo publis?", "ask"),
+    ("cargo publi[s]h", "ask"),
+    ("terraform appl*", "ask"),
+    ("*", "ask"),
+    ("/usr/*/git push", "ask"),
+    ("/usr/bin/carg? publish", "ask"),
+    ("bash scripts/*.sh", "ask"),
+    ("python3 *.py", "ask"),
+    # outside the model: asks as unparseable
+    ("cargo +(publish)", "ask"),
+    ("!(zzz) apply", "ask"),
+    ("cargo publi{[,x}s{],y}h", "ask"),
+    ("echo {1..300}", "ask"),
+    # the tail: a rule that could match
+    ("git push origin *", "ask"),
+    ("terraform apply *", "deny"),
+    ("rm -rf build/*", "ask"),
+]
+
+EXPANSION_SILENT = [
+    "ls *.py",
+    "git add src/*",
+    "find . -name '*.py'",
+    "mkdir -p src/{a,b}",
+    "cp f{,.bak}",
+    "echo {1..3}",
+    "gh api repos/o/r/pulls?state=all",
+    "echo [WARN]",
+    'for f in *.md; do wc -l "$f"; done',
+    "[[ $x == *y* ]]",
+    "git stash show stash@{0}",
+    "cp -r assets/* dist/",
+    "arr[0]=1 ls",
+    "X=* git status",
+    "rm build/*.o",
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), EXPANSION_JUDGED)
+def test_decide_braceAndGlob_judgedByWhatBashRuns(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+@pytest.mark.parametrize("command", EXPANSION_SILENT)
+def test_decide_ordinaryBraceAndGlob_isSilent(rules, command):
+    assert decide(rules, command)[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    ("command", "reason"),
+    [
+        ("cargo publis?", "cobot gate: glob '?' decides what runs"),
+        (
+            "git push origin *",
+            "cobot gate: glob '*' could match never Bash(git push * --force*) (default layer)",
+        ),
+        ("cargo +(publish)", "cobot gate: unparseable command (extended glob)"),
+        ("echo {1..300}", "cobot gate: unparseable command (brace expansion too large)"),
+    ],
+)
+def test_judgeBash_globReason_namesTheGlob(rules, command, reason):
+    assert decide(rules, command)[0].reason() == reason
+
+
+AGENT_GLOBS = [
+    ("ls plugins/*/agents", None),
+    ("cat src/{a,b}.rs", None),
+    ("ls {src,tests}", None),
+    ("grep -rn x --include=*.py .", None),
+    ("gh api repos/o/r/pulls?state=all", None),
+    ("ls ./*.py", None),
+    ("cat ~/notes/*.md", None),
+    ("ls *.py", "ask"),
+    ("find *", "ask"),
+    ("git log *", "ask"),
+    ("ls $x*", "ask"),
+    ("ls -l*", "ask"),
+    ("ls $(echo x)", "ask"),
+    ("kubectl get --kubeconfig=* pods", "ask"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), AGENT_GLOBS)
+@pytest.mark.parametrize("agent", ["cobot:consultant", "cobot:learner"])
+def test_decide_agentReadList_countsAnchoredGlobsOnly(rules, command, expected, agent):
+    assert decide(rules, command, agent=agent)[0].decision == expected, command
+
+
+def test_judgeBash_unanchoredGlobUnderAnAgent_saysHowToAnchor(rules):
+    verdict = decide(rules, "ls *.py", agent="cobot:consultant")[0]
+    assert verdict.reason() == "cobot gate: glob '*.py' could expand to an option; anchor it: ./*.py"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat ~/.claude/settings.js?",
+        "echo x > ~/.claude/settings.js?",
+        "cp x ~/.claude/{settings.json,y}",
+        "cat ~/.claude/settings.[]j]son",
+        "cat ~/.claude/settings.j[[:alpha:]]on",
+        "cat ~/.[c]laude/settings.jso[n]",
+        "cat ~/**",
+        "cat ~/.claude/SETTINGS.JSO?",
+        "cat ~/.claude/settings.$(printf '[j')]son",
+        "ls ~/.claude/*",
+    ],
+)
+def test_judgeBash_globReachingAProtectedFile_asks(rules, command):
+    verdict = decide(rules, command)[0]
+    assert verdict.decision == "ask" and "protected file" in verdict.reason(), command
+
+
+def test_globsMeet_segmentStarStopsAtASlash(rules):
+    star = rules.SEGMENT_STAR
+    assert rules.globs_meet(f"/r/src/{star}", "*/.claude/settings*.json") is False
+    assert rules.globs_meet(f"/h/.claude/settings.js{star}", "*/.claude/settings*.json") is True
+
+    def token(text):
+        return shlex.split(rules.shell.scan(text).outer)[0]
+
+    assert rules.path_glob(token("~/**"))[0] == "~/*"
+    assert rules.path_glob(token("a/*/b?")) == (f"a/{star}/b{star}", True)
+    assert rules.path_glob(token("a/$(x)]b/c")) == ("a/*b/c", True)
+    assert rules.path_glob(token('a/"$(x)"]b/c')) == ("a/*b/c", False)
+
+
+def test_judgeBash_ownerAllowCoversAGlob(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(kubectl apply*)\n")
+    assert decide(rules, "kubectl apply -f k8s/*.yaml")[0].decision is None
+
+
+@pytest.fixture
+def runner_dir(tmp_path):
+    (tmp_path / "Makefile").write_text("show:\n\t@echo value $(X)\ntest:\n\tpytest\n")
+    (tmp_path / "package.json").write_text(
+        '{"scripts": {"test": "eslint src/*", "lint": "ruff check src/*"}}'
+    )
+    return tmp_path
+
+
+RUNNER_GLOBS = [
+    # argv runners: a glob that is a word of the inner command is judged there
+    ("uv run pytest tests/test_*.py", None),
+    ("docker exec dev ls /app/*", None),
+    ("nix develop -c ls src/*", None),
+    ("mise exec -- ls src/*", None),
+    ("chroot /x ls /y/*", None),
+    ("flatpak run --command=ls app src/*", None),
+    ("uv run car* publish", "ask"),
+    ("docker exec dev cargo publis?", "ask"),
+    # a glob the runner's parser consumes keeps the segment opaque
+    ("uv run --with * publish", "ask"),
+    ("uv run --with=* publish", "ask"),
+    ("docker compose exec * publish", "ask"),
+    ("docker exec * ls", "ask"),
+    # runners that resolve a name, read options anywhere or take a code string
+    ("npm test -- src/*", "ask"),
+    ("make show X=*", "ask"),
+    ("npm run te*", "ask"),
+    ("make t*", "ask"),
+    ("npm exec eslint src/*", "ask"),
+    ("nix-shell --run ls*", "ask"),
+    ("toolbox run ls *", "ask"),
+    # globs in a body read from disk, or in a quoted string
+    ("npm test", None),
+    ("npm run lint", None),
+    ("make test", None),
+    ("bash -c 'ls *.py'", None),
+    ("bash -c 'cargo publis?'", "ask"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), RUNNER_GLOBS)
+def test_judgeBash_runnerWithAGlob_expandsOnlyWhereTheGlobIsAnInnerWord(rules, runner_dir, command, expected):
+    assert judge_in(rules, command, runner_dir)[0].decision == expected, command
+
+
+def test_judgeBash_runnerOrigin_showsTheGlob(rules, runner_dir):
+    verdict = judge_in(rules, "uv run car* publish", runner_dir)[0]
+    assert verdict.reason() == "cobot gate: glob '*' decides what runs via uv run car* publish"
+
+
+def test_commandParts_plantedSentinelInABody_isRefused(rules):
+    key = rules.shell.sentinels(rules.shell.scan("ls *").outer)[0]
+    assert rules.command_parts(f"ls {key}") is None
+    assert rules.command_parts(f"ls {key}", frozenset({key})) is not None
+    assert rules.command_parts("echo $(date)") is None
+
+
+# ---------------------------------------------------------------- bypass review, 2026-11-13
+
+REVIEW_ROWS = [
+    # runner-body redirection targets: quotes removed, braces expanded
+    ("bash -c 'echo {} > {~/.claude/settings.json,}'", "ask"),
+    ("bash -c 'echo x > ~/.claude/\"settings.json\"'", "ask"),
+    # brace quote skipping as the scanner reads it, failing closed
+    ("cat ~/.claude/{settings.json,$'\\''}", "ask"),
+    ('cat ~/.claude/{settings.json,"$(echo "\'")"}', "ask"),
+    ("git push origin {main,--force,$'\\''}", "deny"),
+    # a file name becomes code under builtins that evaluate names or arithmetic
+    ("let x=*", "ask"),
+    ("unset *", "ask"),
+    ("read * <<< x", "ask"),
+    ("printf -v * %s x", "ask"),
+    ("test -v *", "ask"),
+    ("unset 'a[$(id)]'", "ask"),
+    # a split substitution's output is globbed without case too
+    ('cat ~/.claude/$(echo "[s]")ETTINGS.JSON', "ask"),
+    # gh api: -X=METHOD, and a glob in it
+    ("gh api repos/x -X=DELETE", "deny"),
+    ("gh api repos/x -X=D*", "ask"),
+    # ** reaches a protected file with no / in the token
+    ("cat **", "ask"),
+    # compound array assignments are data
+    ("files=(*.py)", None),
+    ("declare -a a=(*.py)", None),
+    ("a=($(git push)); ls", "ask"),
+    ("a=(x); git push", "ask"),
+    ("a=(x) && git push --force", "deny"),
+    # still silent
+    ("printf '%s\\n' *", None),
+    ("[ -f *.txt ]", None),
+    ("set -- *.txt", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), REVIEW_ROWS)
+def test_decide_bypassReviewRows(rules, command, expected):
+    assert decide(rules, command)[0].decision == expected, command
+
+
+def test_judgeBash_makeRecipeTargetWithABrace_asks(rules, tmp_path):
+    (tmp_path / "Makefile").write_text("b:\n\techo x > {~/.claude/settings.json,}\n")
+    (tmp_path / "package.json").write_text('{"scripts": {"b": "echo x > {~/.claude/settings.json,}"}}')
+    assert judge_in(rules, "make b", tmp_path)[0].decision == "ask"
+    assert judge_in(rules, "npm run b", tmp_path)[0].decision == "ask"
+
+
+def test_scan_unclosedPieceInsideABrace_isAnError(rules):
+    assert rules.shell.scan("p {a,'b}").error is not None
+    assert rules.shell.scan('p {a,"$(echo "x)"}').error is not None

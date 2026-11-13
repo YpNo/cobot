@@ -380,9 +380,9 @@ allow Bash(gitleaks detect*) @consultant
 allow Bash(govulncheck*) @consultant
 allow Bash(pip-audit*) @consultant
 allow Bash(uv audit*) @consultant
-allow Bash(cargo audit*) @consultant
+# the direct binaries only: a repository's .cargo/config.toml alias shadows cargo audit and
+# cargo deny (cargo 1.99 warns and runs the alias), so those forms ask (gate-findings Q4)
 allow Bash(cargo-audit audit*) @consultant
-allow Bash(cargo deny check*) @consultant
 allow Bash(cargo-deny check*) @consultant
 allow Bash(npm audit) @consultant
 allow Bash(npm audit --json*) @consultant

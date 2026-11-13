@@ -580,6 +580,14 @@ FOREIGN_FLAGS = frozenset(
         "--exec-path",
     }
 )
+# options that load configuration able to run a program, by command word (gate-findings A1):
+# git --config-env sets config like -c; cargo --config and -Z (attached too); docker --config
+# loads CLI plugins from that directory
+FOREIGN_BY_CLI: dict[str, frozenset[str]] = {
+    "git": frozenset({"-c", "--config-env"}),
+    "cargo": frozenset({"--config", "-Z"}),
+    "docker": frozenset({"--config"}),
+}
 KUBECONFIG_FLAGS: dict[str, frozenset[str]] = {
     "kubectl": frozenset({"--kubeconfig"}),
     "helm": frozenset({"--kubeconfig"}),
@@ -627,12 +635,227 @@ def executes_foreign(tokens: list[str]) -> bool:
     if not rest:
         return False
     cli = os.path.basename(rest[0])
-    kube_flags = KUBECONFIG_FLAGS.get(cli, frozenset())
+    named = KUBECONFIG_FLAGS.get(cli, frozenset()) | FOREIGN_BY_CLI.get(cli, frozenset())
     for token in rest[1:]:
         name = token.split("=", 1)[0]
-        if name in FOREIGN_FLAGS or name in kube_flags or (cli == "git" and name == "-c"):
+        if name in FOREIGN_FLAGS or name in named or (cli == "cargo" and token.startswith("-Z")):
             return True
     return False
+
+
+# ---------------------------------------------------------------- read-only agents (gate-findings A)
+
+SAFE_WRITE_TARGETS = frozenset({"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/fd/2"})
+READ_LIST_GAP = "the read list does not cover it"
+
+
+@dataclass(frozen=True)
+class Guard:
+    """What makes a read-list command write a file or run a program. ``long``: getopt long names,
+    read with any abbreviation and ``=value``; ``short``: getopt letters, read in any cluster;
+    ``single``: ``-name`` or ``--name`` alone or with ``=``, as Go's flag and find read them;
+    ``verbs``: positional words; ``suffix``: any long name ending in it; ``check``: a parser of
+    its own. Each reading over-reads (a letter inside an attached value), never under-reads."""
+
+    long: frozenset[str] = frozenset()
+    short: str = ""
+    single: frozenset[str] = frozenset()
+    verbs: frozenset[str] = frozenset()
+    suffix: str = ""
+    check: object = None  # Callable[[list[str]], str | None]
+
+
+def _words(text: str) -> frozenset[str]:
+    return frozenset(text.split())
+
+
+def getopt_hit(token: str, guard: Guard) -> bool:
+    if token.startswith("--") and len(token) > 2:
+        name = token[2:].split("=", 1)[0]
+        abbreviates = any(option.startswith(name) for option in guard.long)
+        return abbreviates or bool(guard.suffix and name.endswith(guard.suffix))
+    return token.startswith("-") and len(token) > 1 and any(letter in guard.short for letter in token[1:])
+
+
+def single_hit(token: str, guard: Guard) -> bool:
+    return token.startswith("-") and token.lstrip("-").split("=", 1)[0] in guard.single
+
+
+def guarded_token(tokens: list[str], guard: Guard) -> str | None:
+    """The first token the guard reads as a write or a run."""
+    if guard.check is not None:
+        return guard.check(tokens)
+    for token in tokens:
+        if getopt_hit(token, guard) or single_hit(token, guard) or token in guard.verbs:
+            return token
+    return None
+
+
+def uniq_output(tokens: list[str]) -> str | None:
+    """``uniq [OPTION]… [INPUT [OUTPUT]]``: a second operand is the file it writes."""
+    with_value, operands, rest = (
+        {"-f", "-s", "-w", "--skip-fields", "--skip-chars", "--check-chars"},
+        [],
+        list(tokens),
+    )
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--":
+            operands.extend(rest)
+            break
+        if arg in with_value or (arg[:1] == "-" and arg[1:2] != "-" and arg[-1:] in "fsw"):
+            rest = rest[1:]
+        elif not option_word(arg) or arg == "-":
+            operands.append(arg)
+    return operands[1] if len(operands) > 1 else None
+
+
+BRANCH_WRITES = Guard(
+    long=_words("delete move copy force set-upstream-to unset-upstream edit-description track no-track")
+    | _words("create-reflog"),
+    short="dDmMcCfut",
+)
+BRANCH_VALUES = _words("--contains --no-contains --merged --no-merged --points-at --sort --format")
+
+
+def branch_write(tokens: list[str]) -> str | None:
+    """``git branch``: a write option, or a name outside list mode (``-l``/``--list``) creates a
+    branch. ``--color``, ``--column`` and ``--abbrev`` take a value only with ``=``."""
+    listing = any(
+        t in ("-l", "--list") or (t.startswith("--") and "--list".startswith(t) and len(t) > 3)
+        for t in tokens
+    )
+    rest = list(tokens)
+    while rest:
+        arg = rest.pop(0)
+        if getopt_hit(arg, BRANCH_WRITES):
+            return arg
+        if arg in BRANCH_VALUES:
+            rest = rest[1:]
+        elif not option_word(arg) and not listing:
+            return arg
+    return None
+
+
+CURL_FLAGS = _words("--silent --show-error --location --fail --fail-with-body --head --include --verbose")
+CURL_FLAGS |= _words("--insecure --globoff --compressed --ipv4 --ipv6 --http1.1 --http2")
+CURL_VALUES = _words("--header --user-agent --referer --max-time --connect-timeout --retry --retry-delay")
+CURL_VALUES |= _words("--retry-max-time --range --request --url --write-out")
+CURL_SHORT_FLAGS = "sSLfIivkg46"
+CURL_SHORT_VALUES = {"H": "--header", "A": "--user-agent", "e": "--referer", "m": "--max-time"}
+CURL_SHORT_VALUES |= {"r": "--range", "X": "--request", "w": "--write-out"}
+
+
+def curl_value_safe(option: str, value: str) -> bool:
+    if option == "--request":
+        return value in ("GET", "HEAD")
+    if option in ("--header", "--write-out"):
+        return not value.startswith("@") and "%output" not in value.lower()
+    return True
+
+
+def curl_unsafe(tokens: list[str]) -> str | None:
+    """``curl`` keeps the read list only when every option is a read (an allow-list, Q3): uploads,
+    data, file writes and config files ask. Long options are exact (curl does not abbreviate);
+    a cluster is read letter by letter and a value letter ends it."""
+    rest = list(tokens)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--":
+            return None
+        if arg.startswith("--"):
+            if arg in CURL_FLAGS:
+                continue
+            if arg in CURL_VALUES and rest and curl_value_safe(arg, rest[0]):
+                rest = rest[1:]
+                continue
+            return arg
+        if not option_word(arg):
+            continue
+        for index, letter in enumerate(arg[1:], start=1):
+            if letter in CURL_SHORT_FLAGS:
+                continue
+            option = CURL_SHORT_VALUES.get(letter)
+            if option is None:
+                return arg
+            attached = arg[index + 1 :]
+            value = attached or (rest.pop(0) if rest else "")
+            if not curl_value_safe(option, value):
+                return arg
+            break
+    return None
+
+
+# each row's source: the installed --help (version) or the upstream reference, read 2026-11-13
+READ_GUARDS: dict[str, Guard] = {
+    # bfs 4.1.1 and GNU findutils find(1): actions that delete, run or write
+    "find": Guard(single=_words("delete rm exec execdir ok okdir fprint fprint0 fprintf fls")),
+    "rg": Guard(long=_words("pre")),  # ripgrep 14.1.1
+    "fd": Guard(long=_words("exec exec-batch"), short="xX"),  # fd(1), github.com/sharkdp/fd
+    "sort": Guard(long=_words("output compress-program"), short="o"),  # GNU coreutils 9.7
+    "uniq": Guard(check=uniq_output),  # GNU coreutils 9.7
+    "tree": Guard(short="oR"),  # tree 2.2.1
+    "file": Guard(long=_words("compile"), short="C"),  # file 5.46
+    # mikefarah/yq and kislyuk/yq docs
+    "yq": Guard(long=_words("inplace in-place split-exp split-exp-file"), short="is"),
+    "git log": Guard(long=_words("output")),  # git 2.47.3
+    "git show": Guard(long=_words("output")),
+    "git diff": Guard(long=_words("output")),
+    "git branch": Guard(check=branch_write),
+    "zizmor": Guard(long=_words("fix")),  # docs.zizmor.sh/usage
+    "trivy": Guard(long=_words("output module-dir"), short="o"),  # trivy.dev CLI reference
+    "gitleaks detect": Guard(long=_words("report-path log-opts"), short="r"),  # gitleaks README
+    "pip-audit": Guard(long=_words("fix output"), short="o"),  # pypa/pip-audit README
+    "cargo-audit audit": Guard(verbs=_words("fix")),  # rustsec cargo-audit README
+    "npm audit": Guard(verbs=_words("fix")),  # npm 11.20.0
+    "pnpm audit": Guard(long=_words("fix")),  # pnpm 12.18.0
+    "semgrep": Guard(long=_words("autofix output"), short="ao", suffix="-output"),  # semgrep CLI reference
+    "docker build": Guard(long=_words("output iidfile metadata-file push load"), short="o"),  # docker docs
+    "docker compose config": Guard(long=_words("output"), short="o"),
+    "cosign verify": Guard(long=_words("output-file")),  # sigstore cosign docs
+    "actionlint": Guard(single=_words("shellcheck pyflakes")),  # rhysd/actionlint usage
+    "go list": Guard(single=_words("toolexec exec mod modfile")),  # go help build, list
+    "go env": Guard(single=_words("w u")),
+    "terraform providers": Guard(verbs=_words("lock mirror")),  # developer.hashicorp.com
+    "tofu providers": Guard(verbs=_words("lock mirror")),
+    "kubectl kustomize": Guard(long=_words("output"), short="o"),  # kubectl reference
+    "kustomize build": Guard(long=_words("output"), short="o"),
+    "helm template": Guard(long=_words("output-dir dependency-update")),  # helm.sh docs
+    "kubeconform": Guard(single=_words("cache")),  # yannh/kubeconform README
+    "curl": Guard(check=curl_unsafe),  # curl 8.14.1
+}
+
+
+def guard_keys(plain: list[str]) -> list[tuple[str, int]]:
+    """The guard keys a segment can meet, each with where its arguments start: the command word,
+    then with one and two verbs read past the global options."""
+    verb = strip_global_options(plain)
+    keys = [(plain[0], 1)]
+    keys += [(" ".join(verb[: n + 1]), n + 1) for n in (1, 2) if len(verb) > n]
+    return keys
+
+
+def guarded(plain: list[str]) -> str | None:
+    """The reason a read-list command writes or runs (gate-findings A2, A3), or None."""
+    if not plain:
+        return None
+    verb = strip_global_options(plain)
+    for key, start in guard_keys(plain):
+        guard = READ_GUARDS.get(key)
+        tokens = plain[1:] if start == 1 else verb[start:]
+        token = guard and guarded_token(tokens, guard)
+        if token:
+            return f"option '{token[:30]}' of {key} can write or run; {READ_LIST_GAP}"
+    return None
+
+
+def written_file(reached: Reached) -> str | None:
+    """The reason no agent-scoped allow counts: a redirection of the command, or of a runner body
+    it expands, writes a file (gate-findings A, redirection writes)."""
+    for word in reached.writes:
+        if word not in SAFE_WRITE_TARGETS:
+            return f"redirection to '{show(word, shell.REGISTRY)[:40]}' writes a file; {READ_LIST_GAP}"
+    return None
 
 
 API_CLIS = ("gh", "glab", "gt", "tea")  # gt is Gitea's CLI; tea, its archived predecessor, still installed
@@ -1945,18 +2168,23 @@ def quoted_code(segment: list[str], inert: bool) -> str | None:
 
 
 def judge_words(
-    segment: list[str], bash_rules: list[Rule], holes: dict, agent_allows: bool = True
+    segment: list[str],
+    bash_rules: list[Rule],
+    holes: dict,
+    agent_allows: bool = True,
+    refused: str | None = None,
 ) -> tuple[Verdict, list[Rule]]:
     """A segment without a hole in the command it runs, judged as before the scanner; agent-scoped
-    allows are left out when it executes foreign code or holds a substitution (``agent_allows``)."""
+    allows are left out when it executes foreign code or holds a substitution (``agent_allows``),
+    or when it, or the whole command (``refused``), writes a file or runs a program."""
     forms = candidates(segment)
-    foreign = executes_foreign(segment) or not agent_allows
-    matched = [
-        r
-        for r in bash_rules
-        if matches_bash(r, forms) and not (foreign and r.decision == "allow" and r.agent)
-    ]
+    refused = refused or guarded(strip_wrappers(segment))
+    foreign = executes_foreign(segment) or not agent_allows or bool(refused)
+    agent_allow = [r for r in bash_rules if r.decision == "allow" and r.agent and matches_bash(r, forms)]
+    matched = [r for r in bash_rules if matches_bash(r, forms) and not (foreign and r in agent_allow)]
     verdict = resolve(matched, "no rule matched")
+    if refused and agent_allow and verdict.decision == ASK:
+        verdict = Verdict(ASK, None, refused)
     if is_opaque(strip_wrappers(segment)) and verdict.decision != DENY:
         allowed = any(allow_counts(r) for r in matched)
         verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{show(forms[0], holes)[:60]}'")
@@ -1985,22 +2213,24 @@ def could_match(
     return Verdict(ASK, None, note), found
 
 
-def agent_globs(segment: list[str], plain: list[str]) -> str:
+def agent_globs(segment: list[str], plain: list[str], refused: str | None = None) -> str:
     """How an agent-scoped allow meets the segment's holes: ``counts`` when every hole is an
-    anchored glob and nothing executes foreign code; ``anchor`` when only unanchored globs stop it;
-    ``never`` otherwise (a substitution could hold any option)."""
-    if not all_glob(segment) or executes_foreign(segment):
+    anchored glob and nothing executes foreign code, writes or runs; ``anchor`` when only
+    unanchored globs stop it; ``never`` otherwise (a substitution could hold any option)."""
+    if not all_glob(segment) or executes_foreign(segment) or refused or guarded(plain):
         return "never"
     globbed = [token for token in plain if shell.has_sentinel(token)]
     return "counts" if all(anchored(token) for token in globbed) else "anchor"
 
 
-def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
+def judge_holed(
+    segment: list[str], bash_rules: list[Rule], holes: dict, refused: str | None = None
+) -> tuple[Verdict, list[Rule]]:
     """A segment with a hole: never matching anyway → deny; structural → ask; never viable → ask;
     an owner allow covering every value → silence; ask viable → ask; else silence."""
     plain = strip_wrappers(segment)
     if not plain:  # ``for x in $(…)``: data
-        return judge_words(segment, bash_rules, holes)
+        return judge_words(segment, bash_rules, holes, refused=refused)
     forms = candidates(segment)
     nevers = never_anyway(forms, bash_rules)
     if nevers:
@@ -2009,14 +2239,14 @@ def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
     if key:
         return Verdict(ASK, None, f"{hole_noun(key)} '{holes[key].span}' decides what runs"), []
     if not hole_keys(plain):  # ``x=$(…) bash -c '…'``: the command is literal
-        return judge_words(segment, bash_rules, holes, agent_allows=all_glob(segment))
+        return judge_words(segment, bash_rules, holes, agent_allows=all_glob(segment), refused=refused)
     tested = forms[-1:] if plain[0] == "gcloud" else forms
     first = hole_keys(plain)[0]
     hole = f"{hole_noun(first)} '{holes[first].span}'"
     never = could_match("never", tested, bash_rules, hole)
     if never:
         return never
-    agents = agent_globs(segment, plain)
+    agents = agent_globs(segment, plain, refused)
     covering = [
         r
         for r in bash_rules
@@ -2045,7 +2275,12 @@ def known_values(segment: list[str], holes: dict) -> list[str] | None:
 
 
 def judge_segment(
-    segment: list[str], unit: shell.Scan, bash_rules: list[Rule], holes: dict, with_values: bool
+    segment: list[str],
+    unit: shell.Scan,
+    bash_rules: list[Rule],
+    holes: dict,
+    with_values: bool,
+    refused: str | None = None,
 ) -> tuple[Verdict, list[Rule]]:
     """Judge the segment, and again with known values put in (stricter wins); quoted code asks."""
     variants = [segment]
@@ -2055,7 +2290,7 @@ def judge_segment(
     best: tuple[Verdict, list[Rule]] = (Verdict(None, None, "no rule matched"), [])
     for variant in variants:
         judge = judge_holed if hole_keys(variant) else judge_words
-        verdict, matched = judge(variant, bash_rules, holes)
+        verdict, matched = judge(variant, bash_rules, holes, refused=refused)
         code = quoted_code(variant, unit.inert_code)
         if code and verdict.decision != DENY:
             verdict = Verdict(ASK, None, f"quoted code '{show(code, holes)[:60]}' may run")
@@ -2084,8 +2319,9 @@ def judge_bash(
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
+    refused = written_file(reached)
     for segment, origin, unit in entries:
-        verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values)
+        verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, refused)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

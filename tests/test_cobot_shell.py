@@ -553,3 +553,7 @@ def test_scan_writes_areTheTargetsARedirectionWrites(command, writes):
 def test_scan_writesInASubstitutionBody_belongToTheBody():
     (hole,) = sh.scan("echo $(cat a > b)").holes.values()
     assert hole.body.writes == ["b"]
+
+
+def test_scan_unclosedLocaleString_isAnError():
+    assert sh.scan('echo $"abc').error == "unbalanced quote"

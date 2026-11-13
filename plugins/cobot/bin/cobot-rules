@@ -1103,12 +1103,14 @@ def expand_segments(
 ) -> list[tuple[list[str], str]]:
     """Replace each resolvable runner or wrapper segment by the commands it runs, recursively up to
     MAX_EXPANSION levels, tagged with the outermost origin. A segment holding a substitution is
-    never expanded: the substituted text could be the code the runner runs. Redirection targets of
+    expanded only when every hole sits in a leading assignment's value: elsewhere the substituted
+    text could be the code the runner runs. Redirection targets of
     the bodies go to ``paths``."""
     out: list[tuple[list[str], str]] = []
     for segment in segments:
         plain = strip_wrappers(segment)
-        expandable = depth < MAX_EXPANSION and is_opaque(plain) and not hole_keys(segment)
+        literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
+        expandable = depth < MAX_EXPANSION and is_opaque(plain) and literal
         commands = expand_runner(plain, cwd) if expandable else None
         parts = [command_parts(command) for command in commands or []]
         if not commands or None in parts:
@@ -1318,10 +1320,9 @@ def is_quoted_hole(token: str, holes: dict[str, shell.Hole]) -> bool:
     return shell.SENTINEL_RE.fullmatch(token) is not None and token in holes and holes[token].quoted
 
 
-def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.Hole]) -> str | None:
-    """The first hole that could decide what runs: in a token ``strip_wrappers`` consumed (except
-    the value of a literal ``NAME=`` assignment before the first wrapper), in the verb zone, or
-    anywhere in a segment whose head reads its arguments as code or structure."""
+def prefix_key(segment: list[str], plain: list[str]) -> str | None:
+    """The first hole in a token ``strip_wrappers`` consumed, except the value of a literal
+    ``NAME=`` assignment before the first wrapper (it only sets a variable)."""
     in_prefix = True
     for token in segment[: len(segment) - len(plain)]:
         keys = shell.sentinels(token)
@@ -1333,6 +1334,21 @@ def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.
         in_prefix = False
         if keys:
             return keys[0]
+    return None
+
+
+def holes_only_in_assignments(segment: list[str], plain: list[str]) -> bool:
+    """Every hole of the segment sits in a leading assignment's value: the command it runs is
+    literal and is judged, and expanded, as one without a substitution."""
+    return not hole_keys(plain) and prefix_key(segment, plain) is None
+
+
+def structural_key(segment: list[str], plain: list[str], holes: dict[str, shell.Hole]) -> str | None:
+    """The first hole that could decide what runs: in the wrapper prefix (``prefix_key``), in the
+    verb zone, or anywhere in a segment whose head reads its arguments as code or structure."""
+    key = prefix_key(segment, plain)
+    if key:
+        return key
     zone = plain if whole_segment_is_zone(plain) else verb_zone(plain, holes)
     keys = hole_keys(zone)
     return keys[0] if keys else None
@@ -1356,10 +1372,13 @@ def quoted_code(segment: list[str], inert: bool) -> str | None:
     return None
 
 
-def judge_words(segment: list[str], bash_rules: list[Rule], holes: dict) -> tuple[Verdict, list[Rule]]:
-    """A segment without a hole, judged as before the scanner."""
+def judge_words(
+    segment: list[str], bash_rules: list[Rule], holes: dict, agent_allows: bool = True
+) -> tuple[Verdict, list[Rule]]:
+    """A segment without a hole in the command it runs, judged as before the scanner; agent-scoped
+    allows are left out when it executes foreign code or holds a substitution (``agent_allows``)."""
     forms = candidates(segment)
-    foreign = executes_foreign(segment)
+    foreign = executes_foreign(segment) or not agent_allows
     matched = [
         r
         for r in bash_rules
@@ -1406,6 +1425,8 @@ def judge_holed(segment: list[str], bash_rules: list[Rule], holes: dict) -> tupl
     key = structural_key(segment, plain, holes)
     if key:
         return Verdict(ASK, None, f"substitution '{holes[key].span}' decides what runs"), []
+    if not hole_keys(plain):  # ``x=$(…) bash -c '…'``: the command is literal
+        return judge_words(segment, bash_rules, holes, agent_allows=False)
     tested = forms[-1:] if plain[0] == "gcloud" else forms
     span = holes[hole_keys(segment)[0]].span
     never = could_match("never", tested, bash_rules, span)

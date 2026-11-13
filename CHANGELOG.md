@@ -321,6 +321,9 @@ All notable changes to this project are documented here. The format follows
   `exec -la x`; an option the gate does not know leaves the wrapper opaque), a backslash-newline
   inside a word (`git pu\` ⏎ `sh --force`), and `trap '…'` (now opaque). Brace and glob
   expansion in a verb position (`cargo {publish,}`) is still silent and has its own follow-up.
+  A substitution only in a leading assignment no longer hides the command after it
+  (`x=$(true) bash -c 'git push --force'` is denied, `x=$(true) make deploy` resolves the
+  target).
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

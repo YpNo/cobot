@@ -886,6 +886,11 @@ def make_repo(tmp_path):
         ("make -C", "ask"),
         ("make test && git push", "ask"),
         ("CGO_ENABLED=0 make test", None),
+        ("X=$(true) make test", None),
+        ("X=$(true) make force", "deny"),
+        ("X=$(true) make release", "ask"),
+        ("X=$(true) make test $(echo force)", "ask"),
+        ("timeout $(echo 5) make test", "ask"),
         ("nix develop -c make test", None),
     ],
 )
@@ -2162,6 +2167,13 @@ BYPASSES_CLOSED = [
     ("exec -z git push", "ask"),
     ("exec -al x git push", "ask"),
     ("echo >a\\", "ask"),
+    # a substitution only in a leading assignment leaves the command judged as without one
+    ("x=$(true) bash -c 'git push --force'", "deny"),
+    ("x=$(true) eval 'git push --force'", "ask"),
+    ("x=$(true) python3 -c 'import os'", "ask"),
+    ("x=$(true) sudo rm -rf /", "ask"),
+    ("x=$(true) y=1 sh -c 'terraform apply'", "deny"),
+    ("x=$(true) timeout $(echo 5) git status", "ask"),
 ]
 
 
@@ -2213,6 +2225,7 @@ def test_judgeBash_ownerAllowCoveringEveryValue_silences(rules, layers):
 def test_judgeBash_agentAllowWithAHole_neverCounts(rules):
     assert decide(rules, "git log --oneline", agent="cobot:consultant")[0].decision is None
     assert decide(rules, "git log $(echo -c core.pager=x)", agent="cobot:consultant")[0].decision == "ask"
+    assert decide(rules, "x=$(true) git log --oneline", agent="cobot:consultant")[0].decision == "ask"
 
 
 def test_judgeBash_definedCat_dropsTheKnownValue(rules):

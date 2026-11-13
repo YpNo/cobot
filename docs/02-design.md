@@ -209,7 +209,7 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   `make release` as its `git push`; a Makefile with `include`, pattern or suffix rules,
   `.SECONDEXPANSION` or `$(eval)`, a target under a conditional or with a target-specific variable,
   a recipe needing a function (`$(shell …)`), an unknown variable or `$<`-style automatic variable,
-  a nested make under `-C`, or an option the table does not know keeps the command opaque. One
+  or an option the table does not know keeps the command opaque. One
   accepted gap: a prerequisite list that does not expand (`test: $(GO_SOURCES)`) is read as the
   file list it is; a computed prerequisite naming a recipe target would escape;
 - looks through **entry wrappers** the same way: `distrobox enter … -- <cmd>`, `toolbox run`,
@@ -218,6 +218,23 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   table (an option the table does not know keeps the wrapper opaque), nested up to four levels;
   remote execution (`ssh`, `mosh`, `kubectl exec`, `gcloud … ssh`, `gh codespace ssh`) cannot be
   judged and asks;
+- follows **`cd` and `pushd`** through the command, so a runner reads its Makefile, mise config
+  or `package.json` in every directory it may run in, and a substitution body or a runner's own
+  commands start there (a recipe in its physical `-C` folder, a mise task in its config's folder
+  and the caller's). A `cd` may fail or be skipped, so it adds its target to the directories in
+  effect; only the `&&` chain it leads runs in the target alone (`cd sub && make deploy` is judged
+  as `sub/Makefile`'s recipe, `cd sub; make deploy` as both). A runner body is walked as one script
+  whose lines may each start over. A target the gate cannot know (`cd $(…)`, `cd "$X"`, `cd -`,
+  `~`, a glob, a folder missing now, a relative name while `CDPATH` is set), a `popd`, a `cd` in a
+  pipeline, in the background, behind a wrapper (`nice cd`) or in a string (`eval`, `alias`), a
+  loop around one, and a script that may redefine `cd` or how it resolves (a function, `CDPATH`,
+  `set -P`, `shopt`) keep every later runner that reads a file opaque. `$PWD` is the directory in
+  effect unless the script could assign it, by name or through a computed one (`printf -v`,
+  `declare`, …), or quotes it. `uv run --directory` and `mise exec -C` stay opaque. Accepted gaps:
+  a folder replaced by an earlier part of the same command (`mv other sub; cd sub && make`) is
+  read as it is now, like any file the command writes before a runner reads it, and shell state
+  from the Bash tool's snapshot (a `CDPATH` set only there, a `cd` function such as zoxide's) is
+  not seen;
 - emits `hookSpecificOutput.permissionDecision: deny` (reason = rule + layer, quoted and truncated)
   or `ask`; **it never emits `allow`**, so the plugin can only narrow what Claude Code permits;
 - resolves the project layer through `git rev-parse --git-common-dir`, so worktrees share it;

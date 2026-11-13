@@ -312,6 +312,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Runner expansion ignored a `cd` in the same command: `cd sub && make deploy` read the root
+  Makefile, so a harmless root `deploy` hid `sub/Makefile`'s `git push` and the gate stayed
+  silent. The gate now follows `cd` and `pushd` through the command and resolves each `make`,
+  `mise` and `npm`/`pnpm`/`yarn`/`bun` script in every directory it may run in (a `cd` may fail,
+  so only the `&&` chain it leads is taken to run in its target), a substitution body and a
+  runner's own commands included. A computed or unknown target (`cd $(…)`, `cd "$X"`, `cd -`,
+  `~`), a `popd`, a `cd` in a pipeline, in the background, behind a wrapper or in a string, a
+  loop around one, and a script that may redefine `cd` (a function, `alias`, `CDPATH`, `set -P`)
+  keep the later runners opaque, so they ask; so do `uv run --directory` and `mise exec -C`. A
+  recipe now starts in its physical `make -C` folder, so a nested make there resolves instead of
+  asking. A bash oracle checks that every runner bash ran sits in a directory the gate followed.
 - Gate bypasses in the shell parsing, silent before and now judged: a line cut at `<<`
   (`cat <<EOF > f; git push --force`), an unquoted here-document body's `$(…)`, a delimiter with
   quotes in it (`<<E"O"F`), a quote inside a comment hiding the next line, redirections before

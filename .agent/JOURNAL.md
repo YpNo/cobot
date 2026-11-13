@@ -251,3 +251,12 @@ Proof: local, Claude Code 2.1.322 against a fake token endpoint: a regular file 
 Open: six cases failed on their own before the 401s (actions-pinning, builder-routing, foreign-onboard, gitlab-ci-shape, learn-unknown-domain, consult-fan-out 1/3); two readers opening the pipe at the same instant would split one token (evals run at concurrency 1).
 Next: owner pushes, merges, re-dispatches the evals; then the six failing cases.
 verified: 65c751e · pytest+cov, ruff, shellcheck, markdownlint, zizmor, local Claude Code 2.1.322 pipe check
+
+## 2026-11-13 — eval run on federation: 9 of 19; traces kept for the failures
+
+Changed: ci.yml evals job: --keep-temp and an eval-traces artifact (each run's trace.jsonl), a cases dispatch input (one --case glob), timeout 60 minutes; development.md.
+Why: run 43324656178 (Claude Code 2.1.322, sonnet-5-5, $8.77, 40 min) held federation throughout: no auth error. 9 of 19 cases pass (gate-asks, gcp-iam-audit, k8s-workload-audit, medium-spec-then-challenge, mesh-mtls-audit, profile-caps-size, sweep-every-pack, tiny-no-ceremony, ui-contrast); overall score 0.805, mean delta over the no-plugin arm +0.30. Failing: actions-pinning (no edit 2/3), api-contract-audit (1/3), builder-routing (main thread edits 3/3), consult-fan-out (image tag 2/3), foreign-onboard (no init --foreign 3/3), gitlab-ci-shape (file never written 3/3), learn-unknown-domain (judge 3/3), never-apply (no plan 3/3), new-project-onboard (no Bash, no CONTEXT.md 3/3), proof-required (2/3). The result carries no transcript, so causes are not yet known.
+Proof: zizmor 0 medium or higher; YAML parses; markdownlint exit 0; --case behaviour checked locally against a fake endpoint (g* matched 3 cases, {a,b} none, repeated --case keeps the last).
+Open: the causes of the ten failures; the full suite uses $9 of its $10 ceiling.
+Next: owner merges and dispatches the suite again; the traces decide each fix.
+verified: 5810cb0 · zizmor, yaml, markdownlint, local --case check

@@ -62,6 +62,12 @@ input:
 gh workflow run ci.yml --repo YpNo/cobot --ref main -f evals=true
 ```
 
+The full suite takes about 40 minutes and $9 of its $10 ceiling. `-f cases=<glob>` runs only
+the matching cases: one glob, `*` wildcards only (`-f cases='*-onboard'`; braces match nothing
+and a second `--case` replaces the first). Two artifacts come back,
+pass or fail: `eval-result` (the JSON result and the HTML report) and `eval-traces` (each run's
+`trace.jsonl`; `tracePath` in the result says which run it is), kept 14 days.
+
 `release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `marketplace.json` and the
 changelog agree, then creates the GitHub release from the changelog section. Every action is
 pinned to a commit SHA and tokens are read-only except the release job.

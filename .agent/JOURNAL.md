@@ -370,3 +370,11 @@ Why: spec gate-expansion revision 3, owner Q1 (braces exact). Build-time catch: 
 Proof: pytest tests/test_cobot_shell.py exit 0, module 99 % (one defensive line); full suite exit 0; ruff check and format exit 0.
 Next: T02 judging on brace words and glob holes.
 verified: 6fbb468 · pytest (scanner, full suite), ruff
+
+## 2026-11-13 — gate-expansion T02: judging brace words and glob holes
+
+Changed: cobot-rules (shell_items expands braces per segment, targets too; holes from shell.REGISTRY; hole_noun reasons; anchored, anchored_glob, agent_globs and the anchor reason in judge_holed; API-zone exception in structural_key; is_assignment for NAME[…]= in prefix_key; path_glob with SEGMENT_STAR, ** crossing, case folding and the ] widening in globs_meet; all_holes removed); tests: judged, silent, reason, agent, protected and globs_meet rows.
+Why: spec gate-expansion revision 3, owner Q2 (anchor reason).
+Proof: pytest with coverage exit 0 (98.57 %); ruff check and format exit 0; cobot-rules check on every Goal row gives the spec's verdict.
+Next: T03 runner expansion through glob holes.
+verified: 0412fc5 · pytest+cov, ruff, cobot-rules check

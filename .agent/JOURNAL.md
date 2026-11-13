@@ -394,3 +394,11 @@ Why: spec gate-expansion story 6. Found while proving the rows can fail: the stu
 Proof: pytest with coverage exit 0 (98.60 %); mutations (no inner-word check, no extglob error, agent anchoring off) each fail their rows; ruff exit 0.
 Next: T05 agent prompts, T06 docs.
 verified: a4de1bf · pytest+cov, differential mutations, ruff
+
+## 2026-11-13 — gate-expansion T05: agents anchor their globs
+
+Changed: agents/consultant.md and agents/learner.md, one line each on anchoring globs.
+Why: owner answer Q2 a).
+Proof: python3 -I scripts/check-plugin.py exit 0 (agents listing about 523 tokens); claude plugin validate plugins/cobot --strict exit 0.
+Next: T06 docs and CHANGELOG.
+verified: f8cac97 · check-plugin, plugin validate

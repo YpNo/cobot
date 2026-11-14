@@ -12,6 +12,16 @@ All notable changes to this project are documented here. The format follows
   assert_cmd and predicates, beside proptest; every crate row re-read on crates.io, dated by the
   version's own publish date, with the MSRV of each.
 
+### Fixed
+
+- Consultants fell off their read list: in run 43584857035, 16 of 21 consultant sessions hit the
+  catch-all ask, so the gha consultant never ran zizmor (F-27). Ten opened with `cd <repository>`,
+  three with `pwd`, three wrapped a command in a `for` loop or a shell function. The consultant
+  and the consult brief now say the working directory already is the repository and commands run
+  in place, one command over many files; the ui procedure computes every colour pair in one `jq`
+  call; the read list gains bare `pwd` only (a `cd` keeps asking). `consult-fan-out` fails a run
+  whose consultant falls through to the catch-all ask.
+
 ## [0.2.0] - 2026-11-14
 
 The first release since 0.1.0 and the one that makes the repository public: R1.1 (learning,

@@ -395,6 +395,22 @@ def test_decide_promoteRows_anchoredOnTheCommandWord(rules, command, expected):
     assert decide(rules, command)[0].decision == expected
 
 
+def test_gate_consultantPwd_silentButCdLoopsAndFunctionsStillAsk(rules):
+    # F-27 (run 43584857035): consultants opened with pwd, cd, for loops and shell functions;
+    # only bare pwd joins the read list, the others keep asking and the brief says run in place
+    assert rules.gate(payload("pwd", agent_type="cobot:consultant")) is None
+    for command in (
+        "cd /tmp/x; ls -A",
+        'for f in ./k8s/*; do cat -n "$f"; done',
+        "f(){ jq -n 1; }; f",
+        "pwd; rm -rf x",
+    ):
+        out = json.loads(rules.gate(payload(command, agent_type="cobot:consultant")))
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask", command
+    out = json.loads(rules.gate(payload("pwd", agent_type="cobot:learner")))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
 def test_gate_agentScope_consultantBashAsks(rules):
     out = json.loads(rules.gate(payload("echo hi", agent_type="cobot:consultant")))
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"

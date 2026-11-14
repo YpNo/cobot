@@ -14,17 +14,19 @@ every fact. The argument narrows the audit to one path.
    surface (`web-desktop`, `web-mobile`, `handheld-640x480-dpad`); a theme folder is the
    handheld profile.
 2. **Contrast, computed.** Collect text/background and component/background pairs from the
-   stylesheet or the tokens (resolve custom properties to their hex values). For each pair run
-   the WCAG formula with `jq` (on the read list), never estimate:
+   stylesheet or the tokens (resolve custom properties to their hex values). Run the WCAG formula
+   with `jq` (on the read list) once, every pair in `pairs`, never estimate; a `for` loop or a
+   shell function around it is off the read list and asks:
 
    ```bash
-   jq -n --arg fg 777777 --arg bg ffffff '
+   jq -rn --argjson pairs '[["777777","ffffff"],["00aa00","ffffff"]]' '
      def chan($h): ($h | ascii_downcase | explode
        | map(if . >= 97 then . - 87 else . - 48 end) | .[0] * 16 + .[1]) / 255;
      def lin: if . <= 0.04045 then . / 12.92 else pow((. + 0.055) / 1.055; 2.4) end;
      def lum($c): 0.2126 * (chan($c[0:2]) | lin) + 0.7152 * (chan($c[2:4]) | lin)
        + 0.0722 * (chan($c[4:6]) | lin);
-     [lum($fg), lum($bg)] | (max + 0.05) / (min + 0.05) | . * 100 | round / 100'
+     $pairs[] | . as [$fg, $bg]
+     | "\($fg) on \($bg): \([lum($fg), lum($bg)] | (max + 0.05) / (min + 0.05) | . * 100 | round / 100)"'
    ```
 
    Reference values: `#777777` on `#ffffff` = 4.48 (fails 1.4.3 by 0.02; `#767676` passes at

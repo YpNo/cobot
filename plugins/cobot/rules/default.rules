@@ -390,6 +390,7 @@ allow Bash(npm audit --audit-level*) @consultant
 allow Bash(pnpm audit) @consultant
 allow Bash(pnpm audit --json*) @consultant
 allow Bash(pnpm audit --audit-level*) @consultant
+allow Bash(pnpm audit --ignore-pnpmfile*) @consultant
 allow Bash(semgrep scan*) @consultant
 allow Bash(semgrep --config*) @consultant
 allow Bash(docker build --check *) @consultant

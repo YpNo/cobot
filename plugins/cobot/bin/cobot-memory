@@ -124,7 +124,7 @@ class Memory:
         return external_memory(self.root)
 
     def trust(self) -> tuple[bool, str]:
-        return repo_trust(self.root, self.dir)
+        return repo_trust(self.checkout, self.dir)  # a submodule's own remotes, not its superproject's
 
     # ---------------------------------------------------------------- files
 

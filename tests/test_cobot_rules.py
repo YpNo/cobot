@@ -1339,7 +1339,8 @@ def test_gate_contributeRemotesAsk(rules, command):
         ("hadolint Dockerfile", True),
         ("gitleaks detect --no-git --report-format json", True),
         ("npm audit --json", True),
-        ("pnpm audit --audit-level=high", True),
+        ("pnpm audit --ignore-pnpmfile --audit-level=high", True),
+        ("pnpm audit --audit-level=high", False),
         ("cargo-deny check advisories", True),
         ("cargo deny check advisories", False),
         ("docker build --check .", True),
@@ -3130,7 +3131,7 @@ TRUST_GATED_READS = [
     "cargo-audit audit",
     "cargo-deny check",
     "npm audit --json",
-    "pnpm audit --json",
+    "pnpm audit --ignore-pnpmfile --json",
     "trivy fs .",
     "docker build --check .",
 ]
@@ -3229,7 +3230,8 @@ def test_repositoryConfig_mergedUnrelatedRoot_asks(rules, repository_trust, tmp_
         ("cargo tree", "rust-toolchain.toml"),
         ("cargo --version", ".cargo/config.toml"),
         ("npm audit --json", ".npmrc"),
-        ("pnpm audit --json", "pnpm-workspace.yaml"),
+        ("pnpm audit --ignore-pnpmfile --json", "pnpm-workspace.yaml"),
+        ("pnpm audit --ignore-pnpmfile --json", "package.json"),
         ("trivy fs .", "trivy.yaml"),
         ("docker build --check .", "Dockerfile"),
     ],
@@ -3417,3 +3419,135 @@ def test_decide_pip_audit_reasonNamesTheRequirement(rules):
     assert reason == "cobot gate: pip-audit '-r' can write or run; the read list does not cover it"
     reason = decide(rules, "uv audit", agent="cobot:consultant")[0].reason()
     assert reason == "cobot gate: uv audit without --frozen can write or run; the read list does not cover it"
+
+
+# ---------------------------------------------------------------- gate-repo-config bypass review, 2026-11-14
+
+REPO_CONFIG_REVIEW_ASK = [
+    "pnpm audit",
+    "pnpm audit --json",
+    "pnpm audit --ignore-pnpmfile --registry=http://127.0.0.1:1/",
+    "pnpm audit --ignore-pnpmfile --userconfig=x",
+    "pnpm audit --ignore-pnpmfile --config.registry=http://x/",
+    "npm audit --json --registry=http://127.0.0.1:1/",
+    "npm audit --json --userconfig x",
+    "pip-audit -vo out",
+]
+REPO_CONFIG_REVIEW_SILENT = ["pip-audit -fjson", "pip-audit -sosv", "pnpm audit --ignore-pnpmfile"]
+
+
+@pytest.mark.parametrize("command", REPO_CONFIG_REVIEW_ASK)
+def test_decide_repoConfigReview_asks(rules, command):
+    assert decide(rules, command, agent="cobot:consultant")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", REPO_CONFIG_REVIEW_SILENT)
+def test_decide_repoConfigReview_silent(rules, command):
+    assert decide(rules, command, agent="cobot:consultant")[0].decision is None, command
+
+
+@pytest.mark.parametrize("name", ["pip", "pip.py", "pip.pyc", "pip.cpython-313-x86_64-linux-gnu.so"])
+def test_repositoryConfig_pipShadowedInTheWorkingDirectory_asksEvenTrusted(
+    rules, repository_trust, tmp_path, name
+):
+    repo = owner_repo(tmp_path / "r")
+    assert agent_judge(rules, "pip-audit", repo).decision is None
+    (repo / name).mkdir() if name == "pip" else (repo / name).write_text("")
+    verdict = agent_judge(rules, "pip-audit -f json", repo)
+    assert verdict.decision == "ask" and "imports" in verdict.reason()
+    untrusted = owner_repo(tmp_path / "u", remote="https://github.com/evil/x")
+    (untrusted / "pip.py").write_text("")
+    assert agent_judge(rules, "pip-audit", untrusted).decision == "ask"
+
+
+def test_repositoryConfig_strangersSubmodule_isNotTrustedThroughItsSuperproject(
+    rules, repository_trust, tmp_path
+):
+    lib = owner_repo(tmp_path / "lib", remote=None, files={"rust-toolchain.toml": "[toolchain]\n"})
+    sup = owner_repo(tmp_path / "super")
+    git_in(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(lib), "vendor/lib")
+    sub = sup / "vendor" / "lib"
+    git_in(sub, "remote", "set-url", "origin", "https://github.com/stranger/lib")
+    git_in(sub, "update-ref", "refs/remotes/origin/main", "HEAD")
+    verdict = agent_judge(rules, "cargo --version", sub)
+    assert verdict.decision == "ask" and "not an identity's" in verdict.reason()
+
+
+def test_repositoryConfig_workingDirectoryOutsideTheOverride_untrusted(
+    rules, repository_trust, tmp_path, monkeypatch
+):
+    trusted = owner_repo(tmp_path / "t")
+    other = owner_repo(tmp_path / "o", remote="https://github.com/evil/x")
+    monkeypatch.setenv("COBOT_RULES_PROJECT_DIR", str(trusted))
+    assert agent_judge(rules, "cargo tree", other).decision == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "docker build --check sub --no-cache-filter .",
+        "docker build --check sub --zz .",
+        "docker build --check github.com/attacker/repo",
+        "docker build --check sub other",
+        "docker build --check nonesuch",
+    ],
+)
+def test_repositoryConfig_dockerContextTheGateCannotPin_asks(rules, repository_trust, tmp_path, command):
+    repo = owner_repo(tmp_path / "r", files={"sub/Dockerfile": "FROM scratch\n", "other/x": "x\n"})
+    (repo / "sub" / "Dockerfile").write_text("# syntax=evil/frontend\nFROM scratch\n")  # a pull request
+    assert agent_judge(rules, command, repo).decision == "ask", command
+
+
+def test_repositoryConfig_lowerCaseDockerfile_isCompared(rules, repository_trust, tmp_path):
+    repo = owner_repo(tmp_path / "r")
+    (repo / "Dockerfile").unlink()
+    git_in(repo, "rm", "-q", "--cached", "Dockerfile")
+    git_in(repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "rm")
+    git_in(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "dockerfile").write_text("# syntax=evil/frontend\nFROM scratch\n")
+    assert agent_judge(rules, "docker build --check .", repo).decision == "ask"
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "decision"),
+    [
+        (".cargo/config.toml", '[build]\nrustc-wrapper = "scripts/w.sh"\n', "ask"),
+        (".cargo/config.toml", '[build]\nrustc-wrapper = "./w"\n', "ask"),
+        (".cargo/config.toml", '[build]\nrustc-wrapper = "sccache"\n', None),
+        ("rust-toolchain.toml", '[toolchain]\npath = "/abs/in/repo"\n', "ask"),
+        ("rust-toolchain.toml", '[toolchain]\nchannel = "1.99"\n', None),
+    ],
+)
+def test_repositoryConfig_committedFileNamingAProgramByPath_asks(
+    rules, repository_trust, tmp_path, name, text, decision
+):
+    repo = owner_repo(tmp_path / "r", files={name: text})
+    assert agent_judge(rules, "cargo metadata", repo).decision == decision
+
+
+def test_repositoryConfig_relocatedCargoHome_keepsTheOwnersHomeCargoOut(
+    rules, repository_trust, tmp_path, monkeypatch
+):
+    home = tmp_path / "home"
+    repo = owner_repo(home / "work" / "r")
+    (home / ".cargo").mkdir()
+    (home / ".cargo" / "config.toml").write_text("[net]\n")
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "elsewhere"))
+    assert agent_judge(rules, "cargo tree", repo).decision is None
+
+
+def test_git_runsWithoutLazyFetchPromptOrProtocol(monkeypatch, tmp_path):
+    import _cobot_common
+
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append((argv, kwargs["env"]))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(_cobot_common.subprocess, "run", fake_run)
+    _cobot_common.git(["status"], tmp_path)
+    _cobot_common.git_bytes(["cat-file", "blob", "HEAD:x"], tmp_path)
+    for argv, env in seen:
+        assert "protocol.allow=never" in argv
+        assert env["GIT_NO_LAZY_FETCH"] == "1" and env["GIT_TERMINAL_PROMPT"] == "0"

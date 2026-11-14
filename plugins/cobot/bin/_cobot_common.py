@@ -15,8 +15,10 @@ SECRET_RE = re.compile(
 )
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 HELP_ARGS = ("-h", "--help")
-# git reads repository config: an index refresh would run the repository's core.fsmonitor program
-NO_FSMONITOR = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
+# git reads repository config: an index refresh would run the repository's core.fsmonitor program,
+# and a partial clone would fetch a missing blob (over ssh, a core.sshCommand) during cat-file
+NO_FSMONITOR = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "protocol.allow=never"]
+QUIET_GIT_ENV = {"GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
 
 
 class HelpRequested(Exception):
@@ -98,11 +100,12 @@ def data_dir() -> Path:
 
 def git(args: list[str], cwd: Path) -> str | None:
     """Run git and return stdout, or None when git is missing or the call fails. Every call turns
-    the repository's fsmonitor program and untracked cache off."""
+    the repository's fsmonitor program, untracked cache, lazy fetches, prompts and replace refs off."""
     try:
         out = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [shutil.which("git") or "git", *NO_FSMONITOR, *args],
             cwd=cwd,
+            env={**os.environ, **QUIET_GIT_ENV},
             capture_output=True,
             text=True,
             timeout=5,
@@ -119,6 +122,7 @@ def git_bytes(args: list[str], cwd: Path) -> bytes | None:
         out = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [shutil.which("git") or "git", *NO_FSMONITOR, *args],
             cwd=cwd,
+            env={**os.environ, **QUIET_GIT_ENV},
             capture_output=True,
             timeout=5,
             check=False,

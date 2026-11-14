@@ -402,8 +402,14 @@ All notable changes to this project are documented here. The format follows
   asks in every repository: `pip-audit -r` or a project path (it builds source-only
   dependencies) unless `--no-deps` and `--disable-pip`, `uv audit` without `--frozen`,
   `terraform|tofu providers schema`, `docker build --builder`, a `BUILDKIT_SYNTAX` build argument
-  or a Dockerfile on stdin, and `trivy --config`. Every git call cobot makes turns the
-  repository's `core.fsmonitor` off. `cargo --version` is silent on the read list again.
+  or a Dockerfile on stdin, and `trivy --config`. The branch's bypass review also closed:
+  `pnpm audit` runs `.pnpmfile.cjs` (it now needs `--ignore-pnpmfile`), `pip-audit` imports a
+  `pip` planted in the working directory, a stranger's submodule was trusted through its
+  superproject, docker options and git contexts that moved the Dockerfile read, a cargo config
+  naming its wrapper by path, `--registry` and `--userconfig` on the audits, and a blobless
+  clone's lazy fetch from inside the hook. Every git call cobot makes turns the repository's
+  `core.fsmonitor`, lazy fetches, prompts and replace refs off. `cargo --version` is silent on
+  the read list again.
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

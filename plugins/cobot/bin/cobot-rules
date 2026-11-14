@@ -781,9 +781,6 @@ def pip_audit_resolves(tokens: list[str]) -> str | None:
     """``pip-audit`` writes with ``--fix`` or ``-o``, and resolving requirements (``-r``) or a
     project path builds source-only dependencies, running their ``setup.py``, unless both
     ``--no-deps`` and ``--disable-pip`` are given (gate-repo-config)."""
-    written = guarded_token(tokens, PIP_AUDIT_WRITES)
-    if written:
-        return written
     resolves, safe, rest = None, set(), list(tokens)
     while rest:
         arg = rest.pop(0)
@@ -791,6 +788,12 @@ def pip_audit_resolves(tokens: list[str]) -> str | None:
         if arg == "--":
             resolves = resolves or (rest[0] if rest else None)
             break
+        if (
+            getopt_hit(arg, PIP_AUDIT_WRITES)
+            if arg.startswith("--")
+            else option_word(arg) and pip_audit_writes(arg)
+        ):
+            return arg
         if name in ("--no-deps", "--disable-pip"):
             safe.add(name)
         elif arg.startswith("--") and len(name) > 4 and "--requirement".startswith(name):
@@ -806,6 +809,14 @@ def pip_audit_resolves(tokens: list[str]) -> str | None:
     return resolves if resolves and safe != {"--no-deps", "--disable-pip"} else None
 
 
+def pip_audit_writes(cluster: str) -> bool:
+    """``-o`` before any other value letter of the cluster (``-vo``; not the ``o`` of ``-fjson``)."""
+    for letter in cluster[1:]:
+        if letter in PIP_AUDIT_SHORT_VALUES:
+            return letter == "o"
+    return False
+
+
 def pip_audit_cluster(arg: str, rest: list[str], resolves: str | None) -> tuple[str | None, list[str]]:
     """A short cluster (``-vr req``, ``-rreq``): a value letter takes the rest or the next word."""
     for index, letter in enumerate(arg[1:], start=1):
@@ -813,6 +824,15 @@ def pip_audit_cluster(arg: str, rest: list[str], resolves: str | None) -> tuple[
             found = resolves or ("-r" if letter == "r" else None)
             return found, rest if arg[index + 1 :] else rest[1:]
     return resolves, rest
+
+
+PNPM_AUDIT_OPTIONS = Guard(long=_words("fix registry userconfig globalconfig"))
+
+
+def pnpm_audit_unsafe(tokens: list[str]) -> str | None:
+    """``pnpm audit``: a fix, a registry or npmrc the agent picks, or any ``--config.<key>``."""
+    hit = guarded_token(tokens, PNPM_AUDIT_OPTIONS)
+    return hit or next((t for t in tokens if t.startswith("--config.")), None)
 
 
 DOCKER_BUILD_WRITES = Guard(long=_words("output iidfile metadata-file push load builder"), short="o")
@@ -910,8 +930,10 @@ READ_GUARDS: dict[str, Guard] = {
     "cargo-deny check": Guard(
         long=_words("graph"), short="g"
     ),  # cargo-deny check --help: graph_output is recreated
-    "npm audit": Guard(verbs=_words("fix")),  # npm 11.20.0
-    "pnpm audit": Guard(long=_words("fix")),  # pnpm 12.18.0
+    # npm 11.20.0, pnpm 12.18.0: a registry or npmrc the agent picks gets the environment's tokens;
+    # pnpm runs .pnpmfile.cjs (or the file pnpm-workspace.yaml names) unless --ignore-pnpmfile
+    "npm audit": Guard(verbs=_words("fix"), long=_words("registry userconfig globalconfig")),
+    "pnpm audit": Guard(check=pnpm_audit_unsafe, missing="--ignore-pnpmfile"),
     "semgrep": Guard(long=_words("autofix output"), short="ao", suffix="-output"),  # semgrep CLI reference
     "docker build": Guard(check=docker_build_unsafe),  # docker docs; BuildKit frontend syntax
     "docker compose config": Guard(long=_words("output"), short="o"),
@@ -967,6 +989,7 @@ def written_file(reached: Reached) -> str | None:
 # ---------------------------------------------------------------- repository configuration (gate-repo-config)
 
 TOOLCHAIN_FILES = ("rust-toolchain", "rust-toolchain.toml", ".cargo/config", ".cargo/config.toml")
+PROGRAM_FILES = frozenset({"rust-toolchain", "rust-toolchain.toml", "config", "config.toml"})
 # command word -> the files in the working directory and its parents that decide what it runs:
 # rustup's toolchain file (a ``path`` runs that toolchain's binaries) and cargo's config
 # (``build.rustc-wrapper``); npm's and pnpm's registry and token settings; trivy's config
@@ -976,17 +999,22 @@ CONFIG_FILES: dict[str, tuple[str, ...]] = {
     "cargo-audit": TOOLCHAIN_FILES,
     "cargo-deny": TOOLCHAIN_FILES,
     "npm": (".npmrc",),
-    "pnpm": (".npmrc", "pnpm-workspace.yaml"),
+    # pnpm also runs .pnpmfile.cjs, or a file pnpm-workspace.yaml names: pnpm audit needs
+    # --ignore-pnpmfile (READ_GUARDS); package.json's packageManager can switch pnpm's version
+    "pnpm": (".npmrc", "pnpm-workspace.yaml", "package.json"),
 }
 CWD_CONFIG_FILES = {"trivy": ("trivy.yaml",)}  # read from the working directory only
-PARENT_FILES = (*TOOLCHAIN_FILES, ".npmrc")  # read above the repository too
+PARENT_FILES = (*TOOLCHAIN_FILES, ".npmrc", "pnpm-workspace.yaml", ".pnpmfile.cjs", ".pnpmfile.mjs")
 DEFAULT_BRANCHES = ("refs/remotes/origin/main", "refs/remotes/origin/master")
 DOCKER_BUILD_VALUES = frozenset(
     "-t --tag --build-arg --target --platform --network --label --secret --ssh --cache-from --cache-to "
     "--progress --add-host --shm-size --ulimit --call --build-context --annotation --attest --sbom "
     "--provenance --allow --cgroup-parent --isolation -m --memory --memory-swap -c --cpu-shares "
-    "--cpuset-cpus --cpuset-mems --cpu-period --cpu-quota -f --file".split()
+    "--cpuset-cpus --cpuset-mems --cpu-period --cpu-quota -f --file --no-cache-filter --security-opt "
+    "--policy".split()
 )
+DOCKER_BUILD_FLAGS = frozenset("--check --no-cache --pull -q --quiet --rm --force-rm".split())
+DOCKERFILE_NAMES = ("Dockerfile", "dockerfile")  # BuildKit falls back to the lower-case name
 
 
 class RepositoryConfig:
@@ -998,6 +1026,7 @@ class RepositoryConfig:
         self._trust: tuple[bool, str] | None = None
         self._top: Path | None = None
         self._ref: str | None = None
+        self.changed: dict[Path, str | None] = {}  # changed_file per path, once per hook call
 
     def trust(self) -> tuple[bool, str]:
         if self._trust is None:
@@ -1021,9 +1050,12 @@ def gate_trust(cwd: Path) -> tuple[bool, str]:
     """The gate's trust, stricter than memory's: never foreign mode; every remote parsed and owned
     by an identity; a listed root commit only without any remote and with a single root (a fork,
     or a merge of unrelated histories, shares a listed root)."""
-    root = repo_root(cwd)
+    root = checkout_root(cwd)  # a submodule's own remotes; repo_root would read its superproject's
     if memory_dir(cwd).is_symlink():
         return False, "foreign mode, the tree is another owner's code"
+    top = root.resolve()
+    if cwd != top and top not in cwd.parents:
+        return False, "the working directory is outside the checkout the gate reads"
     remote_map = remotes(root)
     if remote_map:
         owners, identities = remote_owners(root)
@@ -1048,10 +1080,29 @@ def default_branch(top: Path) -> str:
     return ""
 
 
+# keys of a toolchain file or cargo config whose value is a program: a path names a file in the
+# tree the comparison does not cover (``rustc-wrapper = "scripts/w.sh"``), a bare name is on PATH
+PROGRAM_KEY_RE = re.compile(
+    r"(?m)^\s*(?:path|rustc|rustdoc|rustc-wrapper|rustc-workspace-wrapper|credential-provider|"
+    r"global-credential-providers)\s*=\s*(.*)$"
+)
+
+
+def names_a_path(data: bytes) -> bool:
+    text = data.decode("utf-8", "replace")
+    return any("/" in value or value.strip(" '\"[").startswith(".") for value in PROGRAM_KEY_RE.findall(text))
+
+
 def changed_file(config: RepositoryConfig, path: Path) -> str | None:
     """The file's name when it is not its blob at the reference commit (untracked there, different,
-    a symlink, unreadable); None when it matches or does not exist. A symlinked folder on the way
-    is not tracked under that path, so it differs too."""
+    a symlink, unreadable) or names a program by path; None when it matches or does not exist. A
+    symlinked folder on the way is not tracked under that path, so it differs too."""
+    if path not in config.changed:
+        config.changed[path] = compare_file(config, path)
+    return config.changed[path]
+
+
+def compare_file(config: RepositoryConfig, path: Path) -> str | None:
     if not (path.exists() or path.is_symlink()):
         return None
     ref = config.ref()
@@ -1063,18 +1114,21 @@ def changed_file(config: RepositoryConfig, path: Path) -> str | None:
     if not ref or data is None:
         return str(path)
     blob = git_bytes(["cat-file", "blob", f"{ref}:{relative}"], config.top())
-    return None if blob == data else str(path)
+    if blob != data:
+        return str(path)
+    return str(path) if path.name in PROGRAM_FILES and names_a_path(data) else None
 
 
 def parent_config(config: RepositoryConfig) -> str | None:
     """A toolchain, cargo or npm file above the repository (rustup, cargo and npm read every parent
     directory); the owner's own ``$CARGO_HOME`` and ``~/.npmrc`` are left out."""
-    cargo_home = Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
-    own = {cargo_home / "config", cargo_home / "config.toml", Path.home() / ".npmrc"}
+    homes = {Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo"), Path.home() / ".cargo"}
+    own = {(home / name).resolve() for home in homes for name in ("config", "config.toml")}
+    own.add((Path.home() / ".npmrc").resolve())
     for folder in config.top().parents:
         for name in PARENT_FILES:
             path = folder / name
-            if path not in own and (path.exists() or path.is_symlink()):
+            if path.resolve() not in own and (path.exists() or path.is_symlink()):
                 return str(path)
     return None
 
@@ -1093,30 +1147,34 @@ def safe_build_path(word: str) -> bool:
 
 
 def docker_build_files(plain: list[str], cwd: Path) -> list[Path] | str:
-    """The Dockerfile ``docker build`` reads, or the word that puts it outside the working
-    directory."""
+    """The Dockerfiles ``docker build`` may read, or the word that makes them unknown: an option the
+    gate does not read (it could take the next word as its value), more than one context, a context
+    that is no directory here (``github.com/x/y`` is a git context), a path outside."""
     verb = strip_global_options(plain)
     rest, dockerfile, contexts = list(verb[2:]), None, []
     while rest:
         arg = rest.pop(0)
         name, has_value, value = arg.partition("=")
-        if name in ("-f", "--file") or (arg.startswith("-f") and not arg.startswith("--") and len(arg) > 2):
-            value = (
-                value
-                if has_value
-                else (arg[2:] if name not in ("-f", "--file") else (rest.pop(0) if rest else ""))
-            )
+        if name in ("-f", "--file") or (arg.startswith("-f") and not arg.startswith("--")):
+            value = value if has_value else (arg[2:] or (rest.pop(0) if rest else ""))
             if not safe_build_path(value):
                 return value or arg
             dockerfile = value
-        elif name in DOCKER_BUILD_VALUES and not has_value:
-            rest = rest[1:]
-        elif not option_word(arg):
-            if not safe_build_path(arg):
+        elif name in DOCKER_BUILD_VALUES:
+            rest = rest if has_value else rest[1:]
+        elif option_word(arg):
+            if arg not in DOCKER_BUILD_FLAGS:
                 return arg
+        elif not safe_build_path(arg) or contexts:
+            return arg
+        else:
             contexts.append(arg)
-    context = contexts[-1] if contexts else "."
-    return [cwd / (dockerfile or str(Path(context) / "Dockerfile"))]
+    context = contexts[0] if contexts else "."
+    if not (cwd / context).is_dir():
+        return context
+    if dockerfile:
+        return [cwd / dockerfile]
+    return [cwd / context / name for name in DOCKERFILE_NAMES]
 
 
 def deciding_files(plain: list[str], config: RepositoryConfig) -> list[Path] | str | None:
@@ -1132,6 +1190,10 @@ def deciding_files(plain: list[str], config: RepositoryConfig) -> list[Path] | s
         return [config.cwd / name for name in CWD_CONFIG_FILES[head]]
     if strip_global_options(plain)[:2] == ["docker", "build"]:
         return docker_build_files(plain, config.cwd)
+    if head == "pip-audit":  # it runs ``python -m pip``, which imports pip from the working directory
+        return sorted(
+            entry for entry in config.cwd.iterdir() if entry.name == "pip" or entry.name.startswith("pip.")
+        )
     return None
 
 
@@ -1148,7 +1210,13 @@ def repository_config(plain: list[str], origin: str, config: RepositoryConfig) -
     if origin:
         return f"{head} via {origin[:30]} reads the repository's configuration; {READ_LIST_GAP}"
     if isinstance(files, str):
-        return f"{head} reads '{files[:40]}' outside the working directory; {READ_LIST_GAP}"
+        return f"{head} '{files[:40]}' could read files outside the working directory; {READ_LIST_GAP}"
+    if head == "pip-audit":
+        return (
+            files
+            and f"pip-audit imports '{files[0].name}' from the working directory; {READ_LIST_GAP}"
+            or None
+        )
     trusted, why = config.trust()
     if not trusted:
         return f"{head} reads the repository's configuration and the repository is not trusted ({why})"

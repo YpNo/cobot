@@ -172,4 +172,12 @@ form); fixed in T02 with read-list rows. The gate's trust tests run against real
 repositories (a fork remote, a merge of unrelated histories, a file above the repository, a
 commit on `HEAD` only, an untracked or unreadable file); every other test gets a neutral
 repository check from `tests/conftest.py`. pip-audit, docker and trivy follow their documentation
-(not installed). F-25 closed, F-26 parked. Bypass-aimed review: pending.
+(not installed). F-25 closed, F-26 parked. Bypass-aimed review (code-reviewer, 2026-11-14,
+pnpm 12.18, rustup 1.29.2, git 2.47.3, 2 500 fuzzed commands per agent, no crash): 2 BLOCKER, 3
+MAJOR, 4 MINOR, all folded in T05: `pnpm audit` runs `.pnpmfile.cjs` (now `--ignore-pnpmfile`
+only); `pip-audit` imports a planted `pip` from the working directory; a stranger's submodule
+read its superproject's remotes (trust now reads the checkout); docker value options, git
+contexts and a lower-case `dockerfile`; a blobless clone lazy-fetched in the hook (no lazy fetch,
+prompt or protocol now); a matching config naming its wrapper by path; `--registry`; a cwd outside
+`COBOT_RULES_PROJECT_DIR`; `-fjson` and a relocated `CARGO_HOME` false asks. During the review one
+probe made a real `git fetch` to a non-existent `github.com/ypno/src.git`; nothing local was sent.

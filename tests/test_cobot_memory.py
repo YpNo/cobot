@@ -895,4 +895,5 @@ def test_git_everyCall_turnsTheRepositorysFsmonitorOff(memory, monkeypatch, tmp_
 
     monkeypatch.setattr(_cobot_common.subprocess, "run", fake_run)
     _cobot_common.repo_trust(tmp_path, tmp_path / ".agent")
-    assert seen and all(argv[1:5] == _cobot_common.NO_FSMONITOR for argv in seen)
+    width = len(_cobot_common.NO_FSMONITOR)
+    assert seen and all(argv[1 : 1 + width] == _cobot_common.NO_FSMONITOR for argv in seen)

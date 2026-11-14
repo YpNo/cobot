@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
+The first release since 0.1.0 and the one that makes the repository public: R1.1 (learning,
+currency, delivery, the security sweep), R2 slices 1–4 (hardening, UI and CI/CD experts, cloud
+experts, stacks), the consult router, the MCP read-name gate, the GCP proof with the Google Cloud
+MCP servers, new projects, the gate's bash shell model (command substitutions, a `cd` before a
+runner, brace and glob expansion, repository configuration and trust), and the eval suite running
+in CI under workload identity federation.
+
 ### Added
 
 - New projects (`.agent/specs/new-project.md`): `cobot-memory check` prints a `tree:` line (new,

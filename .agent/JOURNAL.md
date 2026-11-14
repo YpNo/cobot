@@ -170,3 +170,12 @@ Proof: check-plugin failed on exactly the five skills before the text change, ok
 Open: unproven until a paid consult-fan-out run; F-27 (the consultant's `cd` asks) is a gate-rule decision for the owner.
 Next: owner pushes fix/agent-foreground and merges, then rebases or re-cuts the 0.2.0 release on top; a cases=consult-fan-out run.
 verified: 148c1ca · pytest+cov, ruff, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — release 0.2.0 cut, rebased onto main (PR 27)
+
+Changed: chore/release-0.2.0 rebuilt on main e563bfb: plugin.json and marketplace.json to 0.2.0; CHANGELOG Unreleased cut to [0.2.0] - 2026-11-14, the summary naming the gate's shell model and the eval suite in CI under federation; release-0.2.0 spec row 8 notes the rebase. The 2026-11-12 cut (919a7c4, ced0607) conflicted with everything merged since (PRs 28–48).
+Why: owner asked to rebase the release PR and fix its conflicts; PR 48 (agents in the foreground) merged after the full suite.
+Proof: release.yml's version check replayed (plugin.json, marketplace.json and the changelog heading agree; notes extract 457 lines); full eval suite on f1e200f (run 43584857035) 16 of 17, overall 0.997, mean Δ +0.32, the one miss fixed by PR 48 and proven by run 43599532436 (consult-fan-out 3 of 3, Δ +0.50, all six consultant calls in the foreground); pytest with coverage exit 0 (98.70 %); ruff check and format, shellcheck, markdownlint, zizmor offline (0 medium or higher), claude plugin validate --strict (plugin and marketplace), check-plugin exit 0; cobot-memory check exit 0 (2 open findings; journal mixed order and brief 5996 of 6000 dropping CONTEXT Stack and Environment, both already on main); github-settings --check: 0 changes pending.
+Open: /cobot:ship on a service repository (spec row 6); F-20 and F-27 open; the cut date moves if the tag is pushed another day; commit author emails become public with the history; visibility, settings --apply, the social preview and the tag are the owner's.
+Next: owner force-pushes chore/release-0.2.0, merges PR 27, goes public, runs github-settings --apply, uploads docs/assets/social.jpg, pushes v0.2.0.
+verified: 449ef81 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, memory check, release version check, settings check

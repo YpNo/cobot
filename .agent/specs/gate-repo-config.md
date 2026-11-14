@@ -166,4 +166,10 @@ branch. See *Deciding files* in the model.
 
 ## Converge
 
-pending
+2026-11-14, T01–T04 built. Found while building: `cargo --version` had asked for the agents
+since gate-findings T03 (`--version` among cargo's global flags dropped it from the canonical
+form); fixed in T02 with read-list rows. The gate's trust tests run against real temporary
+repositories (a fork remote, a merge of unrelated histories, a file above the repository, a
+commit on `HEAD` only, an untracked or unreadable file); every other test gets a neutral
+repository check from `tests/conftest.py`. pip-audit, docker and trivy follow their documentation
+(not installed). F-25 closed, F-26 parked. Bypass-aimed review: pending.

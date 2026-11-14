@@ -119,3 +119,11 @@ Why: spec gate-repo-config T02 (F-25), owner's answer a). Found while building: 
 Proof: pytest with coverage exit 0 (98.67 %); ruff check and format exit 0.
 Next: T03 pip-audit, uv audit, providers schema, docker frontend.
 verified: f8b4574 · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T03: resolving asks everywhere
+
+Changed: cobot-rules (Guard.missing and its reason; PIP_AUDIT_* with pip_audit_resolves and pip_audit_cluster; DOCKER_BUILD_WRITES and docker_build_unsafe; READ_GUARDS uv audit missing --frozen, trivy config and -c, terraform and tofu providers schema); tests: RESOLVES_ASK for both agents, RESOLVES_SILENT, the pip-audit and uv audit reasons.
+Why: spec gate-repo-config (owner's item 2, challenger BLOCKER uv audit, MAJOR providers schema and docker frontend). pip-audit, docker and trivy are not installed here: their rows follow the tools' documentation.
+Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0.
+Next: T04 docs, CHANGELOG, decision 28, F-25 closed, F-26 parked.
+verified: 0c337b6 · pytest+cov, ruff

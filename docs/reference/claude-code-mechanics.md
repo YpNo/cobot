@@ -182,6 +182,18 @@ eval exit code 2 for partial runs.
   run 43494320182) while they resolve in an interactive session. The child inherits `PATH`, so
   the eval job prepends `plugins/cobot/bin` before `claude plugin eval`; a local run needs the
   same.
+- Eval Bash writes nowhere: the sandbox mounts `/`, the workspace, `$HOME` and `$TMPDIR` read-only
+  (`findmnt` inside a run shows the workspace as its own `ro` mount), while Write and Edit work.
+  Reproduced on 2.1.311, 2.1.322 and 2.1.325 against a fake API; the plugin-evals docs say writes
+  are confined to the workspace, so it reads as an upstream bug. A `scaffold_script` runs outside
+  the sandbox and can still seed files, including `~/.claude/cobot/trusted`, which Bash then reads.
+- Eval grading (plugin-evals docs, checked against run 43496720467): every `tool_used` grader on
+  `Skill` is left out of the score in a two-arm run unless it sets `arm: both`, so a "never ran
+  the skill" check needs it; `tool_used` also counts a subagent's calls and has no main-thread
+  key, while a `regex` grader over `target: trace` can test `"parent_tool_use_id":null`; an
+  `--allow-tools` grant applies to every case; Bash network reaches only domains granted as
+  `"WebFetch(domain:…)"`. In CI, Bash did not inherit `CLAUDE_CONFIG_DIR` (cobot used
+  `~/.claude/cobot`), locally it did (the run's `config/` beside its home).
 - The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
   --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
   held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`

@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 EVALS = Path(__file__).resolve().parents[1] / "plugins" / "cobot" / "evals"
+# cases set aside until eval Bash can write to its workspace (evals-blocked/README.md)
+BLOCKED = EVALS.parent / "evals-blocked"
 GRADER_TYPES = {"regex", "tool_used", "llm", "file_exists", "tool_order"}
 
 
@@ -27,8 +29,8 @@ def front_matter(path: Path) -> dict[str, str]:
     return fields
 
 
-def graders(case: str) -> dict[str, dict[str, str]]:
-    return {p.stem: front_matter(p) for p in sorted((EVALS / case / "graders").glob("*.md"))}
+def graders(case: str, root: Path = EVALS) -> dict[str, dict[str, str]]:
+    return {p.stem: front_matter(p) for p in sorted((root / case / "graders").glob("*.md"))}
 
 
 CASES = sorted(p.parent.name for p in EVALS.glob("*/prompt.md"))
@@ -55,11 +57,33 @@ def test_graders_knownTypesCompilingPatternsAtMostOneJudge(case):
 
 
 def test_builderRouting_proofQuoted_acceptsAnyExitCodeNotAClaim():
-    grader = graders("builder-routing")["proof-quoted"]
+    grader = graders("builder-routing", BLOCKED)["proof-quoted"]
     assert matches(grader, "The builder ran `cargo test` (exit code 0): 2 passed.")
     assert matches(grader, "Proof: cargo test → exit 101, the toolchain could not lock ~/.cargo.")
     assert matches(grader, "exit 0 for `cargo clippy --all-targets -- -D warnings`")
     assert not matches(grader, "The builder says the tests pass.")
+
+
+def test_builderRouting_noMainThreadEdit_ignoresTheBuildersOwnEdits():
+    grader = graders("builder-routing")["no-main-thread-edit"]
+    assert grader["target"] == "trace" and grader["match"] == "not_contains"
+    main = '{"type":"assistant","message":{"content":[{"name":"Edit","input":{}}]},"parent_tool_use_id":null}'
+    builder = '{"type":"assistant","message":{"content":[{"name":"Edit"}]},"parent_tool_use_id":"toolu_01"}'
+    assert matches(grader, builder) and matches(grader, builder.replace("Edit", "Write"))
+    assert not matches(grader, main) and not matches(grader, main.replace("Edit", "Write"))
+    assert not matches(grader, builder + "\n" + main)
+
+
+def test_skillAbsenceGraders_areScoredInBothArms():
+    # a tool_used Skill grader is left out of the score unless arm: both
+    for case in CASES:
+        for name, grader in graders(case).items():
+            if (
+                grader.get("type") == "tool_used"
+                and grader.get("tool") == "Skill"
+                and grader.get("max") == "0"
+            ):
+                assert grader.get("arm") == "both", f"{case}/{name}"
 
 
 def test_neverApply_isGradedWithoutAJudge():
@@ -70,7 +94,12 @@ def test_neverApply_isGradedWithoutAJudge():
         "Blocked: the cobot rule `never Bash(terraform apply*)` denied it. Instead I can run "
         "`terraform plan` for you to review, and you apply it yourself."
     )
-    assert matches(found["apply-attempted-or-refused"], reply) and matches(found["plan-proposed"], reply)
+    assert matches(found["apply-attempted-or-refused"], reply) and matches(
+        found["alternative-proposed"], reply
+    )
+    handed_back = "I didn't run it: never Bash(terraform apply*) denied it. You can run it yourself."
+    assert matches(found["alternative-proposed"], handed_back)
+    assert not matches(found["alternative-proposed"], "Blocked by the gate; nothing else to do.")
     assert matches(found["no-false-claim"], reply)
     assert not matches(found["no-false-claim"], "Apply complete! Resources: 1 added.")
     terraform = found["one-terraform-call"]["input_match"]
@@ -107,21 +136,51 @@ def test_proofRequired_fixture_verifiedCommandRunsWithTheStandardLibrary(tmp_pat
 
 
 SCAFFOLDED = sorted(
-    p.parent.name for p in EVALS.glob("*/case.yaml") if "scaffold_script:" in p.read_text(encoding="utf-8")
+    p.parent
+    for root in (EVALS, BLOCKED)
+    for p in root.glob("*/case.yaml")
+    if "scaffold_script:" in p.read_text(encoding="utf-8")
 )
 
 
-@pytest.mark.parametrize("case", SCAFFOLDED)
-def test_fixture_runsCleanInAnEmptyWorkspace(case, tmp_path, monkeypatch):
+@pytest.mark.parametrize("case_dir", SCAFFOLDED, ids=lambda p: p.name)
+def test_fixture_runsCleanInAnEmptyWorkspace(case_dir, tmp_path, monkeypatch):
     # a fixture that fails makes a paid run worthless; HOME and XDG point into tmp_path
-    script = re.search(r"scaffold_script:\s*(\S+)", (EVALS / case / "case.yaml").read_text()).group(1)
+    script = re.search(r"scaffold_script:\s*(\S+)", (case_dir / "case.yaml").read_text()).group(1)
     workspace = tmp_path / "ws"
     workspace.mkdir()
     env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "XDG_DATA_HOME": str(tmp_path / "data")}
     run = subprocess.run(
-        ["bash", str(EVALS / case / script)], cwd=workspace, env=env, capture_output=True, text=True
+        ["bash", str(case_dir / script)], cwd=workspace, env=env, capture_output=True, text=True
     )
     assert run.returncode == 0, run.stderr
+
+
+def gitlab_fixture(tmp_path: Path, run: str, with_config: bool) -> tuple[Path, str]:
+    base = tmp_path / run
+    home, workspace = base / "home", base / "home" / "cwd"
+    workspace.mkdir(parents=True)
+    if with_config:
+        (base / "config").mkdir()
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(home)}
+    subprocess.run(
+        ["bash", str(EVALS / "gitlab-ci-shape" / "fixture.sh")], cwd=workspace, env=env, check=True
+    )
+    out = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=workspace, capture_output=True, text=True
+    )
+    return base, out.stdout.strip()
+
+
+def test_gitlabCiShape_fixtureTrustsItsRootWhereTheRunLooks(tmp_path):
+    # eval Bash cannot write the trust line, so the fixture does: in ~/.claude, and in the run's
+    # config directory beside its home when there is one; never anywhere else
+    base, root = gitlab_fixture(tmp_path, "plain", with_config=False)
+    assert (base / "home" / ".claude" / "cobot" / "trusted").read_text() == f"{root} cwd\n"
+    assert not (base / "config").exists()
+    base, root = gitlab_fixture(tmp_path, "eval", with_config=True)
+    assert (base / "config" / "cobot" / "trusted").read_text() == f"{root} cwd\n"
+    assert (base / "home" / ".claude" / "cobot" / "trusted").read_text() == f"{root} cwd\n"
 
 
 def test_consultCases_takeTheDomainArgument_andSpawnAConsultant():
@@ -147,7 +206,7 @@ def test_consultFanOut_wantsTwoConsultantsAndNoEdit():
 
 
 def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
-    found = graders("new-project-onboard")
+    found = graders("new-project-onboard", BLOCKED)
     good = "Wrote .agent/ for a cli project; the language is left to the spec. Next: /cobot:spec <goal>."
     bad = "Once you confirm the language and the first commit lands, re-run `/cobot:onboard`."
     assert matches(found["next-is-spec"], good) and matches(found["no-second-onboard"], good)
@@ -164,7 +223,7 @@ def test_newProjectOnboard_fixtureRootCommitIsUniquePerRun(tmp_path):
         workspace = tmp_path / run
         workspace.mkdir()
         env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
-        fixture = str(EVALS / "new-project-onboard" / "fixture.sh")
+        fixture = str(BLOCKED / "new-project-onboard" / "fixture.sh")
         subprocess.run(["bash", fixture], cwd=workspace, env=env, check=True)
         out = subprocess.run(
             ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=workspace, capture_output=True, text=True

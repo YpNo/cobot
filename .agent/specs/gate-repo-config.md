@@ -86,6 +86,17 @@ file would be the agent's choice. Guarded everywhere for the same reason: `docke
 `--file=-`), `terraform|tofu providers schema` (it starts the provider binaries), and `uv audit`
 without `--frozen` (locking builds the project).
 
+**Deciding files (owner's answer, challenger MAJOR).** A trusted repository counts only when
+each deciding file in the tree matches its blob at origin's default branch. The files, in the
+working directory and each parent up to the repository's top level, are: `rust-toolchain`,
+`rust-toolchain.toml`, `.cargo/config` and `.cargo/config.toml` for the cargo rows; `.npmrc`
+(and `pnpm-workspace.yaml` for pnpm) for the audit rows; `trivy.yaml` in the working directory;
+and the Dockerfile `docker build` reads. The branch is `refs/remotes/origin/HEAD`, else
+`origin/main`, else `origin/master`. With no remote, the comparison is against `HEAD`. Blobs are
+read with `git cat-file` (no index, no filter). A file that is untracked there, or differs, makes
+the repository untrusted, and the ask names the file. A checked-out pull request that changes
+one of these files therefore asks, and so does the owner's own branch editing one.
+
 **`pip-audit`.** `READ_GUARDS["pip-audit"]` becomes a parser. It asks when `-r|--requirement`
 (any abbreviation) or a project-path operand appears, unless both `--no-deps` and
 `--disable-pip` are given. The `--fix` and `-o|--output` guards stay. Values of `-f --format -s
@@ -149,8 +160,9 @@ the identity rule only); BLOCKER `uv audit` builds the project (asks unless `--f
 docker `BUILDKIT_SYNTAX`, `--builder` and stdin; MINOR the fsmonitor test (now an argv test),
 `rev-list` cost (skipped with a remote), pip-audit forms and test isolation. Put to the owner:
 MAJOR a pull request checked out in the owner's repository (`gh pr checkout`) keeps the
-repository trusted while its `.cargo/config.toml` is the contributor's. **Owner's answer:**
-pending.
+repository trusted while its `.cargo/config.toml` is the contributor's. **Owner's answer
+(2026-11-14):** a) each deciding file present in the tree must match its blob at origin's default
+branch. See *Deciding files* in the model.
 
 ## Converge
 

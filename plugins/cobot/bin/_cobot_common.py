@@ -15,6 +15,8 @@ SECRET_RE = re.compile(
 )
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 HELP_ARGS = ("-h", "--help")
+# git reads repository config: an index refresh would run the repository's core.fsmonitor program
+NO_FSMONITOR = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
 
 
 class HelpRequested(Exception):
@@ -95,10 +97,11 @@ def data_dir() -> Path:
 
 
 def git(args: list[str], cwd: Path) -> str | None:
-    """Run git and return stdout, or None when git is missing or the call fails."""
+    """Run git and return stdout, or None when git is missing or the call fails. Every call turns
+    the repository's fsmonitor program and untracked cache off."""
     try:
         out = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [shutil.which("git") or "git", *args],
+            [shutil.which("git") or "git", *NO_FSMONITOR, *args],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -169,3 +172,57 @@ def host_owner_repo(url: str) -> tuple[str, str, str] | None:
 def root_commits(root: Path) -> list[str]:
     out = git(["rev-list", "--max-parents=0", "HEAD"], root) or ""
     return out.split()
+
+
+def read_lines(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
+def external_memory(root: Path) -> Path | None:
+    """Where foreign mode keeps the memory of the repository whose origin is at ``root``."""
+    origin = remotes(root).get("origin")
+    parts = host_owner_repo(origin) if origin else None
+    return data_dir() / parts[0] / parts[1] / parts[2] if parts else None
+
+
+def remote_owners(root: Path) -> tuple[dict[str, str], set[str]]:
+    """Each remote's ``host/owner`` and the owner's identities (``~/.claude/cobot/identities``)."""
+    owners = {name: f"{p[0]}/{p[1]}" for name, url in remotes(root).items() if (p := host_owner_repo(url))}
+    return owners, {line.lower() for line in read_lines(cobot_config_dir() / "identities")}
+
+
+def trusted_roots() -> set[str]:
+    return {line.split()[0] for line in read_lines(cobot_config_dir() / "trusted") if line.split()}
+
+
+def repo_trust(root: Path, agent_dir: Path) -> tuple[bool, str]:
+    """Whether the memory at ``agent_dir`` may be read as the owner's: foreign mode resolving to the
+    external memory, every remote owner an identity, or a root commit listed in
+    ``~/.claude/cobot/trusted``. Reads remotes, root commits and two config files; scans no tree."""
+    if agent_dir.is_symlink():
+        expected = external_memory(root)
+        if expected and agent_dir.resolve() == expected.resolve():
+            return True, "foreign mode, memory outside the tree"
+        return (
+            False,
+            f".agent is a symlink that does not resolve to the external memory for origin ({expected})",
+        )
+    remote_map = remotes(root)
+    owners, identities = remote_owners(root)
+    strangers: list[str] = []
+    if remote_map:
+        if owners and set(owners.values()) <= identities:
+            return True, f"every remote owner is an identity ({', '.join(sorted(set(owners.values())))})"
+        strangers = [
+            f"{name} -> {owner}" for name, owner in sorted(owners.items()) if owner not in identities
+        ]
+    roots = set(root_commits(root))
+    if roots and roots & trusted_roots():
+        return True, "root commit listed in ~/.claude/cobot/trusted"
+    if not remote_map and not roots:
+        return False, "no remote and no commit: /cobot:onboard starts it"
+    detail = f" ({', '.join(strangers)})" if strangers else ""
+    return False, f"no identity matches every remote{detail} and the root commit is not trusted"

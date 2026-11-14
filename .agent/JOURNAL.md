@@ -204,3 +204,12 @@ Proof: tests first (pwd rule and grader failed before the change); pytest with c
 Open: the consult cases' behaviour is unproven until a paid run; the new grader makes consult-fan-out fail on any consultant command off the read list.
 Next: owner pushes fix/f27-consultant-in-place and merges, then cases=consult-fan-out (and the full suite when convenient).
 verified: 05fb87a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check, gate probe, jq run
+
+## 2026-11-14 — fewer stops for the owner
+
+Changed: protocol Rules: Edit or Write, not a script; JSON with jq, not python3 -c; never a variable as the command; Paths ≤ 4 questions; Learning keeps the rule, the steps stay in the learn skill (2994 of 3000 chars); spec skill: four questions as a ceiling, decide what CONTEXT.md, a cobot rule or a later spec settles, environment answers into CONTEXT.md, fold BLOCKER and MAJOR yourself and ask only to overrule or when the fold drops what the owner asked for; gate: a lone mise info flag is not opaque (tests first); architecture.md; CHANGELOG.
+Why: latex-resume-generator session 77d61bc6 (42 asks, 9 question rounds); replay through main 71ba8e3: 37 of 41 Bash asks still ask (23 python3 heredocs, 8 python3 -c, 2 variable commands, 2 real git commit, 2 large scraping scripts that should ask); the substitution PRs had fixed 4 of 6.
+Proof: replay of the 41 asked commands through main and this branch (37 ask on both: the change is guidance); the named replacements are silent (Edit and Write on .agent/specs and CONTEXT.md, curl | jq, each --version named, mise --version) and the replaced forms ask; pytest with coverage exit 0 (98.70 %); ruff check and format, shellcheck, markdownlint, claude plugin validate --strict (plugin and marketplace), check-plugin, cobot-memory check exit 0.
+Open: the drop in stops is unproven until a live session; the questions rule is measured by the owner's next spec.
+Next: owner pushes fix/fewer-approvals and merges.
+verified: 89b01d4 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check, latex replay, gate probes

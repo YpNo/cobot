@@ -229,3 +229,12 @@ Proof: replay of the 41 asked commands through main and this branch (37 ask on b
 Open: the drop in stops is unproven until a live session; the questions rule is measured by the owner's next spec.
 Next: owner pushes fix/fewer-approvals and merges.
 verified: 89b01d4 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check, latex replay, gate probes
+
+## 2026-11-15 — Antigravity spec on agy 1.5.9, challenger pass 3
+
+Changed: feat/antigravity rebased onto main 24a71af (journal entries kept in date order); design input gains "Facts re-read 2026-11-15 (agy 1.5.9)", every row sourced; spec folds them (89d4c26: both file-tool families, run_workflow force_ask, invoke_subagent Workspace as a mode in either shape, orchestration allow lists, plugin MCP names, one SessionStart shape, refresh by reinstall, learner on pro) and challenger pass 3 (4eeb4d0); spec 298 lines.
+Why: the owner's agy session report (/home/ypno/workspace/cobot-agy-report.md), checked against agy changelog 1.5.9, the live hooks and permissions pages, the built-in docs and an agy plugin validate probe; where the report and the live docs disagree (file-tool names, run_command Cwd, invoke_subagent shape) the gate accepts both.
+Proof: live docs confirm allow defers and auto_approve widens, so the gate design holds; validate accepts flash_lite and an unknown tool name silently, and names both file-tool families in its matcher hints; challenger pass 3 SOUND WITH CHANGES (BLOCKER: .agent, _agents, _agent customization roots, config.json, sidecars and other plugins outside the never rows; MAJOR: manage_task send_input to a REPL, workflow agents' finish; six MINOR), every point checked at its source and folded; markdownlint, check-plugin exit 0.
+Open: whether PreToolUse fires for an invoke_subagent child stays the smoke's (T08); nothing built yet.
+Next: owner reviews the spec; then /cobot:build antigravity from T01.
+verified: 4eeb4d0 · source checks, challenger pass 3, markdownlint, check-plugin

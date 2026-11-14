@@ -36,6 +36,32 @@ fixtures), antigravity.google/docs and the changelog (1.5.5 is the newest releas
 | Tests | no eval harness; `agy -p --output-format json` for scripted runs; EGM tests with fixtures in a temporary HOME | a smoke script is the floor |
 | Unknown | whether PreToolUse fires for a **subagent's** tool call; private-repository install | spike S3 decides whether builders may run under agy at all |
 
+## Facts re-read 2026-11-15 (agy 1.5.9)
+
+An agy session answered a fixed question list (the owner's report, `agy models` on a Google
+account sign-in); every claim below was checked here against `agy changelog`, the live pages
+antigravity.google/docs/hooks and /permissions, the built-in docs under
+`~/.gemini/antigravity-cli/builtin/skills/`, or an `agy plugin validate` probe. Where the report
+and the live docs disagree, both are recorded and the gate accepts both.
+
+| Area | Fact (source) | Consequence |
+|---|---|---|
+| Decisions | `allow` "delegates to the next hook or default policy"; `auto_approve` widens (live hooks page; the built-in `hooks.md` abridges `allow` to "automatically allow") | no opinion stays `allow`; `auto_approve` is never emitted |
+| File tools | two families: `view_file` (`AbsolutePath`), `write_to_file`, `replace_file_content`, `multi_replace_file_content` (`TargetFile`) in the live docs; `read_file`, `write_file`, `edit_file` (`Path`) in the report's Gemini 4 session; validate's matcher hints name both ("match `replace_file_content` or `edit_file`") | the gate and the agent tool table map both |
+| `run_command` | `CommandLine`; the live docs list a `Cwd` argument, the report's session had none; hook stdin carries a top-level `cwd`, "the agent's working directory" (live and built-in docs, 1.5.4) | `Cwd` and `cwd` serve expansion only; the project layer stays `workspacePaths` |
+| `run_workflow` | new for everyone in 1.5.9 (changelog): runs Python from `Script` or `ScriptPath` in `Cwd`; its `call_tool` runs pre-tool hooks and any unapproved ask is denied; workflow agents are main agents (`run-workflow/SKILL.md`) | `force_ask`; inside a workflow every cobot ask becomes a deny |
+| `invoke_subagent` | `Workspace` is a mode, `inherit`, `branch` or `share` ("other values are errors", `run-workflow/SKILL.md`; the report's tool declaration); the live docs show `Subagents`, an array of specs | the three modes or none → `allow`, anything else → `force_ask`; both shapes read |
+| Orchestration | `schedule`, `list_permissions`, `ask_permission`, `manage_task` (`list`, `status`, `kill`, `send_input`) (live docs) | allow, except `send_input`, judged as Bash |
+| Retired tools | `find_by_name`, `grep_search`, `list_dir` left the default baseline and stay available to an agent that lists them (changelog) | agents list both families |
+| Agents | `model` takes `inherit`, `flash_lite`, `flash`, `pro` (validate accepts `flash_lite`); a concrete model or `sonnet` skips the agent; `effort` is ignored (report probe); validate accepts an unknown tool name silently (probe) | tiers only; check-plugin checks agy tool names |
+| Tiers | `pro` → Gemini 4 Argon and `flash` → Gemini 3.8 Flash on a `GEMINI_API_KEY` (changelog fix); the same on other connections is inferred; models differ per connection (sign-in, API key, ADC, Enterprise, gateway) | the learner, `effort: high` in Claude Code, takes `pro` |
+| SessionStart | one shape: `{"injectSteps":[{"systemMessage":{"systemMessage":"…","metadata":{…}}}]}`; no documented size limit (both docs) | one constant, no "try both" |
+| MCP | plugin MCP servers are namespaced `<plugin>_<server>` (changelog) | known server names include installed plugins' servers |
+| Hooks | default timeout 30 s; payload has no agent identity (live and built-in docs); fail open on error (report, docs page; the 1.5.3 spike showed it) | the shim's deny-by-output holds |
+| Install | `agy plugin install <folder>` replaces an installed copy in place, swaps atomically and restores the previous one on failure (changelog 1.4.8, 1.5.6); install from a GitHub subpath exists (changelog) | refresh = validate, then install; never uninstall first |
+
+Still unknown: whether PreToolUse fires for an `invoke_subagent` child's calls (the smoke, T08).
+
 ## Shape: one tree, read by both (proven by validation, 2026-11-11)
 
 EGM does not generate an Antigravity copy: agy installs the plugin folder and reads the shared

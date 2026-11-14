@@ -25,7 +25,7 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 | markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-11 |
 | plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-11 |
 | gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-09 |
-| plugin contract (sizes, descriptions, agent budget, knowledge lines) | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-11 |
+| plugin contract (sizes, descriptions, agent budget, knowledge lines, foreground agent calls) | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-11 |
 | memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-09 |
 | reinstall into a dogfood repository (uninstall + install; `claude plugin update` ignores same-version edits) | `./install.sh --refresh /path/to/repo` | carried over, not re-run | 2026-11-08 (journal) |
 | evals (paid sessions, owner's terminal) | `cd plugins/cobot && claude plugin eval . --runs 1 --ablation none --no-publish --allow-tools Bash Write Edit` | carried over, not re-run | 2026-11-08 (journal) |

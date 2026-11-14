@@ -99,3 +99,16 @@ def test_check_protocolExactlyAtTheCharBudget_passes(contract, plugin):
 def test_check_protocolMissing_isReportedNotRaised(contract, plugin):
     (plugin / "protocol.md").unlink()
     assert "protocol.md: missing" in contract.check(plugin)
+
+
+def test_check_skillNamingAnAgentWithoutForegroundFlag_fails(contract, plugin):
+    # an Agent call that omits run_in_background started in the background in 22 of 23 calls
+    # (eval run 43584857035): the skill then reported before the agent did
+    (plugin / "agents" / "consultant.md").write_text("---\nname: consultant\ndescription: d\n---\nbody\n")
+    skill(plugin, "consult", "router", body="One `Agent` call, `subagent_type: cobot:consultant`.\n")
+    skill(plugin, "learn", "forked", "agent: cobot:consultant\n", body="No spawn named here.\n")
+    problems = contract.check(plugin)
+    assert any("consult" in p and "run_in_background: false" in p for p in problems)
+    assert not any("learn" in p for p in problems)
+    skill(plugin, "wrap", "fan-out", body="One `cobot:consultant` (`run_in_background: false`).\n")
+    assert not any("wrap" in p for p in contract.check(plugin))

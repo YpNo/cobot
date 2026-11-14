@@ -194,6 +194,11 @@ eval exit code 2 for partial runs.
   `--allow-tools` grant applies to every case; Bash network reaches only domains granted as
   `"WebFetch(domain:…)"`. In CI, Bash did not inherit `CLAUDE_CONFIG_DIR` (cobot used
   `~/.claude/cobot`), locally it did (the run's `config/` beside its home).
+- An `Agent` call that omits `run_in_background` may start in the background ("Async agent
+  launched"): 22 of 23 such calls did in run 43584857035 (2.1.322), and all 15 calls with
+  `run_in_background: false` ran in the foreground. The main thread then ends its turn before the
+  agent reports and answers again per finished agent, so a `last_message` grader sees only the
+  last one. Every cobot skill that starts an agent sets the flag; `check-plugin` enforces it.
 - The eval sandbox confines the child's writes outside the workspace: `cobot-memory init
   --foreign` ran and reported success inside a run, and the owner's `~/.local/share/cobot`
   held nothing afterwards (observed 2026-11-08, 2.1.311, bubblewrap backend). A case's `env`

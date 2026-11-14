@@ -261,6 +261,12 @@ All notable changes to this project are documented here. The format follows
 - `actions-pinning` failed every run on `source-or-reresolve` although each one pinned the SHA
   it had just re-resolved upstream: the grader knew `gh api` and the expert's table but not
   `git ls-remote` on the action's repository (run 43580607780). It accepts that now.
+- `/cobot:consult` could report before its consultants did: an `Agent` call that omits
+  `run_in_background` started in the background in 22 of 23 calls (Claude Code 2.1.322, run
+  43584857035), so one `consult-fan-out` run answered "both are still running", then wrote one
+  message per domain as each finished. Consult, spec, wrap, ship and build now set
+  `run_in_background: false` on every agent they start, and `check-plugin` fails a skill that
+  names one of the plugin's agents without it.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

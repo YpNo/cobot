@@ -18,7 +18,7 @@ argument-hint: [spec slug]
    `cobot-memory learn --dry-run`, then `learn`; general entries wait for `learn --promote`.
 3. **Review fan-out**, in one message: `/code-review` at the size's level, `/security-review` when
    the diff touches inputs, auth, secrets, shell or infra, and one `cobot:consultant` per relevant
-   domain with the prompt of `/cobot:consult` step 2 (workflows changed → `gha`; a Dockerfile or
+   domain (`run_in_background: false`) with the prompt of `/cobot:consult` step 2 (workflows changed → `gha`; a Dockerfile or
    compose file → `containers`; a `google` provider or `cloudbuild.yaml` → `gcp`; manifests,
    kustomizations or charts → `kubernetes`; Istio or mesh policies → `service-mesh`).
    Propose `/cobot:security-sweep` (the owner types it), the whole-tree pass, before a release or handover, not at

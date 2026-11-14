@@ -26,7 +26,7 @@ verified commands, run `/code-review low` for small, then one journal line throu
      (headplane has `package.json` and `go.mod`) is split into one task per stack, or goes to the
      builder of the files it changes most with the other skill named in the brief. Brief = the
      task row, its acceptance, the files in scope, the verified commands, nothing more (not the
-     whole spec).
+     whole spec). Every builder call sets `run_in_background: false`: step 3 needs its report.
    - Tasks with disjoint file sets and no mutual deps may run as parallel lanes: at most three
      Agent calls in one message with `isolation: worktree`. You integrate; builders never merge.
 3. On each report: refuse it if `Checks:` lacks a command, an exit code or output; re-run the

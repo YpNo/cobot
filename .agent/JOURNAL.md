@@ -179,3 +179,11 @@ Proof: release.yml's version check replayed (plugin.json, marketplace.json and t
 Open: /cobot:ship on a service repository (spec row 6); F-20 and F-27 open; the cut date moves if the tag is pushed another day; commit author emails become public with the history; visibility, settings --apply, the social preview and the tag are the owner's.
 Next: owner force-pushes chore/release-0.2.0, merges PR 27, goes public, runs github-settings --apply, uploads docs/assets/social.jpg, pushes v0.2.0.
 verified: 449ef81 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, memory check, release version check, settings check
+
+## 2026-11-14 — memory tidy: journal order, CONTEXT inside the brief
+
+Changed: JOURNAL.md stable-sorted by date (PR 44's 2026-11-13 entry back among its day; no entry text changed); CONTEXT.md head 3237 → 2488 chars: owner-terminal commands in their own section after Applies, stale lines updated (public since 0.2.0, CLI 2.1.311 local, 2.1.322 in CI, 2.1.325 latest), verified dates re-run today, the CI eval dispatch as a verified row.
+Why: cobot-memory check read the journal as mixed order (compact refuses that) and the brief dropped CONTEXT Stack and Environment at 6054 of 6000 chars; the brief guarantees CONTEXT 2500 chars, so a head under that always fits.
+Proof: cobot-memory check: newest at bottom, brief 5794 of 6000, no dropped sections; pytest with coverage exit 0 (98.70 %); markdownlint, check-plugin exit 0; cobot-rules check "git status" exit 0.
+Next: owner pushes chore/memory-tidy and merges; the social preview and the v0.2.0 tag.
+verified: 550b46b · memory check, pytest+cov, markdownlint, check-plugin, gate dry run

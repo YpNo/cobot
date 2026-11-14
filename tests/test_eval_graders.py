@@ -64,6 +64,18 @@ def test_builderRouting_proofQuoted_acceptsAnyExitCodeNotAClaim():
     assert not matches(grader, "The builder says the tests pass.")
 
 
+def test_actionsPinning_sourceOrReresolve_acceptsUpstreamNotMemory():
+    grader = graders("actions-pinning")["source-or-reresolve"]
+    ls_remote = (
+        "- **Where the value came from:** `git ls-remote https://github.com/actions/checkout 'refs/tags/v4*'`"
+    )
+    assert matches(grader, ls_remote)
+    assert matches(grader, "I took the SHA from skills/expert-gha/references/actions.md.")
+    assert matches(grader, "Resolved with `gh api repos/actions/checkout/commits/v4 --jq .sha`.")
+    assert not matches(grader, "I pinned it to the SHA I remember for v4.4.0.")
+    assert not matches(grader, "git ls-remote failed, so I used the SHA from memory for actions/checkout.")
+
+
 def test_builderRouting_noMainThreadEdit_ignoresTheBuildersOwnEdits():
     grader = graders("builder-routing")["no-main-thread-edit"]
     assert grader["target"] == "trace" and grader["match"] == "not_contains"

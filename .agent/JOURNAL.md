@@ -152,3 +152,12 @@ Proof: pytest with coverage exit 0 (98.08 %, grader tests now cover the main-thr
 Open: the read-only eval Bash is an upstream report for the owner to file; actions-pinning re-resolving through the granted domains and gitlab-ci-shape passing the trust check are unproven until a paid run; the docs' threshold 0.8 and -j are not adopted.
 Next: owner pushes, merges, dispatches cases=actions-pinning and cases=gitlab-ci-shape, then the full suite.
 verified: 92ac129 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, fake-API suite load
+
+## 2026-11-14 — single-case proofs; actions-pinning grader accepts git ls-remote
+
+Changed: evals/actions-pinning/graders/source-or-reresolve.md also accepts `git ls-remote … github.com/actions/checkout`; a grader test (upstream sources pass, a SHA from memory fails); CHANGELOG.
+Why: run 43580616055 (gitlab-ci-shape, $0.66) passed 3 of 3, Δ +0.17: the fixture-seeded trust works. Run 43580607780 (actions-pinning, $0.32) reached github.com through the WebFetch(domain:…) grant and pinned actions/checkout@11d5960 # v4.4.0 in all six runs, each from git ls-remote, yet scored 0.80: the grader knew only gh api and references/actions.md. Every run also tried Bash's allowed_domains first, which evals refuse.
+Proof: the new pattern matches all six real final replies; pytest with coverage exit 0; ruff, markdownlint, check-plugin, plugin validate --strict exit 0.
+Open: actions-pinning shows Δ 0 (the baseline pins the newest v4 as well): requiring the newest stable major and the expert's table would measure expert-gha; the owner's call.
+Next: owner pushes, merges, then the full suite on main.
+verified: 7eb286d · pytest+cov, ruff, markdownlint, check-plugin, plugin validate, six-trace replay

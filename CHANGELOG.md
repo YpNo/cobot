@@ -258,6 +258,9 @@ All notable changes to this project are documented here. The format follows
   fixture; the eval job grants `github.com` and `api.github.com` so `actions-pinning` can resolve
   a tag. `foreign-onboard`, `new-project-onboard` and the builder's cargo proof move to
   `plugins/cobot/evals-blocked/`: eval Bash cannot write, the workspace included.
+- `actions-pinning` failed every run on `source-or-reresolve` although each one pinned the SHA
+  it had just re-resolved upstream: the grader knew `gh api` and the expert's table but not
+  `git ls-remote` on the action's repository (run 43580607780). It accepts that now.
 - `cobot-memory init --help` ran `init` and wrote the memory files: the bins accepted any
   `--word`. `cobot-memory`, `cobot-rules` and `cobot-deps` now parse through one per-command table;
   `-h`/`--help` prints the usage, an unknown option exits 2, `init --profile` takes only the six

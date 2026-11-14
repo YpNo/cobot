@@ -127,3 +127,11 @@ Why: spec gate-repo-config (owner's item 2, challenger BLOCKER uv audit, MAJOR p
 Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0.
 Next: T04 docs, CHANGELOG, decision 28, F-25 closed, F-26 parked.
 verified: 0c337b6 · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T04: docs, findings
+
+Changed: CHANGELOG Unreleased Security (one bullet); docs/configuration.md (Repository configuration and trust); docs/architecture.md security model; docs/01-decisions.md decision 28 amended; FINDINGS F-25 closed, F-26 parked; spec converge.
+Why: spec gate-repo-config T04.
+Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: independent bypass-aimed review, fold.
+verified: e6bf39f · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

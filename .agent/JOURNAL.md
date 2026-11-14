@@ -187,3 +187,11 @@ Why: cobot-memory check read the journal as mixed order (compact refuses that) a
 Proof: cobot-memory check: newest at bottom, brief 5794 of 6000, no dropped sections; pytest with coverage exit 0 (98.70 %); markdownlint, check-plugin exit 0; cobot-rules check "git status" exit 0.
 Next: owner pushes chore/memory-tidy and merges; the social preview and the v0.2.0 tag.
 verified: 550b46b · memory check, pytest+cov, markdownlint, check-plugin, gate dry run
+
+## 2026-11-14 — lang-rust CLI crates (F-20)
+
+Changed: lang-rust references/versions.md gains clap 4.6.7, serde 1.0.229, serde_json 1.0.154, tempfile 3.27.0, assert_cmd 2.2.2, predicates 3.1.4; every crate row re-read on crates.io (the updated column is the version's publish date, not the crate's updated_at); MSRV line; F-20 closed; CHANGELOG.
+Why: F-20, a new Rust project's spec looked these up itself.
+Proof: crates.io API for each crate and version; GitHub last commits within a month for tempfile, assert_cmd, predicates, clap, serde, serde_json; pytest with coverage exit 0 (98.70 %); markdownlint, claude plugin validate --strict, check-plugin, cobot-memory check exit 0.
+Next: owner pushes fix/f20-rust-crates and merges.
+verified: f20d2d4 · crates.io, pytest+cov, markdownlint, plugin validate, check-plugin, memory check

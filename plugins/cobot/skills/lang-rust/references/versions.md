@@ -35,8 +35,15 @@ Format: `- [verified YYYY-MM-DD · src: <url>] claim`. The brief flags version l
 | proptest | 1.12.0 | 2026-10-10 | property tests |
 | insta | 1.49.0 | 2026-10-03 | snapshots |
 | secrecy | 0.10.3 | 2024-10-09 | dormant (> 6 months) but small and stable; acceptable, re-check |
+| clap | 4.6.7 | 2026-09-14 | CLI parsing, `derive` feature |
+| serde | 1.0.229 | 2026-07-18 | serialisation, `derive` feature |
+| serde_json | 1.0.154 | 2026-10-11 | JSON |
+| tempfile | 3.27.0 | 2026-03-11 | temporary files and dirs in tests; repository active (commit 2026-10-30) |
+| assert_cmd | 2.2.2 | 2026-05-11 | run the binary in integration tests (`Command::cargo_bin`) |
+| predicates | 3.1.4 | 2026-02-11 | assertions for assert_cmd output; repository active (commit 2026-11-02) |
 
-- [verified 2026-11-06 · src: https://crates.io/api/v1/crates/<name>] all rows above, `max_stable_version`.
+- [verified 2026-11-14 · src: https://crates.io/api/v1/crates/<name>] all rows above: `max_stable_version`, and the `updated` column is that version's publish date (`/api/v1/crates/<name>/<version>`, `created_at`), not the crate's `updated_at`, which moves with metadata edits.
+- [verified 2026-11-14 · src: https://crates.io/api/v1/crates/<name>/<version>] MSRV (`rust_version`): clap, tokio, tokio-util and assert_cmd 1.85; proptest 1.88; the others 1.77 or older.
 
 ## Local machine (not upstream)
 

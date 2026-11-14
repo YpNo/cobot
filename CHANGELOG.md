@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `lang-rust` lists the crates a Rust CLI starts with (F-20): clap, serde, serde_json, tempfile,
+  assert_cmd and predicates, beside proptest; every crate row re-read on crates.io, dated by the
+  version's own publish date, with the MSRV of each.
+
 ## [0.2.0] - 2026-11-14
 
 The first release since 0.1.0 and the one that makes the repository public: R1.1 (learning,

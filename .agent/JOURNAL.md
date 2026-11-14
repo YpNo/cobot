@@ -135,3 +135,11 @@ Why: spec gate-repo-config T04.
 Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
 Next: independent bypass-aimed review, fold.
 verified: e6bf39f · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — gate-repo-config T05: bypass review folds
+
+Changed: _cobot_common.py (protocol.allow=never in NO_FSMONITOR; QUIET_GIT_ENV with GIT_NO_LAZY_FETCH, GIT_TERMINAL_PROMPT, GIT_NO_REPLACE_OBJECTS on git and git_bytes); cobot-memory (Memory.trust reads the checkout); cobot-rules (gate_trust from checkout_root and a cwd outside it untrusted; a per-path cache of changed_file; PROGRAM_KEY_RE and names_a_path; pnpm deciding files and parent files; own cargo and npm files resolved, ~/.cargo always; DOCKER_BUILD_FLAGS, more value options, DOCKERFILE_NAMES, one context that is a directory; pip shadowing in the working directory; pip-audit's write guard on parsed options; pnpm_audit_unsafe with missing --ignore-pnpmfile; npm audit --registry --userconfig --globalconfig); default.rules (allow pnpm audit --ignore-pnpmfile* for the consultant); tests: review rows, pip shadowing, a stranger's submodule, the override cwd, docker contexts, the lower-case dockerfile, configs naming a program by path, a relocated CARGO_HOME, the git argv and environment; docs, CHANGELOG, F-26 note, spec converge.
+Why: owner's condition: an independent code-reviewer pass aimed at bypasses (2 BLOCKER, 3 MAJOR, 4 MINOR, all folded). One review probe made a real git fetch to a non-existent github.com/ypno/src.git (nothing local sent); later probes blocked network.
+Proof: pytest with coverage exit 0 (98.70 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: owner reviews security/gate-repo-config; nothing pushed.
+verified: f4c00cb · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

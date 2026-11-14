@@ -87,6 +87,15 @@ Proof: pytest with coverage exit 0 (98.66 %); ruff check and format exit 0; shel
 Next: independent bypass-aimed review, fold.
 verified: 0c5572a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
 
+## 2026-11-13 — eval cases against the plugin-evals docs; blocked cases set aside
+
+Changed: graders no-spec-skill and no-spec get arm: both; builder-routing no-main-thread-edit becomes a trace regex (Edit or Write with parent_tool_use_id null, not_contains); never-apply plan-proposed becomes alternative-proposed ("terraform plan" or "yourself"); gitlab-ci-shape's fixture writes the root's trust line (~/.claude/cobot/trusted, and the run's config/ beside its home when present) and its prompt no longer asks for --trust-root; ci.yml grants WebFetch(domain:github.com) and WebFetch(domain:api.github.com); foreign-onboard, new-project-onboard and builder-routing's proof-quoted move to plugins/cobot/evals-blocked/ with a README; markdownlint ignores the moved cases; tests follow; development.md, claude-code-mechanics.md, CHANGELOG.
+Why: full run 43496720467 ($9.50, 47 min) scored 13 of 19, Δ +0.31. The plugin-evals docs (code.claude.com/docs/en/plugin-evals) say Skill graders are unscored unless arm: both (the run shows scored false), tool_used has no main-thread key (the trace shows the builder's Edits under the Agent call), and Bash network needs WebFetch(domain:…) grants. Eval Bash is read-only everywhere: reproduced locally with a scripted fake API on 2.1.311, 2.1.322 and 2.1.325 (findmnt shows the workspace as its own ro mount), against the docs' "writes are confined to the run's workspace".
+Proof: pytest with coverage exit 0 (98.08 %, grader tests now cover the main-thread pattern, the arm: both rule, the hand-back reply and the trust seeding); ruff, shellcheck (fixtures included), markdownlint, zizmor, plugin validate --strict and check-plugin exit 0; the main-thread pattern checked on 18 real traces (builder-routing 0 matches with 2 subagent edits each, tiny-no-ceremony and medium-spec 6 of 6 matches); locally against the fake API the whole suite loads (17 cases, every fixture ran, the WebFetch domain grant accepted), a fixture-written ~/.claude/cobot/trusted is readable from eval Bash, and the regex grader matched a main-thread Write in the harness's own trace.
+Open: the read-only eval Bash is an upstream report for the owner to file; actions-pinning re-resolving through the granted domains and gitlab-ci-shape passing the trust check are unproven until a paid run; the docs' threshold 0.8 and -j are not adopted.
+Next: owner pushes, merges, dispatches cases=actions-pinning and cases=gitlab-ci-shape, then the full suite.
+verified: 92ac129 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, fake-API suite load
+
 ## 2026-11-14 — gate-findings T07: bypass review folds
 
 Changed: cobot-rules (word_bounded in matches_bash for agent-scoped allows; rustup and cargo +toolchain in executes_foreign; FOREIGN_BY_CLI for npm, pnpm, uv, cargo -C; READ_GUARDS rg --hostname-bin, cargo-deny check -g, cargo-audit audit --db; uniq counts a glob operand twice; branch_write takes the last of --list and --no-list; inner_rustup skips --install and --, a toolchain path is opaque; readings continue past a presumed value only when an option follows; flag tables for uv, pnpm, npm; NPM_COMMANDS, NPM_ALIASES, npm_command, PNPM_RECURSIVE, canonical_package_manager; git_alias_set makes git opaque; guard reason reworded); tests: FINDINGS_REVIEW_* rows; CHANGELOG, configuration.md, spec converge (trimmed to 300 lines).
@@ -144,15 +153,6 @@ Proof: pytest with coverage exit 0 (98.70 %); ruff check and format exit 0; shel
 Next: owner reviews security/gate-repo-config; nothing pushed.
 verified: f4c00cb · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
 
-## 2026-11-13 — eval cases against the plugin-evals docs; blocked cases set aside
-
-Changed: graders no-spec-skill and no-spec get arm: both; builder-routing no-main-thread-edit becomes a trace regex (Edit or Write with parent_tool_use_id null, not_contains); never-apply plan-proposed becomes alternative-proposed ("terraform plan" or "yourself"); gitlab-ci-shape's fixture writes the root's trust line (~/.claude/cobot/trusted, and the run's config/ beside its home when present) and its prompt no longer asks for --trust-root; ci.yml grants WebFetch(domain:github.com) and WebFetch(domain:api.github.com); foreign-onboard, new-project-onboard and builder-routing's proof-quoted move to plugins/cobot/evals-blocked/ with a README; markdownlint ignores the moved cases; tests follow; development.md, claude-code-mechanics.md, CHANGELOG.
-Why: full run 43496720467 ($9.50, 47 min) scored 13 of 19, Δ +0.31. The plugin-evals docs (code.claude.com/docs/en/plugin-evals) say Skill graders are unscored unless arm: both (the run shows scored false), tool_used has no main-thread key (the trace shows the builder's Edits under the Agent call), and Bash network needs WebFetch(domain:…) grants. Eval Bash is read-only everywhere: reproduced locally with a scripted fake API on 2.1.311, 2.1.322 and 2.1.325 (findmnt shows the workspace as its own ro mount), against the docs' "writes are confined to the run's workspace".
-Proof: pytest with coverage exit 0 (98.08 %, grader tests now cover the main-thread pattern, the arm: both rule, the hand-back reply and the trust seeding); ruff, shellcheck (fixtures included), markdownlint, zizmor, plugin validate --strict and check-plugin exit 0; the main-thread pattern checked on 18 real traces (builder-routing 0 matches with 2 subagent edits each, tiny-no-ceremony and medium-spec 6 of 6 matches); locally against the fake API the whole suite loads (17 cases, every fixture ran, the WebFetch domain grant accepted), a fixture-written ~/.claude/cobot/trusted is readable from eval Bash, and the regex grader matched a main-thread Write in the harness's own trace.
-Open: the read-only eval Bash is an upstream report for the owner to file; actions-pinning re-resolving through the granted domains and gitlab-ci-shape passing the trust check are unproven until a paid run; the docs' threshold 0.8 and -j are not adopted.
-Next: owner pushes, merges, dispatches cases=actions-pinning and cases=gitlab-ci-shape, then the full suite.
-verified: 92ac129 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, fake-API suite load
-
 ## 2026-11-14 — single-case proofs; actions-pinning grader accepts git ls-remote
 
 Changed: evals/actions-pinning/graders/source-or-reresolve.md also accepts `git ls-remote … github.com/actions/checkout`; a grader test (upstream sources pass, a SHA from memory fails); CHANGELOG.
@@ -179,3 +179,11 @@ Proof: release.yml's version check replayed (plugin.json, marketplace.json and t
 Open: /cobot:ship on a service repository (spec row 6); F-20 and F-27 open; the cut date moves if the tag is pushed another day; commit author emails become public with the history; visibility, settings --apply, the social preview and the tag are the owner's.
 Next: owner force-pushes chore/release-0.2.0, merges PR 27, goes public, runs github-settings --apply, uploads docs/assets/social.jpg, pushes v0.2.0.
 verified: 449ef81 · pytest+cov, ruff, shellcheck, markdownlint, zizmor, plugin validate, check-plugin, memory check, release version check, settings check
+
+## 2026-11-14 — memory tidy: journal order, CONTEXT inside the brief
+
+Changed: JOURNAL.md stable-sorted by date (PR 44's 2026-11-13 entry back among its day; no entry text changed); CONTEXT.md head 3237 → 2488 chars: owner-terminal commands in their own section after Applies, stale lines updated (public since 0.2.0, CLI 2.1.311 local, 2.1.322 in CI, 2.1.325 latest), verified dates re-run today, the CI eval dispatch as a verified row.
+Why: cobot-memory check read the journal as mixed order (compact refuses that) and the brief dropped CONTEXT Stack and Environment at 6054 of 6000 chars; the brief guarantees CONTEXT 2500 chars, so a head under that always fits.
+Proof: cobot-memory check: newest at bottom, brief 5794 of 6000, no dropped sections; pytest with coverage exit 0 (98.70 %); markdownlint, check-plugin exit 0; cobot-rules check "git status" exit 0.
+Next: owner pushes chore/memory-tidy and merges; the social preview and the v0.2.0 tag.
+verified: 550b46b · memory check, pytest+cov, markdownlint, check-plugin, gate dry run

@@ -206,6 +206,12 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   `docker exec`, `nix develop -c`, …) is looked through a glob only when the glob is a word of
   the inner command; extended globs and words mixing braces and brackets ask
   (.agent/specs/gate-expansion.md);
+- reads past the options before a verb in every way they allow, so an option it does not know
+  cannot hide a ruled verb from `never` and `ask` rows (`cargo +nightly publish`, `npm --registry
+  x publish`); treats `${…}` with an operator word as a hole and `$"…"` as a hole with its
+  untranslated value; and keeps the read-only agents' read lists from covering any write or run
+  (a guard table of options, a `curl` allow-list, redirections into files)
+  (.agent/specs/gate-findings.md);
 - resolves **mise tasks** before judging: `mise run <task>`, the `mise <task>` shorthand and
   `mise exec … -- <cmd>` become the commands behind them (from the closest mise config, local files
   first) and each is judged on its own, the reason naming the origin (`via mise run deploy`); a

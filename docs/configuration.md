@@ -55,6 +55,24 @@ under an agent scope; a glob after a builtin that evaluates names or arithmetic 
 `a[$(…)]` would run), and `cat **` anywhere (`globstar` may be on); `[[ $x == @(a|b) ]]` and
 `if !(grep -q x f)` (extended-glob syntax); a word mixing braces and brackets; `echo {1..300}`.
 
+Options before the verb (.agent/specs/gate-findings.md): `never` and `ask` rows also match
+each place the verb could start past the options before it, so `npm --registry x publish` and
+`cargo +nightly -vv publish` match `never Bash(npm publish*)` and `never Bash(cargo publish*)`;
+an `allow` matches only the canonical form. The gate knows the value options of `git`, `cargo`,
+`npm`, `pnpm`, `uv`, `kubectl`, `helm` and a few more; after an option it does not know, the
+next word is read both as the verb and as that option's value. Known cost: an unknown option
+whose value is a ruled verb reads as that verb (`npm --zz publish test` is denied, and an owner
+`allow` cannot lift a `never`). A runner behind such an option (`uv -q run …`, `pnpm -r build`,
+`npm --prefix web test`) asks, a prompt on common monorepo commands that the form without the
+option avoids. `npm` verbs are read as npm reads them (an alias or a unique prefix: `npm publ`
+is `npm publish`), `pnpm recursive <verb>` as `pnpm <verb>`, and `git -c alias.…` asks (the
+verb is an alias the line defines).
+
+`${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
+hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's
+value. A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo
+$"publish"` is denied.
+
 Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
 from the default layer) silences the gate; `ask` prompts; otherwise Claude Code's own
 permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's
@@ -90,3 +108,40 @@ For the read-only agents (consultant, learner), `gcloud … list|describe`,
 repository content (an environment assignment, `git -c`, `--kubeconfig`, `--post-renderer`,
 `--enable-exec`) asks instead, and `kubectl get secret` is denied for them (decision 28,
 ADR-0006).
+
+## What the read lists never cover
+
+For the consultant and the learner, a read-list command loses its read list, and asks, when it
+could write a file or run a program (decision 28, `.agent/specs/gate-findings.md`):
+
+- a command word that only starts like a read row: `cat*` covers `cat` and `cat …`, never
+  `catatonit`; `git diff*` never `git difftool`;
+- an option the gate's guard table names: `find -delete -exec -execdir -ok -okdir -fprint
+  -fprint0 -fprintf -fls`, `rg --pre --hostname-bin`, `fd -x -X`, `sort -o --compress-program`, a second
+  `uniq` operand, `tree -o -R`, `file -C`, `yq -i -s`, `git log|show|diff --output`, `git branch`
+  with a write option or a branch name outside `--list`, `zizmor --fix`, `trivy -o
+  --module-dir`, `gitleaks -r --log-opts`, `pip-audit --fix -o`, `cargo-audit audit fix --db`, `cargo-deny check -g`, `npm
+  audit fix`, `pnpm audit --fix`, `semgrep --autofix -o --*-output`, `docker build -o --push`,
+  `docker compose config -o`, `cosign verify --output-file`, `actionlint -shellcheck -pyflakes`,
+  `go list -toolexec -exec -mod -modfile`, `go env -w -u`, `terraform|tofu providers lock|mirror`,
+  `kubectl kustomize -o`, `kustomize build -o`, `helm template --output-dir
+  --dependency-update`, `kubeconform -cache`. Long options match any abbreviation, short ones
+  any cluster (`sort -uo`), which can over-read a letter inside a value and ask;
+- `git --config-env`, `cargo --config`, `-Z` or `-C`, `cargo +<toolchain>`, `rustup`, `docker
+  --config`, `npm --userconfig --globalconfig --cache --prefix`, `pnpm --env-file
+  --npmrc-auth-file --store-dir --state-dir -C --dir`, `uv --config-file --directory --project`
+  (configuration or a directory that can change what runs), besides an environment assignment, `git -c` and the kubeconfig and plugin flags;
+- a `curl` option outside its read set: `-s -S -L -f -I -i -v -k -g -4 -6 --compressed
+  --http1.1 --http2 --fail-with-body`, and with a value `-H` (not `@file`), `-A`, `-e`, `-m`,
+  `--connect-timeout`, `--retry*`, `-r`, `-X GET|HEAD`, `--url`, `-w` (not `@file`, no
+  `%output{`);
+- a redirection into a file anywhere in the command or in a runner body it expands, except
+  `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/fd/1`, `/dev/fd/2` and descriptor
+  duplications (`2>&1`).
+
+`cargo audit` and `cargo deny check` are not on the read lists: a repository's
+`.cargo/config.toml` alias shadows them. Use `cargo-audit audit` and `cargo-deny check`. Read
+lists still take a plain variable as text (`find $X`): an agent cannot carry a variable across
+Bash calls, and an assignment in the command asks. Repository configuration that read-list
+tools load (`trivy.yaml`, a `# syntax=` frontend for `docker build --check`, `pip-audit -r`
+building a local requirement, a `build.rustc-wrapper` for `cargo tree`) is finding F-25.

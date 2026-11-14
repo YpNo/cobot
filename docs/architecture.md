@@ -80,7 +80,13 @@ substitution (.agent/specs/gate-expansion.md). The soundness target, in the scan
 hole in the command's words, a substitution or a glob, is never silent where some text in its
 place, for a glob some set of file names, would change which program runs or make a rule match
 the form that names what runs. An agent-scoped allow counts on globs only when each is anchored
-by literal text that cannot be an option. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
+by literal text that cannot be an option. A `${…}` with an operator word is a hole too, and a
+locale string `$"…"` a hole with its untranslated text as known value; `never` and `ask` rows
+read every place a verb could start past options the gate does not know
+(.agent/specs/gate-findings.md). For the read-only agents, a segment that could write a file
+or run a program (a guarded option, a `curl` option outside its read set, a redirection into a
+file in the command or a runner body) never matches their read list; the scanner's
+`Scan.writes` holds the targets a redirection writes. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
 and container or sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`,
 `nix develop -c`, …) are looked through and the command behind them is judged.
 

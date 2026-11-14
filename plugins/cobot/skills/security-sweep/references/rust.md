@@ -89,8 +89,8 @@ attention, because it is where the guarantee stops.
 ## Verification commands (read-only)
 
 ```bash
-cargo audit
-cargo deny check advisories bans licenses    # if deny.toml exists
+cargo-audit audit                            # not `cargo audit`: a repository alias can shadow it
+cargo-deny check advisories bans licenses    # if deny.toml exists
 cargo clippy --all-targets -- -W clippy::pedantic
 grep -rn "unsafe" --include='*.rs' . | grep -v "SAFETY:"
 grep -rn "unwrap()\|expect(\|panic!\|accept_invalid_certs" --include='*.rs' .

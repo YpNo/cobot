@@ -7,10 +7,13 @@ a Bash command are words of the command, which run as commands of their own, whi
   comments and redirections removed (the rest of each line kept), quotes left in place for
   ``shlex``;
 - ``holes``: each substitution (``$(…)``, a backtick, ``<(…)``, ``>(…)``), arithmetic
-  ``$((…))``/``$[…]`` and ANSI-C ``$'…'`` word, keyed by its sentinel, with its scanned body
+  ``$((…))``/``$[…]``, ANSI-C ``$'…'`` and locale ``$"…"`` word, ``${…}`` with an operator
+  (.agent/specs/gate-findings.md), keyed by its sentinel, with its scanned body
   when it runs a command; a hole whose sentinel is not in ``outer`` (a redirection target, an
   unquoted here-document body, inside arithmetic) still runs and is judged by its body;
-- ``targets``: redirection target words, for the protected-file check;
+- ``targets``: redirection target words, for the protected-file check; ``writes``: those a
+  redirection writes (``>``, ``>>``, ``>|``, ``&>``, ``<>``, ``>&`` to a word that is no file
+  descriptor), for the read-only agents;
 - ``error``: set on anything the scanner does not model exactly, so the caller asks.
 
 Expansion (.agent/specs/gate-expansion.md): an unquoted brace expression is a ``brace`` hole whose
@@ -42,11 +45,16 @@ METACHARS = frozenset(" \t\n;&|()<>")
 QUOTING_MODES = ("top", "sub", "arith", "param")  # where quotes quote; not inside "…" or a body
 FD_PREFIX_RE = re.compile(r"(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
 CAT_HEREDOC_RE = re.compile(r"^\s*cat\s*$")
+WRITING_OPERATORS = frozenset({">", ">>", ">|", "&>", "&>>", "<>", ">&"})
+FD_WORD_RE = re.compile(r"^\d*-?$")  # ``>&2``, ``>&-``, ``>&3-``: a descriptor, not a file
 EXPANDING_MODES = ("top", "sub")  # where bash expands braces and globs in a word
 EXTGLOB_CHARS = "?*+@!"  # before ``(``: an extended glob when ``extglob`` is on
 SPECIAL_PARAMETERS = "*?@#-!$"  # ``$*``, ``$?`` … : a parameter, never a glob
 MAX_BRACE_WORDS = 256  # words brace expansion may build in one command before it asks
 BRACKET_CODE_RE = re.compile(r"\$[({]|`")
+# ``${…}`` read as a variable's value or a number: a name, positional or special parameter,
+# ``#`` or ``!`` before one, a subscript; anything else holds an operator word bash expands
+PLAIN_PARAMETER_RE = re.compile(r"^[#!]?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|\d+|[*@#?$!-])$")
 SEQUENCE_RE = re.compile(r"^(?:([-+]?\d+)\.\.([-+]?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.([-+]?\d+))?$")
 _COUNTER = itertools.count()  # one key space per process: inner scans share the outer holes
 REGISTRY: dict[str, Hole] = {}  # every hole by key; the gate reads kinds and spans here
@@ -58,7 +66,7 @@ class Hole:
     span: str  # the original text, capped, for reasons and traces
     quoted: bool  # exactly one word (inside double quotes, a process substitution, ``$'…'``)
     body: Scan | None  # the command it runs; None for arithmetic, ``$'…'``, braces and globs
-    value: str | None = None  # the text a bare ``cat <<'D'`` here-document prints
+    value: str | None = None  # known text: a bare ``cat <<'D'`` here-document, an untranslated ``$"…"``
     kind: str = "substitution"  # or ``glob`` (file names) or ``brace`` (``alternatives``)
     alternatives: tuple[str, ...] = ()  # a brace's alternatives, scanned, quotes kept
 
@@ -76,6 +84,7 @@ class Scan:
     outer: str = ""
     holes: dict[str, Hole] = field(default_factory=dict)
     targets: list[str] = field(default_factory=list)
+    writes: list[str] = field(default_factory=list)  # targets a redirection writes
     heredocs: list[HereDoc] = field(default_factory=list)
     inert_code: bool = False  # data text (a quoted here-document, a here-string) holds ``$(`` or a backtick
     error: str | None = None
@@ -175,6 +184,7 @@ class _Scanner:
         self.pending: list[HereDoc] = []
         self.capture: int | None = None  # start of a redirection target in ``out``
         self.capture_data = False  # the target is a here-string: data, not a file
+        self.capture_operator = ""  # the operator of the pending target
 
     # ------------------------------------------------------------ driver
 
@@ -384,6 +394,22 @@ class _Scanner:
         self.i = inner.i + 1
         return False
 
+    def locale(self) -> bool:
+        """``$"…"``: double-quoted text a message catalogue may translate into anything, so a quoted
+        hole; its value is the untranslated text when that holds no expansion or escape."""
+        start = self.i
+        inner = self.child("dq", self.i + 2)
+        while inner.i < len(self.text) and self.text[inner.i] != '"':
+            inner.step()
+        if inner.i >= len(self.text):
+            raise ShellError("unbalanced quote")
+        self.scan.holes.update(inner.scan.holes)
+        raw = self.text[start + 2 : inner.i]
+        value = None if any(c in raw for c in "$`\\") else raw
+        self.hole(self.text[start : inner.i + 1], True, None, value)
+        self.i = inner.i + 1
+        return False
+
     def ansi_c(self) -> bool:
         """``$'…'``: escapes the gate does not decode, so the word is computed."""
         j = self.i + 2
@@ -405,6 +431,8 @@ class _Scanner:
             return False
         if nxt == "'" and self.mode in QUOTING_MODES:
             return self.ansi_c()
+        if nxt == '"' and self.mode in QUOTING_MODES:
+            return self.locale()
         if nxt == "(":
             end = self.arith_end(self.i + 3) if self.text[self.i + 2 : self.i + 3] == "(" else None
             return self.arithmetic(self.i + 3, end, "$((") if end is not None else self.substitution()
@@ -465,7 +493,10 @@ class _Scanner:
 
     def parameter(self) -> bool:
         """``${…}``: no comments inside; a substitution inside is a hole; ``@P`` re-expands a
-        value as a prompt, which runs ``$(…)`` held in it."""
+        value as a prompt, which runs ``$(…)`` held in it. One with an operator word
+        (``${x:-word}``, ``${x#pat}``, ``${x@Q}``) is a hole of unknown text, quoted inside
+        double quotes: the gate cannot know whether the variable is set."""
+        start = self.i
         inner = self.child("dq" if self.mode == "dq" else "param", self.i + 2)
         braces = 1
         while inner.i < len(self.text):
@@ -480,8 +511,11 @@ class _Scanner:
         if content.endswith("@P"):
             raise ShellError("${…@P} prompt expansion")
         self.scan.holes.update(inner.scan.holes)
-        self.emit("${" + content + "}")
         self.i = inner.i + 1
+        if PLAIN_PARAMETER_RE.match(content):
+            self.emit("${" + content + "}")
+        else:
+            self.hole(self.text[start : self.i], self.mode not in EXPANDING_MODES, None)
         return False
 
     def backtick(self) -> bool:
@@ -552,6 +586,7 @@ class _Scanner:
         self.emit(" ")
         self.capture = len(self.out)
         self.capture_data = operator == "<<<"
+        self.capture_operator = operator
         return True
 
     def drop_fd_prefix(self) -> None:
@@ -577,6 +612,10 @@ class _Scanner:
             self.scan.inert_code = self.scan.inert_code or ("$(" in word or "`" in word)
         else:
             self.scan.targets.append(word)
+            if self.capture_operator in WRITING_OPERATORS:
+                fd_dup = self.capture_operator == ">&" and FD_WORD_RE.match(word.strip())
+                if not fd_dup:
+                    self.scan.writes.append(word.strip())
         self.capture = None
         self.emit(" ")
 

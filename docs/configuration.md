@@ -142,6 +142,41 @@ could write a file or run a program (decision 28, `.agent/specs/gate-findings.md
 `cargo audit` and `cargo deny check` are not on the read lists: a repository's
 `.cargo/config.toml` alias shadows them. Use `cargo-audit audit` and `cargo-deny check`. Read
 lists still take a plain variable as text (`find $X`): an agent cannot carry a variable across
-Bash calls, and an assignment in the command asks. Repository configuration that read-list
-tools load (`trivy.yaml`, a `# syntax=` frontend for `docker build --check`, `pip-audit -r`
-building a local requirement, a `build.rustc-wrapper` for `cargo tree`) is finding F-25.
+Bash calls, and an assignment in the command asks.
+
+### Repository configuration and trust
+
+Some read-list commands run a program the repository's files choose
+(`.agent/specs/gate-repo-config.md`). They are silent for the agents only in a **trusted**
+repository:
+
+| commands | the files that decide |
+|---|---|
+| `cargo --version`, `rustc --version`, `cargo tree`, `cargo metadata`, `cargo-audit audit`, `cargo-deny check` | `rust-toolchain`, `rust-toolchain.toml`, `.cargo/config`, `.cargo/config.toml` in the working directory and every parent |
+| `npm audit`, `pnpm audit --ignore-pnpmfile` | `.npmrc` (and for pnpm `pnpm-workspace.yaml`, `package.json`) in the working directory and every parent |
+| `trivy fs`, `trivy config`, `trivy image` | `trivy.yaml` in the working directory |
+| `docker build --check` | the `Dockerfile` (or `dockerfile`) it reads; one context, an existing directory inside the working directory, and only options the gate reads |
+
+Trusted, for the gate: every remote's owner is in `~/.claude/cobot/identities` (a root commit
+listed in `~/.claude/cobot/trusted` counts only with no remote and a single root commit); the
+repository is not in foreign mode; no such file sits above the repository's top level (your
+`$CARGO_HOME` and `~/.npmrc` are left out); and each deciding file present in the tree matches
+its blob at origin's default branch (`refs/remotes/origin/HEAD`, else `origin/main` or
+`origin/master`; `HEAD` with no remote). A checked-out pull request, or your own branch, that
+changes one of these files asks until it is merged. A toolchain or cargo file that names a
+program by path (`rustc-wrapper = "scripts/w.sh"`, a toolchain `path`) asks even when it
+matches, since the program it names is not compared. Remotes are read from the checkout itself,
+so a stranger's submodule inside your repository is not trusted. A runner's expanded command (`make t` whose
+recipe runs `cargo tree`) never counts. The main thread is not affected.
+
+Resolving asks in every repository, trusted or not: `pip-audit -r …` or a project path
+(resolving builds source-only dependencies) unless both `--no-deps` and `--disable-pip`; `uv
+audit` without `--frozen`; `terraform|tofu providers schema`; `docker build --builder`, a
+`BUILDKIT_SYNTAX` build argument, or a Dockerfile or context on stdin; `trivy -c|--config`;
+`pnpm audit` without `--ignore-pnpmfile` (pnpm runs `.pnpmfile.cjs`, or any file
+`pnpm-workspace.yaml` names); `npm|pnpm audit --registry`, `--userconfig`, `--config.*`;
+`pip-audit` in a working directory holding `pip`, `pip.py` or another `pip.*` (it runs `python
+-m pip`, which imports from there). The gate's own git calls never fetch, prompt or follow
+replace refs.
+A repository delivered with its own `.git/config` can still run a program on a git read (finding
+F-26).

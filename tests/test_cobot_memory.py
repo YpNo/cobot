@@ -880,3 +880,20 @@ def test_memoryDir_foreignSymlinkInMainCheckout_sharedByWorktrees(memory, repo, 
     tree = tmp_path / "tree"
     subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "feat", str(tree)], check=True)
     assert memory.Memory(str(tree)).dir == repo / ".agent"
+
+
+def test_git_everyCall_turnsTheRepositorysFsmonitorOff(memory, monkeypatch, tmp_path):
+    """No trust-path command reads the index, so a planted program could not prove this: the argv
+    does (gate-repo-config story 3)."""
+    import _cobot_common
+
+    seen = []
+
+    def fake_run(argv, **_):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(_cobot_common.subprocess, "run", fake_run)
+    _cobot_common.repo_trust(tmp_path, tmp_path / ".agent")
+    width = len(_cobot_common.NO_FSMONITOR)
+    assert seen and all(argv[1 : 1 + width] == _cobot_common.NO_FSMONITOR for argv in seen)

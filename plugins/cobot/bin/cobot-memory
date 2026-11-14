@@ -49,13 +49,16 @@ from _cobot_common import (  # noqa: E402
     cobot_config_dir,
     config_dir,
     data_dir,
+    external_memory,
     git,
     host_owner_repo,
     memory_dir,
     parse_cli,
     plugin_root,
+    read_lines,
     remotes,
     repo_root,
+    repo_trust,
     root_commits,
 )
 from _cobot_knowledge import (  # noqa: E402
@@ -118,32 +121,10 @@ class Memory:
     # ---------------------------------------------------------------- trust
 
     def external_path(self) -> Path | None:
-        origin = remotes(self.root).get("origin")
-        parts = host_owner_repo(origin) if origin else None
-        return data_dir() / parts[0] / parts[1] / parts[2] if parts else None
+        return external_memory(self.root)
 
     def trust(self) -> tuple[bool, str]:
-        if self.dir.is_symlink():
-            expected = self.external_path()
-            if expected and self.dir.resolve() == expected.resolve():
-                return True, "foreign mode, memory outside the tree"
-            return False, f".agent is a symlink that does not resolve to the external memory for origin ({expected})"
-        remote_map = remotes(self.root)
-        identities = {line.lower() for line in read_lines(cobot_config_dir() / "identities")}
-        strangers: list[str] = []
-        if remote_map:
-            owners = {name: f"{p[0]}/{p[1]}" for name, url in remote_map.items() if (p := host_owner_repo(url))}
-            if owners and set(owners.values()) <= identities:
-                return True, f"every remote owner is an identity ({', '.join(sorted(set(owners.values())))})"
-            strangers = [f"{name} -> {owner}" for name, owner in sorted(owners.items()) if owner not in identities]
-        roots = set(root_commits(self.root))
-        trusted = {line.split()[0] for line in read_lines(cobot_config_dir() / "trusted") if line.split()}
-        if roots and roots & trusted:
-            return True, "root commit listed in ~/.claude/cobot/trusted"
-        if not remote_map and not roots:
-            return False, "no remote and no commit: /cobot:onboard starts it"
-        detail = f" ({', '.join(strangers)})" if strangers else ""
-        return False, f"no identity matches every remote{detail} and the root commit is not trusted"
+        return repo_trust(self.checkout, self.dir)  # a submodule's own remotes, not its superproject's
 
     # ---------------------------------------------------------------- files
 
@@ -192,14 +173,13 @@ BOOTSTRAP_ROOT_FILE = re.compile(
     r"(?i)\.gitignore|\.gitattributes|\.editorconfig|(readme|changelog)(\.(md|markdown|txt|rst|adoc))?"
     r"|(licen[cs]e|copying)(-[a-z0-9.-]+)?(\.(md|txt))?"
 )
-# an untracked scan runs the repository's core.fsmonitor program; the tree is repository content
-NO_FSMONITOR = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
+# _cobot_common.git turns core.fsmonitor off: an untracked scan would run the repository's program
 UNTRACKED = ["--others", "--exclude-standard", "--directory", "--no-empty-directory"]
 
 
 def listed_paths(top: Path) -> list[str] | None:
     """Tracked and untracked, non-ignored paths; an untracked directory is one ``dir/`` entry."""
-    out = git([*NO_FSMONITOR, "ls-files", "-z", "--cached", *UNTRACKED], top)
+    out = git(["ls-files", "-z", "--cached", *UNTRACKED], top)
     return None if out is None else sorted({path for path in out.split("\0") if path})
 
 
@@ -217,7 +197,7 @@ def inside_some_repository(folder: Path) -> bool:
 def repository_probe(here: Path) -> str | None:
     """TREE_NOT_REPOSITORY, TREE_EXISTING when git did not answer inside a repository, or None for
     a work tree. Cheap: no file scan, so it may run before the trust check."""
-    probe = git([*NO_FSMONITOR, "rev-parse", "--is-inside-work-tree"], here)
+    probe = git(["rev-parse", "--is-inside-work-tree"], here)
     if probe is None:
         return TREE_EXISTING if inside_some_repository(here) else TREE_NOT_REPOSITORY
     return None if probe == "true" else TREE_NOT_REPOSITORY  # a bare repository, or inside .git
@@ -225,8 +205,8 @@ def repository_probe(here: Path) -> str | None:
 
 def nothing_below(here: Path) -> bool:
     """No tracked and no untracked, non-ignored file under a subfolder (a dotfiles repository at ~)."""
-    tracked = git([*NO_FSMONITOR, "ls-files", "--", "."], here)
-    untracked = git([*NO_FSMONITOR, "ls-files", *UNTRACKED, "--", "."], here)
+    tracked = git(["ls-files", "--", "."], here)
+    untracked = git(["ls-files", *UNTRACKED, "--", "."], here)
     return tracked == "" and untracked == ""
 
 
@@ -238,7 +218,7 @@ def tree_state(cwd: Path) -> str:
     early = repository_probe(here)
     if early:
         return early
-    top = git([*NO_FSMONITOR, "rev-parse", "--show-toplevel"], here)
+    top = git(["rev-parse", "--show-toplevel"], here)
     if top is None:
         return TREE_EXISTING
     if Path(top).resolve() != here:
@@ -246,14 +226,8 @@ def tree_state(cwd: Path) -> str:
     paths = listed_paths(here)
     if paths is None or not all(is_bootstrap(path) for path in paths):
         return TREE_EXISTING
-    has_commit = git([*NO_FSMONITOR, "rev-parse", "--verify", "--quiet", "HEAD"], here) is not None
+    has_commit = git(["rev-parse", "--verify", "--quiet", "HEAD"], here) is not None
     return TREE_NEW_BOOTSTRAP if has_commit else TREE_NEW_NO_COMMIT
-
-
-def read_lines(path: Path) -> list[str]:
-    if not path.is_file():
-        return []
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")]
 
 
 # ---------------------------------------------------------------- brief

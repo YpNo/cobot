@@ -103,3 +103,43 @@ Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; shel
 Open: the session brief is 6132 chars against its 6000 budget, on main before this compaction too.
 Next: owner pushes chore/journal-compact and opens the PR.
 verified: 2c4ad0a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — gate-repo-config T01: trust in _cobot_common
+
+Changed: _cobot_common.py (NO_FSMONITOR on every git call; read_lines, external_memory, remote_owners, trusted_roots, repo_trust moved from cobot-memory); cobot-memory (Memory.trust and external_path delegate; the explicit NO_FSMONITOR arguments dropped); tests: an argv test that every trust-path git call carries NO_FSMONITOR; spec: the owner's answer a) and the deciding-files model.
+Why: spec gate-repo-config T01 (F-25); owner's answer to the challenger's PR-checkout MAJOR.
+Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; the existing trust tests pass unchanged.
+Next: T02 trust-gated rows.
+verified: 84aeb9f · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T02: trust-gated reads
+
+Changed: _cobot_common.py (git_bytes); cobot-rules (CONFIG_FILES, CWD_CONFIG_FILES, PARENT_FILES, RepositoryConfig with lazy trust, top and reference commit; gate_trust stricter than memory's; default_branch; changed_file by git cat-file; parent_config leaving $CARGO_HOME and ~/.npmrc out; safe_build_path and docker_build_files; deciding_files; repository_config; judge_bash passes the reason per segment for an agent; cargo's -V --version -h --help --list out of its global flags); tests/conftest.py (stub_repository_config, repository_trust with GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM, HOME, CARGO_HOME, XDG_DATA_HOME, CLAUDE_CONFIG_DIR); tests: TRUST_GATED_READS trusted and untrusted, foreign mode, a listed root with a fork remote and after a merge of unrelated histories, deciding files changed, committed on HEAD only, untracked, in a parent inside the repository, above the repository, the owner's cargo home, no default branch, docker contexts, a runner, no repository, no remote against HEAD, an unreadable file.
+Why: spec gate-repo-config T02 (F-25), owner's answer a). Found while building: cargo --version asked for the agents on main since gate-findings T03 (--version among cargo's global flags dropped it from the canonical form); fixed here with AGENT_READS rows.
+Proof: pytest with coverage exit 0 (98.67 %); ruff check and format exit 0.
+Next: T03 pip-audit, uv audit, providers schema, docker frontend.
+verified: f8b4574 · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T03: resolving asks everywhere
+
+Changed: cobot-rules (Guard.missing and its reason; PIP_AUDIT_* with pip_audit_resolves and pip_audit_cluster; DOCKER_BUILD_WRITES and docker_build_unsafe; READ_GUARDS uv audit missing --frozen, trivy config and -c, terraform and tofu providers schema); tests: RESOLVES_ASK for both agents, RESOLVES_SILENT, the pip-audit and uv audit reasons.
+Why: spec gate-repo-config (owner's item 2, challenger BLOCKER uv audit, MAJOR providers schema and docker frontend). pip-audit, docker and trivy are not installed here: their rows follow the tools' documentation.
+Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0.
+Next: T04 docs, CHANGELOG, decision 28, F-25 closed, F-26 parked.
+verified: 0c337b6 · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T04: docs, findings
+
+Changed: CHANGELOG Unreleased Security (one bullet); docs/configuration.md (Repository configuration and trust); docs/architecture.md security model; docs/01-decisions.md decision 28 amended; FINDINGS F-25 closed, F-26 parked; spec converge.
+Why: spec gate-repo-config T04.
+Proof: pytest with coverage exit 0 (98.69 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: independent bypass-aimed review, fold.
+verified: e6bf39f · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — gate-repo-config T05: bypass review folds
+
+Changed: _cobot_common.py (protocol.allow=never in NO_FSMONITOR; QUIET_GIT_ENV with GIT_NO_LAZY_FETCH, GIT_TERMINAL_PROMPT, GIT_NO_REPLACE_OBJECTS on git and git_bytes); cobot-memory (Memory.trust reads the checkout); cobot-rules (gate_trust from checkout_root and a cwd outside it untrusted; a per-path cache of changed_file; PROGRAM_KEY_RE and names_a_path; pnpm deciding files and parent files; own cargo and npm files resolved, ~/.cargo always; DOCKER_BUILD_FLAGS, more value options, DOCKERFILE_NAMES, one context that is a directory; pip shadowing in the working directory; pip-audit's write guard on parsed options; pnpm_audit_unsafe with missing --ignore-pnpmfile; npm audit --registry --userconfig --globalconfig); default.rules (allow pnpm audit --ignore-pnpmfile* for the consultant); tests: review rows, pip shadowing, a stranger's submodule, the override cwd, docker contexts, the lower-case dockerfile, configs naming a program by path, a relocated CARGO_HOME, the git argv and environment; docs, CHANGELOG, F-26 note, spec converge.
+Why: owner's condition: an independent code-reviewer pass aimed at bypasses (2 BLOCKER, 3 MAJOR, 4 MINOR, all folded). One review probe made a real git fetch to a non-existent github.com/ypno/src.git (nothing local sent); later probes blocked network.
+Proof: pytest with coverage exit 0 (98.70 %); ruff check and format exit 0; shellcheck exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0; python3 -I scripts/check-plugin.py exit 0.
+Next: owner reviews security/gate-repo-config; nothing pushed.
+verified: f4c00cb · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin

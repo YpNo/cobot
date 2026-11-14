@@ -86,7 +86,10 @@ read every place a verb could start past options the gate does not know
 (.agent/specs/gate-findings.md). For the read-only agents, a segment that could write a file
 or run a program (a guarded option, a `curl` option outside its read set, a redirection into a
 file in the command or a runner body) never matches their read list; the scanner's
-`Scan.writes` holds the targets a redirection writes. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
+`Scan.writes` holds the targets a redirection writes. A read whose program the repository's
+files choose (a toolchain file, cargo or npm config, `trivy.yaml`, a Dockerfile) counts for
+them only in a repository trusted by identity whose deciding files match origin's default
+branch (.agent/specs/gate-repo-config.md); every git call cobot makes turns `core.fsmonitor` off. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
 and container or sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`,
 `nix develop -c`, …) are looked through and the command behind them is judged.
 

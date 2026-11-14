@@ -388,6 +388,28 @@ All notable changes to this project are documented here. The format follows
   aliases), `pnpm recursive publish` are denied, and `git -c alias.p=… p` asks. An argument
   after a verb is no longer read as a verb (`uv -q run publish.py` asks as a runner, never a
   deny).
+- Read-list commands whose program the repository's files choose are silent for the consultant
+  and the learner only in a trusted repository (`.agent/specs/gate-repo-config.md`, F-25):
+  `cargo --version`, `rustc --version`, `cargo tree`, `cargo metadata`, `cargo-audit audit` and
+  `cargo-deny check` (a `rust-toolchain.toml` with `path =` made `cargo --version` run the
+  repository's own binary; `.cargo/config.toml`'s `build.rustc-wrapper`), `npm audit` and `pnpm
+  audit` (an `.npmrc` registry received an environment token), `trivy` (`trivy.yaml`) and
+  `docker build --check` (the Dockerfile's `# syntax=` frontend). Trusted means every remote
+  owner is an identity (a listed root commit counts only alone, with no remote: a fork shares its
+  upstream's root), not foreign mode, no such file above the repository, and each deciding file
+  matching its blob at origin's default branch, so a checked-out pull request that changes one
+  asks. `docker build`'s context and `-f` must stay inside the working directory. Resolving
+  asks in every repository: `pip-audit -r` or a project path (it builds source-only
+  dependencies) unless `--no-deps` and `--disable-pip`, `uv audit` without `--frozen`,
+  `terraform|tofu providers schema`, `docker build --builder`, a `BUILDKIT_SYNTAX` build argument
+  or a Dockerfile on stdin, and `trivy --config`. The branch's bypass review also closed:
+  `pnpm audit` runs `.pnpmfile.cjs` (it now needs `--ignore-pnpmfile`), `pip-audit` imports a
+  `pip` planted in the working directory, a stranger's submodule was trusted through its
+  superproject, docker options and git contexts that moved the Dockerfile read, a cargo config
+  naming its wrapper by path, `--registry` and `--userconfig` on the audits, and a blobless
+  clone's lazy fetch from inside the hook. Every git call cobot makes turns the repository's
+  `core.fsmonitor`, lazy fetches, prompts and replace refs off. `cargo --version` is silent on
+  the read list again.
 - CI holds no Anthropic API key: the eval job and the weekly knowledge refresh authenticate by
   workload identity federation (`scripts/anthropic-federation.sh`): a named pipe mints a fresh
   GitHub OIDC token for each read, since Anthropic accepts a token's `jti` once and Claude Code

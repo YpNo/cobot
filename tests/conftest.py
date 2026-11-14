@@ -56,3 +56,36 @@ def rules():
     sys.modules["cobot_rules"] = module  # dataclasses resolve annotations through sys.modules
     loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def stub_repository_config(request, monkeypatch):
+    """The gate's repository-configuration check reads the checkout the tests run in; a test sees
+    it only through ``repository_trust`` (gate-repo-config), every other test gets a neutral one."""
+    if "repository_trust" in request.fixturenames:
+        return
+    module = sys.modules.get("cobot_rules")
+    if module is not None:
+        monkeypatch.setattr(module, "repository_config", lambda *_: None)
+
+
+@pytest.fixture
+def repository_trust(tmp_path, monkeypatch):
+    """A config directory naming the identity ``github.com/ypno``, no global or system git config,
+    and a home and cargo home of their own; returns the config directory."""
+    config = tmp_path / "config"
+    (config / "cobot").mkdir(parents=True)
+    (config / "cobot" / "identities").write_text("github.com/ypno\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    for name, value in {
+        "CLAUDE_CONFIG_DIR": config,
+        "XDG_DATA_HOME": tmp_path / "data",
+        "HOME": home,
+        "CARGO_HOME": home / ".cargo",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }.items():
+        monkeypatch.setenv(name, str(value))
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    return config

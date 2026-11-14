@@ -410,6 +410,7 @@ allow Bash(terraform providers*) @consultant
 allow Bash(tofu version) @consultant
 allow Bash(python3 --version) @consultant
 allow Bash(node --version) @consultant
+allow Bash(pwd) @consultant
 allow Bash(ls*) @consultant
 allow Bash(cat*) @consultant
 allow Bash(head*) @consultant

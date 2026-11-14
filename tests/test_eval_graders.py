@@ -217,6 +217,18 @@ def test_consultFanOut_wantsTwoConsultantsAndNoEdit():
     assert found["no-edit"]["max"] == "0" and found["no-write"]["max"] == "0"
 
 
+def test_consultFanOut_readListOnly_failsTheCatchAllAskNotAReadListCommand():
+    # F-27, run 43584857035: the gha consultant's `cd <repo>; ...` fell through to the catch-all
+    # ask, so zizmor never ran; the trace line below is the gate's reason as the trace carries it
+    grader = graders("consult-fan-out")["read-list-only"]
+    assert grader["target"] == "trace" and grader["match"] == "not_contains"
+    asked = '{"type":"tool_result","content":"cobot rule: ask Bash(*) @consultant (default layer)"}'
+    assert not matches(grader, asked)
+    other = '{"type":"tool_result","content":"cobot rule: ask Bash(git push*) (default layer)"}'
+    assert matches(grader, other)
+    assert matches(grader, '{"name":"Bash","input":{"command":"zizmor --offline ."}}')
+
+
 def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
     found = graders("new-project-onboard", BLOCKED)
     good = "Wrote .agent/ for a cli project; the language is left to the spec. Next: /cobot:spec <goal>."

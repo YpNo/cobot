@@ -3351,3 +3351,69 @@ def test_repositoryConfig_otherReads_untouched(rules, repository_trust, tmp_path
     repo = owner_repo(tmp_path / "r", remote="https://github.com/evil/x")
     assert agent_judge(rules, "ls", repo).decision is None
     assert agent_judge(rules, "for f in a; do ls; done", repo).decision == "ask"
+
+
+# resolving builds code, in any repository (gate-repo-config T03)
+RESOLVES_ASK = [
+    "pip-audit -r requirements.txt",
+    "pip-audit -rrequirements.txt",
+    "pip-audit -vr requirements.txt",
+    "pip-audit --requirement requirements.txt",
+    "pip-audit --requirem=requirements.txt",
+    "pip-audit --req requirements.txt",
+    "pip-audit .",
+    "pip-audit -f json .",
+    "pip-audit --no-deps -r requirements.txt",
+    "pip-audit --disable-pip -r requirements.txt",
+    "pip-audit --desc on -r r.txt",
+    "pip-audit -- .",
+    "uv audit",
+    "uv audit --locked",
+    "uv --offline audit",
+    "terraform providers schema -json",
+    "tofu providers schema -json",
+    "terraform -chdir=x providers schema",
+    "docker build --check --build-arg BUILDKIT_SYNTAX=evil/frontend .",
+    "docker build --check --build-arg=BUILDKIT_SYNTAX=evil/frontend .",
+    "docker build --check --build-arg BUILDKIT_SYNTAX .",
+    "docker build --check --builder evil .",
+    "docker build --check -f - .",
+    "docker build --check -f- .",
+    "docker build --check --file=- .",
+    "docker build --check - ",
+    "trivy fs -c ./evil.yaml .",
+    "trivy fs --config=./evil.yaml .",
+    "trivy --config ./evil.yaml fs .",
+]
+RESOLVES_SILENT = [
+    "pip-audit",
+    "pip-audit -f json",
+    "pip-audit --desc on",
+    "pip-audit --desc --format json",
+    "pip-audit --no-deps --disable-pip -r requirements.txt",
+    "pip-audit --disable-pip --no-deps --requirement=requirements.txt",
+    "pip-audit -l",
+    "uv audit --frozen",
+    "terraform providers",
+    "docker build --check --build-arg VERSION=1 .",
+    "trivy fs --scanners vuln .",
+    "trivy config .",
+]
+
+
+@pytest.mark.parametrize("command", RESOLVES_ASK)
+@pytest.mark.parametrize("agent", ["cobot:consultant", "cobot:learner"])
+def test_decide_resolves_asksInEveryRepository(rules, command, agent):
+    assert decide(rules, command, agent=agent)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", RESOLVES_SILENT)
+def test_decide_resolves_readsStaySilent(rules, command):
+    assert decide(rules, command, agent="cobot:consultant")[0].decision is None, command
+
+
+def test_decide_pip_audit_reasonNamesTheRequirement(rules):
+    reason = decide(rules, "pip-audit -r req.txt", agent="cobot:consultant")[0].reason()
+    assert reason == "cobot gate: pip-audit '-r' can write or run; the read list does not cover it"
+    reason = decide(rules, "uv audit", agent="cobot:consultant")[0].reason()
+    assert reason == "cobot gate: uv audit without --frozen can write or run; the read list does not cover it"

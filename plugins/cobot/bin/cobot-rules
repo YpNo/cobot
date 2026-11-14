@@ -691,6 +691,7 @@ class Guard:
     verbs: frozenset[str] = frozenset()
     suffix: str = ""
     check: object = None  # Callable[[list[str]], str | None]
+    missing: str = ""  # an option without which the command writes or runs (``uv audit --frozen``)
 
 
 def _words(text: str) -> frozenset[str]:
@@ -767,6 +768,72 @@ def branch_write(tokens: list[str]) -> str | None:
     return None
 
 
+PIP_AUDIT_WRITES = Guard(long=_words("fix output"), short="o")
+# pip-audit README, read 2026-11-14: options that take a value; --desc and --aliases take one of
+# on|off|auto when it follows
+PIP_AUDIT_VALUES = _words("-f --format -s --vulnerability-service --cache-dir --progress-spinner --timeout")
+PIP_AUDIT_VALUES |= _words("--path --index-url --extra-index-url --ignore-vuln -o --output")
+PIP_AUDIT_CHOICES = _words("--desc --aliases")
+PIP_AUDIT_SHORT_VALUES = "fsor"
+
+
+def pip_audit_resolves(tokens: list[str]) -> str | None:
+    """``pip-audit`` writes with ``--fix`` or ``-o``, and resolving requirements (``-r``) or a
+    project path builds source-only dependencies, running their ``setup.py``, unless both
+    ``--no-deps`` and ``--disable-pip`` are given (gate-repo-config)."""
+    written = guarded_token(tokens, PIP_AUDIT_WRITES)
+    if written:
+        return written
+    resolves, safe, rest = None, set(), list(tokens)
+    while rest:
+        arg = rest.pop(0)
+        name, has_value, _ = arg.partition("=")
+        if arg == "--":
+            resolves = resolves or (rest[0] if rest else None)
+            break
+        if name in ("--no-deps", "--disable-pip"):
+            safe.add(name)
+        elif arg.startswith("--") and len(name) > 4 and "--requirement".startswith(name):
+            resolves, rest = resolves or name, rest if has_value else rest[1:]
+        elif name in PIP_AUDIT_VALUES and not has_value:
+            rest = rest[1:]
+        elif name in PIP_AUDIT_CHOICES:
+            rest = rest[1:] if rest and rest[0] in ("on", "off", "auto") else rest
+        elif option_word(arg) and not arg.startswith("--"):
+            resolves, rest = pip_audit_cluster(arg, rest, resolves)
+        elif not option_word(arg):
+            resolves = resolves or arg  # a project path
+    return resolves if resolves and safe != {"--no-deps", "--disable-pip"} else None
+
+
+def pip_audit_cluster(arg: str, rest: list[str], resolves: str | None) -> tuple[str | None, list[str]]:
+    """A short cluster (``-vr req``, ``-rreq``): a value letter takes the rest or the next word."""
+    for index, letter in enumerate(arg[1:], start=1):
+        if letter in PIP_AUDIT_SHORT_VALUES:
+            found = resolves or ("-r" if letter == "r" else None)
+            return found, rest if arg[index + 1 :] else rest[1:]
+    return resolves, rest
+
+
+DOCKER_BUILD_WRITES = Guard(long=_words("output iidfile metadata-file push load builder"), short="o")
+
+
+def docker_build_unsafe(tokens: list[str]) -> str | None:
+    """``docker build``: a write, another builder, a Dockerfile or context on stdin, or a
+    ``BUILDKIT_SYNTAX`` build argument naming the frontend image BuildKit runs."""
+    written = guarded_token(tokens, DOCKER_BUILD_WRITES)
+    if written:
+        return written
+    for index, arg in enumerate(tokens):
+        following = tokens[index + 1] if index + 1 < len(tokens) else ""
+        name, has_value, value = arg.partition("=")
+        if name == "--build-arg" and (value if has_value else following).startswith("BUILDKIT_SYNTAX"):
+            return arg
+        if arg in ("-", "-f-") or (name in ("-f", "--file") and (value if has_value else following) == "-"):
+            return arg
+    return None
+
+
 CURL_FLAGS = _words("--silent --show-error --location --fail --fail-with-body --head --include --verbose")
 CURL_FLAGS |= _words("--insecure --globoff --compressed --ipv4 --ipv6 --http1.1 --http2")
 CURL_VALUES = _words("--header --user-agent --referer --max-time --connect-timeout --retry --retry-delay")
@@ -833,9 +900,10 @@ READ_GUARDS: dict[str, Guard] = {
     "git diff": Guard(long=_words("output")),
     "git branch": Guard(check=branch_write),
     "zizmor": Guard(long=_words("fix")),  # docs.zizmor.sh/usage
-    "trivy": Guard(long=_words("output module-dir"), short="o"),  # trivy.dev CLI reference
+    "trivy": Guard(long=_words("output module-dir config"), short="oc"),  # trivy.dev CLI reference
     "gitleaks detect": Guard(long=_words("report-path log-opts"), short="r"),  # gitleaks README
-    "pip-audit": Guard(long=_words("fix output"), short="o"),  # pypa/pip-audit README
+    "pip-audit": Guard(check=pip_audit_resolves),  # pypa/pip-audit README
+    "uv audit": Guard(missing="--frozen"),  # uv 0.12.23: locking runs the project's build backend
     "cargo-audit audit": Guard(
         long=_words("db"), short="d", verbs=_words("fix")
     ),  # rustsec cargo-audit README
@@ -845,14 +913,15 @@ READ_GUARDS: dict[str, Guard] = {
     "npm audit": Guard(verbs=_words("fix")),  # npm 11.20.0
     "pnpm audit": Guard(long=_words("fix")),  # pnpm 12.18.0
     "semgrep": Guard(long=_words("autofix output"), short="ao", suffix="-output"),  # semgrep CLI reference
-    "docker build": Guard(long=_words("output iidfile metadata-file push load"), short="o"),  # docker docs
+    "docker build": Guard(check=docker_build_unsafe),  # docker docs; BuildKit frontend syntax
     "docker compose config": Guard(long=_words("output"), short="o"),
     "cosign verify": Guard(long=_words("output-file")),  # sigstore cosign docs
     "actionlint": Guard(single=_words("shellcheck pyflakes")),  # rhysd/actionlint usage
     "go list": Guard(single=_words("toolexec exec mod modfile")),  # go help build, list
     "go env": Guard(single=_words("w u")),
-    "terraform providers": Guard(verbs=_words("lock mirror")),  # developer.hashicorp.com
-    "tofu providers": Guard(verbs=_words("lock mirror")),
+    # schema starts every provider binary, one committed under .terraform/ included
+    "terraform providers": Guard(verbs=_words("lock mirror schema")),  # developer.hashicorp.com
+    "tofu providers": Guard(verbs=_words("lock mirror schema")),
     "kubectl kustomize": Guard(long=_words("output"), short="o"),  # kubectl reference
     "kustomize build": Guard(long=_words("output"), short="o"),
     "helm template": Guard(long=_words("output-dir dependency-update")),  # helm.sh docs
@@ -878,6 +947,8 @@ def guarded(plain: list[str]) -> str | None:
     for key, start in guard_keys(plain):
         guard = READ_GUARDS.get(key)
         tokens = plain[1:] if start == 1 else verb[start:]
+        if guard and guard.missing and guard.missing not in tokens:
+            return f"{key} without {guard.missing} can write or run; {READ_LIST_GAP}"
         token = guard and guarded_token(tokens, guard)
         if token:
             return f"{key} '{token[:30]}' can write or run; {READ_LIST_GAP}"

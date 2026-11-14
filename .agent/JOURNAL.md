@@ -195,3 +195,12 @@ Why: F-20, a new Rust project's spec looked these up itself.
 Proof: crates.io API for each crate and version; GitHub last commits within a month for tempfile, assert_cmd, predicates, clap, serde, serde_json; pytest with coverage exit 0 (98.70 %); markdownlint, claude plugin validate --strict, check-plugin, cobot-memory check exit 0.
 Next: owner pushes fix/f20-rust-crates and merges.
 verified: f20d2d4 · crates.io, pytest+cov, markdownlint, plugin validate, check-plugin, memory check
+
+## 2026-11-14 — consultants run in place (F-27)
+
+Changed: consultant.md and the consult brief: the working directory is the repository, run commands in place, one command over many files, no for loop or shell function; consult/domains/ui.md: the contrast formula takes every pair in one jq call; default rules: allow Bash(pwd) @consultant; eval consult-fan-out grader read-list-only (trace, not_contains the catch-all ask); tests for the pwd rule, the grader and the ui block (runs it with jq, gates it as consultant); F-27 closed; CHANGELOG.
+Why: F-27; replaying the grader on run 43584857035 failed 16 of 21 consultant sessions (cd 10, pwd 3, loops and functions 3), and 1 of 3 in run 43599532436 (cd). Allowing cd for @consultant was rejected: it would widen the read list.
+Proof: tests first (pwd rule and grader failed before the change); pytest with coverage exit 0 (98.70 %); ruff check and format, shellcheck, markdownlint, claude plugin validate --strict (plugin and marketplace), check-plugin, cobot-memory check exit 0; the documented jq block prints 4.48 and 3.11 and the gate is silent on it for the consultant.
+Open: the consult cases' behaviour is unproven until a paid run; the new grader makes consult-fan-out fail on any consultant command off the read list.
+Next: owner pushes fix/f27-consultant-in-place and merges, then cases=consult-fan-out (and the full suite when convenient).
+verified: 05fb87a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check, gate probe, jq run

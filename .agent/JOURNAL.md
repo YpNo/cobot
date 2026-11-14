@@ -111,3 +111,11 @@ Why: spec gate-repo-config T01 (F-25); owner's answer to the challenger's PR-che
 Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; the existing trust tests pass unchanged.
 Next: T02 trust-gated rows.
 verified: 84aeb9f · pytest+cov, ruff
+
+## 2026-11-14 — gate-repo-config T02: trust-gated reads
+
+Changed: _cobot_common.py (git_bytes); cobot-rules (CONFIG_FILES, CWD_CONFIG_FILES, PARENT_FILES, RepositoryConfig with lazy trust, top and reference commit; gate_trust stricter than memory's; default_branch; changed_file by git cat-file; parent_config leaving $CARGO_HOME and ~/.npmrc out; safe_build_path and docker_build_files; deciding_files; repository_config; judge_bash passes the reason per segment for an agent; cargo's -V --version -h --help --list out of its global flags); tests/conftest.py (stub_repository_config, repository_trust with GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM, HOME, CARGO_HOME, XDG_DATA_HOME, CLAUDE_CONFIG_DIR); tests: TRUST_GATED_READS trusted and untrusted, foreign mode, a listed root with a fork remote and after a merge of unrelated histories, deciding files changed, committed on HEAD only, untracked, in a parent inside the repository, above the repository, the owner's cargo home, no default branch, docker contexts, a runner, no repository, no remote against HEAD, an unreadable file.
+Why: spec gate-repo-config T02 (F-25), owner's answer a). Found while building: cargo --version asked for the agents on main since gate-findings T03 (--version among cargo's global flags dropped it from the canonical form); fixed here with AGENT_READS rows.
+Proof: pytest with coverage exit 0 (98.67 %); ruff check and format exit 0.
+Next: T03 pip-audit, uv audit, providers schema, docker frontend.
+verified: f8b4574 · pytest+cov, ruff

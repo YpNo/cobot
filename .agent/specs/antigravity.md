@@ -36,7 +36,7 @@ What does not change:
   spec is one PR.
 - Rules before autonomy: the gate never widens in either runtime; under agy "no opinion" is
   `allow` (agy's defer), asks are `force_ask`, `auto_approve` is never emitted (a test scans every
-  output); self-protection extends to agy's settings and `agy plugin disable|uninstall`.
+  output); self-protection extends to agy's settings and `agy plugin disable|uninstall|link`.
 - Knowledge is a skill: no new skill; the agy facts are dated in `docs/harnesses.md` and
   `docs/reference/antigravity-mechanics.md`.
 - Proof, not promises: every story has its command; the live behaviour (hooks in subagents, fail
@@ -79,7 +79,7 @@ What does not change:
    has, mapped by one table to both agy families (the toolset varies by model): Read →
    `view_file`, `read_file`; Grep → `grep_search`; Glob → `find_by_name`, `list_dir`; Edit →
    `replace_file_content`, `multi_replace_file_content`, `edit_file`; Write → `write_to_file`,
-   `write_file`; Bash → `run_command`; WebFetch → `read_url_content`; WebSearch → `search_web`;
+   `write_file`; Bash → `run_command`, `manage_task` (to poll an async command); WebFetch → `read_url_content`; WebSearch → `search_web`;
    Skill and Agent have no agy tool and are dropped.
    - The consultant and the learner get no `run_command` (their `@agent` read lists cannot
      apply: no agent identity reaches agy hooks), and `commandExecutionPolicy: off`.
@@ -110,16 +110,16 @@ What does not change:
    **Project folder.** agy hooks run in the plugin folder. The project layer comes from
    `workspacePaths`, never from `run_command`'s `Cwd` (model-written, present on some models) or
    the stdin `cwd`: the layers of every listed path apply, so a `Cwd: /tmp` cannot drop a project
-   `never`. `Cwd`, else `cwd`, serves only Makefile, mise and package.json expansion and relative
-   paths. With no `workspacePaths`, a call that needs the
+   `never`. `Cwd`, else `cwd`, serves only Makefile, mise and package.json expansion. With no
+   `workspacePaths`, a call that needs the
    project gets `force_ask`. A test proves a project-layer `never` applies whatever `Cwd` says.
 
    **Mapping:**
    - `run_command.CommandLine` → Bash `command`;
-   - `manage_task` `Input` (text sent to a persistent terminal) → Bash;
+   - `manage_task` `Input` → Bash, never below `force_ask` (the reader may be a REPL or `ssh`);
    - `write_to_file`, `replace_file_content`, `multi_replace_file_content` (`TargetFile`) and
-     `write_file`, `edit_file` (`Path`), resolved against the project folder when relative →
-     Write / Edit `file_path`;
+     `write_file`, `edit_file` (`Path`) → Write / Edit `file_path`, the parent resolved with
+     `realpath`; a relative path gets `force_ask`;
    - MCP: `call_mcp_tool` `ServerName` and `ToolName` → `mcp__<server>__<tool>`. An eager
      `mcp_<rest>` is split at a known server name, read at each call from agy's MCP configuration
      and the installed plugins' servers, named `<plugin>_<server>` (files in the mechanics doc). For an unknown server it is judged at every `_` and
@@ -131,12 +131,14 @@ What does not change:
    **Tools by name:**
    - read tools (`view_file`, `read_file`, `list_dir`, `find_by_name`, `grep_search`,
      `read_url_content`, `search_web`, `view_code_item`) and orchestration tools (`ask_question`,
-     `send_message`, `manage_subagents`, `list_permissions`, `ask_permission`, `schedule`,
-     `manage_task` other than `send_input`) → `allow`;
+     `send_message`, `list_permissions`, `ask_permission`, `finish`, `skill_search`, `schedule`
+     without `TimerCondition`, `manage_task` `list|status|kill`, `manage_subagents`
+     `list|kill|kill_all`) → `allow`; any other action or argument → `force_ask`;
    - `invoke_subagent` → `allow` when every spec's `Workspace` (flat args or the `Subagents`
-     array) is absent, `inherit`, `branch` or `share`, `force_ask` otherwise;
-   - `run_workflow` → `force_ask`: it runs Python from `Script` or `ScriptPath` (inside a workflow,
-     agy denies every unapproved ask, so a cobot ask there is a deny);
+     array) is absent or `inherit`, or `branch`/`share` while `.agent/cobot.rules` has no
+     uncommitted change (a new workspace reads the committed rules), `force_ask` otherwise;
+   - `run_workflow` → `force_ask`, its reason naming the `ScriptPath` file's sha256 and "workflow
+     agents not proven gated" (inside a workflow agy denies an unapproved ask);
    - `define_subagent` → `deny`;
    - any other tool, or a file tool without its path argument, → `force_ask`.
 
@@ -150,14 +152,16 @@ What does not change:
      - the Claude Code gate tests unchanged;
    - shellcheck on the shim.
 4. **Self-protection for agy.** As the owner, the default rules deny:
-   - editing or writing `~/.gemini/antigravity-cli/settings*.json`, `~/.gemini/config/hooks.json`,
-     the project's `.agents/hooks.json` and `.agents/plugins/**` (a hook there runs outside the
-     gate and may answer `auto_approve`), and the installed plugin copy
-     `~/.gemini/config/plugins/cobot/**`;
+   - editing or writing `~/.gemini/antigravity-cli/settings*.json`, `~/.gemini/config/**` (hooks,
+     `config.json` enablement, MCP servers, every installed plugin), `~/.gemini/jetski/**`
+     (command sidecars, access grants), and in every customization root (`.agents`, `.agent`,
+     `_agents`, `_agent`, at any depth) `hooks.json`, `plugins.json`, `skills.json` and
+     `plugins/**`: a hook or plugin there runs outside the gate and may answer `auto_approve`;
    - `agy plugin*` and `agy plugins*` `disable`, `uninstall` and `link` forms naming cobot.
 
-   They ask on every `agy` invocation (`ask Bash(agy*)`: a nested `agy -p` with its own flags is
-   outside the gate) and on `install.sh`. A default rule cannot carve out the read forms, so the
+   They ask on every `agy` invocation (`ask Bash(agy*)`, reason "may replace or bypass the cobot
+   gate": `agy plugin install` replaces in place, a nested `agy -p` is outside the gate) and on
+   `install.sh`. A default rule cannot carve out the read forms, so the
    README proposes the owner line `allow Bash(agy plugin validate*)`.
 
    Accept: `pytest tests/test_cobot_rules.py -k agySelf`, with `cobot-rules check` rows for each
@@ -190,18 +194,17 @@ What does not change:
 6. **Install at work.** As the owner:
    - `./install.sh --agy` runs `agy plugin validate` on `plugins/cobot`, then `agy plugin install
      "$root/plugins/cobot"`;
-   - `./install.sh --agy --refresh`, in either order, validates, then installs again: agy
-     replaces the copy atomically and restores the previous one on failure, so it never
-     uninstalls first (that would open a window without the gate); a failed install is loud;
-   - `--agy` is a modifier, not the last-wins action;
+   - the same command refreshes (agy replaces the copy atomically and restores the previous one
+     on failure; never uninstall first); the README says to run it with no agy session open, and
+     a failed install is loud; `--agy` is a modifier, not the last-wins action;
    - `./install.sh --check` reports agy's plugin state when `agy` is on PATH;
    - the README says to clone at a release tag.
 
    ADR-0003 holds: nothing else is written. Accept: `pytest tests/test_install.py -k agy`, with
    `agy` faked on PATH, argv recorded, both flag orders and the failed-install path.
 7. **Memory beside agy's discovery.** As the orchestrator, `cobot-memory check` warns when
-   `.agent/skills`, `.agent/rules` or `.agent/workflows` exists, since agy loads those legacy
-   folders.
+   `.agent/` holds `skills`, `rules`, `workflows`, `plugins`, `hooks.json`, `plugins.json` or
+   `skills.json`: `.agent/` is also an agy customization root, so agy loads them.
    - Accept: `pytest tests/test_new_project.py -k agyLegacy` (or the memory tests).
 8. **The record.** As the owner, the change carries:
    - ADR-0007 (decision 1 amended);
@@ -224,6 +227,9 @@ What does not change:
    - a throwaway workspace hook in the scratch repo's `.agents/hooks.json` that prints
      `{"decision":"deny"}` and then exits 1, removed after: if the call runs, agy ignores a
      failing hook's output;
+   - inside a `run_workflow`, a `call_tool` and an `agent()` attempting `git push --force`;
+   - a `branch` child after an uncommitted `.agent/cobot.rules` line;
+   - a workspace hook named `cobot` with `"enabled": false` (a name clash) cannot disable the gate;
    - the brief arrives as a system message;
    - an MCP call's name form;
    - `/cobot:onboard` reaches `cobot-memory check` through the brief's path.
@@ -240,17 +246,15 @@ The four questions that were expensive to undo were asked and answered on 2026-1
 input, Owner decisions). Decided here without asking:
 - the agy agent body is a synced copy, not a pointer: no subagent read is proven, and a copy works
   without one;
-- `install.sh --agy` covers install and refresh, user scope only;
+- `install.sh --agy` covers install and refresh (one command), user scope only;
 - the PostInvocation hook is dropped: it sees neither a subagent's report nor a tool result, so
   proof lives in the brief.
 
 ## Plan
 
-1. T01 first: the tree split. Every later task depends on `claude-agents/` and the two manifests.
-2. The gate adapter and its shim, the self-protection rules, then the brief: the safety-carrying
-   parts, test first.
-3. Install, memory, the agent sync.
-4. Docs, the smoke script, then the owner's smoke run fills the harness record before the PR.
+T01 (the tree split) first; then the safety-carrying parts test first (gate, shim,
+self-protection, brief); install, memory, sync; docs and the smoke script; the owner's smoke run
+fills the harness record before the PR.
 
 ## Tasks
 
@@ -259,9 +263,9 @@ input, Owner decisions). Decided here without asking:
 | T01 | Tree split: `git mv agents/*.md claude-agents/`; `.claude-plugin/plugin.json` `agents` list; `.antigravity-plugin/plugin.json`; quote `onboard`'s `argument-hint`; `check-plugin`, `install.sh` `report_overlaps`, `test_cli_flags` and the mechanics note read the manifest list; the new `check-plugin` checks (manifest agreement, strict YAML frontmatter, 24 000-byte skill bodies). Proof: `python3 scripts/check-plugin.py`; `pytest tests/test_check_plugin.py tests/test_cli_flags.py`; `claude plugin validate plugins/cobot --strict` | — | — | — |
 | T02 | `scripts/sync-agents.py` and the nine agy agents in `agents/`: tool map, model map, `mainAgent: false`, `commandExecutionPolicy: off` and no `run_command` for consultant and learner, bodies copied; `check-plugin` agy-agent checks (known tools, YAML list, tier). Proof: `pytest tests/test_agents_sync.py`; `agy plugin validate plugins/cobot` (one warning) | a | — | T01 |
 | T03 | Gate adapter `cobot-rules gate --runtime agy` (project layer from `workspacePaths`, `Cwd` for expansion only, payload mapping incl. `manage_task`, verdicts, read and orchestration tools, `define_subagent` deny, missing path asks, MCP split at the known server, else strictest; `invoke_subagent` `Workspace` outside `inherit|branch|share` asks; `run_workflow` asks; both file-tool families) and `hooks/gate-agy.sh` (stdin buffered, deadline, every failure or non-JSON → deny, exit 0); root `hooks.json` group `cobot` with PreToolUse `.*`, `timeout: 10`, and SessionStart. Proof: `pytest tests/test_gate_agy.py`; shellcheck | b | **risk** (trust boundary) | T01 |
-| T04 | Default rules: never Edit/Write of agy's settings, global and workspace hooks files, `.agents/plugins/**` and the installed cobot copy; never `agy plugin(s) disable|uninstall|link` of cobot; `ask Bash(agy*)` and `install.sh`. Proof: `pytest tests/test_cobot_rules.py -k agySelf` | b | — | T03 |
+| T04 | Default rules: never Edit/Write of agy's settings, `~/.gemini/config/**`, `~/.gemini/jetski/**`, and `hooks.json`, `plugins.json`, `skills.json`, `plugins/**` in every customization root (`.agents`, `.agent`, `_agents`, `_agent`); never `agy plugin(s) disable|uninstall|link` of cobot; `ask Bash(agy*)` and `install.sh`. Proof: `pytest tests/test_cobot_rules.py -k agySelf` | b | — | T03 |
 | T05 | `cobot-session start --runtime agy`: `systemMessage` step, project from `workspacePaths`, agy section after the protocol with the brief budget reduced, serialised cap, the error path. Proof: `pytest tests/test_cobot_session.py -k agy` (or the session tests in `test_cobot_memory.py`) | a | — | T01 |
-| T06 | `install.sh --agy [--refresh]` as a modifier, validate then install, never uninstall first, loud failed install; `--check` agy state; `cobot-memory check` legacy-folder warning. Proof: `pytest tests/test_install.py -k agy`; `pytest -k agyLegacy`; shellcheck `install.sh` | a | — | T01 |
+| T06 | `install.sh --agy` as a modifier, validate then install (it also refreshes), never uninstall first, loud failed install; `--check` agy state; `cobot-memory check` legacy-folder warning. Proof: `pytest tests/test_install.py -k agy`; `pytest -k agyLegacy`; shellcheck `install.sh` | a | — | T01 |
 | T07 | Version 0.3.0 in both manifests and the marketplace, `release.yml` manifest-agreement check; docs: ADR-0007, decision 1 note, `docs/reference/antigravity-mechanics.md`, `docs/harnesses.md`, README section, architecture and configuration rows, CHANGELOG, the E8 line in wrap and spec; `scripts/spikes/smoke-agy.sh` (scratch repo, local bare remote, real HOME, no skip-permissions flag, S4 `not run`). Proof: markdownlint, shellcheck, `check-plugin` | — | — | T02–T06 |
 | T08 | The owner's smoke run on a signed-in agy; results into `docs/harnesses.md`; any gap it shows becomes a fold or a named gap in README and the brief before the PR | — | — | T07 |
 
@@ -283,10 +287,11 @@ Lanes after T01: a (agents, sync, session, install, memory) and b (`cobot-rules`
 
 ## Challenger verdict
 
-Pass 2 (2026-11-12): **SOUND WITH CHANGES**, seven points folded (the project layer from
-`workspacePaths`, the known-server MCP split, a foreign subagent `Workspace`, four MINOR).
-Pass 1 (2026-11-12): **SOUND WITH CHANGES**, twelve points folded (BLOCKER: hooks or plugins
-written outside the gate; seven MAJOR, four MINOR). Both in full in the 2026-11-12 journal entry.
+Pass 3 (2026-11-15, the agy 1.5.9 fold): **SOUND WITH CHANGES**, nine folded. BLOCKER: `.agent`,
+`_agents`, `_agent` are customization roots too; `config.json`, sidecars, other plugins were open.
+MAJOR: `send_input` floors at `force_ask`; workflow `finish` and smoke rows. Six MINOR folded.
+Passes 1 and 2 (2026-11-12): SOUND WITH CHANGES, twelve and seven points folded (BLOCKER: hooks or
+plugins written outside the gate); in full in the 2026-11-12 journal entry.
 
 ## Converge
 

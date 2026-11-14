@@ -113,6 +113,21 @@ def git(args: list[str], cwd: Path) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
+def git_bytes(args: list[str], cwd: Path) -> bytes | None:
+    """``git`` for binary output (``cat-file blob``): stdout as bytes, or None on any failure."""
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [shutil.which("git") or "git", *NO_FSMONITOR, *args],
+            cwd=cwd,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
 def repo_root(cwd: str | os.PathLike | None) -> Path:
     """The main checkout that holds .agent/, shared by its worktrees; cwd when not a repo."""
     override = os.environ.get("COBOT_RULES_PROJECT_DIR")

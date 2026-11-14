@@ -41,7 +41,22 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_make  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
-from _cobot_common import HelpRequested, UsageError, config_dir, parse_cli, plugin_root, repo_root  # noqa: E402
+from _cobot_common import (  # noqa: E402
+    HelpRequested,
+    UsageError,
+    checkout_root,
+    config_dir,
+    git,
+    git_bytes,
+    memory_dir,
+    parse_cli,
+    plugin_root,
+    remote_owners,
+    remotes,
+    repo_root,
+    root_commits,
+    trusted_roots,
+)
 
 ASK, DENY = "ask", "deny"
 DECISION_OF = {"never": DENY, "ask": ASK, "allow": "allow"}
@@ -288,8 +303,9 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     # cargo --help 1.99.0, read 2026-11-13; a leading ``+<toolchain>`` is rustup's proxy selector
     "cargo": (
         frozenset({"--color", "-C", "--config", "-Z", "--explain"}),
-        frozenset({"-v", "--verbose", "-q", "--quiet", "--locked", "--offline", "--frozen"})
-        | frozenset({"-h", "--help", "-V", "--version", "--list"}),
+        # -V, --version, -h, --help and --list end the run: they stay in the canonical form, so an
+        # exact ``allow Bash(cargo --version)`` matches
+        frozenset({"-v", "--verbose", "-q", "--quiet", "--locked", "--offline", "--frozen"}),
     ),
     # value options only, so their value is never read as a verb (readings): uv --help 0.12.23,
     # pnpm --help 12.18.0, npm help config 11.20.0, read 2026-11-13
@@ -874,6 +890,206 @@ def written_file(reached: Reached) -> str | None:
     for word in reached.writes:
         if word not in SAFE_WRITE_TARGETS:
             return f"redirection to '{show(word, shell.REGISTRY)[:40]}' writes a file; {READ_LIST_GAP}"
+    return None
+
+
+# ---------------------------------------------------------------- repository configuration (gate-repo-config)
+
+TOOLCHAIN_FILES = ("rust-toolchain", "rust-toolchain.toml", ".cargo/config", ".cargo/config.toml")
+# command word -> the files in the working directory and its parents that decide what it runs:
+# rustup's toolchain file (a ``path`` runs that toolchain's binaries) and cargo's config
+# (``build.rustc-wrapper``); npm's and pnpm's registry and token settings; trivy's config
+CONFIG_FILES: dict[str, tuple[str, ...]] = {
+    "cargo": TOOLCHAIN_FILES,
+    "rustc": TOOLCHAIN_FILES,
+    "cargo-audit": TOOLCHAIN_FILES,
+    "cargo-deny": TOOLCHAIN_FILES,
+    "npm": (".npmrc",),
+    "pnpm": (".npmrc", "pnpm-workspace.yaml"),
+}
+CWD_CONFIG_FILES = {"trivy": ("trivy.yaml",)}  # read from the working directory only
+PARENT_FILES = (*TOOLCHAIN_FILES, ".npmrc")  # read above the repository too
+DEFAULT_BRANCHES = ("refs/remotes/origin/main", "refs/remotes/origin/master")
+DOCKER_BUILD_VALUES = frozenset(
+    "-t --tag --build-arg --target --platform --network --label --secret --ssh --cache-from --cache-to "
+    "--progress --add-host --shm-size --ulimit --call --build-context --annotation --attest --sbom "
+    "--provenance --allow --cgroup-parent --isolation -m --memory --memory-swap -c --cpu-shares "
+    "--cpuset-cpus --cpuset-mems --cpu-period --cpu-quota -f --file".split()
+)
+
+
+class RepositoryConfig:
+    """What the gate knows of the repository a hook call runs in, asked once and only when a
+    segment meets a row whose program the repository's files can choose (gate-repo-config)."""
+
+    def __init__(self, cwd: Path) -> None:
+        self.cwd = cwd
+        self._trust: tuple[bool, str] | None = None
+        self._top: Path | None = None
+        self._ref: str | None = None
+
+    def trust(self) -> tuple[bool, str]:
+        if self._trust is None:
+            self._trust = gate_trust(self.cwd)
+        return self._trust
+
+    def top(self) -> Path:
+        if self._top is None:
+            self._top = checkout_root(self.cwd).resolve()
+        return self._top
+
+    def ref(self) -> str:
+        """The commit the deciding files must match: origin's default branch, ``HEAD`` without a
+        remote, "" when origin has no default branch the gate can find."""
+        if self._ref is None:
+            self._ref = default_branch(self.top())
+        return self._ref
+
+
+def gate_trust(cwd: Path) -> tuple[bool, str]:
+    """The gate's trust, stricter than memory's: never foreign mode; every remote parsed and owned
+    by an identity; a listed root commit only without any remote and with a single root (a fork,
+    or a merge of unrelated histories, shares a listed root)."""
+    root = repo_root(cwd)
+    if memory_dir(cwd).is_symlink():
+        return False, "foreign mode, the tree is another owner's code"
+    remote_map = remotes(root)
+    if remote_map:
+        owners, identities = remote_owners(root)
+        strangers = sorted(name for name in remote_map if owners.get(name) not in identities)
+        if strangers:
+            return False, f"remote {', '.join(strangers)} is not an identity's"
+        return True, "every remote owner is an identity"
+    roots = root_commits(root)
+    if len(roots) == 1 and roots[0] in trusted_roots():
+        return True, "the root commit is listed, no remote"
+    return False, "no remote owned by an identity and no single listed root commit"
+
+
+def default_branch(top: Path) -> str:
+    if not remotes(top):
+        return "HEAD"
+    head = git(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"], top)
+    candidates = [head] if head else []
+    for ref in [*candidates, *DEFAULT_BRANCHES]:
+        if git(["rev-parse", "--verify", "-q", f"{ref}^{{commit}}"], top):
+            return ref
+    return ""
+
+
+def changed_file(config: RepositoryConfig, path: Path) -> str | None:
+    """The file's name when it is not its blob at the reference commit (untracked there, different,
+    a symlink, unreadable); None when it matches or does not exist. A symlinked folder on the way
+    is not tracked under that path, so it differs too."""
+    if not (path.exists() or path.is_symlink()):
+        return None
+    ref = config.ref()
+    try:
+        relative = path.relative_to(config.top()).as_posix()
+        data = path.read_bytes() if path.is_file() and not path.is_symlink() else None
+    except (OSError, ValueError):
+        return str(path)
+    if not ref or data is None:
+        return str(path)
+    blob = git_bytes(["cat-file", "blob", f"{ref}:{relative}"], config.top())
+    return None if blob == data else str(path)
+
+
+def parent_config(config: RepositoryConfig) -> str | None:
+    """A toolchain, cargo or npm file above the repository (rustup, cargo and npm read every parent
+    directory); the owner's own ``$CARGO_HOME`` and ``~/.npmrc`` are left out."""
+    cargo_home = Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+    own = {cargo_home / "config", cargo_home / "config.toml", Path.home() / ".npmrc"}
+    for folder in config.top().parents:
+        for name in PARENT_FILES:
+            path = folder / name
+            if path not in own and (path.exists() or path.is_symlink()):
+                return str(path)
+    return None
+
+
+def safe_build_path(word: str) -> bool:
+    """A path inside the working directory: relative, no ``..``, ``~``, ``-``, URL or hole."""
+    if (
+        not word
+        or shell.has_sentinel(word)
+        or word.startswith(("/", "~", "-"))
+        or "://" in word
+        or "@" in word
+    ):
+        return False
+    return ".." not in Path(word).parts
+
+
+def docker_build_files(plain: list[str], cwd: Path) -> list[Path] | str:
+    """The Dockerfile ``docker build`` reads, or the word that puts it outside the working
+    directory."""
+    verb = strip_global_options(plain)
+    rest, dockerfile, contexts = list(verb[2:]), None, []
+    while rest:
+        arg = rest.pop(0)
+        name, has_value, value = arg.partition("=")
+        if name in ("-f", "--file") or (arg.startswith("-f") and not arg.startswith("--") and len(arg) > 2):
+            value = (
+                value
+                if has_value
+                else (arg[2:] if name not in ("-f", "--file") else (rest.pop(0) if rest else ""))
+            )
+            if not safe_build_path(value):
+                return value or arg
+            dockerfile = value
+        elif name in DOCKER_BUILD_VALUES and not has_value:
+            rest = rest[1:]
+        elif not option_word(arg):
+            if not safe_build_path(arg):
+                return arg
+            contexts.append(arg)
+    context = contexts[-1] if contexts else "."
+    return [cwd / (dockerfile or str(Path(context) / "Dockerfile"))]
+
+
+def deciding_files(plain: list[str], config: RepositoryConfig) -> list[Path] | str | None:
+    """The files that decide what a read-list command runs, the word that makes them unknowable,
+    or None when the repository's files cannot choose its program."""
+    head = plain[0]
+    if head in CONFIG_FILES:
+        folders = [config.cwd, *config.cwd.parents]
+        top = config.top()
+        inside = [folder for folder in folders if folder == top or top in folder.parents]
+        return [folder / name for folder in inside for name in CONFIG_FILES[head]]
+    if head in CWD_CONFIG_FILES:
+        return [config.cwd / name for name in CWD_CONFIG_FILES[head]]
+    if strip_global_options(plain)[:2] == ["docker", "build"]:
+        return docker_build_files(plain, config.cwd)
+    return None
+
+
+def repository_config(plain: list[str], origin: str, config: RepositoryConfig) -> str | None:
+    """The reason a read-list command whose program the repository's files can choose loses the
+    read list: a runner's command, an untrusted repository, a deciding file above the repository
+    or one that differs from origin's default branch (gate-repo-config)."""
+    if not plain:
+        return None
+    files = deciding_files(plain, config)
+    if files is None:
+        return None
+    head = plain[0]
+    if origin:
+        return f"{head} via {origin[:30]} reads the repository's configuration; {READ_LIST_GAP}"
+    if isinstance(files, str):
+        return f"{head} reads '{files[:40]}' outside the working directory; {READ_LIST_GAP}"
+    trusted, why = config.trust()
+    if not trusted:
+        return f"{head} reads the repository's configuration and the repository is not trusted ({why})"
+    above = parent_config(config) if head in CONFIG_FILES else None
+    if above:
+        return f"{head} reads '{above[:50]}' above the repository; {READ_LIST_GAP}"
+    for path in files:
+        changed = changed_file(config, path)
+        if changed:
+            return (
+                f"{head} reads '{changed[-50:]}', which differs from origin's default branch; {READ_LIST_GAP}"
+            )
     return None
 
 
@@ -2435,8 +2651,10 @@ def judge_bash(
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
+    config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
     for segment, origin, unit in entries:
-        verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, refused)
+        own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
+        verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

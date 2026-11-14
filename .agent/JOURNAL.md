@@ -103,3 +103,11 @@ Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; shel
 Open: the session brief is 6132 chars against its 6000 budget, on main before this compaction too.
 Next: owner pushes chore/journal-compact and opens the PR.
 verified: 2c4ad0a · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin
+
+## 2026-11-14 — gate-repo-config T01: trust in _cobot_common
+
+Changed: _cobot_common.py (NO_FSMONITOR on every git call; read_lines, external_memory, remote_owners, trusted_roots, repo_trust moved from cobot-memory); cobot-memory (Memory.trust and external_path delegate; the explicit NO_FSMONITOR arguments dropped); tests: an argv test that every trust-path git call carries NO_FSMONITOR; spec: the owner's answer a) and the deciding-files model.
+Why: spec gate-repo-config T01 (F-25); owner's answer to the challenger's PR-checkout MAJOR.
+Proof: pytest with coverage exit 0 (98.68 %); ruff check and format exit 0; the existing trust tests pass unchanged.
+Next: T02 trust-gated rows.
+verified: 84aeb9f · pytest+cov, ruff

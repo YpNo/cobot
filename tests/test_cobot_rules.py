@@ -820,6 +820,13 @@ def judge_in(rules, command, cwd):
         ("mise exec --", "ask"),
         ("mise ls", None),
         ("mise install", None),
+        # a lone info flag names no task (latex-resume-generator asked on `mise --version`)
+        ("mise --version", None),
+        ("mise -V", None),
+        ("mise --help", None),
+        ("mise -h", None),
+        ("mise --version run deploy", "ask"),
+        ("mise -V deploy", "ask"),
     ],
 )
 def test_miseTask_resolvedFromConfig(rules, mise_repo, command, decision):

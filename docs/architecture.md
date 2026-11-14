@@ -32,7 +32,7 @@ ADR-0005 and ADR-0006.
 
 Intake names the size (tiny, small, medium, large) and the profile caps it. Tiny and small work
 is done in the main thread with a focused check. Medium and large work goes through
-`/cobot:spec` (≤ 5 clarify questions, challenger and consults in parallel), `/cobot:build` (one
+`/cobot:spec` (≤ 4 clarify questions, challenger and consults in parallel), `/cobot:build` (one
 builder per task, up to three worktree lanes, proof lines checked), then `/cobot:wrap` (full
 checks, reviews, journal with a verified stamp). One spec is one branch and one pull request.
 

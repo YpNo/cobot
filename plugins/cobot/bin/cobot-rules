@@ -235,6 +235,8 @@ MISE_BUILTINS = frozenset(
     "self-update set settings shell sync tasks test-tool tool trust uninstall unset unuse upgrade use "
     "version watch where which x r i up ln rm cfg e s w a b g t".split()
 )
+# a lone info flag names no task; with anything after it, a flag may precede a task
+MISE_INFO_FLAGS = frozenset({"--version", "-V", "--help", "-h"})
 # a task with one of these keys runs more than its ``run`` lines say
 UNRESOLVED_TASK_KEYS = frozenset({"depends", "depends_post", "wait_for", "file", "shell", "dir"})
 MAX_ORIGIN = 40
@@ -1398,6 +1400,8 @@ def opaque_as_read(plain: list[str]) -> bool:
         return True
     if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
         sub = plain[1] if len(plain) > 1 else ""
+        if len(plain) == 2 and sub in MISE_INFO_FLAGS:
+            return False
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
     if head in OPAQUE_SUBCOMMANDS:

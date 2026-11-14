@@ -11,9 +11,20 @@ All notable changes to this project are documented here. The format follows
 - `lang-rust` lists the crates a Rust CLI starts with (F-20): clap, serde, serde_json, tempfile,
   assert_cmd and predicates, beside proptest; every crate row re-read on crates.io, dated by the
   version's own publish date, with the MSRV of each.
+- Fewer stops for the owner (latex-resume-generator session, 42 gate asks and 9 question rounds).
+  Replayed through today's gate, 37 of its 41 Bash asks still asked, 33 of them for how the
+  command was written: 23 inline `python3 -` edits, 8 `python3 -c` JSON reads, 2 loops running a
+  variable as the command. The protocol now says to edit with Edit or Write, read JSON with `jq`
+  and name each program, which the gate passes. `/cobot:spec` asks at most four questions (the
+  question tool's limit, which five overran twice), never what CONTEXT.md, a cobot rule or a later
+  spec settles; it writes the owner's environment answers into CONTEXT.md; and it folds BLOCKER
+  and MAJOR objections itself, asking only to overrule one or when the fold drops something the
+  owner asked for. The protocol's learning line keeps the rule; the learn skill keeps the steps.
 
 ### Fixed
 
+- `mise --version`, `-V`, `--help` and `-h` alone no longer ask: a lone info flag names no task
+  (a flag followed by anything still asks, since it may precede one).
 - Consultants fell off their read list: in run 43584857035, 16 of 21 consultant sessions hit the
   catch-all ask, so the gha consultant never ran zizmor (F-27). Ten opened with `cd <repository>`,
   three with `pwd`, three wrapped a command in a `for` loop or a shell function. The consultant

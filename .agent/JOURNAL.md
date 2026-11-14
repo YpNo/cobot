@@ -161,3 +161,12 @@ Proof: the new pattern matches all six real final replies; pytest with coverage 
 Open: actions-pinning shows Δ 0 (the baseline pins the newest v4 as well): requiring the newest stable major and the expert's table would measure expert-gha; the owner's call.
 Next: owner pushes, merges, then the full suite on main.
 verified: 7eb286d · pytest+cov, ruff, markdownlint, check-plugin, plugin validate, six-trace replay
+
+## 2026-11-14 — agents start in the foreground
+
+Changed: consult, spec, wrap, ship and build set `run_in_background: false` on every agent they start; consult reports once, after every consultant has returned; check-plugin fails a skill that names one of the plugin's agents without the flag (test first); mechanics note; CHANGELOG; finding F-27.
+Why: full suite on main f1e200f (run 43584857035, $8.39, 41 min) passed 16 of 17, overall score 0.997, mean Δ +0.32; the miss was one consult-fan-out run whose final message held only the gha section. The trace shows both Agent calls launched async (no flag), a "still running" reply, then one message per finished consultant. Across the run 22 of 23 calls without the flag went to the background, 15 of 15 with `false` stayed in the foreground (Claude Code 2.1.322).
+Proof: check-plugin failed on exactly the five skills before the text change, ok after; pytest with coverage exit 0 (98.70 %); ruff check and format exit 0; markdownlint exit 0; claude plugin validate plugins/cobot and . --strict exit 0.
+Open: unproven until a paid consult-fan-out run; F-27 (the consultant's `cd` asks) is a gate-rule decision for the owner.
+Next: owner pushes fix/agent-foreground and merges, then rebases or re-cuts the 0.2.0 release on top; a cases=consult-fan-out run.
+verified: 148c1ca · pytest+cov, ruff, markdownlint, plugin validate, check-plugin

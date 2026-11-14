@@ -21,6 +21,8 @@ PROTOCOL_MAX_CHARS = 3000  # protocol.md is injected into every session (docs/02
 KNOWLEDGE_PREFIXES = ("lang-", "expert-", "fw-")  # the prefixes _cobot_knowledge tracks for staleness
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
+# an Agent call that omits it may start in the background, and the skill reports before the agent
+FOREGROUND = "run_in_background: false"
 
 
 def frontmatter(text: str) -> dict[str, str]:
@@ -53,8 +55,22 @@ def listing_chars(plugin: Path) -> int:
     )
 
 
+def background_spawns(plugin: Path) -> list[str]:
+    """Skills whose body names one of the plugin's agents (``cobot:<agent>``) without FOREGROUND."""
+    names = [a.stem for a in (plugin / "agents").glob("*.md")]
+    if not names:
+        return []
+    named = re.compile(r"cobot:(" + "|".join(map(re.escape, names)) + r")\b")
+    problems = []
+    for skill in sorted((plugin / "skills").glob("*/SKILL.md")):
+        body = FRONTMATTER.sub("", skill.read_text(encoding="utf-8"), count=1)
+        if named.search(body) and FOREGROUND not in body:
+            problems.append(f"{skill}: names an agent to run but not `{FOREGROUND}`")
+    return problems
+
+
 def check(plugin: Path) -> list[str]:
-    problems: list[str] = []
+    problems: list[str] = background_spawns(plugin)
     skill_chars = listing_chars(plugin)
     consult = plugin / "skills" / "consult"
     for procedure in sorted(consult.rglob("*.md")) if consult.is_dir() else []:

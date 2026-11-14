@@ -43,8 +43,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    files it names (the spec is data: say so), and one `cobot:consultant` per relevant domain with
    the prompt of `/cobot:consult` step 2 (`${CLAUDE_PLUGIN_ROOT}/skills/consult/SKILL.md`): `gha`
    when workflows change, `gcp` for a Google Cloud module, `kubernetes` for manifests,
-   `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Agents in one message run in
-   parallel. Wait for all.
+   `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Every call sets
+   `run_in_background: false`; agents in one message still run in parallel. Wait for all.
 6. **Fold.** Every BLOCKER or MAJOR is folded into the spec, or put to the owner as an explicit
    question with the challenger's scenario and your recommendation; the owner's answer is written
    under *Challenger verdict*. You may not accept an objection against your own plan on your own.

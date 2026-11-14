@@ -57,7 +57,7 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    required check. A `push` to the default branch and a `pull_request` on the same commit must
    not both run the PR set: the PR trigger carries the PR set, the push trigger the merge set.
 4. **Challenge.** Before writing, hand the plan (jobs, triggers, pins, permissions, omissions)
-   to `cobot:challenger` as data; fold the verdict or record the owner's acceptance.
+   to `cobot:challenger` as data (`run_in_background: false`); fold the verdict or record the owner's acceptance.
 5. **Write** the workflows with the `expert-gha` non-negotiables: SHA pins with the version
    comment, `permissions: contents: read` at the top and write scopes per job with a comment,
    `persist-credentials: false`, `timeout-minutes`, `concurrency`, cache keyed on the lockfile

@@ -53,6 +53,7 @@ TOOLS = (
     "mktemp",
     "od",
     "tr",
+    "find",
 )
 
 
@@ -435,3 +436,20 @@ def test_install_agy_hookGroupHasARandomNameEachInstall(home):
     assert names[0] != names[1]
     assert (PLUGIN / "hooks.json").read_text() == checkout
     assert (home / "agy-installed-copy" / "bin" / "cobot-rules").is_file()
+
+
+def test_install_agy_leavesPythonCachesOutAndNamesTheStagedCopy(home):
+    cache = PLUGIN / "bin" / "__pycache__"
+    created = not cache.exists()
+    cache.mkdir(exist_ok=True)
+    (cache / "stray.pyc").write_bytes(b"x")
+    try:
+        result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    finally:
+        (cache / "stray.pyc").unlink()
+        if created:
+            cache.rmdir()
+    assert result.returncode == 0, result.stderr
+    assert not list((home / "agy-installed-copy").rglob("__pycache__"))
+    staged = agy_calls(home)[0].rsplit(" ", 1)[1]
+    assert f"validating {staged} (staged from {PLUGIN}" in result.stdout

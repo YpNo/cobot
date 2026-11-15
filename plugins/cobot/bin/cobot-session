@@ -34,6 +34,8 @@ CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
 CUSTOMIZATION_FILES = ("hooks.json", "plugins.json", "plugins")
 WORKSPACE_WARNING = "warning: agy customizations in this workspace run beside cobot's gate"
 WORKSPACE_SHOWN = 5
+WORKSPACE_PATH_SHOWN = 160  # the tail of a deep path: the root and file names stay readable
+WORKSPACE_WARNING_CAP = 1_200
 
 
 def protocol_text() -> str:
@@ -110,11 +112,13 @@ def build_payload(stdin: str) -> str:
 
 def agy_section() -> str:
     """What the protocol cannot say under agy: where the tools are (agy puts nothing on PATH and
-    does not expand skill text), its tool names, and the gaps against Claude Code."""
-    root = plugin_root()
-    text = f"""{AGY_HEADING}
-- bin/ is not on PATH: run `python3 -I {root}/bin/<tool> ...` for cobot-memory, cobot-rules and \
-cobot-deps. A skill is `{root}/skills/<name>/SKILL.md`: read it with view_file, or type /<name>.
+    does not expand skill text), its tool names, and the gaps against Claude Code. Within
+    AGY_SECTION_CAP for a plugin path up to about 400 characters; never cut, so a longer path
+    costs brief budget, not a gap line."""
+    return f"""{AGY_HEADING}
+- The plugin folder is `{plugin_root()}`. Its bin/ is not on PATH: run `python3 -I <plugin \
+folder>/bin/<tool> ...` for cobot-memory, cobot-rules and cobot-deps. A skill is `<plugin \
+folder>/skills/<name>/SKILL.md`: read it with view_file, or type /<name>.
 - Tool names: Agent is invoke_subagent, AskUserQuestion is ask_question, Skill is reading the \
 skill file.
 - onboard, rules and security-sweep run only when the owner types them.
@@ -123,7 +127,6 @@ skill file.
 the report.
 - Children receive the workspace's AGENTS.md and GEMINI.md.
 - Builders' tool calls are not proven gated under agy: review their diff before any outward step."""
-    return text[:AGY_SECTION_CAP]
 
 
 def folders_to_root(workspace: Path) -> list[Path]:
@@ -151,10 +154,14 @@ def workspace_warning(workspaces: list[str]) -> str:
         return ""
     found = list(dict.fromkeys(found))
     more = f" and {len(found) - WORKSPACE_SHOWN} more" if len(found) > WORKSPACE_SHOWN else ""
-    return (
+    shown = [
+        path if len(path) <= WORKSPACE_PATH_SHOWN else "…" + path[-WORKSPACE_PATH_SHOWN:] for path in found
+    ]
+    line = (
         f"{WORKSPACE_WARNING} and may answer before it. Tell the owner before your first tool call,"
-        f" and do not edit them: {', '.join(found[:WORKSPACE_SHOWN])}{more}"
+        f" and do not edit them: {', '.join(shown[:WORKSPACE_SHOWN])}{more}"
     )
+    return line[:WORKSPACE_WARNING_CAP]
 
 
 def agy_project(payload: dict) -> str | None:

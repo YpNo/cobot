@@ -121,9 +121,13 @@ retire_old_marketplace() { # before the new marketplace registers: a folder carr
 AGY_GROUP_LINE='  "cobot": {'
 
 stage_agy() { # DIR: copy the plugin into DIR/cobot with a random hook group name
+  # called as `stage_agy … || exit 1`, where set -e does not apply: every step fails on its own
   name="cobot-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-  cp -R "$PLUGIN_DIR" "$1/cobot"
-  sed "s/^$AGY_GROUP_LINE\$/  \"$name\": {/" "$PLUGIN_DIR/hooks.json" >"$1/cobot/hooks.json"
+  [ ${#name} -eq 22 ] || { echo "install: no random hook group name" >&2; return 1; }
+  cp -R "$PLUGIN_DIR" "$1/cobot" || { echo "install: cannot stage the plugin" >&2; return 1; }
+  # caches of a local test run stay out of the install
+  find "$1/cobot" -name __pycache__ -type d -prune -exec rm -rf {} + || return 1
+  sed "s/^$AGY_GROUP_LINE\$/  \"$name\": {/" "$PLUGIN_DIR/hooks.json" >"$1/cobot/hooks.json" || return 1
   grep -q "^  \"$name\": {\$" "$1/cobot/hooks.json" || {
     echo "install: hooks.json has no '$AGY_GROUP_LINE' line to rename; nothing installed" >&2
     return 1
@@ -136,9 +140,9 @@ cmd_agy() { # validate, then install: agy replaces an installed copy in place an
   stage=$(mktemp -d) || { echo "install: no temporary folder" >&2; exit 1; }
   trap 'rm -rf "$stage"' EXIT
   stage_agy "$stage" || exit 1
-  echo "agy: validating $PLUGIN_DIR (run this with no agy session open)"
+  echo "agy: validating $stage/cobot (staged from $PLUGIN_DIR; run this with no agy session open)"
   agy plugin validate "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
-  echo "agy: installing $PLUGIN_DIR at user scope"
+  echo "agy: installing $stage/cobot at user scope"
   rc=0; agy plugin install "$stage/cobot" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "install: agy plugin install failed (exit $rc); agy keeps the previous copy, if one was installed" >&2

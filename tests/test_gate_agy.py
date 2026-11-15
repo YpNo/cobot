@@ -412,6 +412,32 @@ def test_rootHooksJson_routesEveryToolThroughTheShim():
     assert hook == {"type": "command", "command": "sh ./hooks/gate-agy.sh", "timeout": 10}
 
 
+# ---------------------------------------------------------------- workspacePaths shape (wrap review)
+
+
+def test_noWorkspace_askedPush_asksWithoutCrashing(rules):
+    data = answer(rules, payload("run_command", {"CommandLine": "git push origin main"}))
+    assert data["decision"] == "force_ask"
+    assert "no workspacePaths" in data["reason"]
+
+
+@pytest.mark.parametrize("paths", ["/repo", ["relative/ws"], [7], {"a": 1}])
+def test_workspacePaths_notAListOfAbsolutePaths_asks(rules, workspace, paths):
+    body = json.loads(payload("write_to_file", {"TargetFile": str(workspace / "x")}))
+    body["workspacePaths"] = paths
+    data = answer(rules, json.dumps(body))
+    assert data["decision"] == "force_ask"
+    assert "no workspacePaths" in data["reason"]
+
+
+def test_loadRulesAgy_runsNoGitForTheDefaultAndOwnerLayers(rules, workspace, monkeypatch):
+    seen = []
+    real = rules.repo_root
+    monkeypatch.setattr(rules, "repo_root", lambda cwd=None: seen.append(cwd) or real(cwd))
+    rules.load_rules_agy([str(workspace)])
+    assert seen == [str(workspace)]
+
+
 # ---------------------------------------------------------------- self-protection under agy (T04)
 
 

@@ -95,6 +95,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Review fixes under Antigravity (wrap): a substitution counts as an unknown whole path only
+  where it leads the path or names its last part, so `.agents/plu$(x)ins/…` and `.agents/$(x)/…`
+  ask again; a `workspacePaths` that is not a list of absolute paths asks instead of reading
+  folders the hook's cwd picks; an asked push without a project no longer crashes the gate; the
+  default and owner layers load without a git call; the agy section names the plugin folder once
+  and is never cut, and the workspace warning is capped; `install.sh --agy` leaves Python caches
+  out of the staged copy, names it in its log, and fails on every staging step.
 - Under Antigravity a repository could switch the gate off: agy merges hook groups by name, so a
   committed `.agents/hooks.json` with `{"cobot": {"enabled": false}}` disabled cobot's group
   (smoke `h2`). `install.sh --agy` now installs a staged copy whose group is named

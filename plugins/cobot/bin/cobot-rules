@@ -380,14 +380,17 @@ class Verdict:
 # ---------------------------------------------------------------- rule files
 
 
-def layer_paths(cwd: str | None) -> dict[str, Path]:
+def fixed_layer_paths() -> dict[str, Path]:
+    """The default and owner layers: neither depends on the project."""
     owner = os.environ.get("COBOT_RULES_OWNER")
-    paths = {
+    return {
         "default": plugin_root() / "rules" / "default.rules",
         "owner": Path(owner) if owner else config_dir() / "cobot.rules",
     }
-    paths["project"] = repo_root(cwd) / ".agent" / "cobot.rules"
-    return paths
+
+
+def layer_paths(cwd: str | None) -> dict[str, Path]:
+    return {**fixed_layer_paths(), "project": repo_root(cwd) / ".agent" / "cobot.rules"}
 
 
 def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
@@ -436,9 +439,8 @@ def load_rules_agy(workspaces: list[str]) -> tuple[list[Rule], list[str]]:
     model-written Cwd cannot drop a project ``never``."""
     rules: list[Rule] = []
     warnings: list[str] = []
-    paths = layer_paths(workspaces[0])
-    read_layer("default", paths["default"], rules, warnings)
-    read_layer("owner", paths["owner"], rules, warnings)
+    for layer, path in fixed_layer_paths().items():
+        read_layer(layer, path, rules, warnings)
     for project in dict.fromkeys(repo_root(w) / ".agent" / "cobot.rules" for w in workspaces):
         read_layer("project", project, rules, warnings)
     return rules, warnings
@@ -2441,14 +2443,24 @@ def globstar(token: str) -> bool:
     return any(a + b in token for a, b in itertools.pairwise(stars))
 
 
+def reads_like_a_variable(token: str, key: str) -> bool:
+    """A substitution stands for a whole unknown path where it leads the token (``$(pwd)/x``) or
+    names its last part (``docs/$(date).md``); glued inside a folder name (``plu$(x)ins/``) or
+    standing for a folder between literal ones (``.agents/$(x)/h.sh``), it does not."""
+    at = token.index(key)
+    return at == 0 or (token[at - 1] == "/" and "/" not in token[at + len(key) :])
+
+
 def folder_named(rule: Rule, token: str) -> bool:
-    """A folder row (``<dir>/*``) meets a token with a substitution only where the token names the
-    folder's last part with its ``/``: ``$(pwd)/README.md`` could be any path, and such a row would
-    otherwise ask on every one. A substitution that hides the whole folder is read like a variable,
-    which the gate does not resolve either. A glob reaches real files: it keeps the full check."""
+    """A folder row (``<dir>/*``) meets a token with a substitution through the full check unless
+    every substitution reads like a variable and the token does not name the folder's last part
+    with its ``/``: otherwise such a row would ask on every ``$(pwd)/README.md``. A substitution
+    that hides the whole folder is read like a variable, which the gate does not resolve either. A
+    glob reaches real files: it keeps the full check."""
     if not rule.pattern.endswith("/*"):
         return True
-    if all(shell.kind_of(key) == "glob" for key in shell.sentinels(token)):
+    holes = [key for key in shell.sentinels(token) if shell.kind_of(key) != "glob"]
+    if not holes or not all(reads_like_a_variable(token, key) for key in holes):
         return True
     return rule.pattern[:-2].rsplit("/", 1)[-1] + "/" in token
 
@@ -3153,6 +3165,14 @@ def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdic
     return best
 
 
+def agy_workspaces(value: object) -> list[str]:
+    """agy's workspacePaths when it is a list of absolute paths, else none: a call that needs the
+    project then asks, rather than reading a folder the hook's own cwd would pick."""
+    if isinstance(value, list) and all(isinstance(path, str) and os.path.isabs(path) for path in value):
+        return list(value)
+    return []
+
+
 def gate_agy(stdin: str) -> str:
     """One agy decision for a PreToolUse payload; any failure denies (agy runs a call whose hook
     fails)."""
@@ -3162,7 +3182,7 @@ def gate_agy(stdin: str) -> str:
         name, args = str(call["name"]), call.get("args") or {}
         if not isinstance(args, dict):
             raise TypeError("toolCall.args is not an object")
-        workspaces = [str(path) for path in payload.get("workspacePaths") or []]
+        workspaces = agy_workspaces(payload.get("workspacePaths"))
         plan = agy.translate(name, args, agy.known_servers(Path.home()))
         verdict = judge_plan(plan, workspaces, payload.get("cwd"))
         head = str(
@@ -3171,11 +3191,12 @@ def gate_agy(stdin: str) -> str:
         log_event(
             {"tool": name, "head": head[:120], "decision": verdict.decision, "reason": verdict.reason()}
         )
+        reason = verdict.reason()
+        base = plan.cwd or payload.get("cwd") or (workspaces[0] if workspaces else None)
+        if base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
+            reason += stamp_suffix(base)  # no project, no stamp: the hook's own folder is the plugin
     except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
         return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
-    reason = verdict.reason()
-    if name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
-        reason += stamp_suffix(plan.cwd or payload.get("cwd") or workspaces[0])
     return agy_output(verdict.decision, reason)
 
 

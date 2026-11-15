@@ -3707,6 +3707,12 @@ def test_agySelf_ruleComment_reasonOnlyFromDefaultAndOwnerLayers(rules, layers):
         ("cp x $(git rev-parse --show-toplevel)/.agents/hooks.json", "ask"),
         ("cat ~/.gemini/config/plugins/*/plugin.json", "ask"),
         ("cat docs/**/x.md", "ask"),
+        ("cp e .agents/plu$(echo g)ins/x/h.sh", "ask"),
+        ("cp e .agents/plu$(cat f)ins/x/h.sh", "ask"),
+        ("cp e .agents/$(echo plugins)/x/h.sh", "ask"),
+        ("cp e x/.age$(cat f)nts/plu$(cat g)gins/h", "ask"),
+        ("cp e ~/.gemini/$(cat f)/grants.json", "ask"),
+        ("cp e ~/.gemini/jet$(cat f)ski/grants.json", "ask"),
     ],
 )
 def test_agySelf_folderRowWithASubstitution_asksOnlyWhereTheFolderIsNamed(rules, command, expected, tmp_path):

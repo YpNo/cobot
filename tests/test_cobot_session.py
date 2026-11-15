@@ -70,7 +70,7 @@ def test_agy_section_givesAbsoluteBinPathAndTheGaps(session):
     section = session.agy_section()
     root = session.plugin_root()
     assert len(section) <= session.AGY_SECTION_CAP
-    assert f"{root}/bin" in section
+    assert f"`{root}`" in section and "<plugin folder>/bin/<tool>" in section
     assert "python3 -I" in section
     for tool in ("cobot-memory", "cobot-rules", "cobot-deps"):
         assert tool in section
@@ -82,10 +82,32 @@ def test_agy_section_givesAbsoluteBinPathAndTheGaps(session):
     assert "not enforced" in section and "not proven gated" in section
 
 
-def test_agy_section_longPluginPath_staysWithinItsCap(session, monkeypatch, tmp_path):
-    deep = tmp_path / ("p" * 60) / ".gemini" / "config" / "plugins" / "cobot"
+@pytest.mark.parametrize("width", [60, 300])
+def test_agy_section_longPluginPath_keepsEveryGapWithinItsCap(session, monkeypatch, tmp_path, width):
+    deep = tmp_path / ("p" * width) / ".gemini" / "config" / "plugins" / "cobot"
     monkeypatch.setattr(session, "plugin_root", lambda: deep)
-    assert len(session.agy_section()) <= session.AGY_SECTION_CAP
+    section = session.agy_section()
+    assert len(section) <= session.AGY_SECTION_CAP
+    assert section.rstrip().endswith("review their diff before any outward step.")
+    assert f"`{deep}`" in section and "<plugin folder>/bin/<tool>" in section
+
+
+def test_agy_deepWorkspaceWarning_staysWithinTheSerialisedCap(session, tmp_path, monkeypatch):
+    deep = tmp_path
+    for _ in range(6):
+        deep = deep / ("d" * 200)
+    deep.mkdir(parents=True)
+    import subprocess as sp
+
+    sp.run(["git", "init", "-q", str(deep)], check=True)
+    for root in ("_agents", "_agent", ".agents", ".agent"):
+        (deep / root).mkdir()
+        for name in ("hooks.json", "plugins.json"):
+            (deep / root / name).write_text("{}")
+    monkeypatch.setattr(session, "run_tool", lambda *_a, **_k: "")
+    out = session.agy_answer(agy_payload([deep]))
+    assert len(out) <= session.TOTAL_CAP
+    assert len(session.workspace_warning([str(deep)])) <= session.WORKSPACE_WARNING_CAP
 
 
 def test_agy_projectFromWorkspacePaths_notTheHookFolder(session, project, monkeypatch):
@@ -172,7 +194,7 @@ def test_agy_shim_printsOneAnswerFromThePluginFolder(project, monkeypatch):
     )
     assert done.returncode == 0
     text = message(done.stdout)
-    assert f"{PLUGIN.resolve()}/bin" in text
+    assert f"`{PLUGIN.resolve()}`" in text
 
 
 def test_agy_hooksJson_runsTheSessionShimFlat():

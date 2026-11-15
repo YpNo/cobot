@@ -31,6 +31,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -2447,6 +2448,66 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
     return frozenset(anchors)
 
 
+GLOB_ENTRIES_MAX = 4096  # folder entries one command's link-glob checks may read
+GLOB_DEADLINE = 0.25  # seconds they may take; past either, the command asks
+
+
+@dataclass
+class GlobBudget:
+    """What is left for one command's link-glob scans: entries and a monotonic deadline."""
+
+    entries: int
+    deadline: float
+
+    @classmethod
+    def fresh(cls) -> GlobBudget:
+        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE)
+
+    def take(self) -> bool:
+        """One more entry; False once the entries or the time are spent."""
+        self.entries -= 1
+        return self.entries >= 0 and time.monotonic() <= self.deadline
+
+
+def glob_links(token: str, cwd: str | None, protected: list[Rule], budget: GlobBudget) -> bool:
+    """Whether a glob reaches a protected path through a symlink: the folder before its first
+    hole segment is listed (dotfiles included), and each link whose name that segment could match
+    is read at its target, the rest of the glob kept. Regular files are judged lexically
+    already; only links can lead elsewhere. Past the budget it counts as a touch (ask)."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    parts = os.path.join(cwd or os.getcwd(), glob).split("/")
+    first = next((i for i, part in enumerate(parts) if GLOB_HOLES & set(part)), None)
+    if first is None:
+        return False
+    folder = "/".join(parts[:first]) or "/"
+    if not os.path.isdir(folder):
+        return False
+    rest = "/".join(parts[first + 1 :])
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if not budget.take():
+                    return True
+                if entry.is_symlink() and globs_meet(parts[first], entry.name):
+                    if link_reaches(os.path.realpath(entry.path), rest, protected):
+                        return True
+    except OSError:
+        return False
+    return False
+
+
+def link_reaches(target: str, rest: str, protected: list[Rule]) -> bool:
+    """A link's target, with what the glob still names under it, against the protected rows."""
+    if not rest:
+        return any(matches_file(r, file_forms(target, None), fold=True) for r in protected)
+    form = f"{target}/{rest}".casefold()
+    return any(
+        globs_meet(form, pattern.casefold()) or globs_meet(form, f"*/{pattern}".casefold())
+        for r in protected
+        for pattern in rule_patterns(r)
+    )
+
+
 def word_touches(
     token: str,
     cwd: str | None,
@@ -2454,6 +2515,7 @@ def word_touches(
     relocating: bool,
     anchors: frozenset[str],
     destroying: bool = False,
+    budget: GlobBudget | None = None,
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
@@ -2461,7 +2523,11 @@ def word_touches(
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     if shell.has_sentinel(token):
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
-        return (pathlike or bare_glob) and any(path_may_match(r, token, cwd) for r in protected)
+        if not (pathlike or bare_glob):
+            return False
+        if any(path_may_match(r, token, cwd) for r in protected):
+            return True
+        return bare_glob and budget is not None and glob_links(token, cwd, protected, budget)
     forms = file_forms(token, cwd)
     if any(matches_file(r, forms, fold=True) for r in protected):
         return True
@@ -2490,6 +2556,7 @@ def protected_file_touched(
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
+    budget = GlobBudget.fresh()
     jobs = [(segment, dirs, True) for segment, dirs in placed]
     if paths:
         jobs.append((paths, union(visited, start), False))
@@ -2506,7 +2573,7 @@ def protected_file_touched(
             for form in home_forms(token):
                 anchored = os.path.isabs(form) or form.startswith("~")
                 if any(
-                    word_touches(form, base, protected, relocating, anchors, destroying)
+                    word_touches(form, base, protected, relocating, anchors, destroying, budget)
                     for base in bases[: 1 if anchored else None]
                 ):
                     return token

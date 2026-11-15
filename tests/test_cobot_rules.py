@@ -4151,3 +4151,60 @@ def test_protectedCwd_asksOnceNamingTheFolder(rules, workspace, command):
 def test_protectedCwd_ordinaryFolder_staysSilent(rules, workspace):
     assert judge_in(rules, "ls", workspace / "docs")[0].decision is None
     assert judge_in(rules, "git status", workspace)[0].decision is None
+
+
+# ---------------------------------------------------------------- residuals: link globs
+
+
+@pytest.fixture
+def linked(workspace):
+    """``alias -> vault/key.txt``, ``.k -> vault/key.txt``, ``door -> vault`` beside plain files."""
+    (workspace / "alias").symlink_to(workspace / "vault" / "key.txt")
+    (workspace / ".k").symlink_to(workspace / "vault" / "key.txt")
+    (workspace / "door").symlink_to(workspace / "vault")
+    (workspace / "docs" / "a.md").write_text("a")
+    return workspace
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat al*",
+        "cat ./a?ias",
+        "cat [[:alpha:]]lias",
+        "cat [^x]lias",
+        "echo x > al*",
+        "shopt -s dotglob; cat .?",
+        "tee d*/new.txt",
+        "cp x do?r/",
+    ],
+)
+def test_linkGlob_reachingAProtectedFolder_asks(rules, linked, command):
+    assert judge_in(rules, command, linked)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", ["cat docs/*.md", "ls docs/*", "cat *.toml"])
+def test_linkGlob_plainFiles_staySilent(rules, linked, command):
+    assert judge_in(rules, command, linked)[0].decision is None, command
+
+
+def test_linkGlob_homeGlobThroughALink_asks(rules, fake_home):
+    _, home = fake_home
+    (home / "cfg").symlink_to(home / ".gemini" / "config")
+    assert judge_in(rules, "tee ~/cf*/x", home / "ws")[0].decision == "ask"
+
+
+def test_linkGlob_deepGlob_neverOutrunsTheHook(rules, workspace):
+    import time
+
+    began = time.monotonic()
+    verdict = judge_in(rules, "cat /*/*/*/*/*/*/*/*/*/*.zzz; git push --force origin main", workspace)[0]
+    assert verdict.decision == "deny"
+    assert time.monotonic() - began < 1.0
+
+
+def test_linkGlob_pastTheEntryCap_asks(rules, workspace, monkeypatch):
+    monkeypatch.setattr(rules, "GLOB_ENTRIES_MAX", 3)
+    for i in range(5):
+        (workspace / "docs" / f"f{i}.md").write_text("x")
+    assert judge_in(rules, "cat docs/*.md", workspace)[0].decision == "ask"

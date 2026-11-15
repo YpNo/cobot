@@ -4366,3 +4366,44 @@ def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_pat
     )
     err = capsys.readouterr().err
     assert "unreadable rule ignored" in err and "approve" not in err
+
+
+# ---------------------------------------------------------------- F-33 deletions and folder options
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find ~/.gemini -delete",
+        "find ~ -name .gemini -exec rm -r {} +",
+        "find ~/.gemini -execdir rm {} ;",
+        "find ~/.gemini -ok rm {} ;",
+        "find -L ~/.gemini -maxdepth 2 -delete",
+        "gio trash ~/.gemini",
+        "gio remove ~/.gemini",
+        "gio move ~/.gemini /tmp/g",
+        "rm -r ~",
+        "rm -r /",
+        "nice find ~ -delete",
+    ],
+)
+def test_f33_deletionReachingAProtectedFolder_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find . -name '*.pyc' -delete",
+        "find src -type f -delete",
+        "rm -r build",
+        "find ~/src -name x -print",
+        "gio open README.md",
+        "find . -exec grep -l foo {} +",
+    ],
+)
+def test_f33_ordinaryDeletions_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command

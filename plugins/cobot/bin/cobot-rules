@@ -2431,12 +2431,37 @@ def program_of(segment: list[str]) -> list[str]:
     return strip_wrappers(program_folded(segment) or segment)
 
 
-def destroys(segment: list[str]) -> bool:
-    """Whether the segment deletes what it names: removing a protected folder's parent removes the
-    folder (``rm -r ~/.gemini``, behind any wrapper)."""
+GIO_DELETING = frozenset({"trash", "remove", "rm"})
+GIO_MOVING = frozenset({"move", "mv", "rename", "copy", "cp"})
+FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})  # what it runs is not followed
+FIND_LEADING = frozenset({"-H", "-L", "-P"})  # options before the start paths; -D and -O take a value
+IMPLICIT_FOLDER = -1  # a ``find`` with no start path deletes under the folder it runs in
+
+
+def deleted_words(segment: list[str]) -> frozenset[int]:
+    """The indexes of the words a segment deletes with what is under them: every word of ``rm``,
+    ``rmdir``, ``unlink``, ``shred``, ``trash``, ``git rm``, ``gio trash|remove``; the start paths
+    of a ``find`` with a deleting or running action (IMPLICIT_FOLDER when it names none). Removing
+    a protected folder's parent removes the folder (``rm -r ~/.gemini``, behind any wrapper)."""
     argv = program_of(segment)
+    at = len(segment) - len(argv)
     head = argv[0] if argv else ""
-    return head in DESTROYING or (head == "git" and "rm" in argv[1:3])
+    if (
+        head in DESTROYING
+        or (head == "git" and "rm" in argv[1:3])
+        or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
+    ):
+        return frozenset(range(at + 1, len(segment)))
+    if head != "find" or not FIND_ACTIONS & set(argv):
+        return frozenset()
+    i = 1
+    while i < len(argv) and (argv[i] in FIND_LEADING or argv[i] in ("-D", "-O") or argv[i].startswith("-O")):
+        i += 2 if argv[i] in ("-D", "-O") else 1
+    starts = []
+    while i < len(argv) and not argv[i].startswith(("-", "(", "!", ",")):
+        starts.append(at + i)
+        i += 1
+    return frozenset(starts) if starts else frozenset({IMPLICIT_FOLDER})
 
 
 def enters(segment: list[str]) -> bool:
@@ -2448,7 +2473,8 @@ def enters(segment: list[str]) -> bool:
 def relocates(segment: list[str]) -> bool:
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    return head in RELOCATING or (head == "git" and "mv" in argv[1:3])
+    gio = head == "gio" and bool(argv[1:2]) and argv[1] in GIO_MOVING
+    return head in RELOCATING or (head == "git" and "mv" in argv[1:3]) or gio
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -2563,6 +2589,13 @@ def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relo
     return relocating and bool(literal) and any(globs_meet(name, root) for root in CUSTOMIZATION_ROOTS_FOLDED)
 
 
+def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
+    """Whether a folder holds a protected folder's parent: HOME and ``/`` hold ``~/.gemini``, so
+    deleting them deletes it (``rm -r ~``, ``find ~ -delete``)."""
+    folder = os.path.normpath(form).casefold().rstrip("/") + "/"
+    return any(anchor.startswith(folder) for anchor in anchors)
+
+
 def word_touches(
     token: str,
     cwd: str | None,
@@ -2597,7 +2630,7 @@ def word_touches(
     if any(matches_file(r, forms, fold=True) for r in protected):
         return True
     anchored = any(os.path.normpath(form).casefold() in anchors for form in forms)
-    if destroying and anchored:
+    if destroying and (anchored or any(holds_an_anchor(form, anchors) for form in forms)):
         return True
     if not relocating:
         return False
@@ -2628,11 +2661,16 @@ def protected_file_touched(
     for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
-        destroying = command and destroys(segment)
+        deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
+        if IMPLICIT_FOLDER in deleted and any(
+            word_touches(".", base, protected, relocating, anchors, True, budget, entering) for base in bases
+        ):
+            return segment[0]
         for index, token in enumerate(segment):
+            destroying = index in deleted
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):

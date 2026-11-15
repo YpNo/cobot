@@ -31,6 +31,8 @@ import re
 import shlex
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -343,6 +345,8 @@ LAYERS = ("default", "owner", "project")
 # a rule's trailing ``# comment`` joins its reason, except from the project layer: repository text
 # must not speak to the owner in a permission prompt
 NOTE_LAYERS = frozenset({"default", "owner"})
+RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
+SHOWN_TOOLS = FILE_TOOLS | {"Bash", "mcp"}  # a project row's tool a reason may name
 
 
 @dataclass(frozen=True)
@@ -360,6 +364,15 @@ class Rule:
         body = self.pattern if self.tool == "mcp" else f"{self.tool}({self.pattern})"
         return f"{self.decision} {body}{scope}"
 
+    def shown(self) -> str:
+        """The rule as a reason shows it: its text from the default and owner layers; from the
+        project layer only its place, since the pattern is repository text that would speak to
+        the owner in the prompt (F-29). The decision and tool come from fixed vocabularies."""
+        if self.layer in NOTE_LAYERS:
+            return self.text()
+        tool = self.tool if self.tool in SHOWN_TOOLS else "tool"  # RULE_RE takes any name
+        return f"{self.decision} {tool} rule at {RULES_FILE}:{self.line}"
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -370,7 +383,7 @@ class Verdict:
 
     def reason(self) -> str:
         if self.rule:
-            text = f"cobot rule: {self.rule.text()} ({self.rule.layer} layer)"
+            text = f"cobot rule: {self.rule.shown()} ({self.rule.layer} layer)"
             text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
@@ -2150,6 +2163,7 @@ class Reached:
 
     paths: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
+    visited: Dirs = frozenset()  # every directory a command may run in (None: one is unknown)
 
     def add(self, targets: list[str], writes: list[str]) -> None:
         self.paths.extend(target_words(targets))
@@ -2174,15 +2188,25 @@ def expand_everywhere(
     return out
 
 
-def expand_segment(
-    segment: list[str], here: Dirs, depth: int, reached: Reached
-) -> list[tuple[list[str], str]]:
+Placed = tuple[list[str], str, Dirs]  # a command, the runner it came from, where it may run
+
+
+def expand_segment(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
     """The segment, or the commands it runs when it is a resolvable runner or wrapper, tagged with
     the outermost origin. A segment holding a substitution is expanded only when every hole sits in
     a leading assignment's value: elsewhere the substituted text could be the code the runner runs.
     A body is walked as one script whose lines may each start
     over in the runner's directory (one shell or one per line: make's ``.ONESHELL``, a mise
-    script); it runs in a new shell, so its state is read from its own text."""
+    script); it runs in a new shell, so its state is read from its own text. A cased program
+    (``BASH -c``) is expanded as written and in lower case: a case-insensitive volume runs both."""
+    folded = program_folded(segment)
+    if folded is not None:
+        return [*expand_cased(segment, here, depth, reached), *expand_segment(folded, here, depth, reached)]
+    return expand_cased(segment, here, depth, reached)
+
+
+def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
+    """``expand_segment`` for the segment as written."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
     globbed = not literal and all_glob(segment) and prefix_key(segment, plain) is None and argv_runner(plain)
@@ -2190,14 +2214,14 @@ def expand_segment(
     issued = frozenset(hole_keys(plain)) if globbed else frozenset()
     expansions = expand_everywhere(plain, here, issued) if expandable else None
     if not expansions or (globbed and not globs_reach_inner(plain, expansions)):
-        return [(segment, "")]
+        return [(segment, "", here)]
     origin = show(" ".join(plain), shell.REGISTRY)[:MAX_ORIGIN]
-    out: list[tuple[list[str], str]] = []
+    out: list[Placed] = []
     for parts, start in expansions:
         reached.add(flatten([targets for _, targets, _ in parts]), flatten([writes for *_, writes in parts]))
         texts = [text for text, *_ in parts]
         entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, reached)
-        out.extend((tokens, origin) for tokens, _ in entries)
+        out.extend((tokens, origin, dirs) for tokens, _, dirs in entries)
     return out
 
 
@@ -2208,7 +2232,7 @@ def expand_script(
     depth: int,
     reached: Reached,
     starts: dict[str, Dirs] | None = None,
-) -> tuple[list[tuple[list[str], str]], Dirs]:
+) -> tuple[list[Placed], Dirs]:
     """Expand every segment of a script given as lines, recursively up to MAX_EXPANSION levels, each
     from the directories in effect where it runs; return the directories in effect at the end too.
     Redirection targets of the bodies go to ``reached``; ``starts`` gets the directories each
@@ -2217,7 +2241,7 @@ def expand_script(
     for text in texts:
         items.extend([LINE, *shell_items(text)] if items else shell_items(text))
     placed, end = walk_directories(items, dirs, state)
-    out: list[tuple[list[str], str]] = []
+    out: list[Placed] = []
     anywhere = end
     for segment, here in placed:
         anywhere = union(anywhere, here)
@@ -2226,6 +2250,7 @@ def expand_script(
         out.extend(expand_segment(segment, here, depth, reached))
     if starts is not None:
         starts[ANYWHERE] = anywhere
+    reached.visited = union(reached.visited, anywhere)
     return out, end
 
 
@@ -2238,12 +2263,12 @@ def expand_units(
     scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, reached: Reached, entries: list
 ) -> None:
     """Expand the command, then every substitution body it runs from the directories in effect
-    where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
+    where the substitution sits, into ``entries`` as (segment, origin, unit, dirs). A body is a forked
     subshell: it shares the whole command's state."""
     reached.add(scanned.targets, scanned.writes)
     starts: dict[str, Dirs] = {}
     placed, _ = expand_script([scanned.outer], dirs, state, 0, reached, starts)
-    entries.extend((segment, via or origin, scanned) for segment, via in placed)
+    entries.extend((segment, via or origin, scanned, here) for segment, via, here in placed)
     for hole in scanned.holes.values():
         if hole.body is not None:
             here = starts.get(hole.key, starts[ANYWHERE])
@@ -2389,12 +2414,37 @@ def resolve(matched: list[Rule], note: str = "") -> Verdict:
 
 
 RELOCATING = frozenset({"mv", "ln", "cp", "rsync", "install", "rename"})  # a folder appears or moves
+CUSTOMIZATION_ROOTS_FOLDED = frozenset(root.casefold() for root in agy.CUSTOMIZATION_ROOTS)
 GLOB_CHARS = "*?["
 
 
+DESTROYING = frozenset({"rm", "rmdir", "unlink", "shred", "trash", "trash-put"})  # a folder vanishes
+
+
+def program_of(segment: list[str]) -> list[str]:
+    """The segment from its program word on, wrappers and assignments dropped, in lower case
+    where a case-insensitive volume would run it so (``X=1 NOHUP RM`` is ``rm``)."""
+    return strip_wrappers(program_folded(segment) or segment)
+
+
+def destroys(segment: list[str]) -> bool:
+    """Whether the segment deletes what it names: removing a protected folder's parent removes the
+    folder (``rm -r ~/.gemini``, behind any wrapper)."""
+    argv = program_of(segment)
+    head = argv[0] if argv else ""
+    return head in DESTROYING or (head == "git" and "rm" in argv[1:3])
+
+
+def enters(segment: list[str]) -> bool:
+    """Whether the segment is a ``cd`` or ``pushd``: its operand is a folder the next words run in."""
+    argv = directory_verb(segment)
+    return bool(argv) and argv[0] in ("cd", "pushd")
+
+
 def relocates(segment: list[str]) -> bool:
-    head = os.path.basename(segment[0]) if segment else ""
-    return head in RELOCATING or (head == "git" and "mv" in segment[1:3])
+    argv = program_of(segment)
+    head = argv[0] if argv else ""
+    return head in RELOCATING or (head == "git" and "mv" in argv[1:3])
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -2408,13 +2458,116 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
         literal = pattern[: min((pattern.find(c) for c in GLOB_CHARS if c in pattern), default=len(pattern))]
         folder = literal.rstrip("/") if literal.endswith("/") else os.path.dirname(literal)
         while folder not in (home, "/", "") and folder.startswith(home + "/"):
-            anchors.add(folder)
+            anchors.add(folder.casefold())  # compared without case (F-30)
             folder = os.path.dirname(folder)
     return frozenset(anchors)
 
 
+GLOB_ENTRIES_MAX = 4096  # folder entries one command's link-glob checks may read
+GLOB_DEADLINE = 0.25  # seconds they may take; past either, the command asks
+
+
+@dataclass
+class GlobBudget:
+    """What is left for one command's link-glob scans: entries and a monotonic deadline."""
+
+    entries: int
+    deadline: float
+
+    @classmethod
+    def fresh(cls) -> GlobBudget:
+        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE)
+
+    def take(self) -> bool:
+        """One more entry; False once the entries or the time are spent."""
+        self.entries -= 1
+        return self.entries >= 0 and time.monotonic() <= self.deadline
+
+
+def glob_links(
+    token: str,
+    cwd: str | None,
+    protected: list[Rule],
+    budget: GlobBudget,
+    named: Callable[[str], bool] | None = None,
+) -> bool:
+    """Whether a glob reaches a protected path through what it expands to: the folder before its
+    first hole segment is listed (dotfiles included), and each entry that segment could match is
+    read with the rest of the glob, through links and ``..``. Regular files are judged lexically
+    already, so without ``named`` only links and folders are read; with it (a ``cd`` target, a
+    move, a link, a deletion: the word stands for whole folders) every matching name with no hole
+    left is judged as that literal name, since a glob only expands to names that exist. Past the
+    budget it counts as a touch (ask)."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    parts = os.path.join(cwd or os.getcwd(), glob).split("/")
+    first = next((i for i, part in enumerate(parts) if GLOB_HOLES & set(part)), None)
+    if first is None:
+        return False
+    folder = "/".join(parts[:first]) or "/"
+    if not os.path.isdir(folder):
+        return False
+    rest = "/".join(parts[first + 1 :])
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if not budget.take():
+                    return True
+                if not globs_meet(parts[first].casefold(), entry.name.casefold()):  # nocaseglob
+                    continue
+                if named is not None and not GLOB_HOLES & set(rest):
+                    if named(os.path.join(entry.path, rest) if rest else entry.path):
+                        return True
+                    continue
+                if rest and entry.is_dir() and link_reaches(entry.path, rest, protected):
+                    return True
+                if not rest and entry.is_symlink() and link_reaches(entry.path, "", protected):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def folder_and_patterns(rule: Rule) -> list[str]:
+    """The rule's patterns (``~`` both ways), and for a folder row the folder itself."""
+    patterns = rule_patterns(rule)
+    return patterns + [pattern[:-2] for pattern in patterns if pattern.endswith("/*")]
+
+
+def link_reaches(entry: str, rest: str, protected: list[Rule]) -> bool:
+    """A matched entry, with what the glob still names under it, against the protected rows: a
+    link anywhere up to the next hole, or a ``..``, is resolved first (``a*/l/config/x``,
+    ``s*/../.gemini/config/x``)."""
+    if not rest:
+        return any(matches_file(r, file_forms(os.path.realpath(entry), None), fold=True) for r in protected)
+    form = os.path.normpath(resolved_prefix(f"{entry}/{rest}")).casefold()
+    return any(
+        globs_meet(form, pattern.casefold()) or globs_meet(form, f"*/{pattern}".casefold())
+        for r in protected
+        for pattern in folder_and_patterns(r)
+    )
+
+
+def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relocating: bool) -> bool:
+    """Whether a word with holes could name a protected folder's parent (``rm -r ~/.gem*``) or,
+    for a move or a link, a customization root (``mv x .agen*``)."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    form = os.path.normpath(os.path.join(cwd or os.getcwd(), glob)).casefold()
+    if any(globs_meet(form, anchor) for anchor in anchors):
+        return True
+    name = os.path.basename(glob.rstrip("/")).casefold()
+    literal = name.strip("*?" + SEGMENT_STAR)  # a bare ``*`` would meet every root: ``cp -r assets/* dist/``
+    return relocating and bool(literal) and any(globs_meet(name, root) for root in CUSTOMIZATION_ROOTS_FOLDED)
+
+
 def word_touches(
-    token: str, cwd: str | None, protected: list[Rule], relocating: bool, anchors: frozenset[str]
+    token: str,
+    cwd: str | None,
+    protected: list[Rule],
+    relocating: bool,
+    anchors: frozenset[str],
+    destroying: bool = False,
+    budget: GlobBudget | None = None,
+    whole: bool = False,
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
@@ -2422,34 +2575,157 @@ def word_touches(
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     if shell.has_sentinel(token):
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
-        return (pathlike or bare_glob) and any(path_may_match(r, token, cwd) for r in protected)
+        if not (pathlike or bare_glob):
+            return False
+        acting = relocating or destroying or whole  # the word stands for whole folders
+        if any(path_may_match(r, token, cwd, acting and not bare_glob) for r in protected):
+            return True
+        if not bare_glob:  # a substitution: its text is unknown, so read it lexically
+            return (relocating or destroying) and glob_meets_anchor(token, cwd, anchors, relocating)
+        if budget is None:
+            return False
+
+        def named(name: str) -> bool:
+            return word_touches(name, cwd, protected, relocating, anchors, destroying, None, whole)
+
+        return glob_links(token, cwd, protected, budget, named if acting else None)
     forms = file_forms(token, cwd)
-    if any(matches_file(r, forms) for r in protected):
+    if any(matches_file(r, forms, fold=True) for r in protected):
+        return True
+    anchored = any(os.path.normpath(form).casefold() in anchors for form in forms)
+    if destroying and anchored:
         return True
     if not relocating:
         return False
-    named_root = os.path.basename(token.rstrip("/")) in agy.CUSTOMIZATION_ROOTS
-    return named_root or os.path.normpath(forms[0]) in anchors
+    named_root = os.path.basename(token.rstrip("/")).casefold() in CUSTOMIZATION_ROOTS_FOLDED
+    return named_root or anchored
 
 
 def protected_file_touched(
-    segments: list[list[str]], cwd: str | None, rules: list[Rule], paths: list[str] | None = None
+    placed: list[tuple[list[str], Dirs]],
+    cwd: str | None,
+    rules: list[Rule],
+    paths: list[str] | None = None,
+    visited: Dirs = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
-    Edit/Write rule, or that moves or links a customization root or a protected folder.
-    ``paths`` (the files the runners reached) are checked word by word, never read as a command."""
+    Edit/Write rule, or that moves or links a customization root or a protected folder. Each word
+    is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
+    redirection and runner targets) are checked word by word, never read as a command, in every
+    directory the script visits."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
     anchors = protected_anchors(protected)
-    for segment in [*segments, *([paths] if paths else [])]:
-        command = segment is not paths
+    start = directories_of(Path(cwd or os.getcwd()))
+    homed = home_cd_targets([segment for segment, _ in placed])
+    budget = GlobBudget.fresh()
+    jobs = [(segment, dirs, True) for segment, dirs in placed]
+    if paths:
+        jobs.append((paths, union(visited, start), False))
+    for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
+        destroying = command and destroys(segment)
+        entering = command and enters(segment)
+        bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         for index, token in enumerate(segment):
             if token.startswith("-") or index == program:
                 continue
-            if word_touches(token, cwd, protected, relocating, anchors):
-                return token
+            if DIRECTORY_STACK_RE.match(token):
+                return token  # ``~-``, ``~1``: OLDPWD or the directory stack, unknown to the gate
+            for form in home_forms(token):
+                if PWD_TILDE_RE.match(form):
+                    form = form[2:].lstrip("/") or "."  # ``~+`` is PWD: the segment's own folder
+                anchored = os.path.isabs(form) or form.startswith("~")
+                if any(
+                    word_touches(form, base, protected, relocating, anchors, destroying, budget, entering)
+                    for base in bases[: 1 if anchored else None]
+                ):
+                    return token
+                if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
+                    return token
     return None
+
+
+def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
+    """An ask when a command runs in a folder a ``never`` Edit/Write folder row protects: a command
+    without a file word (``make clean``, ``git clean -fdx``) still writes there (F-32)."""
+    rows = [
+        r
+        for r in rules
+        if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent and r.pattern.endswith("/*")
+    ]
+    for directory in directories:
+        forms = file_forms(os.path.join(directory, "x"), None)
+        found = next((r for r in rows if matches_file(r, forms, fold=True)), None)
+        if found:
+            note = (
+                f"the working directory is inside a protected folder: {found.shown()} ({found.layer} layer)"
+            )
+            return Verdict(ASK, None, f"{note}: '{directory}'")  # the rule first: agy cuts long reasons
+    return None
+
+
+def home_cd_targets(segments: list[list[str]]) -> set[str]:
+    """The folders a ``cd`` or ``pushd`` may reach that the directory walk leaves unknown: through
+    ``~``, ``$HOME`` or ``${HOME}`` (read as HOME), a bare ``cd`` (HOME), and a relative operand
+    under each ``CDPATH`` entry the command assigns or the hook inherits. The walk keeps them
+    unknown so runners stay opaque after them; the protected check also reads every word in them,
+    which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    cdpath = [
+        entry
+        for segment in segments
+        for word in segment
+        if word.startswith("CDPATH=")
+        for entry in word[len("CDPATH=") :].split(":")
+    ] + os.environ.get("CDPATH", "").split(":")
+    roots = [os.path.expanduser(home_forms(e)[-1]) for e in cdpath if e and not shell.has_sentinel(e)]
+    folders = set()
+    for segment in segments:
+        argv = directory_verb(segment)
+        if not argv or argv[0] not in ("cd", "pushd"):
+            continue
+        operands = [w for w in argv[1:] if not w.startswith("-")]
+        if not operands and argv[0] == "cd":
+            folders.add(os.path.expanduser("~"))
+        for word in operands:
+            homed = home_forms(word)[-1]
+            if shell.has_sentinel(homed):
+                continue
+            if homed.startswith("~"):
+                folders.add(os.path.normpath(os.path.expanduser(homed)))
+            elif not os.path.isabs(homed) and not homed.startswith(("./", "../")):
+                folders.update(os.path.normpath(os.path.join(root, homed)) for root in roots)
+    return folders
+
+
+def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = True) -> bool:
+    """Whether a relative word's last part matches, without case, the last part of a protected
+    file row (not a folder row): after a ``cd`` the gate cannot follow, ``tee settings.json`` may
+    be writing ``.claude/settings.json``."""
+    rows = [r for r in protected if not r.pattern.endswith("/*") and os.path.basename(r.pattern).strip("*")]
+    if shell.has_sentinel(word):  # a glob only where the folder is unknown: a known one is listed
+        if not unknown or not all(shell.kind_of(key) == "glob" for key in shell.sentinels(word)):
+            return False
+        name = os.path.basename(path_glob(word)[0].rstrip("/")).casefold()
+        return any(globs_meet(name, os.path.basename(r.pattern).casefold()) for r in rows)
+    name = os.path.basename(word.rstrip("/")).casefold()
+    return any(fnmatch.fnmatchcase(name, os.path.basename(r.pattern).casefold()) for r in rows)
+
+
+HOME_WORDS = ("$HOME", "${HOME}")
+PWD_TILDE_RE = re.compile(r"^~\+(?:/|$)")  # ``~+``: bash's PWD, the folder the segment runs in
+DIRECTORY_STACK_RE = re.compile(r"^~(?:-|[+-]?\d+)(?:/|$)")  # OLDPWD or a ``dirs`` entry
+
+
+def home_forms(token: str) -> list[str]:
+    """The word, and with a leading ``$HOME`` or ``${HOME}`` read as ``~``: the gate knows HOME's
+    value, so ``tee $HOME/.gemini/config/x`` is the ``~/`` path. Both are checked, so a command
+    that assigns HOME first only asks more."""
+    for word in HOME_WORDS:
+        if token == word or token.startswith(word + "/"):
+            return [token, "~" + token[len(word) :]]
+    return [token]
 
 
 PYTHONS = frozenset({"python", "python3"})
@@ -2508,17 +2784,17 @@ def folder_named(rule: Rule, token: str) -> bool:
     return rule.pattern[:-2].rsplit("/", 1)[-1] + "/" in token
 
 
-def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
+def path_may_match(rule: Rule, token: str, cwd: str | None, whole: bool = False) -> bool:
     """Whether some text in place of the token's substitutions, or some file names for its globs,
-    makes it a path the rule protects."""
+    makes it a path the rule protects; with ``whole`` (a word a command acts on as a whole: a
+    ``cd`` target, a move, a link, a deletion) also the protected folder itself."""
     if not folder_named(rule, token):
         return False
-    glob, fold = path_glob(os.path.expanduser(token))
+    glob, _ = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     forms += [resolved_prefix(form) for form in forms if os.path.isabs(form)]
-    patterns = rule_patterns(rule)
-    if fold:
-        forms, patterns = [form.lower() for form in forms], [pattern.lower() for pattern in patterns]
+    patterns = folder_and_patterns(rule) if whole else rule_patterns(rule)  # compared without case (F-30)
+    forms, patterns = [form.casefold() for form in forms], [pattern.casefold() for pattern in patterns]
     return any(
         globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}")
         for form in forms
@@ -2819,7 +3095,7 @@ def could_match(
     found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in forms)]
     if not found:
         return None
-    note = f"{hole} could match {found[0].text()} ({found[0].layer} layer)"
+    note = f"{hole} could match {found[0].shown()} ({found[0].layer} layer)"
     return Verdict(ASK, None, note), found
 
 
@@ -2884,6 +3160,21 @@ def known_values(segment: list[str], holes: dict) -> list[str] | None:
     return valued if changed else None
 
 
+def program_folded(segment: list[str]) -> list[str] | None:
+    """The segment with its program word, and each wrapper's before it, in lower case; None when
+    nothing changes. A case-insensitive volume (macOS) runs ``GIT`` as ``git``; the arguments keep
+    their case (``--FORCE`` is not ``--force``). Judged beside the segment, so it only adds an
+    ask or a deny: ``outranks`` keeps the stricter (F-30)."""
+    folded, changed = list(segment), False
+    for _ in segment:
+        program = strip_wrappers(folded)
+        if not program or program[0] == program[0].lower():
+            break
+        at = len(folded) - len(program)
+        folded[at], changed = folded[at].lower(), True
+    return folded if changed else None
+
+
 def judge_segment(
     segment: list[str],
     unit: shell.Scan,
@@ -2897,6 +3188,7 @@ def judge_segment(
     valued = known_values(segment, holes) if with_values else None
     if valued is not None:
         variants.append(valued)
+    variants += [folded for folded in map(program_folded, variants) if folded is not None]
     best: tuple[Verdict, list[Rule]] = (Verdict(None, None, "no rule matched"), [])
     for variant in variants:
         judge = judge_holed if hole_keys(variant) else judge_words
@@ -2921,17 +3213,23 @@ def judge_bash(
     holes = shell.REGISTRY  # every hole of the command, its bodies and its runners' inner commands
     with_values = not CAT_DEFINITION_RE.search(command)
     reached = Reached()
-    entries: list[tuple[list[str], str, shell.Scan]] = []
+    entries: list[tuple[list[str], str, shell.Scan, Dirs]] = []
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
-    touched = protected_file_touched([segment for segment, _, _ in entries], cwd, rules, reached.paths)
-    if touched:
+    placed = [(segment, dirs) for segment, _, _, dirs in entries]
+    homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
+    directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
+    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
+    in_protected = protected_cwd(directories, rules)
+    if in_protected:
+        best = in_protected
+    elif touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
     config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
-    for segment, origin, unit in entries:
+    for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
         if origin:
@@ -2970,11 +3268,15 @@ def rule_patterns(rule: Rule) -> list[str]:
     return list(dict.fromkeys([pattern, os.path.realpath(os.path.expanduser("~")) + rule.pattern[1:]]))
 
 
-def matches_file(rule: Rule, forms: list[str]) -> bool:
+def matches_file(rule: Rule, forms: list[str], fold: bool = False) -> bool:
     """A form matches the pattern, at any depth for a relative one, with ``~`` read both ways
     (rule_patterns); a folder row (``<dir>/*``) also protects the folder itself, which a move or
-    a link would carry away."""
+    a link would carry away. ``fold`` compares without case: a case-insensitive volume (macOS)
+    opens ``.Claude/settings.json`` as ``.claude/settings.json`` (F-30)."""
+    if fold:
+        forms = [form.casefold() for form in forms]
     for pattern in rule_patterns(rule):
+        pattern = pattern.casefold() if fold else pattern
         patterns = [pattern, pattern[:-2]] if pattern.endswith("/*") else [pattern]
         for form in forms:
             for each in patterns:
@@ -2985,8 +3287,14 @@ def matches_file(rule: Rule, forms: list[str]) -> bool:
 
 def judge_file(tool: str, path: str, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
     forms = file_forms(path, cwd)
-    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms)]
+    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms, restrictive(r))]
     return resolve(matched, "no rule matched")
+
+
+def restrictive(rule: Rule) -> bool:
+    """``never`` and ``ask`` rows read a path without case; an ``allow`` row never does, so a
+    fold can only add an ask or a deny (F-30)."""
+    return rule.decision != "allow"
 
 
 def mcp_words(tool: str) -> list[str]:
@@ -3203,9 +3511,6 @@ RUNTIMES = frozenset({"claude", "agy"})
 
 def agy_output(decision: str | None, reason: str) -> str:
     return json.dumps({"decision": AGY_DECISION[decision], "reason": reason[:REASON_LIMIT]})
-
-
-RULES_FILE = ".agent/cobot.rules"
 
 
 def rules_committed(workspaces: list[str]) -> bool:

@@ -584,3 +584,60 @@ def test_corpus_noAnswerEverAutoApproves():
     # defined last: pytest runs a module's tests in definition order, so CORPUS holds every answer
     assert len(CORPUS) > 50
     assert not any("auto_approve" in out for out in CORPUS)
+
+
+# ---------------------------------------------- residuals (spec gate-residuals, story 9)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tee $HOME/.gemini/config/settings.json",
+        "rm -r $HOME/.gemini/config",
+        "cd .agents && tee hooks.json",
+        "cd .agents && echo x > hooks.json",
+        'cd "$d" && tee hooks.json',
+        "rm -r ~/.gemini",
+        "mv ~/.GEMINI ~/g",
+        "cat al*",
+    ],
+)
+@pytest.mark.parametrize("with_cwd", [False, True])
+def test_runCommand_residualRows_forceAsk(rules, workspace, agy_home, command, with_cwd):
+    (workspace / ".agents").mkdir(exist_ok=True)
+    (workspace / "alias").symlink_to(agy_home / ".gemini" / "config" / "x")
+    args = {"CommandLine": command, **({"Cwd": str(workspace)} if with_cwd else {})}
+    assert decide(rules, "run_command", args, [workspace], cwd=workspace) == "force_ask", command
+
+
+@pytest.mark.parametrize("with_cwd", [False, True])
+def test_runCommand_casedProgram_deniesLikeTheLowercaseForm(rules, workspace, with_cwd):
+    args = {"CommandLine": "GIT push --force origin main", **({"Cwd": str(workspace)} if with_cwd else {})}
+    assert decide(rules, "run_command", args, [workspace], cwd=workspace) == "deny"
+
+
+def test_runCommand_cwdInAProtectedFolder_namesTheFolder(rules, workspace, agy_home):
+    folder = agy_home / ".gemini" / "config" / "plugins"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = answer(rules, payload("run_command", {"CommandLine": "ls", "Cwd": str(folder)}, [workspace]))
+    assert out["decision"] == "force_ask"
+    assert "is inside a protected folder" in json.dumps(out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'for f in hooks.json; do cp /tmp/evil "$f"; done',
+        "flock hooks.json true",
+        "case x in hooks.json) :;; esac",
+    ],
+)
+def test_runCommand_headOperandsInACustomizationRoot_forceAsk(rules, workspace, command):
+    (workspace / ".agents").mkdir(exist_ok=True)
+    args = {"CommandLine": command, "Cwd": str(workspace / ".agents")}
+    assert decide(rules, "run_command", args, [workspace]) == "force_ask", command
+
+
+def test_runCommand_pwdTilde_inHome_forceAsks(rules, workspace, agy_home):
+    args = {"CommandLine": "tee ~+/.gemini/config/x", "Cwd": str(agy_home)}
+    assert decide(rules, "run_command", args, [workspace]) == "force_ask"

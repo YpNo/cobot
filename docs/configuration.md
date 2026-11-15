@@ -39,14 +39,40 @@ One rule per line: `decision Tool(pattern) [@agent]`, or `decision mcp__<server>
 MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`,
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
 A trailing `# comment` on a default or owner row joins the reason the gate gives, as in
-`ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped, so
-repository text never speaks in a permission prompt.
+`ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped and a
+project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), so repository
+text never speaks in a permission prompt.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
 names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,
 `cat "$(pwd)/README.md"` does not; a substitution that hides the whole folder is read like a
 variable.
+
+The protected-file check reads a path the way the shell and the disk will
+(.agent/specs/gate-residuals.md):
+
+- without case for `never` and `ask` rows (a case-insensitive volume opens `.Claude/settings.json`
+  as `.claude/settings.json`), and with the program word in lower case too (`GIT push --force`
+  is denied); `allow` rows and arguments keep their case;
+- `$HOME/` and `${HOME}/` as `~/`;
+- in the folder a `cd` or `pushd` in the same command reaches, redirect targets included; after
+  a `cd` the gate cannot follow, a word naming a protected file by its last part
+  (`settings.json`, `hooks.json`) asks;
+- through a symlink a bare glob reaches (`cat al*`), by listing the folder before the glob's
+  first hole, at most 4 096 entries and 0.25 s per command;
+- deleting a protected folder's parent below HOME (`rm -r ~/.gemini`, behind any wrapper or
+  through a glob) asks, like moving it; a `cd` target, a move, a link or a deletion written as a
+  glob is judged by the names the glob expands to;
+- `~+` as the folder the command runs in; `~-` and `~1` (OLDPWD, the directory stack) ask;
+- a command whose working folder is inside a `never` folder row asks once, naming the folder.
+
+Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
+a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
+Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
+HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
+the check and the run, and the open findings F-33 (`find -delete`, `tar -C` and other folder
+options) and F-34.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

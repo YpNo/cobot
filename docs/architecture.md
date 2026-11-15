@@ -106,7 +106,7 @@ Hooks run as the user. An untrusted repository's `.agent/` is never injected int
 that protection is advisory for the model's own reads.
 
 Under agy the project layer comes from every `workspacePaths` entry, never from the model's
-`Cwd`; a bare word is also read as a path in the `Cwd`, so a command run inside a protected folder
-asks, and a write through a symlinked customization root is judged by the root's name. agy ignores a hook's exit code, so the shim's last word is always a decision line. Its
+`Cwd`; every word is also read as a path in the `Cwd` and in each folder a `cd` reaches, and a
+command whose `Cwd` is inside a protected folder asks, naming it, and a write through a symlinked customization root is judged by the root's name. agy ignores a hook's exit code, so the shim's last word is always a decision line. Its
 settings, config, grants and every customization root's hook and plugin files are `never` rows
 in the default layer, for both runtimes: a hook written there would run outside the gate.

@@ -3974,11 +3974,22 @@ def test_caseFold_shellWords_askOnACasedProtectedPath(rules, tmp_path, command):
         "/usr/bin/GIT push --force origin main",
         "NICE GIT push --force origin main",
         "ENV GIT push --force origin main",
+        "NOHUP GIT push --force origin main",
+        'BASH -c "git push --force origin main"',
+        "Bash -c 'GIT push --force origin main'",
         "FOO=1 GIT push --force origin main",
     ],
 )
 def test_caseFold_programWord_deniesLikeTheLowercaseCommand(rules, command):
     assert decide(rules, command)[0].decision == "deny", command
+
+
+@pytest.mark.parametrize(
+    "command", ["mv ~/.GEMINI ~/g", "mv ~/.Gemini/Config /tmp/c", "MV .Agents x", "ln -s docs .AGENTS"]
+)
+def test_caseFold_relocations_askLikeTheLowercaseForm(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
 
 
 def test_caseFold_argumentsKeepTheirCase(rules):

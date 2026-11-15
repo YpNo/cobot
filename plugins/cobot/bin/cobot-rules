@@ -2193,7 +2193,16 @@ def expand_segment(
     a leading assignment's value: elsewhere the substituted text could be the code the runner runs.
     A body is walked as one script whose lines may each start
     over in the runner's directory (one shell or one per line: make's ``.ONESHELL``, a mise
-    script); it runs in a new shell, so its state is read from its own text."""
+    script); it runs in a new shell, so its state is read from its own text. A cased program
+    (``BASH -c``) is expanded as written and in lower case: a case-insensitive volume runs both."""
+    folded = program_folded(segment)
+    if folded is not None:
+        return [*expand_cased(segment, here, depth, reached), *expand_segment(folded, here, depth, reached)]
+    return expand_cased(segment, here, depth, reached)
+
+
+def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[tuple[list[str], str]]:
+    """``expand_segment`` for the segment as written."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
     globbed = not literal and all_glob(segment) and prefix_key(segment, plain) is None and argv_runner(plain)
@@ -2400,11 +2409,12 @@ def resolve(matched: list[Rule], note: str = "") -> Verdict:
 
 
 RELOCATING = frozenset({"mv", "ln", "cp", "rsync", "install", "rename"})  # a folder appears or moves
+CUSTOMIZATION_ROOTS_FOLDED = frozenset(root.casefold() for root in agy.CUSTOMIZATION_ROOTS)
 GLOB_CHARS = "*?["
 
 
 def relocates(segment: list[str]) -> bool:
-    head = os.path.basename(segment[0]) if segment else ""
+    head = os.path.basename(segment[0]).lower() if segment else ""  # ``MV`` runs mv on APFS
     return head in RELOCATING or (head == "git" and "mv" in segment[1:3])
 
 
@@ -2419,7 +2429,7 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
         literal = pattern[: min((pattern.find(c) for c in GLOB_CHARS if c in pattern), default=len(pattern))]
         folder = literal.rstrip("/") if literal.endswith("/") else os.path.dirname(literal)
         while folder not in (home, "/", "") and folder.startswith(home + "/"):
-            anchors.add(folder)
+            anchors.add(folder.casefold())  # compared without case (F-30)
             folder = os.path.dirname(folder)
     return frozenset(anchors)
 
@@ -2439,8 +2449,8 @@ def word_touches(
         return True
     if not relocating:
         return False
-    named_root = os.path.basename(token.rstrip("/")) in agy.CUSTOMIZATION_ROOTS
-    return named_root or os.path.normpath(forms[0]) in anchors
+    named_root = os.path.basename(token.rstrip("/")).casefold() in CUSTOMIZATION_ROOTS_FOLDED
+    return named_root or os.path.normpath(forms[0]).casefold() in anchors
 
 
 def protected_file_touched(

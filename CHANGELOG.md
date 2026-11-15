@@ -95,6 +95,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The session brief stays within its budget: the findings block left no room for the knowledge
+  and specs lines after it, so a full findings block pushed the brief past its 6 000 characters
+  (cobot's own brief was at 6 265).
 - Security review fixes (wrap), both runtimes where the gate is shared:
   - a bare word is a path in the working directory too, so a command run with its working
     directory inside a protected folder (agy's `Cwd: ~/.gemini/config/plugins` with

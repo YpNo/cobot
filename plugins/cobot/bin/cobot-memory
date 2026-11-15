@@ -84,6 +84,7 @@ ENTRY_CAP = 1200
 FINDINGS_FLOOR = 400
 SECTION_MARKER_RESERVE = 120
 BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
+PART_SEPARATOR = "\n\n"  # between the text, the findings and each tail line
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
 STAMP_RE = re.compile(r"^verified: ([0-9a-f]{7,40})(\+working-tree)?( · .*)?$", re.M)
@@ -372,16 +373,19 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     others = other_agent_files(mem)
     if others:
         tail.append("also in .agent (read on demand): " + ", ".join(others))
-    reserve = min(FINDINGS_FLOOR, len(findings_block)) + sum(len(t) + 1 for t in tail)
+    tail_room = sum(len(PART_SEPARATOR) + len(t) for t in tail)  # the tail is never cut
+    findings_room = len(PART_SEPARATOR) + min(FINDINGS_FLOOR, len(findings_block)) if findings_block else 0
+    reserve = findings_room + tail_room
     room = budget - reserve - len(journal_block) - BLOCK_SEPARATORS
     context = context_head(mem.read("CONTEXT.md"), max(CONTEXT_CAP, min(CONTEXT_MAX, room)))
     blocks = [block for block in ("## CONTEXT\n" + context if context else "", journal_block) if block]
     text = cap("\n\n".join(blocks), max(budget - reserve, 200))
     parts = [text]
     if findings_block:
-        parts.append(cap(findings_block, max(budget - len(text), FINDINGS_FLOOR)))
+        left = budget - len(text) - len(PART_SEPARATOR) - tail_room
+        parts.append(cap(findings_block, max(left, FINDINGS_FLOOR)))
     parts.extend(tail)
-    return "\n\n".join(p for p in parts if p)
+    return PART_SEPARATOR.join(p for p in parts if p)
 
 
 # ---------------------------------------------------------------- writes

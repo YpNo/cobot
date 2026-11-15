@@ -36,3 +36,12 @@ Proof: the budget test failed first at 3335 of 3000 and 6335 of 6000; full suite
 Open: the findings block is now what gets cut when the brief is full (rows end with the truncation marker); four findings open (F-29..F-32).
 Next: owner pushes chore/journal-compact-0.3 and opens its PR; the gate findings and the A2UI knowledge PR follow.
 verified: 221041f · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check
+
+## 2026-11-15 — A2UI knowledge in expert-ui
+Changed: 0d86c63 expert-ui/references/a2ui.md (16 dated lines: project, protocol v1.0 and its 2026-11-11 breaking change, the catalog and function boundary, npm/PyPI/pub.dev packages, MCP Apps, AG-UI, AI SDK generative UI); SKILL.md names the file and gains an Agent-driven UI rule; consult/domains/ui.md audits an A2UI catalog and flags a pre-1.0 version range; CHANGELOG Added.
+Why: the owner's 2026-11-14 decision (knowledge only, its own PR, before the 0.3.0 cut).
+Proof: every line read from its primary source on 2026-11-15 (gh api, the npm, PyPI and pub.dev JSON, the spec on main); cobot-memory knowledge expert-ui 40 → 56 lines; full suite 2521 passed; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Decided in build: the neighbour lines are verified, not reported as the 2026-11-14 note planned, since each was read from its own repository or registry today.
+Open: which spec revision the published 0.15.0 packages implement (before or after #4044) is not diffed; the version lines are flagged after 30 days.
+Next: owner pushes feat/a2ui-knowledge and opens its PR after the journal tidy PR.
+verified: 0d86c63 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, knowledge count

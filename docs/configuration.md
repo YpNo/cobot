@@ -61,13 +61,18 @@ The protected-file check reads a path the way the shell and the disk will
   (`settings.json`, `hooks.json`) asks;
 - through a symlink a bare glob reaches (`cat al*`), by listing the folder before the glob's
   first hole, at most 4 096 entries and 0.25 s per command;
-- deleting a protected folder's parent below HOME (`rm -r ~/.gemini`) asks, like moving it;
+- deleting a protected folder's parent below HOME (`rm -r ~/.gemini`, behind any wrapper or
+  through a glob) asks, like moving it; a `cd` target, a move, a link or a deletion written as a
+  glob is judged by the names the glob expands to;
+- `~+` as the folder the command runs in; `~-` and `~1` (OLDPWD, the directory stack) ask;
 - a command whose working folder is inside a `never` folder row asks once, naming the folder.
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
-HOME naming a protected path, and a link created between the check and the run.
+HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
+the check and the run, and the open findings F-33 (`find -delete`, `tar -C` and other folder
+options) and F-34.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

@@ -184,6 +184,31 @@ check`; all folded.
   under agy → plan 1 maps the tool; the ambiguity is a named residual.
 - MINOR `rm -r ~/.gemini` (a protected folder's parent) is silent → plan 6, story 6.
 
+## Bypass review
+
+2026-11-15, independent reviewer on `f0d6117..3b7dc9a`, every row reproduced old against new:
+
+- BLOCKER (a regression of this branch) the program-word skip also skipped a `for`, `select` or
+  `case` head and `flock`'s file: `for f in settings.json; do cp /tmp/evil "$f"; done` in
+  `~/.claude` went from ask to none → the skip is removed; `protected_cwd` names the folder.
+- BLOCKER a glob naming a protected folder as a `cd` target, a move, a link or a deletion
+  (`cd ~/.gemini/conf* && tee x`) → a whole-folder word with glob holes is judged by the names it
+  expands to (a glob expands only to existing names), within the scan budget.
+- MAJOR a bare `cd`; `~+`, `~-`, `~N`; deletion and relocation behind wrappers and assignments
+  (`nice rm -r ~/.gemini`) and through globs on the parent (`rm -r ~/.gem*`); `CDPATH` set in the
+  command; a link or `..` after the glob segment (`a*/l/config/x`) → each folded with a test.
+- MINOR nocaseglob, globs after an unknown `cd`, the protected-cwd reason cut by agy before the
+  rule → folded. Pre-existing gaps outside the claims → F-33 (find -delete, tar -C, …) and F-34
+  (project text on stderr).
+
+Residuals added: a `CDPATH` set only in the owner's shell profile; a hung network mount can block
+the scan past its deadline (`resolved_prefix` shares it since F-28); over its budget the ask names
+the token, not the budget.
+
 ## Converge
 
-pending
+2026-11-15: stories 1–9 pass as tests (`-k "projectRow or caseFold or homeVariable or cdWalk or
+cdOperand or cdUnknown or parentDeletion or protectedCwd or linkGlob or bypassFold"` in
+`test_cobot_rules`, the residual rows in `test_gate_agy`); the bypass review's rows are tests;
+a noise check against `main` changes only `cd docs && tee settings.json` and a deletion of a glob
+naming the protected folder; latency 165 → 174 ms per check.

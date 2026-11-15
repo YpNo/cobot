@@ -49,7 +49,8 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
   like the plugin's with `"enabled": false` switches the plugin's group off (smoke `h2`).
   Workspace hooks ran before the plugin's (`h1`). cobot's answer: `install.sh --agy` names the
   group `cobot-<random>` per install, and the brief warns on workspace hooks and plugins.
-  *smoke* `h3`: whether a workspace hook's `auto_approve` can override cobot's `deny`.
+  A workspace hook's `auto_approve` did not override cobot's `deny` (smoke `h3`); the order in
+  which agy runs workspace and plugin hooks varied between runs (`h1`).
 - Print mode (`agy -p`) denies an ask it cannot prompt for ("headless mode cannot prompt"), so
   a `force_ask` is a deny there (smoke `w1`, `b1`).
 - `run_command` saw the checkout's `.git` read-only (a `git push` could not update its

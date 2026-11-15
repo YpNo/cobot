@@ -2515,10 +2515,23 @@ def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
         return False
     glob, fold = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
-    pattern = os.path.expanduser(rule.pattern)
+    forms += [resolved_prefix(form) for form in forms if os.path.isabs(form)]
+    patterns = rule_patterns(rule)
     if fold:
-        forms, pattern = [form.lower() for form in forms], pattern.lower()
-    return any(globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}") for form in forms)
+        forms, patterns = [form.lower() for form in forms], [pattern.lower() for pattern in patterns]
+    return any(
+        globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}")
+        for form in forms
+        for pattern in patterns
+    )
+
+
+def resolved_prefix(glob: str) -> str:
+    """The glob with the folders before its first hole resolved: ``door/*`` through a symlinked
+    ``door`` reaches what ``door`` points at (F-28)."""
+    hole = min((i for i, char in enumerate(glob) if char in GLOB_HOLES), default=len(glob))
+    cut = glob.rfind("/", 0, hole)
+    return os.path.realpath(glob[:cut]) + glob[cut:] if cut > 0 else glob
 
 
 def path_glob(token: str) -> tuple[str, bool]:
@@ -2593,6 +2606,7 @@ CAT_DEFINITION_RE = re.compile(r"(?:^|[\s;&|(){}])(?:function\s+cat\b|cat\s*\(\s
 UNKNOWN_CHAR = "\x00"  # a hole read as one character nothing literal matches
 SEGMENT_STAR = "\x01"  # a glob hole in a path: any text without ``/``
 GLOBSTAR_MARK = "\x02"  # a ``*`` glob hole, until ``**`` runs are found
+GLOB_HOLES = frozenset({"*", "?", SEGMENT_STAR})  # what globs_meet reads as a hole
 EXPANSION_KINDS = frozenset({"glob", "brace"})  # holes a runner body may hold and stay readable
 GLOB_ARGV_RUNNERS = frozenset({"docker", "podman", "docker-compose", "nix", "flatpak", "chroot"})
 # ``NAME=`` or ``NAME[…]=`` (the subscript a bracket glob hole): an assignment in the prefix
@@ -2930,29 +2944,42 @@ def judge_bash(
 
 
 def file_forms(path: str, cwd: str | None) -> list[str]:
-    base = Path(cwd or os.getcwd())
-    absolute = (
-        (base / os.path.expanduser(path)).resolve()
-        if not os.path.isabs(os.path.expanduser(path))
-        else Path(os.path.expanduser(path))
-    )
-    forms = [str(absolute)]
-    try:
-        forms.append(str(absolute.relative_to(base)))
-    except ValueError:
-        pass
-    return forms
+    """Every form a rule may name the path by (F-28): as written (``~`` expanded to HOME as given),
+    with its parent resolved (a symlinked folder) and fully resolved (a symlinked file), each also
+    relative to the working directory. A rule that matches any form matches the path."""
+    base = cwd or os.getcwd()
+    joined = os.path.join(base, os.path.expanduser(path))
+    parent = os.path.join(os.path.realpath(os.path.dirname(joined)), os.path.basename(joined))
+    absolutes = [os.path.normpath(joined), os.path.normpath(parent), os.path.realpath(joined)]
+    bases = {Path(base), Path(os.path.realpath(base))}
+    relatives = [
+        str(Path(form).relative_to(root))
+        for form in absolutes
+        for root in bases
+        if Path(form).is_relative_to(root)
+    ]
+    return list(dict.fromkeys(absolutes + relatives))
+
+
+def rule_patterns(rule: Rule) -> list[str]:
+    """The rule's pattern with ``~`` expanded to HOME as given, and to HOME resolved when HOME is a
+    symlink: a path written through either names the same file (F-28)."""
+    pattern = os.path.expanduser(rule.pattern)
+    if rule.pattern != "~" and not rule.pattern.startswith("~/"):
+        return [pattern]
+    return list(dict.fromkeys([pattern, os.path.realpath(os.path.expanduser("~")) + rule.pattern[1:]]))
 
 
 def matches_file(rule: Rule, forms: list[str]) -> bool:
-    """A form matches the pattern, at any depth for a relative one; a folder row (``<dir>/*``)
-    also protects the folder itself, which a move or a link would carry away."""
-    pattern = os.path.expanduser(rule.pattern)
-    patterns = [pattern, pattern[:-2]] if pattern.endswith("/*") else [pattern]
-    for form in forms:
-        for each in patterns:
-            if fnmatch.fnmatchcase(form, each) or fnmatch.fnmatchcase(form, f"*/{each}"):
-                return True
+    """A form matches the pattern, at any depth for a relative one, with ``~`` read both ways
+    (rule_patterns); a folder row (``<dir>/*``) also protects the folder itself, which a move or
+    a link would carry away."""
+    for pattern in rule_patterns(rule):
+        patterns = [pattern, pattern[:-2]] if pattern.endswith("/*") else [pattern]
+        for form in forms:
+            for each in patterns:
+                if fnmatch.fnmatchcase(form, each) or fnmatch.fnmatchcase(form, f"*/{each}"):
+                    return True
     return False
 
 

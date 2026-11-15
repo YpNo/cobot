@@ -40,8 +40,9 @@ MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
 A trailing `# comment` on a default or owner row joins the reason the gate gives, as in
 `ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped and a
-project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), so repository
-text never speaks in a permission prompt.
+project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), and a warning
+about one names its line only (`project:4: unreadable rule ignored`), so repository text never
+speaks in a permission prompt or on the hook's stderr.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
@@ -65,14 +66,20 @@ The protected-file check reads a path the way the shell and the disk will
   through a glob) asks, like moving it; a `cd` target, a move, a link or a deletion written as a
   glob is judged by the names the glob expands to;
 - `~+` as the folder the command runs in; `~-` and `~1` (OLDPWD, the directory stack) ask;
+- a deletion that takes a protected folder with it asks: `find` with `-delete`, `-exec`,
+  `-execdir`, `-ok` or `-okdir` (its start paths), `gio trash|remove`, and deleting HOME or `/`;
+- a folder an option names as the place a command writes (`tar -C`, `unzip -d`, `patch -d`,
+  `git -C`, `--work-tree`, `--git-dir`) is checked the same way, and the command's relative words
+  resolve in it (.agent/specs/gate-f33-f34.md);
 - a command whose working folder is inside a `never` folder row asks once, naming the folder.
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
+`git -C ~ …` and `tar -C ~ …` (HOME holds `~/.gemini`); `find ~ -exec … {} +` of any command;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
-the check and the run, and the open findings F-33 (`find -delete`, `tar -C` and other folder
-options) and F-34.
+the check and the run, archive members not written on the command line, and folder options of
+other tools (`7z -o`, `cpio -D`).
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

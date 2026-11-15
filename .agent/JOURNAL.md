@@ -71,3 +71,12 @@ Decided in build: cp a ~ stays silent (a merge asks only when a source may land 
 Open: residuals named in the spec (extracting after a cd into a protected folder, busybox find and fd, variables naming a protected folder, very long commands); the safety classifier interrupted this work three times, so the fold went in small edits.
 Next: owner pushes security/gate-f33-f34 and docs/expert-gha-learned, one PR each.
 verified: dc82546 · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, noise check
+
+## 2026-11-15 — expert-gha learns two lines, curated from learn/gha
+Changed: eced86a expert-gha/references/learned.md gains the zizmor version-pin line and the floating rust-toolchain channel line; CHANGELOG Changed.
+Why: the owner asked to finish what was left locally; learn/gha (2 promote commits from curriculo, base 24a71af) carried lines F-42 names.
+Proof: markdownlint; check-plugin; cobot-memory knowledge expert-gha reads 41 lines; the actions.md install-action row (v2.90.1, 2026-11-04) is inside its 30-day threshold, so the snapshot line is not needed.
+Decided in build: the toolchain line's source names the step, not the private repository or the run id.
+Open: learn/gha and its promote worktree stay for the owner to drop once this merges.
+Next: owner pushes docs/expert-gha-learned and opens its PR.
+verified: ea55945 · markdownlint, check-plugin, knowledge count (rebased onto main 7d3e65d)

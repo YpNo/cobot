@@ -1,6 +1,8 @@
 #!/bin/sh
 # cobot rules gate shim for the Antigravity CLI (agy), run from the plugin folder.
 # agy logs a failing hook and runs the call anyway, so every failure path prints a deny, exit 0.
+# CLAUDE_PLUGIN_ROOT may leak in from a Claude Code process: every tool resolves its own folder.
+unset CLAUDE_PLUGIN_ROOT
 DEADLINE_MAX=8 # below the 10 s timeout in hooks.json
 deadline=${COBOT_GATE_DEADLINE:-$DEADLINE_MAX}
 case $deadline in '' | *[!0-9]*) deadline=$DEADLINE_MAX ;; esac

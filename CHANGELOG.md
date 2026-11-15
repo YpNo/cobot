@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The session brief under Antigravity (T05): the root `hooks.json` runs `hooks/session-agy.sh` at
+  SessionStart, which prints `cobot-session start --runtime agy`: one `injectSteps` system
+  message (agy presents a user message as the owner's own words), the project from
+  `workspacePaths[0]` ("project unknown" without an absolute folder there, and no tool runs), the
+  protocol, then an agy section of at most 1 200 characters (the absolute plugin and `bin/` paths,
+  agy's tool names, the owner-typed skills, security-sweep and learn through `invoke_subagent`
+  only, builder proof requested and not enforced, builders not proven gated), then the rule
+  counts and the brief, whose budget shrinks by the section. The serialised answer stays within
+  10 000 characters, cut from the tail. Both agy shims unset `CLAUDE_PLUGIN_ROOT`, so a value
+  leaked from a Claude Code process cannot point the tools at another copy.
 - Self-protection under Antigravity (T04): the default rules deny editing or writing agy's
   settings (`~/.gemini/antigravity-cli/settings*.json`), `~/.gemini/config/*` (hooks,
   enablement, MCP servers, installed plugins) and `~/.gemini/jetski/*` (command sidecars, access

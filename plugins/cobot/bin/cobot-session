@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """cobot-session: the SessionStart payload (protocol + rule counts + memory brief + knowledge and deps lines).
 
-Usage: cobot-session start < hook.json
-Prints hookSpecificOutput.additionalContext, at most 10 000 characters. Never blocks a session:
-on any error it still prints the protocol and one line naming the error.
+Usage: cobot-session start [--runtime claude|agy] < hook.json
+Claude Code: prints hookSpecificOutput.additionalContext, at most 10 000 characters.
+Antigravity (agy): prints one injectSteps system message (not a user message: committed memory
+must not read as the owner's words), the project from workspacePaths[0], the agy section after
+the protocol; the serialised JSON stays within 10 000 characters. Never blocks a session: on any
+error it still prints the protocol and one line naming the error.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -21,6 +25,9 @@ TOTAL_CAP = 10_000
 BRIEF_CAP = 6_000
 LINES_RESERVE = 500  # room kept for the knowledge and dependency lines
 DEADLINE = 25  # seconds shared by every tool call; the hook has 30
+RUNTIMES = ("claude", "agy")
+AGY_SECTION_CAP = 1_200
+AGY_HEADING = "## cobot under Antigravity"
 
 
 def protocol_text() -> str:
@@ -67,28 +74,102 @@ def status_lines(cwd: str | None, clock: Clock) -> str:
     return "\n".join(line.splitlines()[0] if line else "" for line in (knowledge, dependencies))
 
 
+def brief_parts(cwd: str | None, room: int) -> list[str]:
+    """Rule counts, the memory brief within ``room`` (capped at BRIEF_CAP) and the status lines."""
+    clock = Clock()
+    budget = min(BRIEF_CAP, room - LINES_RESERVE)
+    return [
+        rule_counts(cwd, clock),
+        run_tool("cobot-memory", ["brief", "--budget", str(budget)], cwd, clock),
+        status_lines(cwd, clock),
+    ]
+
+
+def error_line(error: Exception) -> str:
+    return f"cobot session: brief unavailable ({type(error).__name__}: {error})"
+
+
 def build_payload(stdin: str) -> str:
     protocol = protocol_text()
     try:
         payload = json.loads(stdin) if stdin.strip() else {}
-        cwd = payload.get("cwd")
-        clock = Clock()
-        budget = min(BRIEF_CAP, TOTAL_CAP - len(protocol) - LINES_RESERVE)
-        parts = [
-            protocol,
-            rule_counts(cwd, clock),
-            run_tool("cobot-memory", ["brief", "--budget", str(budget)], cwd, clock),
-            status_lines(cwd, clock),
-        ]
+        parts = [protocol, *brief_parts(payload.get("cwd"), TOTAL_CAP - len(protocol))]
     except Exception as error:  # noqa: BLE001 - a session must still start
-        parts = [protocol, f"cobot session: brief unavailable ({type(error).__name__}: {error})"]
+        parts = [protocol, error_line(error)]
     return "\n\n".join(p for p in parts if p)[:TOTAL_CAP]
 
 
+# ---------------------------------------------------------------- Antigravity (agy)
+
+
+def agy_section() -> str:
+    """What the protocol cannot say under agy: where the tools are (agy puts nothing on PATH and
+    does not expand skill text), its tool names, and the gaps against Claude Code."""
+    root = plugin_root()
+    text = f"""{AGY_HEADING}
+- bin/ is not on PATH: run `python3 -I {root}/bin/<tool> ...` for cobot-memory, cobot-rules and \
+cobot-deps. A skill is `{root}/skills/<name>/SKILL.md`: read it with view_file, or type /<name>.
+- Tool names: Agent is invoke_subagent, AskUserQuestion is ask_question, Skill is reading the \
+skill file.
+- onboard, rules and security-sweep run only when the owner types them.
+- security-sweep and learn run through invoke_subagent or not at all, never inline.
+- A builder's proof (command and exit code) is requested, not enforced: read it before you trust \
+the report.
+- Children receive the workspace's AGENTS.md and GEMINI.md.
+- Builders' tool calls are not proven gated under agy: review their diff before any outward step."""
+    return text[:AGY_SECTION_CAP]
+
+
+def agy_project(payload: dict) -> str | None:
+    """The first workspace, when it is an absolute folder; hooks run in the plugin folder."""
+    paths = payload.get("workspacePaths") or []
+    first = paths[0] if isinstance(paths, list) and paths else None
+    return first if isinstance(first, str) and os.path.isabs(first) and os.path.isdir(first) else None
+
+
+def agy_message(text: str) -> str:
+    return json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]})
+
+
+def agy_answer(stdin: str) -> str:
+    """The agy SessionStart answer: the protocol, the agy section, then the brief; the tail is cut
+    until the serialised JSON fits, so the cap never reaches the agy section."""
+    protocol = protocol_text()
+    head = [protocol]
+    try:
+        head.append(agy_section())
+        payload = json.loads(stdin) if stdin.strip() else {}
+        project = agy_project(payload if isinstance(payload, dict) else {})
+        room = TOTAL_CAP - sum(len(part) for part in head)
+        tail = brief_parts(project, room) if project else ["cobot session: project unknown (no workspace folder)"]
+    except Exception as error:  # noqa: BLE001 - a session must still start
+        tail = [error_line(error)]
+    fixed = "\n\n".join(head)
+    rest = "\n\n".join(p for p in tail if p)
+    out = agy_message(f"{fixed}\n\n{rest}" if rest else fixed)
+    while len(out) > TOTAL_CAP and rest:
+        rest = rest[: max(len(rest) - (len(out) - TOTAL_CAP), 0)]
+        out = agy_message(f"{fixed}\n\n{rest}" if rest else fixed)
+    return out
+
+
+def runtime_of(argv: list[str]) -> str | None:
+    """``start`` or ``start --runtime <claude|agy>``; None for anything else."""
+    if argv == ["start"]:
+        return "claude"
+    if len(argv) == 3 and argv[:2] == ["start", "--runtime"] and argv[2] in RUNTIMES:
+        return argv[2]
+    return None
+
+
 def main(argv: list[str]) -> int:
-    if argv[:1] != ["start"]:
+    runtime = runtime_of(argv)
+    if runtime is None:
         print(__doc__.strip(), file=sys.stderr)
         return 2
+    if runtime == "agy":
+        print(agy_answer(sys.stdin.read()))
+        return 0
     context = build_payload(sys.stdin.read())
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}))
     return 0

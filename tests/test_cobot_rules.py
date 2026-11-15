@@ -4208,3 +4208,124 @@ def test_linkGlob_pastTheEntryCap_asks(rules, workspace, monkeypatch):
     for i in range(5):
         (workspace / "docs" / f"f{i}.md").write_text("x")
     assert judge_in(rules, "cat docs/*.md", workspace)[0].decision == "ask"
+
+
+# ---------------------------------------------------------------- residuals: bypass review folds
+
+
+@pytest.fixture
+def claude_dir(fake_home):
+    """HOME with ``~/.claude`` (file rows ``settings*.json``) and ``~/.gemini/config``."""
+    _, home = fake_home
+    (home / ".claude").mkdir()
+    return home
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'for f in settings.json; do cp /tmp/evil "$f"; done',
+        'for f in settings.local.json; do echo "{}" > $f; done',
+        "select f in settings.json; do cp /tmp/evil $f; break; done",
+        "flock settings.local.json true",
+        "case x in settings.json) :;; esac",
+        "exec -a settings.json true",
+    ],
+)
+def test_bypassFold_headOperands_stayChecked(rules, claude_dir, command):
+    assert judge_in(rules, command, claude_dir / ".claude")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd ~/.gemini/conf* && tee x",
+        "pushd ~/.gemini/c* && tee x",
+        "cd ~/.gemini/conf?g && tee x",
+        "cp /etc/hosts ~/.gemini/conf*",
+        "cp -t ~/.gemini/conf* /etc/hosts",
+        "mv ~/.gemini/conf* ~/g",
+        "ln -s ~/.gemini/conf* x",
+        "rm -r ~/.gemini/conf*",
+        "bash -c 'cd ~/.gemini/conf* && tee x'",
+    ],
+)
+def test_bypassFold_globNamingTheProtectedFolder_asks(rules, claude_dir, command):
+    assert judge_in(rules, command, claude_dir)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd && tee .gemini/config/x",
+        "cd; echo x > .gemini/config/x",
+        "cd -- && tee .gemini/config/x",
+        "bash -c 'cd && tee .gemini/config/x'",
+        "cd ~/.gemini && tee ~+/config/x",
+        "cd ~/.gemini; cd /; tee ~-/config/x",
+        "pushd ~/.gemini; pushd /; tee ~1/config/x",
+        "CDPATH=~/.gemini cd config && tee x",
+        "CDPATH=~/.gemini; cd config; tee x",
+        "CDPATH=$HOME/.gemini; cd config; echo y > x",
+    ],
+)
+def test_bypassFold_cdForms_reachTheProtectedFolder(rules, claude_dir, command):
+    assert judge_in(rules, command, claude_dir / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "X=1 rm -r ~/.gemini",
+        "nice rm -r ~/.gemini",
+        "timeout 9 rm -r ~/.gemini",
+        "nohup rm -r ~/.gemini",
+        "command rm -r ~/.gemini",
+        "X=1 RM -r ~/.gemini",
+        "nohup mv ~/.gemini ~/g",
+        "NOHUP MV ~/.GEMINI ~/g",
+        "X=1 ln -sfn /tmp/evil ~/.gemini",
+        "rm -r ~/.gem*",
+        "rm -r ~/.gemin?",
+        "rm -r ~/.g[e]mini",
+        "cd ~ && rm -r .gem*",
+        "mv ~/.gem* /tmp/g",
+        "mv x .agen*",
+        "cp -r y .ag?nts",
+    ],
+)
+def test_bypassFold_parentDeletionAndRelocation_throughWrappersAndGlobs(rules, claude_dir, command):
+    assert judge_in(rules, command, claude_dir / "ws")[0].decision == "ask", command
+
+
+@pytest.fixture
+def deep_links(claude_dir):
+    """``ws/a1/l -> ~/.gemini`` and ``ws/s1 -> ~/sub``."""
+    ws = claude_dir / "ws"
+    (ws / "a1").mkdir()
+    (ws / "a1" / "l").symlink_to(claude_dir / ".gemini")
+    (claude_dir / "sub").mkdir()
+    (ws / "s1").symlink_to(claude_dir / "sub")
+    (ws / "lnk").symlink_to(claude_dir / ".gemini" / "config")
+    return ws
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo x > a*/l/config/x",
+        "cat a*/l/config/x",
+        "cat s*/../.gemini/config/x",
+        "shopt -s nocaseglob; cat LNK*/x",
+        'cd "$d" && cp /etc/hosts hooks.js?n',
+        'cd "$d"; echo x > settings.js[o]n',
+    ],
+)
+def test_bypassFold_globsThroughLinksDotsAndCase_ask(rules, deep_links, command):
+    assert judge_in(rules, command, deep_links)[0].decision == "ask", command
+
+
+def test_bypassFold_protectedCwdReason_putsTheRuleFirst(rules, claude_dir):
+    folder = claude_dir / ".gemini" / "config" / "plugins"
+    reason = judge_in(rules, "ls", folder)[0].reason()
+    assert reason.index("never Edit(~/.gemini/config/*)") < reason.index(str(folder))

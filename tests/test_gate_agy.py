@@ -622,3 +622,22 @@ def test_runCommand_cwdInAProtectedFolder_namesTheFolder(rules, workspace, agy_h
     out = answer(rules, payload("run_command", {"CommandLine": "ls", "Cwd": str(folder)}, [workspace]))
     assert out["decision"] == "force_ask"
     assert "is inside a protected folder" in json.dumps(out)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'for f in hooks.json; do cp /tmp/evil "$f"; done',
+        "flock hooks.json true",
+        "case x in hooks.json) :;; esac",
+    ],
+)
+def test_runCommand_headOperandsInACustomizationRoot_forceAsk(rules, workspace, command):
+    (workspace / ".agents").mkdir(exist_ok=True)
+    args = {"CommandLine": command, "Cwd": str(workspace / ".agents")}
+    assert decide(rules, "run_command", args, [workspace]) == "force_ask", command
+
+
+def test_runCommand_pwdTilde_inHome_forceAsks(rules, workspace, agy_home):
+    args = {"CommandLine": "tee ~+/.gemini/config/x", "Cwd": str(agy_home)}
+    assert decide(rules, "run_command", args, [workspace]) == "force_ask"

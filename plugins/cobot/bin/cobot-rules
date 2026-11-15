@@ -32,6 +32,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -2420,16 +2421,30 @@ GLOB_CHARS = "*?["
 DESTROYING = frozenset({"rm", "rmdir", "unlink", "shred", "trash", "trash-put"})  # a folder vanishes
 
 
+def program_of(segment: list[str]) -> list[str]:
+    """The segment from its program word on, wrappers and assignments dropped, in lower case
+    where a case-insensitive volume would run it so (``X=1 NOHUP RM`` is ``rm``)."""
+    return strip_wrappers(program_folded(segment) or segment)
+
+
 def destroys(segment: list[str]) -> bool:
     """Whether the segment deletes what it names: removing a protected folder's parent removes the
-    folder (``rm -r ~/.gemini``)."""
-    head = os.path.basename(segment[0]).lower() if segment else ""
-    return head in DESTROYING or (head == "git" and "rm" in segment[1:3])
+    folder (``rm -r ~/.gemini``, behind any wrapper)."""
+    argv = program_of(segment)
+    head = argv[0] if argv else ""
+    return head in DESTROYING or (head == "git" and "rm" in argv[1:3])
+
+
+def enters(segment: list[str]) -> bool:
+    """Whether the segment is a ``cd`` or ``pushd``: its operand is a folder the next words run in."""
+    argv = directory_verb(segment)
+    return bool(argv) and argv[0] in ("cd", "pushd")
 
 
 def relocates(segment: list[str]) -> bool:
-    head = os.path.basename(segment[0]).lower() if segment else ""  # ``MV`` runs mv on APFS
-    return head in RELOCATING or (head == "git" and "mv" in segment[1:3])
+    argv = program_of(segment)
+    head = argv[0] if argv else ""
+    return head in RELOCATING or (head == "git" and "mv" in argv[1:3])
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -2469,11 +2484,20 @@ class GlobBudget:
         return self.entries >= 0 and time.monotonic() <= self.deadline
 
 
-def glob_links(token: str, cwd: str | None, protected: list[Rule], budget: GlobBudget) -> bool:
-    """Whether a glob reaches a protected path through a symlink: the folder before its first
-    hole segment is listed (dotfiles included), and each link whose name that segment could match
-    is read at its target, the rest of the glob kept. Regular files are judged lexically
-    already; only links can lead elsewhere. Past the budget it counts as a touch (ask)."""
+def glob_links(
+    token: str,
+    cwd: str | None,
+    protected: list[Rule],
+    budget: GlobBudget,
+    named: Callable[[str], bool] | None = None,
+) -> bool:
+    """Whether a glob reaches a protected path through what it expands to: the folder before its
+    first hole segment is listed (dotfiles included), and each entry that segment could match is
+    read with the rest of the glob, through links and ``..``. Regular files are judged lexically
+    already, so without ``named`` only links and folders are read; with it (a ``cd`` target, a
+    move, a link, a deletion: the word stands for whole folders) every matching name with no hole
+    left is judged as that literal name, since a glob only expands to names that exist. Past the
+    budget it counts as a touch (ask)."""
     glob, _ = path_glob(os.path.expanduser(token))
     parts = os.path.join(cwd or os.getcwd(), glob).split("/")
     first = next((i for i, part in enumerate(parts) if GLOB_HOLES & set(part)), None)
@@ -2488,24 +2512,51 @@ def glob_links(token: str, cwd: str | None, protected: list[Rule], budget: GlobB
             for entry in entries:
                 if not budget.take():
                     return True
-                if entry.is_symlink() and globs_meet(parts[first], entry.name):
-                    if link_reaches(os.path.realpath(entry.path), rest, protected):
+                if not globs_meet(parts[first].casefold(), entry.name.casefold()):  # nocaseglob
+                    continue
+                if named is not None and not GLOB_HOLES & set(rest):
+                    if named(os.path.join(entry.path, rest) if rest else entry.path):
                         return True
+                    continue
+                if rest and entry.is_dir() and link_reaches(entry.path, rest, protected):
+                    return True
+                if not rest and entry.is_symlink() and link_reaches(entry.path, "", protected):
+                    return True
     except OSError:
         return False
     return False
 
 
-def link_reaches(target: str, rest: str, protected: list[Rule]) -> bool:
-    """A link's target, with what the glob still names under it, against the protected rows."""
+def folder_and_patterns(rule: Rule) -> list[str]:
+    """The rule's patterns (``~`` both ways), and for a folder row the folder itself."""
+    patterns = rule_patterns(rule)
+    return patterns + [pattern[:-2] for pattern in patterns if pattern.endswith("/*")]
+
+
+def link_reaches(entry: str, rest: str, protected: list[Rule]) -> bool:
+    """A matched entry, with what the glob still names under it, against the protected rows: a
+    link anywhere up to the next hole, or a ``..``, is resolved first (``a*/l/config/x``,
+    ``s*/../.gemini/config/x``)."""
     if not rest:
-        return any(matches_file(r, file_forms(target, None), fold=True) for r in protected)
-    form = f"{target}/{rest}".casefold()
+        return any(matches_file(r, file_forms(os.path.realpath(entry), None), fold=True) for r in protected)
+    form = os.path.normpath(resolved_prefix(f"{entry}/{rest}")).casefold()
     return any(
         globs_meet(form, pattern.casefold()) or globs_meet(form, f"*/{pattern}".casefold())
         for r in protected
-        for pattern in rule_patterns(r)
+        for pattern in folder_and_patterns(r)
     )
+
+
+def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relocating: bool) -> bool:
+    """Whether a word with holes could name a protected folder's parent (``rm -r ~/.gem*``) or,
+    for a move or a link, a customization root (``mv x .agen*``)."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    form = os.path.normpath(os.path.join(cwd or os.getcwd(), glob)).casefold()
+    if any(globs_meet(form, anchor) for anchor in anchors):
+        return True
+    name = os.path.basename(glob.rstrip("/")).casefold()
+    literal = name.strip("*?" + SEGMENT_STAR)  # a bare ``*`` would meet every root: ``cp -r assets/* dist/``
+    return relocating and bool(literal) and any(globs_meet(name, root) for root in CUSTOMIZATION_ROOTS_FOLDED)
 
 
 def word_touches(
@@ -2516,6 +2567,7 @@ def word_touches(
     anchors: frozenset[str],
     destroying: bool = False,
     budget: GlobBudget | None = None,
+    whole: bool = False,
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
@@ -2525,9 +2577,18 @@ def word_touches(
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
         if not (pathlike or bare_glob):
             return False
-        if any(path_may_match(r, token, cwd) for r in protected):
+        acting = relocating or destroying or whole  # the word stands for whole folders
+        if any(path_may_match(r, token, cwd, acting and not bare_glob) for r in protected):
             return True
-        return bare_glob and budget is not None and glob_links(token, cwd, protected, budget)
+        if not bare_glob:  # a substitution: its text is unknown, so read it lexically
+            return (relocating or destroying) and glob_meets_anchor(token, cwd, anchors, relocating)
+        if budget is None:
+            return False
+
+        def named(name: str) -> bool:
+            return word_touches(name, cwd, protected, relocating, anchors, destroying, None, whole)
+
+        return glob_links(token, cwd, protected, budget, named if acting else None)
     forms = file_forms(token, cwd)
     if any(matches_file(r, forms, fold=True) for r in protected):
         return True
@@ -2562,35 +2623,28 @@ def protected_file_touched(
         jobs.append((paths, union(visited, start), False))
     for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
-        skipped = command_words(segment) if command else frozenset()
         relocating = command and relocates(segment)
         destroying = command and destroys(segment)
+        entering = command and enters(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         for index, token in enumerate(segment):
-            if token.startswith("-") or index == program or index in skipped:
+            if token.startswith("-") or index == program:
                 continue
+            if DIRECTORY_STACK_RE.match(token):
+                return token  # ``~-``, ``~1``: OLDPWD or the directory stack, unknown to the gate
             for form in home_forms(token):
+                if PWD_TILDE_RE.match(form):
+                    form = form[2:].lstrip("/") or "."  # ``~+`` is PWD: the segment's own folder
                 anchored = os.path.isabs(form) or form.startswith("~")
                 if any(
-                    word_touches(form, base, protected, relocating, anchors, destroying, budget)
+                    word_touches(form, base, protected, relocating, anchors, destroying, budget, entering)
                     for base in bases[: 1 if anchored else None]
                 ):
                     return token
-                if moved and not anchored and names_a_protected_file(form, protected):
+                if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
                     return token
     return None
-
-
-def command_words(segment: list[str]) -> frozenset[int]:
-    """The indexes of the program word and the wrappers before it that carry no ``/``: PATH finds
-    them, never the working directory, so ``ls`` run inside a protected folder names no file in
-    it (F-32; ``protected_cwd`` asks for that folder instead)."""
-    program = strip_wrappers(segment)
-    at = len(segment) - len(program) if program else len(segment)
-    return frozenset(
-        i for i in range(min(at + 1, len(segment))) if "/" not in segment[i] and "=" not in segment[i]
-    )
 
 
 def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
@@ -2605,43 +2659,63 @@ def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
         forms = file_forms(os.path.join(directory, "x"), None)
         found = next((r for r in rows if matches_file(r, forms, fold=True)), None)
         if found:
-            note = f"the working directory '{directory}' is inside a protected folder"
-            return Verdict(ASK, None, f"{note}: {found.shown()} ({found.layer} layer)")
+            note = (
+                f"the working directory is inside a protected folder: {found.shown()} ({found.layer} layer)"
+            )
+            return Verdict(ASK, None, f"{note}: '{directory}'")  # the rule first: agy cuts long reasons
     return None
 
 
 def home_cd_targets(segments: list[list[str]]) -> set[str]:
-    """The folders a ``cd`` or ``pushd`` reaches through ``~``, ``$HOME`` or ``${HOME}``, read as
-    HOME. The directory walk leaves them unknown (a quoted ``~`` is a folder of that name, and the
-    script may assign HOME), so runners stay opaque after them; the protected check also reads
-    every word in them, which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    """The folders a ``cd`` or ``pushd`` may reach that the directory walk leaves unknown: through
+    ``~``, ``$HOME`` or ``${HOME}`` (read as HOME), a bare ``cd`` (HOME), and a relative operand
+    under each ``CDPATH`` entry the command assigns or the hook inherits. The walk keeps them
+    unknown so runners stay opaque after them; the protected check also reads every word in them,
+    which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    cdpath = [
+        entry
+        for segment in segments
+        for word in segment
+        if word.startswith("CDPATH=")
+        for entry in word[len("CDPATH=") :].split(":")
+    ] + os.environ.get("CDPATH", "").split(":")
+    roots = [os.path.expanduser(home_forms(e)[-1]) for e in cdpath if e and not shell.has_sentinel(e)]
     folders = set()
     for segment in segments:
         argv = directory_verb(segment)
         if not argv or argv[0] not in ("cd", "pushd"):
             continue
-        for word in (w for w in argv[1:] if not w.startswith("-")):
+        operands = [w for w in argv[1:] if not w.startswith("-")]
+        if not operands and argv[0] == "cd":
+            folders.add(os.path.expanduser("~"))
+        for word in operands:
             homed = home_forms(word)[-1]
-            if homed.startswith("~") and not shell.has_sentinel(homed):
+            if shell.has_sentinel(homed):
+                continue
+            if homed.startswith("~"):
                 folders.add(os.path.normpath(os.path.expanduser(homed)))
+            elif not os.path.isabs(homed) and not homed.startswith(("./", "../")):
+                folders.update(os.path.normpath(os.path.join(root, homed)) for root in roots)
     return folders
 
 
-def names_a_protected_file(word: str, protected: list[Rule]) -> bool:
+def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = True) -> bool:
     """Whether a relative word's last part matches, without case, the last part of a protected
     file row (not a folder row): after a ``cd`` the gate cannot follow, ``tee settings.json`` may
     be writing ``.claude/settings.json``."""
-    if shell.has_sentinel(word):
-        return False
+    rows = [r for r in protected if not r.pattern.endswith("/*") and os.path.basename(r.pattern).strip("*")]
+    if shell.has_sentinel(word):  # a glob only where the folder is unknown: a known one is listed
+        if not unknown or not all(shell.kind_of(key) == "glob" for key in shell.sentinels(word)):
+            return False
+        name = os.path.basename(path_glob(word)[0].rstrip("/")).casefold()
+        return any(globs_meet(name, os.path.basename(r.pattern).casefold()) for r in rows)
     name = os.path.basename(word.rstrip("/")).casefold()
-    return any(
-        fnmatch.fnmatchcase(name, os.path.basename(r.pattern).casefold())
-        for r in protected
-        if not r.pattern.endswith("/*") and os.path.basename(r.pattern).strip("*")
-    )
+    return any(fnmatch.fnmatchcase(name, os.path.basename(r.pattern).casefold()) for r in rows)
 
 
 HOME_WORDS = ("$HOME", "${HOME}")
+PWD_TILDE_RE = re.compile(r"^~\+(?:/|$)")  # ``~+``: bash's PWD, the folder the segment runs in
+DIRECTORY_STACK_RE = re.compile(r"^~(?:-|[+-]?\d+)(?:/|$)")  # OLDPWD or a ``dirs`` entry
 
 
 def home_forms(token: str) -> list[str]:
@@ -2710,15 +2784,16 @@ def folder_named(rule: Rule, token: str) -> bool:
     return rule.pattern[:-2].rsplit("/", 1)[-1] + "/" in token
 
 
-def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
+def path_may_match(rule: Rule, token: str, cwd: str | None, whole: bool = False) -> bool:
     """Whether some text in place of the token's substitutions, or some file names for its globs,
-    makes it a path the rule protects."""
+    makes it a path the rule protects; with ``whole`` (a word a command acts on as a whole: a
+    ``cd`` target, a move, a link, a deletion) also the protected folder itself."""
     if not folder_named(rule, token):
         return False
     glob, _ = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     forms += [resolved_prefix(form) for form in forms if os.path.isabs(form)]
-    patterns = rule_patterns(rule)  # protected rows only: compared without case (F-30)
+    patterns = folder_and_patterns(rule) if whole else rule_patterns(rule)  # compared without case (F-30)
     forms, patterns = [form.casefold() for form in forms], [pattern.casefold() for pattern in patterns]
     return any(
         globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}")
@@ -3143,7 +3218,8 @@ def judge_bash(
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
     placed = [(segment, dirs) for segment, _, _, dirs in entries]
-    directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()))
+    homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
+    directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     in_protected = protected_cwd(directories, rules)
     if in_protected:

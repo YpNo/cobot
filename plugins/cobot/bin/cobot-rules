@@ -3459,6 +3459,40 @@ def judge_segment(
     return best
 
 
+WRITING_SCRIPT = "a script that writes files: edit them with Edit or Write, not a script (cobot protocol)"
+PYTHON_RE = re.compile(r"python(?:\d+(?:\.\d+)?)?")
+# what a Python script calls to write a file: open() or .open() with a writing mode, the pathlib
+# writers, and the moves and copies of os and shutil
+PYTHON_WRITES_RE = re.compile(
+    r"\bopen\([^,)]*,\s*(?:mode\s*=\s*)?[rbt]*['\"][rbt]*[wax+]"
+    r"|\.open\(\s*(?:mode\s*=\s*)?['\"][rbt]*[wax+]"
+    r"|\.write_(?:text|bytes)\("
+    r"|\bshutil\.(?:copy\w*|move)\("
+    r"|\bos\.(?:replace|rename)\("
+)
+
+
+def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
+    """Whether a segment edits files through an interpreter: a Python script read from stdin or
+    ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
+    diff the owner sees and whose path the rules judge; a script is opaque to both, whatever the
+    host suggests. A script that only reads keeps its ask."""
+    argv = strip_wrappers(segment)
+    if not argv:
+        return False
+    head = argv[0].lower()
+    if head == "perl":
+        return any(re.fullmatch(r"-[a-zA-Z]*i\S*", word) for word in argv[1:] if not word.startswith("--"))
+    if not PYTHON_RE.fullmatch(head):
+        return False
+    words = argv[1:]
+    code = [show(words[words.index("-c") + 1], holes)] if "-c" in words[:-1] else []
+    reads_stdin = "-" in words or not [w for w in words if not w.startswith("-")]
+    if reads_stdin and not code:
+        code = [doc.body for doc in unit.heredocs]
+    return any(PYTHON_WRITES_RE.search(text) for text in code)
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -3490,6 +3524,8 @@ def judge_bash(
     for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
+        if writes_by_script(segment, unit, holes):
+            verdict = Verdict(DENY, None, WRITING_SCRIPT)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

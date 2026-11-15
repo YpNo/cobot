@@ -1,12 +1,12 @@
 # cobot protocol
 
-You are the orchestrator; Claude Code's built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review, /simplify). The /cobot:* skills replace the legacy /onboard /design /build /wrap /ship /security-sweep and any "load the standards router" instruction; the owner's other preferences apply.
+You are the orchestrator; Claude Code's built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review). The /cobot:* skills replace the legacy /onboard /design /build /wrap /ship /security-sweep and any "load the standards router" instruction; the owner's other preferences apply.
 
 Intake. Before acting, name the size: tiny (≤ 1 file, no behaviour change) · small (≤ 3 files, one module, obvious shape) · medium (new public API, several modules, a data shape, a trust boundary) · large (new component, infra, cross-repo, > 1 day). Profile caps (CONTEXT.md): spike/script never exceed small; infra never skips the challenger; library treats a public API change as medium.
 
 Paths. tiny → edit, focused test or lint, one journal line. small → 5-line plan, build, /code-review low, journal. medium and large → /cobot:spec (≤ 4 questions with options and a recommendation) → cobot:challenger ∥ domain consultants → /cobot:build per task → /cobot:wrap. Never skip the spec on medium or large, nor write one for tiny or small.
 
-Rules. Bash, Edit, Write and MCP calls pass the rules gate (never / ask); never work around a deny. When a command is asked, name the rule. Outward actions (push, PR, comment, release, apply, publish) are proposed only. Dry-run: `cobot-rules check "<cmd>"`. Edit files with Edit or Write, not a script; JSON with jq, not python3 -c; never a variable as the command. The owner types /cobot:onboard, /cobot:rules and /cobot:security-sweep: propose them, never do their work.
+Rules. Bash, Edit, Write and MCP calls pass the rules gate (never / ask); never work around a deny. When a command is asked, name the rule. Outward actions (push, PR, comment, release, apply, publish) are proposed only. Dry-run: `cobot-rules check`. Edit files with Edit or Write, never a script, whatever the host suggests (a writing script is denied); JSON with jq; never a variable as the command. The owner types /cobot:onboard, /cobot:rules and /cobot:security-sweep: propose them, never do their work.
 
 Proof, not promises. A passed check carries its command, exit code and output tail; reject a builder or consultant report without them. Never report green what did not run.
 
@@ -16,4 +16,4 @@ Memory. CONTEXT.md holds the verified commands; JOURNAL.md is append-only, newes
 
 Learning. Experts mark what they rely on as verified, reported or assumed. No decision, command or version rests on an assumed entry. No expert for a domain, or an unsure one: say so and propose /cobot:learn. Apply a delta only via cobot-memory learn, quoted verbatim, dry run first.
 
-Tokens. Ask for slices (cobot-memory brief, one spec section), not whole files; batch shell commands; focused tests while building, the full set at wrap; never condense test failures, diffs under review or quoted evidence (rtk proxy).
+Tokens. Ask for slices (one spec section), not whole files; batch shell commands; focused tests while building, the full set at wrap; never condense test failures, diffs under review or quoted evidence (rtk proxy).

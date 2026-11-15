@@ -286,3 +286,13 @@ Proof: g1, g2, b1, s1, o1 ok; h2 FAILS (a workspace .agents/hooks.json group nam
 Open: h2 is a BLOCKER for the PR: any repository can commit .agents/hooks.json or .agent/hooks.json with {"cobot": {"enabled": false}} and the gate is gone; the fix is the owner's call (a per-install group name, a workspace scan, an upstream agy issue). Unknown: how agy combines an auto_approve from a workspace hook with cobot's deny (not in the smoke yet).
 Next: owner decides the h2 fix; then build it, add the precedence check to the smoke, owner re-runs it.
 verified: a6ac3df · pytest+cov, ruff, shellcheck, sh -n, markdownlint, smoke-agy (owner, 2026-11-15)
+
+## 2026-11-15 — Antigravity: the hook-name bypass closed
+
+Changed: 6420ccc install.sh --agy stages a copy with the hook group renamed cobot-<16 random hex> (od from /dev/urandom), validates and installs it, removes it; the agy brief adds a warning line after the agy section naming workspace hooks.json, plugins.json or plugins/ in .agents, .agent, _agents, _agent from each workspace up to its repository root (five shown); the smoke refuses an installed group still named cobot and gains h3 (a workspace auto_approve beside cobot's deny) and s2 (the warning); README, ADR-0007, mechanics, configuration, harnesses, CHANGELOG.
+Why: smoke h2 (2026-11-15); the owner chose a random name plus the scan.
+Proof: tests written first and seen failing (install 6, session 7); the real agy 1.5.9 installed the staged copy into a throwaway HOME ("hooks: 1 installed (cobot-44c9730ef1d2c1c5)") and the staged folder was gone after; full suite 98.68 %, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Decided in build: the name changes at every install (a refresh too); a bare agy plugin install of the checkout keeps the guessable name, so the README says to install through the script; the warning sits in the never-cut head of the brief.
+Open: the owner re-runs the smoke (h2 must now deny; h3 decides whether a workspace auto_approve can beat cobot's deny); the upstream agy issue (hook groups not namespaced per plugin) is the owner's to file.
+Next: owner pushes, runs ./install.sh --agy and the smoke again; then the harness row, wrap and the PR.
+verified: 6420ccc · pytest+cov, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, staged agy install (throwaway HOME)

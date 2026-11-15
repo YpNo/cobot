@@ -238,3 +238,12 @@ Proof: live docs confirm allow defers and auto_approve widens, so the gate desig
 Open: whether PreToolUse fires for an invoke_subagent child stays the smoke's (T08); nothing built yet.
 Next: owner reviews the spec; then /cobot:build antigravity from T01.
 verified: 4eeb4d0 · source checks, challenger pass 3, markdownlint, check-plugin
+
+## 2026-11-15 — Antigravity T01: the tree split
+
+Changed: Claude Code's nine agents moved to plugins/cobot/claude-agents/, listed by file in .claude-plugin/plugin.json (agents/ is left to agy); .antigravity-plugin/plugin.json with the same name, version, description, license, repository; check-plugin gains manifest agreement, manifest list = folder, 24 000-byte skill bodies and a strict-YAML frontmatter check (stdlib, the subset cobot uses), and is split into small functions; install.sh's overlap report, test_cli_flags, the mechanics note, architecture and the design tree read claude-agents/; onboard's argument-hint quoted, contribute's description folded.
+Why: spec antigravity T01; agy loads .antigravity-plugin/ first and skips any frontmatter its strict parser rejects.
+Proof: the strict-YAML check flags exactly what PyYAML 6.0.3 rejects in the tree (onboard, contribute; the learn template is not a loaded skill) and every test case was checked against it; agy 1.5.9 plugin validate: 30 skills (onboard now loads), 0 agents, exactly the one hooks/hooks.json warning, nothing written to a throwaway HOME; claude plugin validate --strict (plugin and marketplace) passes; full suite 98.70 %, ruff, shellcheck, markdownlint, check-plugin, memory check exit 0.
+Open: Claude Code listing the nine agents from the manifest rests on validate and spike S2b (2026-11-12), not re-run live; the twin check (every claude-agents/<n>.md has agents/<n>.md) lands with T02.
+Next: T02 (lane a) and T03 (lane b, risk, test first).
+verified: a597651 · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, memory check, PyYAML cross-check

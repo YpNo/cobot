@@ -2468,9 +2468,22 @@ def protected_file_touched(
         for index, token in enumerate(segment):
             if token.startswith("-") or index == program:
                 continue
-            if word_touches(token, cwd, protected, relocating, anchors):
+            if any(word_touches(form, cwd, protected, relocating, anchors) for form in home_forms(token)):
                 return token
     return None
+
+
+HOME_WORDS = ("$HOME", "${HOME}")
+
+
+def home_forms(token: str) -> list[str]:
+    """The word, and with a leading ``$HOME`` or ``${HOME}`` read as ``~``: the gate knows HOME's
+    value, so ``tee $HOME/.gemini/config/x`` is the ``~/`` path. Both are checked, so a command
+    that assigns HOME first only asks more."""
+    for word in HOME_WORDS:
+        if token == word or token.startswith(word + "/"):
+            return [token, "~" + token[len(word) :]]
+    return [token]
 
 
 PYTHONS = frozenset({"python", "python3"})

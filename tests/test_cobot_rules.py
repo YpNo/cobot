@@ -4007,3 +4007,34 @@ def test_caseFold_allowRowsNeverFold(rules, layers, tmp_path):
     owner.write_text("ask Bash(git clean*)\nallow Bash(git clean -n*)\n")
     assert decide(rules, "GIT clean -n")[0].decision is None
     assert decide(rules, "GIT clean -fdx")[0].decision == "ask"
+
+
+# ---------------------------------------------------------------- residuals: HOME
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tee $HOME/.gemini/config/settings.json",
+        "tee ${HOME}/.gemini/config/x",
+        'tee "$HOME/.gemini/jetski/x"',
+        "rm -r $HOME/.gemini/config",
+        "echo x > $HOME/.gemini/config/x",
+        "cd $HOME/.gemini/config && ls",
+        "mv $HOME/.gemini /tmp/g",
+        "cp x ${HOME}/.gemini/antigravity-cli/settings.json",
+    ],
+)
+def test_homeVariable_readsLikeTilde(rules, fake_home, command):
+    _, home = fake_home
+    tilde = command.replace("${HOME}", "~").replace("$HOME", "~")
+    assert judge_in(rules, tilde, home / "ws")[0].decision == "ask", tilde
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command", ["tee $HOME/notes.md", "cat ${HOME}/.bashrc", "ls $HOMEDIR/.gemini/config"]
+)
+def test_homeVariable_ordinaryPaths_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command

@@ -2433,7 +2433,7 @@ def word_touches(
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
         return (pathlike or bare_glob) and any(path_may_match(r, token, cwd) for r in protected)
     forms = file_forms(token, cwd)
-    if any(matches_file(r, forms) for r in protected):
+    if any(matches_file(r, forms, fold=True) for r in protected):
         return True
     if not relocating:
         return False
@@ -2522,12 +2522,11 @@ def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
     makes it a path the rule protects."""
     if not folder_named(rule, token):
         return False
-    glob, fold = path_glob(os.path.expanduser(token))
+    glob, _ = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     forms += [resolved_prefix(form) for form in forms if os.path.isabs(form)]
-    patterns = rule_patterns(rule)
-    if fold:
-        forms, patterns = [form.lower() for form in forms], [pattern.lower() for pattern in patterns]
+    patterns = rule_patterns(rule)  # protected rows only: compared without case (F-30)
+    forms, patterns = [form.casefold() for form in forms], [pattern.casefold() for pattern in patterns]
     return any(
         globs_meet(form, pattern) or globs_meet(form, f"*/{pattern}")
         for form in forms
@@ -2893,6 +2892,21 @@ def known_values(segment: list[str], holes: dict) -> list[str] | None:
     return valued if changed else None
 
 
+def program_folded(segment: list[str]) -> list[str] | None:
+    """The segment with its program word, and each wrapper's before it, in lower case; None when
+    nothing changes. A case-insensitive volume (macOS) runs ``GIT`` as ``git``; the arguments keep
+    their case (``--FORCE`` is not ``--force``). Judged beside the segment, so it only adds an
+    ask or a deny: ``outranks`` keeps the stricter (F-30)."""
+    folded, changed = list(segment), False
+    for _ in segment:
+        program = strip_wrappers(folded)
+        if not program or program[0] == program[0].lower():
+            break
+        at = len(folded) - len(program)
+        folded[at], changed = folded[at].lower(), True
+    return folded if changed else None
+
+
 def judge_segment(
     segment: list[str],
     unit: shell.Scan,
@@ -2906,6 +2920,7 @@ def judge_segment(
     valued = known_values(segment, holes) if with_values else None
     if valued is not None:
         variants.append(valued)
+    variants += [folded for folded in map(program_folded, variants) if folded is not None]
     best: tuple[Verdict, list[Rule]] = (Verdict(None, None, "no rule matched"), [])
     for variant in variants:
         judge = judge_holed if hole_keys(variant) else judge_words
@@ -2979,11 +2994,15 @@ def rule_patterns(rule: Rule) -> list[str]:
     return list(dict.fromkeys([pattern, os.path.realpath(os.path.expanduser("~")) + rule.pattern[1:]]))
 
 
-def matches_file(rule: Rule, forms: list[str]) -> bool:
+def matches_file(rule: Rule, forms: list[str], fold: bool = False) -> bool:
     """A form matches the pattern, at any depth for a relative one, with ``~`` read both ways
     (rule_patterns); a folder row (``<dir>/*``) also protects the folder itself, which a move or
-    a link would carry away."""
+    a link would carry away. ``fold`` compares without case: a case-insensitive volume (macOS)
+    opens ``.Claude/settings.json`` as ``.claude/settings.json`` (F-30)."""
+    if fold:
+        forms = [form.casefold() for form in forms]
     for pattern in rule_patterns(rule):
+        pattern = pattern.casefold() if fold else pattern
         patterns = [pattern, pattern[:-2]] if pattern.endswith("/*") else [pattern]
         for form in forms:
             for each in patterns:
@@ -2994,8 +3013,14 @@ def matches_file(rule: Rule, forms: list[str]) -> bool:
 
 def judge_file(tool: str, path: str, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
     forms = file_forms(path, cwd)
-    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms)]
+    matched = [r for r in rules if applies(r, tool, agent) and matches_file(r, forms, restrictive(r))]
     return resolve(matched, "no rule matched")
+
+
+def restrictive(rule: Rule) -> bool:
+    """``never`` and ``ask`` rows read a path without case; an ``allow`` row never does, so a
+    fold can only add an ask or a deny (F-30)."""
+    return rule.decision != "allow"
 
 
 def mcp_words(tool: str) -> list[str]:

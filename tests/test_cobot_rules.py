@@ -3930,3 +3930,61 @@ def test_defaultAndOwnerRows_keepTheirText(rules, layers):
         .reason()
         .startswith("cobot rule: never Bash(git push --force*)")
     )
+
+
+# ---------------------------------------------------------------- residuals: F-30 case
+
+
+@pytest.mark.parametrize(
+    "name", [".Claude/settings.json", ".CLAUDE/SETTINGS.JSON", ".claude/Settings.local.json"]
+)
+def test_caseFold_fileTools_denyAProtectedPathInAnyCase(rules, tmp_path, name):
+    loaded, _, _ = rules.load_rules(None)
+    for tool in ("Write", "Edit"):
+        verdict = rules.judge(tool, {"file_path": str(tmp_path / name)}, str(tmp_path), loaded, None)
+        assert verdict.decision == "deny", (tool, name)
+
+
+def test_caseFold_homeRow_deniesACasedHomePath(rules, fake_home):
+    loaded, home = fake_home
+    verdict = rules.judge(
+        "Write", {"file_path": str(home / ".GEMINI" / "Config" / "x")}, str(home), loaded, None
+    )
+    assert verdict.decision == "deny"
+
+
+@pytest.mark.parametrize("command", ["tee .Claude/settings.json", "cp x .CLAUDE/settings.json"])
+def test_caseFold_shellWords_askOnACasedProtectedPath(rules, tmp_path, command):
+    assert judge_in(rules, command, tmp_path)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "GIT push --force origin main",
+        "Git push --force origin main",
+        "/usr/bin/GIT push --force origin main",
+        "NICE GIT push --force origin main",
+        "ENV GIT push --force origin main",
+        "FOO=1 GIT push --force origin main",
+    ],
+)
+def test_caseFold_programWord_deniesLikeTheLowercaseCommand(rules, command):
+    assert decide(rules, command)[0].decision == "deny", command
+
+
+def test_caseFold_argumentsKeepTheirCase(rules):
+    assert decide(rules, "git push --FORCE origin main")[0].decision != "deny"
+
+
+def test_caseFold_allowRowsNeverFold(rules, layers, tmp_path):
+    owner, project = layers
+    project.write_text("ask Write(*/notes/*)\n")
+    owner.write_text("allow Write(*/Notes/*)\n")
+    loaded, _, _ = rules.load_rules(None)
+    for name in ("notes", "NOTES"):
+        verdict = rules.judge("Write", {"file_path": str(tmp_path / name / "a")}, str(tmp_path), loaded, None)
+        assert verdict.decision == "ask", name
+    owner.write_text("ask Bash(git clean*)\nallow Bash(git clean -n*)\n")
+    assert decide(rules, "GIT clean -n")[0].decision is None
+    assert decide(rules, "GIT clean -fdx")[0].decision == "ask"

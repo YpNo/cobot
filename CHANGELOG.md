@@ -139,6 +139,11 @@ All notable changes to this project are documented here. The format follows
   in place, one command over many files; the ui procedure computes every colour pair in one `jq`
   call; the read list gains bare `pwd` only (a `cd` keeps asking). `consult-fan-out` fails a run
   whose consultant falls through to the catch-all ask.
+- An Edit or Write through a symlinked folder or file no longer misses a `never` rule (F-28):
+  `never Write(*/vault/*)` denied `vault/key.txt` but not `door/key.txt` with `door -> vault`. The
+  gate judges the path as written, with its parent resolved and fully resolved, and the strictest
+  rule wins; a `~` rule also matches HOME resolved when HOME is a symlink. The Bash protected-file
+  check judges the same forms, and resolves the folders before a glob's first hole (`cat door/*`).
 
 ## [0.2.0] - 2026-11-14
 

@@ -3802,3 +3802,84 @@ def test_agySelf_protectedFolderItself_isProtectedForFileTools(rules, fake_home)
     loaded, home = fake_home
     verdict = rules.judge("Write", {"file_path": str(home / ".gemini" / "config")}, str(home), loaded, None)
     assert verdict.decision == "deny"
+
+
+# ---------------------------------------------------------------- symlinked paths, F-28
+
+
+@pytest.fixture
+def vault(tmp_path, layers):
+    """``vault/key.txt``, a folder link ``door -> vault`` and a file link ``alias -> vault/key.txt``,
+    with an owner ``never Write(*/vault/*)``; returns the folder holding them."""
+    owner, _ = layers
+    owner.write_text("never Write(*/vault/*)\n")
+    (tmp_path / "vault").mkdir()
+    (tmp_path / "vault" / "key.txt").write_text("secret\n")
+    (tmp_path / "door").symlink_to("vault")
+    (tmp_path / "alias").symlink_to("vault/key.txt")
+    return tmp_path
+
+
+def judge_write(rules, path, cwd=None):
+    loaded, _, _ = rules.load_rules(None)
+    return rules.judge("Write", {"file_path": str(path)}, str(cwd) if cwd else None, loaded, None)
+
+
+@pytest.mark.parametrize("name", ["vault/key.txt", "door/key.txt", "alias", "door/new.txt"])
+def test_judgeFile_pathThroughASymlink_matchesTheResolvedForm(rules, vault, name):
+    assert judge_write(rules, vault / name).decision == "deny", name
+    assert judge_write(rules, name, cwd=vault).decision == "deny", name
+
+
+def test_judgeFile_ruleNamingTheLink_matchesThePathAsWritten(rules, vault, layers):
+    owner, _ = layers
+    owner.write_text("never Write(*/door/*)\n")
+    assert judge_write(rules, vault / "door" / "key.txt").decision == "deny"
+    assert judge_write(rules, "door/key.txt", cwd=vault).decision == "deny"
+    assert judge_write(rules, vault / "vault" / "other.txt").decision is None
+
+
+@pytest.fixture
+def linked_home(tmp_path, layers, monkeypatch):
+    """HOME a symlink ``home -> real-home``, with an owner ``never Write(~/x)`` that has no relative
+    twin; returns the real home."""
+    owner, _ = layers
+    owner.write_text("never Write(~/x)\n")
+    real = tmp_path / "real-home"
+    real.mkdir()
+    (tmp_path / "home").symlink_to(real)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    return real
+
+
+def test_judgeFile_symlinkedHome_tildeRuleMatchesEveryForm(rules, tmp_path, linked_home):
+    real = linked_home
+    for path in ("~/x", tmp_path / "home" / "x", real / "x"):
+        assert judge_write(rules, path).decision == "deny", path
+    assert judge_write(rules, real / "y").decision is None
+
+
+def test_judgeFile_symlinkedHome_folderRowProtectsTheRealFolderItself(rules, tmp_path, linked_home, layers):
+    owner, _ = layers
+    owner.write_text("never Write(~/vault/*)\n")
+    real = linked_home
+    (real / "vault").mkdir()
+    for path in ("~/vault", real / "vault", real / "vault" / "k"):
+        assert judge_write(rules, path).decision == "deny", path
+    assert judge_write(rules, real / "vaults").decision is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["echo x > door/key.txt", "cat ./alias", "cat door/*", "cat door/$(echo key.txt)"],
+)
+def test_protectedFileTouched_tokenThroughASymlink_asks(rules, vault, command):
+    verdict = judge_in(rules, command, vault)[0]
+    assert verdict.decision == "ask" and "protected file" in verdict.reason(), command
+
+
+def test_protectedFileTouched_symlinkedHome_tildeRuleMatchesTheRealPath(rules, tmp_path, linked_home):
+    real = linked_home
+    for command in ("cat ~/x", f"cat {real}/x", f"cat {real}/$(echo x)"):
+        assert judge_in(rules, command, tmp_path)[0].decision == "ask", command
+    assert judge_in(rules, f"cat {real}/y", tmp_path)[0].decision is None

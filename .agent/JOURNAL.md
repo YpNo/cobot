@@ -247,3 +247,13 @@ Proof: the strict-YAML check flags exactly what PyYAML 6.0.3 rejects in the tree
 Open: Claude Code listing the nine agents from the manifest rests on validate and spike S2b (2026-11-12), not re-run live; the twin check (every claude-agents/<n>.md has agents/<n>.md) lands with T02.
 Next: T02 (lane a) and T03 (lane b, risk, test first).
 verified: a597651 · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, memory check, PyYAML cross-check
+
+## 2026-11-15 — Antigravity T02 and T03: the agents and the gate under agy
+
+Changed: T02 (5097dda) scripts/sync-agents.py writes the nine agy agents from claude-agents/ (tools mapped to both file-tool families, sonnet as flash, learner on pro, mainAgent false; consultant and learner without a command tool, commandExecutionPolicy "off", a line saying so; builders told to read their language skill; the report-hook sentence rewritten); bin/_cobot_agy.py holds the tables and the call translation; check-plugin holds twins, known agy tool names, tiers, mainAgent. T03 (269e3ca) cobot-rules gate --runtime agy (load_rules_agy over every workspacePaths entry, judge_plan, gate_agy), hooks/gate-agy.sh (stdin buffered, 8 s deadline, every failure a deny with exit 0), root hooks.json group cobot, PreToolUse ".*", timeout 10.
+Why: spec antigravity T02 and T03 (risk, test first).
+Proof: tests written first and seen failing (test_agents_sync 18, test_gate_agy 73 incl. every shim failure path as a subprocess, the corpus scan for auto_approve, a symlinked HOME); my review found a real bypass first (the file forms dropped the path as written, so a ~ rule missed under a symlinked HOME), test then fix; agy 1.5.9 plugin validate: skills 30, agents 9, hooks 1, the one hooks/hooks.json warning, nothing written to a throwaway HOME; claude plugin validate --strict (plugin, marketplace); full suite 2354 passed, 98.63 %; ruff, shellcheck, markdownlint, check-plugin, sync --check.
+Decided in build: SessionStart joins hooks.json with T05, whose command it runs; the gate's in-process failure denies under agy (Claude Code's asks), matching the shim; a relative run_command Cwd asks; the agy path is judged in three forms, not only parent-resolved.
+Open: whether PreToolUse fires inside an invoke_subagent child or a workflow agent is T08's; F-28 (the Claude Code gate misses a never rule through a symlinked folder) belongs to its own branch from main.
+Next: T04 (self-protection rows, lane b), T05 and T06 (lane a).
+verified: 269e3ca · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check

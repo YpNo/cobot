@@ -267,3 +267,13 @@ Decided in build: `agy` and `agy *` rather than the spec's `agy*`, which also ma
 Open: whether PreToolUse fires inside an invoke_subagent child or a workflow agent, and whether agy shows the injectSteps brief, are T08's; README's `allow Bash(agy plugin validate*)` owner line and the "no agy session open, clone at a tag" notes land with T07.
 Next: T07 (version 0.3.0, release.yml manifest check, ADR-0007, mechanics and harness docs, README, smoke-agy.sh), then the owner's smoke run (T08).
 verified: 63a3542 · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check
+
+## 2026-11-15 — Antigravity T07: version, record, smoke script
+
+Changed: version 0.3.0 in both manifests and the marketplace; release.yml greps the Antigravity manifest too; ADR-0007 and the decision 1 amendment; docs/reference/antigravity-mechanics.md (agy 1.5.9 facts, each with its source); docs/harnesses.md (one row per runtime and version); README Antigravity section with the named gaps and the `allow Bash(agy plugin validate*)` owner line; architecture rows (adapter, agy agents, security note) and configuration rows (`--agy`, `--check`, COBOT_GATE_DEADLINE, the MCP config files read); wrap and spec say a reviewer that did not run is `not run`, never clean (E8); scripts/spikes/smoke-agy.sh (nine checks, S4 not run).
+Why: spec antigravity T07.
+Proof: sh -n and shellcheck on the smoke script; markdownlint over every .md; check-plugin, sync-agents --check; claude plugin validate --strict (plugin, marketplace); agy 1.5.9 validate with a throwaway HOME: skills 30, agents 9, hooks 1, one warning; full suite 98.67 %.
+Decided in build: the harness record splits Claude Code by named run (2.1.322 eval run, 2.1.311 validate, the 2026-11-06 spikes), so a cell is ok only where a run checked it; no run has checked the Claude Code gate inside a subagent, so that cell says not run; the CHANGELOG stays [Unreleased] (the A2UI knowledge PR is 0.3.0 too); the README's clone command names v0.3.0, which exists once tagged.
+Open: T08, the owner's smoke run, fills the Antigravity row before the PR; the smoke script has not run anywhere yet (it needs a signed-in agy and the real HOME).
+Next: owner pushes feat/antigravity, runs ./install.sh --agy then sh scripts/spikes/smoke-agy.sh, and pastes the result lines; then the harness row, wrap and the PR.
+verified: 356f882 · pytest+cov, ruff, shellcheck, sh -n, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check

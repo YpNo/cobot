@@ -19,19 +19,22 @@ governance: docs/01-decisions.md   # the owner's decisions are this repository's
 ## Verified commands
 | purpose | command | result | verified |
 |---|---|---|---|
-| tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.70 %) | 2026-11-14 |
-| lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-14 |
-| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-14 |
-| markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-14 |
-| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-14 |
-| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-14 |
-| plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-14 |
-| memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-14 |
+| tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.68 %, 2473 tests) | 2026-11-15 |
+| lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-15 |
+| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-15 |
+| markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-15 |
+| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-15 |
+| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-15 |
+| plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-15 |
+| memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-15 |
+| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 (in sync: all) | 2026-11-15 |
+| agy validation (throwaway HOME) | `HOME=$(mktemp -d) agy plugin validate plugins/cobot` | passed, the one hooks/hooks.json warning | 2026-11-15 |
+| agy staged install (throwaway HOME) | `HOME=$(mktemp -d) ./install.sh --agy` | exit 0, group cobot-<random> | 2026-11-15 |
 | evals (paid, CI) | `gh workflow run ci.yml -f evals=true [-f cases=<case>]` | 16 of 17 (run 43584857035) | 2026-11-14 |
 
 ## Constraints
 - nothing writes to `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills`, `~/.claude/settings.json` (ADR-0003)
-- the gate never emits `allow`; any failure blocks (exit 2 in the shim)
+- the Claude Code gate never emits `allow`; any failure blocks (exit 2 in the shim). Under agy it answers `allow` (no opinion), `force_ask` or `deny`, never `auto_approve`, and every failure prints a deny (exit 0)
 - agents never write `.agent/`; only the orchestrator and wrap do
 - commits: Conventional Commits, no Co-Authored-By; PR bodies never mention Claude Code
 - coverage floor 85 % on `bin/`; check-plugin holds the size caps
@@ -49,12 +52,13 @@ Carried over, not re-run; the brief leaves them out.
 | evals, local (paid; needs `PATH="$PWD/bin:$PATH"`) | `cd plugins/cobot && claude plugin eval . --runs 1 --ablation none --no-publish --allow-tools Bash Write Edit` | carried over, not re-run | 2026-11-08 (journal) |
 | R1 spikes (owner's terminal) | `sh scripts/spikes/spike-r1.sh` | carried over, not re-run | 2026-11-06 (journal) |
 | coexistence spikes (owner's terminal) | `sh scripts/spikes/spike-coexistence.sh` | carried over, not re-run | 2026-11-06 (journal) |
+| agy smoke (owner's terminal, signed in, real HOME) | `./install.sh --agy && sh scripts/spikes/smoke-agy.sh` | second run: every runnable check ok; w1, m1, S4 not run | 2026-11-15 |
 
 ## Shape
 - `plugins/cobot/` is the only plugin for now; domain plugins come later
 - `bin/cobot-rules` (gate, `_cobot_make`), `bin/cobot-memory` (brief, learn and promote, knowledge, check, init, journal, findings; `_cobot_knowledge`), `bin/cobot-deps` (currency, `_cobot_deps`), `bin/cobot-session` (SessionStart payload)
 - `hooks/` are thin shims around `bin/`; all logic is tested Python
 - skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute; onboard, rules, security-sweep user-only), knowledge (lang-*, fw-*, expert-*), the consult router (domains under `skills/consult/domains/`), security-sweep (forked)
-- agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder
+- agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder; Claude Code's in `claude-agents/`, agy's in `agents/` (written by `scripts/sync-agents.py`; edit the Claude one)
 - people read `README.md`; agents and architects read `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`
 - design: `docs/02-design.md`; decisions: `docs/01-decisions.md`, `docs/adr/`; platform facts: `docs/reference/claude-code-mechanics.md`; open inputs: `docs/design-inputs/`; decided ones: `docs/history/`

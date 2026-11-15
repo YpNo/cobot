@@ -295,4 +295,23 @@ plugins written outside the gate); in full in the 2026-11-12 journal entry.
 
 ## Converge
 
-pending
+2026-11-15, at the wrap. Every story's acceptance command passed today:
+1. `check-plugin` exit 0; `test_check_plugin`, `test_cli_flags` 63 passed; both validators (agy:
+   the one warning).
+2. `test_agents_sync -k agents_` 18 passed; `sync-agents --check` in sync.
+3. `test_gate_agy` passed; shellcheck on the shims.
+4. `test_cobot_rules -k agySelf` passed.
+5. `test_cobot_session -k agy` passed.
+6. `test_install -k agy` passed; shellcheck `install.sh`.
+7. `test_cobot_memory -k agyLegacy` 2 passed.
+8. markdownlint; `sh -n` and shellcheck on the smoke script; the harness row is filled from the
+   owner's second run.
+
+Built beyond the spec, from the smoke: a random hook group name per install and the brief's
+workspace warning (h2: a repository's `.agents/hooks.json` could switch a group named `cobot`
+off); the gate's own-tool exemption (o1).
+
+Missing, named rather than built:
+- no cobot agent was run under agy (harness Agents: not run);
+- `run_workflow`'s inner calls and the MCP name form were not reached (w1, m1);
+- S4 not run.

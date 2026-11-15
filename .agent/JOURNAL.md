@@ -62,3 +62,12 @@ Proof: two read-only reviews of the transcripts; each claim re-checked here: cob
 Open: F-33 and F-34 stay open on main until security/gate-f33-f34 lands (paused, review fold not built).
 Next: owner pushes docs/findings-dogfood-1115 and opens its PR; the owner picks which findings become the next spec.
 verified: 704f936 · markdownlint, cobot-memory check
+
+## 2026-11-15 — gate F-33 and F-34: deletions, folder options, project text off stderr
+Changed: spec gate-f33-f34 (challenger SOUND WITH CHANGES, eight points; independent review, two blockers and three majors), all folded with tests: project warnings name their line only (F-34); deleting finds, gio, and HOME or / as a deleted folder; folder options of tar, unzip, patch and git as targets and bases, linear with a cap of eight; what a find runs judged as a command, -execdir in each start path and its parent; copies and moves that may land on a protected folder's parent; = values checked as paths; docs, CHANGELOG, F-33 and F-34 closed; rebased onto main 349a940.
+Why: the owner asked to work on F-33 and F-34 (2026-11-15).
+Proof: full suite 2778 passed, 98.68 %; ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate; the review found no regression across the 1 700-string corpus; noise against main: only git -C ~ and find -exec rm -rf newly ask (named known asks); 16 folder options judge in well under 2 s.
+Decided in build: cp a ~ stays silent (a merge asks only when a source may land on the parent); -execdir follows the start paths and their parents, not deeper entries.
+Open: residuals named in the spec (extracting after a cd into a protected folder, busybox find and fd, variables naming a protected folder, very long commands); the safety classifier interrupted this work three times, so the fold went in small edits.
+Next: owner pushes security/gate-f33-f34 and docs/expert-gha-learned, one PR each.
+verified: dc82546 · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, noise check

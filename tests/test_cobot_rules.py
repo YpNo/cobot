@@ -4329,3 +4329,235 @@ def test_bypassFold_protectedCwdReason_putsTheRuleFirst(rules, claude_dir):
     folder = claude_dir / ".gemini" / "config" / "plugins"
     reason = judge_in(rules, "ls", folder)[0].reason()
     assert reason.index("never Edit(~/.gemini/config/*)") < reason.index(str(folder))
+
+
+# ---------------------------------------------------------------- F-34 project text on stderr
+
+
+@pytest.mark.parametrize("line", ["ask Bash(approve-it-is-safe", "allow Bash(approve-it-is-safe*)"])
+def test_projectWarning_namesItsLineNeverItsText(rules, layers, line):
+    _, project = layers
+    project.write_text(f"# x\n{line}\n")
+    _, warnings, _ = rules.load_rules(None)
+    (warning,) = [w for w in warnings if w.startswith("project:")]
+    assert warning.startswith("project:2: ") and warning.endswith("ignored")
+    assert "approve" not in warning
+
+
+def test_ownerWarning_keepsItsText(rules, layers):
+    owner, _ = layers
+    owner.write_text("ask Bash(kubectl\n")
+    _, warnings, _ = rules.load_rules(None)
+    assert any(w.endswith("ignored: ask Bash(kubectl") for w in warnings)
+
+
+def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_path):
+    _, project = layers
+    project.write_text("ask Bash(approve-it-is-safe\n")
+    rules.gate(json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": str(tmp_path)}))
+    rules.gate_agy(
+        json.dumps(
+            {
+                "hookEventName": "PreToolUse",
+                "toolCall": {"id": "t", "name": "run_command", "args": {"CommandLine": "ls"}},
+                "workspacePaths": [str(project.parent.parent)],
+            }
+        )
+    )
+    err = capsys.readouterr().err
+    assert "unreadable rule ignored" in err and "approve" not in err
+
+
+# ---------------------------------------------------------------- F-33 deletions and folder options
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find ~/.gemini -delete",
+        "find ~ -name .gemini -exec rm -r {} +",
+        "find ~/.gemini -execdir rm {} \\;",
+        "find ~/.gemini -ok rm {} \\;",
+        "find -L ~/.gemini -maxdepth 2 -delete",
+        "gio trash ~/.gemini",
+        "gio remove ~/.gemini",
+        "gio move ~/.gemini /tmp/g",
+        "rm -r ~",
+        "rm -r /",
+        "nice find ~ -delete",
+    ],
+)
+def test_f33_deletionReachingAProtectedFolder_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find . -name '*.pyc' -delete",
+        "find src -type f -delete",
+        "rm -r build",
+        "find ~/src -name x -print",
+        "gio open README.md",
+        "find . -exec grep -l foo {} +",
+    ],
+)
+def test_f33_ordinaryDeletions_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -C ~/.gemini -xf /tmp/e.tar config/x",
+        "tar --directory=$HOME/.gemini -xf /tmp/e.tar",
+        "tar --directory ~/.gemini -xf /tmp/e.tar",
+        "tar -xf /tmp/e.tar -C~/.gemini",
+        "tar -C /tmp -C ~/.gemini -xf e.tar",
+        "unzip -d ~/.gemini /tmp/e.zip",
+        "unzip /tmp/e.zip -d ~/.gemini",
+        "git -C ~/.gemini apply /tmp/p",
+        "git -C $HOME/.gemini checkout .",
+        "patch -d ~/.gemini -p1 -i /tmp/p",
+        "patch --directory=~/.gemini -p1 -i /tmp/p",
+        "tar -C ~ -xf /tmp/e.tar .gemini/config/x",
+    ],
+)
+def test_f33_folderOption_namingAProtectedFolderOrItsParent_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -C src -xf a.tar",
+        "git -C src status",
+        "unzip -d out a.zip",
+        "tar -cf a.tar -C src .",
+        "patch -d src -p1 -i p",
+    ],
+)
+def test_f33_ordinaryFolderOptions_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- F-33 challenger folds
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find -delete ~/.gemini",
+        "find . -name x -delete ~/.gemini",
+        "find -name '*' -delete ~",
+        "find -- ~/.gemini -delete",
+        "printf x | find -files0-from - -delete",
+        "find . -maxdepth 0 -exec rm -r ~/.gemini \\;",
+        "find . -maxdepth 0 -exec mv ~/.gemini /tmp/g \\;",
+        "cp -r payload/.gemini ~",
+        "mv payload/.gemini ~",
+        "rsync -a payload/ ~/",
+        "tar xfC e.tar ~/.gemini",
+        "tar --dir=$HOME/.gemini -xf e.tar",
+        "tar --direc ~/.gemini -xf e.tar",
+        "unzip -qod ~/.gemini e.zip",
+        "unzip -od $HOME/.gemini e.zip",
+        "patch -sd ~/.gemini -p1 -i p",
+        "patch --dir=$HOME/.gemini -p1 -i p",
+        "GIT_WORK_TREE=$HOME/.gemini git checkout -- config",
+        "tar --one-top-level=$HOME/.gemini -xf e.tar",
+        "dd if=x of=$HOME/.gemini/config/plugins/x",
+        "dd if=x of=~/.gemini/config/x",
+        "cp --target-directory=$HOME/.gemini/config x",
+        "curl --output=$HOME/.gemini/config/x u",
+    ],
+)
+def test_f33Fold_formsTheChallengerFound_ask(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+def test_f33Fold_execBody_meetsTheNeverRows(rules, fake_home):
+    _, home = fake_home
+    assert (
+        judge_in(rules, "find . -maxdepth 0 -exec git push --force origin main \\;", home / "ws")[0].decision
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find . -name '*.pyc' -delete",
+        "find ~/src -name node_modules -prune -exec ls {} +",
+        "dd if=a of=b",
+        "curl --output=out.json u",
+        "env DESTDIR=/tmp/stage ls",
+        "tar -czf out.tgz -C src .",
+    ],
+)
+def test_f33Fold_ordinaryForms_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    (home / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- F-33 review folds
+
+
+@pytest.mark.parametrize("tool, flag", [("unzip", "-d"), ("tar", "-C"), ("git", "-C")])
+def test_f33Review_manyFolderOptions_stayFast(rules, fake_home, tool, flag):
+    import time
+
+    _, home = fake_home
+    options = " ".join(f"{flag} d{i}" for i in range(16))
+    command = f"{tool} {options} {flag} ~/.gemini x"
+    began = time.monotonic()
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask"
+    assert time.monotonic() - began < 2.0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find ~/x -maxdepth 0 -execdir rm -r .gemini \\;",
+        "find ~/x -maxdepth 0 -okdir rm -r .gemini \\;",
+        "find ~/x -maxdepth 0 -execdir cp /tmp/f .gemini/config/x \\;",
+        "find x -name .gemini -exec cp -r {} ~ \\;",
+        "find x -name .gemini -exec mv {} ~ +",
+        "cp -r x/. ~",
+        "cp -rT x ~",
+        "gio move -T x ~",
+        "cp -r -t ~ x/.gemini",
+        "cp -r --target-directory=$HOME x/.gemini",
+        "cp -r --target-directory=$HOME/.gemini x/config",
+        "mv --target-directory=$HOME/.gemini x/config",
+        "cp -r $X ~",
+        "cp -r ${X} ~",
+        "cd ~ ; cd src ; cp -r /t/.gemini ..",
+        "gfind ~/.gemini -delete",
+        "git clone u ~/.gemini/config",
+        "git worktree add ~/.gemini/config",
+    ],
+)
+def test_f33Review_formsTheReviewFound_ask(rules, fake_home, command):
+    _, home = fake_home
+    (home / "x").mkdir(exist_ok=True)
+    (home / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command", ["cd ~ && find projects/x -name '*.o' -delete", "cd ~ && find projects/x -exec grep foo {} +"]
+)
+def test_f33Review_findFromHomeWithAStartPath_staysSilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "projects" / "x").mkdir(parents=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command

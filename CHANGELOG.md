@@ -100,6 +100,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Gate F-33 and F-34 (both runtimes; `.agent/specs/gate-f33-f34.md`): `find` with a deleting
+  or running action, `gio trash|remove` and deleting HOME or `/` ask when they take a protected
+  folder with them; the folder `tar -C`, `unzip -d`, `patch -d` and `git -C` name is checked and
+  resolves the command's relative words; a project rule's warning names its line, not its text.
 - Gate residuals (F-29 to F-32, both runtimes; `.agent/specs/gate-residuals.md`): a project
   row's reason shows its place, not its pattern or tool name; `never` and `ask` path rows and the
   program word compare without case (macOS volumes); `$HOME/` reads as `~/`, which the `~/.gemini`

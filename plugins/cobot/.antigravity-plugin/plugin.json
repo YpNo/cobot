@@ -1,0 +1,10 @@
+{
+  "name": "cobot",
+  "version": "0.2.0",
+  "description": "Governed technical AI assistant for architects, developers and operators: a rules gate on every outward action, a conceptor, a fresh-context challenger, per-language builders and experts as skills.",
+  "author": { "name": "Michael Lopez", "url": "https://github.com/YpNo" },
+  "homepage": "https://github.com/YpNo/cobot",
+  "repository": "https://github.com/YpNo/cobot",
+  "license": "MIT",
+  "keywords": ["orchestrator", "rules", "challenger", "builders", "memory"]
+}

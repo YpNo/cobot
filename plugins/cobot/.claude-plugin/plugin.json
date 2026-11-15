@@ -6,5 +6,16 @@
   "homepage": "https://github.com/YpNo/cobot",
   "repository": "https://github.com/YpNo/cobot",
   "license": "MIT",
-  "keywords": ["orchestrator", "rules", "challenger", "builders", "memory"]
+  "keywords": ["orchestrator", "rules", "challenger", "builders", "memory"],
+  "agents": [
+    "./claude-agents/builder.md",
+    "./claude-agents/challenger.md",
+    "./claude-agents/consultant.md",
+    "./claude-agents/go-builder.md",
+    "./claude-agents/learner.md",
+    "./claude-agents/python-builder.md",
+    "./claude-agents/rust-builder.md",
+    "./claude-agents/terraform-builder.md",
+    "./claude-agents/typescript-builder.md"
+  ]
 }

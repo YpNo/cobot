@@ -167,7 +167,8 @@ count_links_into_legacy() {
 }
 
 report_overlaps() {
-  for file in "$PLUGIN_DIR"/agents/*.md; do
+  # the agents Claude Code loads: check-plugin holds the manifest's list equal to this folder
+  for file in "$PLUGIN_DIR"/claude-agents/*.md; do
     [ -e "$file" ] || continue
     name=$(basename "$file" .md)
     if [ -e "$CLAUDE_DIR/agents/$name.md" ] || [ -L "$CLAUDE_DIR/agents/$name.md" ]; then

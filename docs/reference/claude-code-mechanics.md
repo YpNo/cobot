@@ -22,8 +22,11 @@ Summarised fetches; items marked *unverified* must be re-checked before relying 
   (project), `.claude/settings.local.json` (local). Local > project > user.
 - Component path keys in plugin.json must start with `./`; `agents`/`commands` keys replace
   the folder scan, `skills` adds to it. `themes`/`monitors` moved under `experimental`.
+- `agents` takes files, not a folder (a folder string is refused: "must end with .md"). cobot
+  lists its nine by file from `claude-agents/`, so `agents/` can hold the Antigravity agents
+  without Claude Code loading them (spike S2b, 2026-11-12, `docs/design-inputs/antigravity-0.3.0.md`).
 
-## Subagents (`agents/*.md`)
+## Subagents (`agents/*.md`; cobot's are in `claude-agents/`)
 - Required `name`, `description`. Honoured for plugin agents: `tools` (allowlist),
   `disallowedTools`, `model` (`sonnet|opus|haiku|fable|<id>|inherit`), `effort`
   (`low..max`), `skills` (preloaded, first 32), `memory` (`user|project|local`),

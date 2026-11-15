@@ -47,8 +47,9 @@ the owner has not approved.
 cobot/
   .claude-plugin/marketplace.json          name: cobot · plugins: [cobot]
   plugins/cobot/
-    .claude-plugin/plugin.json             name, version, description, license, keywords
-    agents/
+    .claude-plugin/plugin.json             name, version, description, license, keywords, agents (by file)
+    .antigravity-plugin/plugin.json        the same name, version, description, license, repository
+    claude-agents/                         Claude Code's agents; agents/ holds the Antigravity ones
       challenger.md                        read-only · inherit/high · omitClaudeMd
       consultant.md                        read-only + Bash(read cmds) + WebFetch · sonnet/medium
       builder.md                           generic fallback (Terraform, Shell, Lua, other) · sonnet/medium

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to
+  `claude-agents/`, listed by file in `.claude-plugin/plugin.json`, which leaves `agents/` to the
+  Antigravity agents; `.antigravity-plugin/plugin.json` carries the same name, version,
+  description, license and repository. `check-plugin` holds the two manifests in agreement, the
+  manifest's list equal to the folder, every skill body within agy's 24 000 bytes and every
+  frontmatter strict YAML, which quoted `onboard`'s `argument-hint` and folded `contribute`'s
+  description (agy skipped `onboard`; a strict parser rejects both).
 - `lang-rust` lists the crates a Rust CLI starts with (F-20): clap, serde, serde_json, tempfile,
   assert_cmd and predicates, beside proptest; every crate row re-read on crates.io, dated by the
   version's own publish date, with the MSRV of each.

@@ -1,6 +1,7 @@
 ---
 name: contribute
-description: Drive a change in someone else's repository to a pull request under the maintainers' rules. Invoke in a foreign repository (memory outside the tree) once /cobot:wrap has stamped the work: reads the constraints onboard copied (AI policy, DCO or CLA, target branch), keeps .agent/UPSTREAM.md current, prepares the branch on the upstream base with a sign-off when required, prepares the facts for the PR body, and prints the push and gh pr create commands for the owner. Never pushes, never opens or comments on anything, never writes PR text the maintainers forbid.
+description: >-
+  Drive a change in someone else's repository to a pull request under the maintainers' rules. Invoke in a foreign repository (memory outside the tree) once /cobot:wrap has stamped the work: reads the constraints onboard copied (AI policy, DCO or CLA, target branch), keeps .agent/UPSTREAM.md current, prepares the branch on the upstream base with a sign-off when required, prepares the facts for the PR body, and prints the push and gh pr create commands for the owner. Never pushes, never opens or comments on anything, never writes PR text the maintainers forbid.
 argument-hint: [spec slug or branch]
 ---
 

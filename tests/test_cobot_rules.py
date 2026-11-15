@@ -4507,3 +4507,57 @@ def test_f33Fold_ordinaryForms_staySilent(rules, fake_home, command):
     (home / "ws" / "src").mkdir(exist_ok=True)
     (home / "src").mkdir(exist_ok=True)
     assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- F-33 review folds
+
+
+@pytest.mark.parametrize("tool, flag", [("unzip", "-d"), ("tar", "-C"), ("git", "-C")])
+def test_f33Review_manyFolderOptions_stayFast(rules, fake_home, tool, flag):
+    import time
+
+    _, home = fake_home
+    options = " ".join(f"{flag} d{i}" for i in range(16))
+    command = f"{tool} {options} {flag} ~/.gemini x"
+    began = time.monotonic()
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask"
+    assert time.monotonic() - began < 2.0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find ~/x -maxdepth 0 -execdir rm -r .gemini \\;",
+        "find ~/x -maxdepth 0 -okdir rm -r .gemini \\;",
+        "find ~/x -maxdepth 0 -execdir cp /tmp/f .gemini/config/x \\;",
+        "find x -name .gemini -exec cp -r {} ~ \\;",
+        "find x -name .gemini -exec mv {} ~ +",
+        "cp -r x/. ~",
+        "cp -rT x ~",
+        "gio move -T x ~",
+        "cp -r -t ~ x/.gemini",
+        "cp -r --target-directory=$HOME x/.gemini",
+        "cp -r --target-directory=$HOME/.gemini x/config",
+        "mv --target-directory=$HOME/.gemini x/config",
+        "cp -r $X ~",
+        "cp -r ${X} ~",
+        "cd ~ ; cd src ; cp -r /t/.gemini ..",
+        "gfind ~/.gemini -delete",
+        "git clone u ~/.gemini/config",
+        "git worktree add ~/.gemini/config",
+    ],
+)
+def test_f33Review_formsTheReviewFound_ask(rules, fake_home, command):
+    _, home = fake_home
+    (home / "x").mkdir(exist_ok=True)
+    (home / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command", ["cd ~ && find projects/x -name '*.o' -delete", "cd ~ && find projects/x -exec grep foo {} +"]
+)
+def test_f33Review_findFromHomeWithAStartPath_staysSilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "projects" / "x").mkdir(parents=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command

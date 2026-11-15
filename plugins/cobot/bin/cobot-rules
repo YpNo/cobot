@@ -2212,13 +2212,14 @@ def expand_segment(segment: list[str], here: Dirs, depth: int, reached: Reached)
 def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
     """``expand_segment`` for the segment as written; the commands a ``find`` runs follow it."""
     argv = strip_wrappers(segment)
-    if argv[:1] == ["find"] and depth < MAX_EXPANSION:
-        bodies = [body for body in find_bodies(argv) if body]
+    if argv[:1] and argv[0].lower() in FIND_PROGRAMS and depth < MAX_EXPANSION:
         origin = show(" ".join(argv), shell.REGISTRY)[:MAX_ORIGIN]
         tail = [
             (t, o or origin, d)
-            for body in bodies
-            for t, o, d in expand_segment(body, here, depth + 1, reached)
+            for action, body in find_bodies(argv)
+            for t, o, d in expand_segment(
+                body, execdir_folders(argv, here) if action in FIND_IN_FOLDER else here, depth + 1, reached
+            )
         ]
         return [*expand_plain(segment, here, depth, reached), *tail]
     return expand_plain(segment, here, depth, reached)
@@ -2448,7 +2449,9 @@ def program_of(segment: list[str]) -> list[str]:
 
 GIO_DELETING = frozenset({"trash", "remove", "rm"})
 GIO_MOVING = frozenset({"move", "mv", "rename", "copy", "cp"})
-FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})  # what it runs is not followed
+FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})  # what it runs is judged apart
+FIND_IN_FOLDER = frozenset({"-execdir", "-okdir"})  # run in the folder of each entry found
+FIND_PROGRAMS = frozenset({"find", "gfind"})
 FIND_LEADING = frozenset({"-H", "-L", "-P"})  # options before the start paths; -D and -O take a value
 IMPLICIT_FOLDER = -1  # a deleting ``find`` also deletes under the folder it runs in
 FILES_FROM = -2  # a deleting ``find`` whose start paths come from a file or stdin
@@ -2531,13 +2534,26 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
         or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
     ):
         return frozenset(range(at + 1, len(segment)))
-    if head != "find" or not FIND_ACTIONS & set(argv):
+    if head not in FIND_PROGRAMS or not FIND_ACTIONS & set(argv):
         return frozenset()
     if "-files0-from" in argv:
         return frozenset({FILES_FROM})
     inside = {at + i for i in find_body_indexes(argv)}
     words = {at + i for i in range(1, len(argv))} - inside
-    return frozenset(words | {IMPLICIT_FOLDER})
+    return frozenset(words if find_starts(argv) else words | {IMPLICIT_FOLDER})
+
+
+def find_starts(argv: list[str]) -> list[int]:
+    """The indexes of the start paths before a ``find``'s first expression (past ``-H``, ``-L``,
+    ``-P``, ``-D x``, ``-Ox`` and ``--``): with none, it searches the folder it runs in."""
+    i = 1
+    while i < len(argv) and (argv[i] in FIND_LEADING or argv[i] in ("-D", "--") or argv[i].startswith("-O")):
+        i += 2 if argv[i] == "-D" else 1
+    starts = []
+    while i < len(argv) and not argv[i].startswith(("-", "(", "!", ",")):
+        starts.append(i)
+        i += 1
+    return starts
 
 
 def find_body_indexes(argv: list[str]) -> set[int]:
@@ -2556,21 +2572,35 @@ def find_body_indexes(argv: list[str]) -> set[int]:
     return found
 
 
-def find_bodies(argv: list[str]) -> list[list[str]]:
-    """The commands a ``find`` runs on what it finds, each judged like a command of its own."""
-    bodies, current = [], None
+def find_bodies(argv: list[str]) -> list[tuple[str, list[str]]]:
+    """The commands a ``find`` runs on what it finds, with the action that runs each, so each is
+    judged like a command of its own."""
+    bodies, action, current = [], "", None
     for word in argv:
         if current is not None:
             if word in (";", "+"):
-                bodies.append(current)
+                bodies.append((action, current))
                 current = None
             else:
                 current.append(word)
         elif word in FIND_ACTIONS - {"-delete"}:
-            current = []
+            action, current = word, []
     if current:
-        bodies.append(current)
-    return [body for body in bodies if body]
+        bodies.append((action, current))
+    return [(action, body) for action, body in bodies if body]
+
+
+def execdir_folders(argv: list[str], here: Dirs) -> Dirs:
+    """Where ``-execdir`` and ``-okdir`` run their command: the folder of each entry found, so at
+    least each start path and its parent (an entry deeper down is not followed)."""
+    if here is None:
+        return None
+    folders = set()
+    for index in find_starts(argv) or [None]:
+        for base in here:
+            start = Path(os.path.normpath(base / os.path.expanduser(argv[index]))) if index else base
+            folders.update({start, start.parent})
+    return frozenset(folders)
 
 
 def enters(segment: list[str]) -> bool:

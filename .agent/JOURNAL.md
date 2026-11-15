@@ -28,3 +28,11 @@ Proof: tests first (7 failed before the fix: door/key.txt, alias, door/new.txt, 
 Open: rebased onto main c34f304 after PR 53 (matches_file now joins both: a folder row protects the folder itself, with ~ read both ways, tested); main's bare-word resolution already asks on cat alias, cat key.txt inside vault and cp a vault/; still open: a glob whose matching name is a link (cat al* none); F-32 (with the cwd in a protected folder every command asks and the reason names the program).
 Next: owner pushes fix/gate-symlinked-paths and opens its PR; the brief is over budget on main too (6265 of 6000, PR 53's journal entries): compact the journal.
 verified: 5ef8dd3 · pytest+cov (2519, 98.73 %), ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, memory check, F-28 probe after the rebase
+
+## 2026-11-15 — journal compacted; the brief keeps its budget
+Changed: df7e645 cobot-memory build_brief caps the findings block after the knowledge and specs tail and the separators (PART_SEPARATOR), so the brief stays within its budget; test first; CHANGELOG Fixed. 221041f compact --force --keep 2 folded 35 entries (2026-11-11 → 2026-11-15) into one with a written summary; JOURNAL.md 325 → 30 lines, the raw entries in JOURNAL-archive.md.
+Why: the owner asked to compact; the measured overage (6265 of 6000) was the brief's cap, not the journal (the brief only reads the last two entries).
+Proof: the budget test failed first at 3335 of 3000 and 6335 of 6000; full suite 2521 passed, 98.73 %; ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory check: brief 6000 of 6000.
+Open: the findings block is now what gets cut when the brief is full (rows end with the truncation marker); four findings open (F-29..F-32).
+Next: owner pushes chore/journal-compact-0.3 and opens its PR; the gate findings and the A2UI knowledge PR follow.
+verified: 221041f · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check

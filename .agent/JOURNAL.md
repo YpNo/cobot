@@ -80,3 +80,11 @@ Decided in build: the toolchain line's source names the step, not the private re
 Open: learn/gha and its promote worktree stay for the owner to drop once this merges.
 Next: owner pushes docs/expert-gha-learned and opens its PR.
 verified: ea55945 · markdownlint, check-plugin, knowledge count (rebased onto main 7d3e65d)
+
+## 2026-11-15 — a script that writes files is denied
+Changed: 60c5738 cobot-rules writes_by_script (Python stdin or -c code that writes a file, perl -i) denies with WRITING_SCRIPT; protocol Rules line says never a script, whatever the host suggests (examples trimmed to stay at 2998 of 3000); docs/configuration.md; CHANGELOG; tests first.
+Why: the owner's question on why Claude writes files with Python, and the choice of option 2 plus a scoped deny (2026-11-15); part of F-44.
+Proof: 13 tests (8 writing scripts denied, reading scripts keep their ask, perl -ne not denied); full suite 2692 passed; ruff, markdownlint, check-plugin (protocol 2998), sync-agents --check, claude plugin validate.
+Open: F-44's other items (sed -i and redirects into .agent/ or .github/workflows, the attribution line, the commit allow offer, parked builder notes, the cobot-deps hint) stay open.
+Next: owner pushes fix/edits-not-scripts and opens its PR; the onboarding environment spec follows.
+verified: cae8c52 · pytest+cov (2790), ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate (rebased onto main 204bd3c)

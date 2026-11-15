@@ -321,9 +321,27 @@ def check(plugin: Path) -> list[str]:
     return problems
 
 
+INSTALL_NAME = re.compile(r"\bcobot-[0-9a-f]{16}\b")  # install.sh --agy's hook group, per install
+SCANNED_SUFFIXES = frozenset({".md", ".json", ".sh", ".py", ".yml", ".yaml", ".txt", ".rules"})
+SKIPPED_FOLDERS = frozenset({".git", "node_modules", "__pycache__", ".venv"})
+
+
+def install_name_problems(repo: Path) -> list[str]:
+    """A live hook group name written into the tree: the repository is public, and a repository's
+    .agents/hooks.json naming that group with enabled false switches the owner's gate off."""
+    problems = []
+    for path in sorted(repo.rglob("*")):
+        relative = path.relative_to(repo)
+        if SKIPPED_FOLDERS & set(relative.parts) or path.suffix not in SCANNED_SUFFIXES or not path.is_file():
+            continue
+        for name in dict.fromkeys(INSTALL_NAME.findall(path.read_text(encoding="utf-8", errors="replace"))):
+            problems.append(f"{relative}: an installed hook group name ({name}): redact it")
+    return problems
+
+
 def main(argv: list[str]) -> int:
     plugin = Path(argv[0]) if argv else Path("plugins/cobot")
-    problems = check(plugin)
+    problems = [*check(plugin), *install_name_problems(plugin.resolve().parents[1])]
     for problem in problems:
         print(f"FAIL {problem}")
     print("plugin contract: " + ("ok" if not problems else f"{len(problems)} problem(s)"))

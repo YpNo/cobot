@@ -3750,4 +3750,55 @@ def agy_installed(rules, tmp_path, monkeypatch):
 def test_agySelf_ownToolsUnderAgyConfig_runSilentlyButStayProtected(rules, agy_installed, command, expected):
     loaded, root = agy_installed
     filled = command.replace("{bin}", str(root / "bin")).replace("{root}", str(root))
-    assert rules.judge_bash(filled, loaded, None, str(root.parent))[0].decision == expected, filled
+    workspace = root.parents[4] / "ws"  # the brief runs from the workspace, not the plugin folder
+    workspace.mkdir(exist_ok=True)
+    assert rules.judge_bash(filled, loaded, None, str(workspace))[0].decision == expected, filled
+
+
+# ---------------------------------------------------------------- bare words, relocation (security review)
+
+
+@pytest.fixture
+def fake_home(rules, tmp_path, monkeypatch):
+    loaded, _, _ = rules.load_rules(None)
+    home = tmp_path / "home"
+    for folder in (".gemini/config/plugins/cobot", ".gemini/jetski", "ws/.agents", "ws/docs"):
+        (home / folder).mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    return loaded, home
+
+
+@pytest.mark.parametrize(
+    ("cwd", "command", "expected"),
+    [
+        (".gemini/config/plugins", "rm -r cobot", "ask"),
+        (".gemini/config/plugins", "rm -rf .", "ask"),
+        (".gemini/config", "cp /tmp/evil.json mcp_config.json", "ask"),
+        (".gemini/config", "rm *", "ask"),
+        ("ws/.agents", "tee hooks.json", "ask"),
+        ("ws/.agents", "printf x > hooks.json", "ask"),
+        ("ws", "cat README.md", None),
+        ("ws", "git add hooks.json", None),
+        ("ws", "ls *.log", None),
+        ("ws", "mv /tmp/x .agents", "ask"),
+        ("ws", "ln -s docs .agents", "ask"),
+        ("ws", "git mv old _agent", "ask"),
+        ("ws", "cp -r tmpl ./sub/.agent", "ask"),
+        ("ws", "ls .agent", None),
+        ("ws", "mkdir -p .agent", None),
+        ("ws", "mv ~/.gemini/config ~/.gemini/c2", "ask"),
+        ("ws", "mv ~/.gemini ~/.g2", "ask"),
+        ("ws", "ls ~/.gemini", None),
+        ("ws", "cp a ~", None),
+        ("ws", "rm -r ~/.gemini/jetski", "ask"),
+    ],
+)
+def test_agySelf_bareWordsAndRelocation_reachProtectedFolders(rules, fake_home, cwd, command, expected):
+    loaded, home = fake_home
+    assert rules.judge_bash(command, loaded, None, str(home / cwd))[0].decision == expected, (cwd, command)
+
+
+def test_agySelf_protectedFolderItself_isProtectedForFileTools(rules, fake_home):
+    loaded, home = fake_home
+    verdict = rules.judge("Write", {"file_path": str(home / ".gemini" / "config")}, str(home), loaded, None)
+    assert verdict.decision == "deny"

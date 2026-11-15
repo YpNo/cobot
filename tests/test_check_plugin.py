@@ -250,3 +250,21 @@ def test_check_agyAgentContract_isHeld(contract, plugin, old, new, expected):
     twin = plugin / "agents" / "a.md"
     twin.write_text(twin.read_text().replace(old, new))
     assert any("agents/a.md" in p and expected in p for p in contract.check(plugin))
+
+
+def test_installNames_aLiveHookGroupNameInTheTree_fails(tmp_path):
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader("check_plugin_names", "scripts/check-plugin.py")
+    spec = importlib.util.spec_from_loader("check_plugin_names", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    name = "cobot-" + "a1" * 8  # built, so this file never holds one
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "run.md").write_text(f"group {name} installed\n")
+    (tmp_path / "ok.md").write_text("group cobot-<random> installed\n")
+    assert module.install_name_problems(tmp_path) == [
+        f"docs/run.md: an installed hook group name ({name}): redact it"
+    ]
+    assert module.install_name_problems(tmp_path / "docs" / "..") != []

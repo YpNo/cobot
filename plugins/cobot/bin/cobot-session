@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _cobot_agy as agy  # noqa: E402
 from _cobot_common import plugin_root  # noqa: E402
 
 TOTAL_CAP = 10_000
@@ -28,12 +29,14 @@ DEADLINE = 25  # seconds shared by every tool call; the hook has 30
 RUNTIMES = ("claude", "agy")
 AGY_SECTION_CAP = 1_200
 AGY_HEADING = "## cobot under Antigravity"
-# agy loads hooks and plugins from these roots in every folder from the workspace up to the
-# repository root; a hook there runs beside the gate and may answer before it (smoke h1, h2)
-CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
+# a hook or plugin in a customization root runs beside the gate and may answer before it
 CUSTOMIZATION_FILES = ("hooks.json", "plugins.json", "plugins")
 WORKSPACE_WARNING = "warning: agy customizations in this workspace run beside cobot's gate"
 WORKSPACE_SHOWN = 5
+DEFAULT_GROUP_WARNING = (
+    "warning: cobot's agy hook group has its default name `cobot`, which a repository's"
+    " .agents/hooks.json can switch off: tell the owner to reinstall with ./install.sh --agy"
+)
 WORKSPACE_PATH_SHOWN = 160  # the tail of a deep path: the root and file names stay readable
 WORKSPACE_WARNING_CAP = 1_200
 
@@ -129,24 +132,14 @@ the report.
 - Builders' tool calls are not proven gated under agy: review their diff before any outward step."""
 
 
-def folders_to_root(workspace: Path) -> list[Path]:
-    """The workspace and its parents up to the repository root holding ``.git``; the workspace
-    alone outside a repository."""
-    chain = [workspace, *workspace.parents]
-    for index, folder in enumerate(chain):
-        if (folder / ".git").exists():
-            return chain[: index + 1]
-    return [workspace]
-
-
 def workspace_warning(workspaces: list[str]) -> str:
     """One line naming the hook and plugin files agy would load beside cobot, or empty."""
     found = [
         str(folder / root / name)
         for workspace in workspaces
         if os.path.isabs(workspace) and os.path.isdir(workspace)
-        for folder in folders_to_root(Path(workspace))
-        for root in CUSTOMIZATION_ROOTS
+        for folder in agy.folders_to_root(Path(workspace))
+        for root in agy.CUSTOMIZATION_ROOTS
         for name in CUSTOMIZATION_FILES
         if (folder / root / name).exists()
     ]
@@ -162,6 +155,16 @@ def workspace_warning(workspaces: list[str]) -> str:
         f" and do not edit them: {', '.join(shown[:WORKSPACE_SHOWN])}{more}"
     )
     return line[:WORKSPACE_WARNING_CAP]
+
+
+def default_group_warning(root: Path | None = None) -> str:
+    """The warning when the installed hook group kept the guessable name (a bare ``agy plugin
+    install``), or empty."""
+    try:
+        groups = json.loads(((root or plugin_root()) / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return DEFAULT_GROUP_WARNING if isinstance(groups, dict) and "cobot" in groups else ""
 
 
 def agy_project(payload: dict) -> str | None:
@@ -189,7 +192,7 @@ def agy_answer(stdin: str) -> str:
         warning = workspace_warning(
             [p for p in paths if isinstance(p, str)] if isinstance(paths, list) else []
         )
-        head += [warning] if warning else []
+        head += [line for line in (default_group_warning(), warning) if line]
         room = TOTAL_CAP - sum(len(part) for part in head)
         tail = (
             brief_parts(project, room)

@@ -132,7 +132,8 @@ stage_agy() { # DIR: copy the plugin into DIR/cobot with a random hook group nam
     echo "install: hooks.json has no '$AGY_GROUP_LINE' line to rename; nothing installed" >&2
     return 1
   }
-  echo "agy: hook group named $name for this install"
+  # the name is a secret of this install: never printed, so it stays out of logs and records
+  echo "agy: hook group renamed to a random name for this install"
 }
 
 cmd_agy() { # validate, then install: agy replaces an installed copy in place and restores it on failure
@@ -143,7 +144,9 @@ cmd_agy() { # validate, then install: agy replaces an installed copy in place an
   echo "agy: validating $stage/cobot (staged from $PLUGIN_DIR; run this with no agy session open)"
   agy plugin validate "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
   echo "agy: installing $stage/cobot at user scope"
-  rc=0; agy plugin install "$stage/cobot" || rc=$?
+  # agy prints the installed group's name: shown masked, so it stays out of terminal logs
+  rc=0; agy plugin install "$stage/cobot" >"$stage/install.log" 2>&1 || rc=$?
+  sed -E 's/cobot-[0-9a-f]{16}/cobot-<random>/g' "$stage/install.log"
   if [ "$rc" -ne 0 ]; then
     echo "install: agy plugin install failed (exit $rc); agy keeps the previous copy, if one was installed" >&2
     exit 1

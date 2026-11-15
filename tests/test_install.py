@@ -313,7 +313,8 @@ case "$1 $2" in
     echo "ok" ;;
   "plugin install")
     [ -e "$HOME/agy-fail-install" ] && { echo "boom" >&2; exit 4; }
-    rm -rf "$HOME/agy-installed-copy" && cp -R "$3" "$HOME/agy-installed-copy"; echo "Installed cobot" ;;
+    rm -rf "$HOME/agy-installed-copy" && cp -R "$3" "$HOME/agy-installed-copy"
+    echo "hooks : 1 installed ($(sed -n 's/^  "\\(cobot-[0-9a-f]*\\)".*/\\1/p' "$3/hooks.json"))" ;;
   "plugin list")
     if [ -e "$HOME/agy-installed" ]; then echo "cobot 0.3.0 enabled"; else echo "No plugins installed."; fi ;;
   *) echo "fake agy: $*" ;;
@@ -453,3 +454,11 @@ def test_install_agy_leavesPythonCachesOutAndNamesTheStagedCopy(home):
     assert not list((home / "agy-installed-copy").rglob("__pycache__"))
     staged = agy_calls(home)[0].rsplit(" ", 1)[1]
     assert f"validating {staged} (staged from {PLUGIN}" in result.stdout
+
+
+def test_install_agy_neverPrintsTheGroupName(home):
+    result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    assert result.returncode == 0, result.stderr
+    name, _ = installed_group(home)
+    assert name not in result.stdout + result.stderr
+    assert "1 installed (cobot-<random>)" in result.stdout

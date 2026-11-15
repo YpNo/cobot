@@ -22,7 +22,8 @@ if grep -q '^  "cobot": {' "$installed" 2>/dev/null; then
   exit 1
 fi
 echo "agy $(agy --version) · cobot $want from $repo · scratch $scratch"
-echo "hook group: $(sed -n 's/^  "\(cobot-[0-9a-f]*\)": {$/\1/p' "$installed")"
+grep -qE '^  "cobot-[0-9a-f]{16}": \{$' "$installed" || { echo "smoke: $installed has no renamed hook group" >&2; exit 1; }
+echo "hook group: cobot-<random> (not printed: keep it out of records)"
 
 mkdir -p "$scratch"
 cd "$scratch"

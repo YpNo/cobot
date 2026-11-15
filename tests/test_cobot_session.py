@@ -242,3 +242,19 @@ def test_agy_workspaceWarning_listsAtMostAFew(session, project):
     line = session.workspace_warning([str(project)])
     assert line.count(str(project)) == session.WORKSPACE_SHOWN
     assert line.endswith("and 3 more")
+
+
+def test_agy_defaultHookGroupName_warnsToReinstall(session, project, tmp_path):
+    root = tmp_path / "installed"
+    root.mkdir()
+    (root / "hooks.json").write_text('{"cobot": {"PreToolUse": []}}')
+    assert session.default_group_warning(root) == session.DEFAULT_GROUP_WARNING
+    (root / "hooks.json").write_text('{"cobot-renamed": {"PreToolUse": []}}')
+    assert session.default_group_warning(root) == ""
+    (root / "hooks.json").write_text("not json")
+    assert session.default_group_warning(root) == ""
+    # this checkout keeps the name as written: only install.sh --agy renames it
+    text = message(session.agy_answer(agy_payload([project])))
+    assert (
+        text.index(session.AGY_HEADING) < text.index(session.DEFAULT_GROUP_WARNING) < text.index("\nrules: ")
+    )

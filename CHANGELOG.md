@@ -95,6 +95,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Security review fixes (wrap), both runtimes where the gate is shared:
+  - a bare word is a path in the working directory too, so a command run with its working
+    directory inside a protected folder (agy's `Cwd: ~/.gemini/config/plugins` with
+    `rm -r cobot`, or `tee hooks.json` inside `.agents/`) asks;
+  - a protected folder row covers the folder itself, and moving or linking onto a customization
+    root (`mv x .agents`, `ln -s docs .agents`) or a protected folder's parent (`mv ~/.gemini …`)
+    asks;
+  - under agy a write through a symlinked customization root, cobot's foreign-mode `.agent`
+    included, is judged by the root's name;
+  - a branch or share subagent asks while `.agent/cobot.rules` is ignored, untracked, or under a
+    symlinked `.agent`;
+  - a top-level `Workspace` beside `Subagents` counts; `run_workflow` names a relative script path,
+    both forms, and a large or special file without reading it;
+  - MCP servers of workspace plugins are known servers, so a known prefix never hides them;
+  - the agy brief warns when the installed hook group kept its default name;
+  - `install.sh --agy` and the smoke no longer print the random group name, and `check-plugin`
+    fails on one written into the tree.
 - Review fixes under Antigravity (wrap): a substitution counts as an unknown whole path only
   where it leads the path or names its last part, so `.agents/plu$(x)ins/…` and `.agents/$(x)/…`
   ask again; a `workspacePaths` that is not a list of absolute paths asks instead of reading

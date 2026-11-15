@@ -438,6 +438,121 @@ def test_loadRulesAgy_runsNoGitForTheDefaultAndOwnerLayers(rules, workspace, mon
     assert seen == [str(workspace)]
 
 
+# ---------------------------------------------- security review: Cwd, aliases, committed rules
+
+
+def commit_all(folder):
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
+    subprocess.run(["git", "-C", str(folder), "add", "-A"], check=True)
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@x",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@x",
+    }
+    subprocess.run(["git", "-C", str(folder), "commit", "-qm", "init"], check=True, env=env)
+
+
+@pytest.mark.parametrize(
+    "cwd, command",
+    [("{home}/.gemini/config/plugins", "rm -r cobot"), ("{ws}/.agents", "tee hooks.json")],
+)
+def test_runCommand_cwdInsideAProtectedFolder_asks(rules, workspace, agy_home, cwd, command):
+    (workspace / ".agents").mkdir(exist_ok=True)
+    (agy_home / ".gemini" / "config" / "plugins").mkdir(parents=True, exist_ok=True)
+    folder = cwd.replace("{home}", str(agy_home)).replace("{ws}", str(workspace))
+    assert decide(rules, "run_command", {"CommandLine": command, "Cwd": folder}, [workspace]) == "force_ask"
+
+
+@pytest.mark.parametrize("root", [".agents", ".agent"])
+def test_fileTools_throughASymlinkedCustomizationRoot_deny(rules, workspace, tmp_path, root):
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    target = workspace / root
+    if target.exists():
+        import shutil
+
+        shutil.rmtree(target)
+    target.symlink_to(real, target_is_directory=True)
+    for name in ("hooks.json", "plugins/x/hooks.json"):
+        assert decide(rules, "write_to_file", {"TargetFile": str(real / name)}, [workspace]) == "deny", name
+    assert decide(rules, "write_to_file", {"TargetFile": str(real / "notes.md")}, [workspace]) == "allow"
+
+
+def test_invokeSubagent_branch_ignoredRulesFileCountsAsUncommitted(rules, workspace):
+    (workspace / ".agent" / "cobot.rules").write_text("never Bash(make deploy*)\n")
+    commit_all(workspace)
+    branch = {"Workspace": "branch", "Prompt": "x"}
+    assert decide(rules, "invoke_subagent", branch, [workspace]) == "allow"
+    ignored = workspace.parent / "ignored"
+    (ignored / ".agent").mkdir(parents=True)
+    (ignored / ".agent" / "cobot.rules").write_text("never Bash(make deploy*)\n")
+    (ignored / "a").write_text("a")
+    subprocess.run(["git", "init", "-q", str(ignored)], check=True)
+    (ignored / ".git" / "info" / "exclude").write_text(".agent\n")
+    commit_all(ignored)
+    assert decide(rules, "invoke_subagent", branch, [ignored]) == "force_ask"
+
+
+def test_invokeSubagent_branch_symlinkedAgentFolderCountsAsUncommitted(rules, workspace, tmp_path):
+    """cobot's foreign mode: .agent is a symlink to memory outside the tree, and excluded."""
+    import shutil
+
+    shutil.rmtree(workspace / ".agent")
+    (workspace / "a").write_text("a")
+    subprocess.run(["git", "init", "-q", str(workspace)], check=True)
+    (workspace / ".git" / "info" / "exclude").write_text(".agent\n")
+    commit_all(workspace)
+    external = tmp_path / "memory"
+    external.mkdir()
+    (external / "cobot.rules").write_text("never Bash(git push*)\n")
+    (workspace / ".agent").symlink_to(external, target_is_directory=True)
+    branch = {"Workspace": "branch", "Prompt": "x"}
+    assert decide(rules, "invoke_subagent", branch, [workspace]) == "force_ask"
+
+
+def test_invokeSubagent_topLevelWorkspaceBesideSubagents_counts(rules, workspace):
+    args = {"Workspace": "branch", "Subagents": [{"Prompt": "x"}]}
+    assert decide(rules, "invoke_subagent", args, [workspace]) == "force_ask"
+
+
+def test_runWorkflow_reasonNamesRelativePathsBothFormsAndLargeFiles(rules, tmp_path):
+    relative = answer(rules, payload("run_workflow", {"ScriptPath": "hooks.json"}))["reason"]
+    assert "relative path" in relative and "sha256" not in relative
+    both = answer(rules, payload("run_workflow", {"ScriptPath": "/x/a.py", "Script": "print(1)"}))["reason"]
+    assert "/x/a.py" in both and "inline script sha256" in both
+    big = tmp_path / "big.py"
+    big.write_bytes(b"x" * (agy_module().WORKFLOW_READ_MAX + 1))
+    large = answer(rules, payload("run_workflow", {"ScriptPath": str(big)}))["reason"]
+    assert "not a small regular file" in large
+    assert (
+        "not a small regular file"
+        in answer(rules, payload("run_workflow", {"ScriptPath": "/dev/zero"}))["reason"]
+    )
+
+
+def test_mcpEager_serverOfAWorkspacePlugin_isKnown(rules, workspace, agy_home):
+    (agy_home / ".gemini" / "config" / "mcp_config.json").write_text(
+        json.dumps({"mcpServers": {"github": {}}})
+    )
+    plugin = workspace / ".agents" / "plugins" / "github"
+    plugin.mkdir(parents=True)
+    (plugin / "mcp_config.json").write_text(json.dumps({"mcpServers": {"admin": {}}}))
+    (workspace / ".agent" / "cobot.rules").write_text("never mcp__github_admin__*\n")
+    assert decide(rules, "mcp_github_admin_delete_repo", {}, [workspace]) == "deny"
+
+
+def test_schedule_withoutTimer_hasAReason(rules, workspace):
+    assert answer(rules, payload("schedule", {"Prompt": "x"}, [workspace]))["reason"] != "cobot gate: "
+
+
+def agy_module():
+    import _cobot_agy
+
+    return _cobot_agy
+
+
 # ---------------------------------------------------------------- self-protection under agy (T04)
 
 

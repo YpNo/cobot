@@ -4329,3 +4329,40 @@ def test_bypassFold_protectedCwdReason_putsTheRuleFirst(rules, claude_dir):
     folder = claude_dir / ".gemini" / "config" / "plugins"
     reason = judge_in(rules, "ls", folder)[0].reason()
     assert reason.index("never Edit(~/.gemini/config/*)") < reason.index(str(folder))
+
+
+# ---------------------------------------------------------------- F-34 project text on stderr
+
+
+@pytest.mark.parametrize("line", ["ask Bash(approve-it-is-safe", "allow Bash(approve-it-is-safe*)"])
+def test_projectWarning_namesItsLineNeverItsText(rules, layers, line):
+    _, project = layers
+    project.write_text(f"# x\n{line}\n")
+    _, warnings, _ = rules.load_rules(None)
+    (warning,) = [w for w in warnings if w.startswith("project:")]
+    assert warning.startswith("project:2: ") and warning.endswith("ignored")
+    assert "approve" not in warning
+
+
+def test_ownerWarning_keepsItsText(rules, layers):
+    owner, _ = layers
+    owner.write_text("ask Bash(kubectl\n")
+    _, warnings, _ = rules.load_rules(None)
+    assert any(w.endswith("ignored: ask Bash(kubectl") for w in warnings)
+
+
+def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_path):
+    _, project = layers
+    project.write_text("ask Bash(approve-it-is-safe\n")
+    rules.gate(json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": str(tmp_path)}))
+    rules.gate_agy(
+        json.dumps(
+            {
+                "hookEventName": "PreToolUse",
+                "toolCall": {"id": "t", "name": "run_command", "args": {"CommandLine": "ls"}},
+                "workspacePaths": [str(project.parent.parent)],
+            }
+        )
+    )
+    err = capsys.readouterr().err
+    assert "unreadable rule ignored" in err and "approve" not in err

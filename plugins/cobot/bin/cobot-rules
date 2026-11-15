@@ -406,6 +406,12 @@ def layer_paths(cwd: str | None) -> dict[str, Path]:
     return {**fixed_layer_paths(), "project": repo_root(cwd) / ".agent" / "cobot.rules"}
 
 
+def shown_line(layer: str, line: str) -> str:
+    """A warning's copy of the rule line: the default and owner layers only. A project line is
+    repository text, and a hook's stderr may reach the owner, so it is named by its place (F-34)."""
+    return f": {line}" if layer in NOTE_LAYERS else ""
+
+
 def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -416,14 +422,12 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
     else:
         mcp = MCP_RULE_RE.match(stripped)
         if not mcp:
-            warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
+            warnings.append(f"{layer}:{number}: unreadable rule ignored{shown_line(layer, stripped)}")
             return None
         decision, pattern, agent, comment = mcp.groups()
         tool = "mcp"
     if layer == "project" and decision == "allow":
-        warnings.append(
-            f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
-        )
+        warnings.append(f"{layer}:{number}: allow is not accepted from the project layer, ignored")
         return None
     note = (comment or "").strip() if layer in NOTE_LAYERS else ""
     return Rule(decision, tool, pattern, agent, layer, number, note)

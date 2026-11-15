@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
+cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,
+self-protection and an install whose hook group gets a random name, so a repository cannot switch
+the gate off. The gate also closes a set of path gaps in both runtimes (symlinks, case-insensitive
+volumes, `$HOME` written for `~`, words after a `cd`, links reached by a glob, deletions and folder
+options that take a protected folder with them), shows a project rule by its place rather than
+its text, and denies a script that writes files in favour of Edit or Write. `expert-ui` gains A2UI
+knowledge, `expert-gha` two lines from a real CI run, and the session brief keeps its budget.
+
 ### Added
 
 - A2UI knowledge in `expert-ui` (knowledge only, no code): `references/a2ui.md` holds the

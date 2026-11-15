@@ -99,6 +99,9 @@ FIELD_PRIORITY = ("Open", "Next", "Changed", "Why", "Proof")
 FIELD_START = re.compile(r"[A-Z][A-Za-z ]{0,30}:")  # "Changed:", "Not done:"; indented lines continue
 JOURNAL_COMPACT_LINES = 400
 OLD_RULES_NAME = "partner.rules"  # the name before ADR-0004; still reported by check
+# what Antigravity (agy) loads from a customization root, and .agent/ is one (a legacy path,
+# scanned one level deep): cobot never writes these there, so check names any it finds
+AGY_DISCOVERED = ("hooks.json", "plugins", "plugins.json", "rules", "skills", "skills.json", "workflows")
 COMPACT_KEEP = 10
 RISK_RE = re.compile(r"^\| *(R-\d+) *\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$")
 RISK_MAX_DAYS = 90
@@ -835,6 +838,12 @@ def cmd_check(mem: Memory) -> str:
     if risks:
         expired = [f"{row[0]} ({row[-1]})" for row in risks if row[-1] < date.today().isoformat()]
         lines.append(f"accepted risks: {len(risks)}" + (f"; expired: {', '.join(expired)}" if expired else ""))
+    found = [name for name in AGY_DISCOVERED if (mem.dir / name).exists()]
+    if found:
+        lines.append(
+            f"warning: .agent/ holds {', '.join(found)}: .agent/ is also an Antigravity customization"
+            " root, so agy loads them; move them out unless you mean agy to"
+        )
     for old in (mem.dir / OLD_RULES_NAME, config_dir() / OLD_RULES_NAME):
         if old.is_file():
             lines.append(f"warning: {old} is not read since the rename (ADR-0004); rename it to cobot.rules")

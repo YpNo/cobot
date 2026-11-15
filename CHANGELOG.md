@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Install into Antigravity (T06): `./install.sh --agy` runs `agy plugin validate` on
+  `plugins/cobot`, then `agy plugin install` of it at user scope; the same command refreshes (agy
+  replaces the copy in place and restores it on failure), so it never uninstalls first. A failed
+  validate installs nothing and a failed install exits 1 with the agy exit code. `--agy` is a
+  modifier: alone it installs into agy only, beside `--project`, `--local`, `--user` or
+  `--refresh` it runs that action then the agy install, in either order, and it refuses `--dev`
+  and `--uninstall`. `--check` reports agy's version and whether cobot is installed there.
+  `cobot-memory check` warns when `.agent/` holds `hooks.json`, `plugins`, `plugins.json`,
+  `rules`, `skills`, `skills.json` or `workflows`: `.agent/` is also an agy customization root.
 - The session brief under Antigravity (T05): the root `hooks.json` runs `hooks/session-agy.sh` at
   SessionStart, which prints `cobot-session start --runtime agy`: one `injectSteps` system
   message (agy presents a user message as the owner's own words), the project from

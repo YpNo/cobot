@@ -281,3 +281,105 @@ def test_install_refresh_removesOldMarketplaceWhenNoneRemain(home, old_state):
     assert "removed marketplace agentic-partner" in result.stdout
     # the real CLI clears the record itself; the fake leaves the file, so the report shows
     assert "settings.json still has extraKnownMarketplaces.agentic-partner" in result.stdout
+
+
+# ---------------------------------------------------------------- --agy (spec antigravity, story 6)
+
+FAKE_AGY = """#!/bin/sh
+echo "$*" >> "$HOME/agy-argv"
+case "$1 $2" in
+  "--version ") echo "1.5.9" ;;
+  "plugin validate")
+    [ -e "$HOME/agy-fail-validate" ] && { echo "invalid manifest" >&2; exit 1; }
+    echo "ok" ;;
+  "plugin install") [ -e "$HOME/agy-fail-install" ] && { echo "boom" >&2; exit 4; }; echo "Installed cobot" ;;
+  "plugin list")
+    if [ -e "$HOME/agy-installed" ]; then echo "cobot 0.3.0 enabled"; else echo "No plugins installed."; fi ;;
+  *) echo "fake agy: $*" ;;
+esac
+"""
+
+
+def with_agy(home_dir, fake_claude=True):
+    exe = hermetic_bin(home_dir, fake_claude) / "agy"
+    exe.write_text(FAKE_AGY)
+    exe.chmod(0o755)
+    return home_dir
+
+
+def agy_calls(home_dir):
+    argv = home_dir / "agy-argv"
+    return argv.read_text().splitlines() if argv.exists() else []
+
+
+def test_install_agy_validatesThenInstallsTheCheckout(home):
+    result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    assert result.returncode == 0, result.stderr
+    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+    assert "no agy session open" in result.stdout
+
+
+@pytest.mark.parametrize("args", [["--agy", "--project", "{t}"], ["--project", "{t}", "--agy"]])
+def test_install_agy_isAModifier_bothOrdersRunBoth(home, tmp_path, args):
+    target = tmp_path / "repo"
+    target.mkdir()
+    result = run_install([a.replace("{t}", str(target)) for a in args], with_agy(home))
+    assert result.returncode == 0, result.stderr
+    assert "installed cobot@cobot --scope project" in result.stdout
+    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+
+
+def test_install_agy_failedValidate_installsNothingAndFailsLoudly(home):
+    with_agy(home)
+    (home / "agy-fail-validate").write_text("")
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    assert agy_calls(home) == [f"plugin validate {PLUGIN}"]
+    assert "agy plugin validate failed" in result.stderr
+
+
+def test_install_agy_failedInstall_failsLoudly(home):
+    with_agy(home)
+    (home / "agy-fail-install").write_text("")
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    assert "agy plugin install failed (exit 4)" in result.stderr
+    assert "previous copy" in result.stderr
+
+
+def test_install_agy_withoutAgy_exitsOne(home):
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    assert "agy not found" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "args", [["--agy", "--uninstall"], ["--uninstall", "user", "--agy"], ["--dev", "--agy"]]
+)
+def test_install_agy_neverUninstallsAndRefusesTheOtherActions(home, args):
+    result = run_install(args, with_agy(home))
+    assert result.returncode == 2
+    assert not any("uninstall" in call for call in agy_calls(home))
+
+
+def test_install_agy_refreshNeverUninstallsFromAgy(home, tmp_path):
+    result = run_install(["--refresh", str(tmp_path), "--agy"], with_agy(home))
+    assert result.returncode == 0, result.stderr
+    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+
+
+def test_install_check_reportsAgyState(home):
+    with_agy(home)
+    result = run_install(["--check"], home)
+    assert "== Antigravity" in result.stdout and "1.5.9" in result.stdout
+    assert "cobot: not installed" in result.stdout
+    (home / "agy-installed").write_text("")
+    result = run_install(["--check", "--agy"], home)
+    assert result.returncode == 0
+    assert "cobot 0.3.0 enabled" in result.stdout
+    assert "plugin install" not in "\n".join(agy_calls(home))
+
+
+def test_install_check_withoutAgy_saysNotFound(home):
+    result = run_install(["--check"], home)
+    assert "agy: not found" in result.stdout

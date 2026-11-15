@@ -5,9 +5,10 @@
 #   --refresh [DIR]       uninstall and reinstall at the installed scope (project or local): the cache only refreshes on a version change
 #   --local [DIR]         same, at local scope (foreign repositories: never committed)
 #   --user                install at user scope (reserved for the switch, docs/03-switch-plan.md)
-#   --check               report Claude Code, marketplace, installed scopes and the legacy scaffold
+#   --check               report Claude Code, marketplace, installed scopes, the legacy scaffold and agy
 #   --uninstall [SCOPE]   uninstall from SCOPE (project | local | user; default project)
 #   --source github|path  where the marketplace comes from (default: path = this checkout)
+#   --agy                 also (or alone: only) validate and install this checkout into Antigravity (agy), user scope; it refreshes too
 set -eu
 
 REPO_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +32,7 @@ OLD_CONF=$CLAUDE_DIR/$OLD_PLUGIN
 NEW_CONF=$CLAUDE_DIR/$PLUGIN
 source_kind=path
 
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
 
 need_claude() {
   command -v claude >/dev/null 2>&1 || { echo "install: claude not found on PATH" >&2; exit 1; }
@@ -112,6 +113,25 @@ retire_old_marketplace() { # before the new marketplace registers: a folder carr
     echo "migrate: $CLAUDE_DIR/settings.json still has extraKnownMarketplaces.$OLD_MARKETPLACE: delete that key by hand"
   fi
   return 0
+}
+
+cmd_agy() { # validate, then install: agy replaces an installed copy in place and restores it on failure
+  command -v agy >/dev/null 2>&1 || { echo "install: agy not found on PATH" >&2; exit 1; }
+  echo "agy: validating $PLUGIN_DIR (run this with no agy session open)"
+  agy plugin validate "$PLUGIN_DIR" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
+  echo "agy: installing $PLUGIN_DIR at user scope"
+  rc=0; agy plugin install "$PLUGIN_DIR" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "install: agy plugin install failed (exit $rc); agy keeps the previous copy, if one was installed" >&2
+    exit 1
+  fi
+}
+
+report_agy() {
+  echo "== Antigravity (agy)"
+  if ! command -v agy >/dev/null 2>&1; then echo "  agy: not found"; return 0; fi
+  echo "  agy $(agy --version 2>/dev/null || echo 'version unknown')"
+  agy plugin list 2>/dev/null | grep "$PLUGIN" || echo "  $PLUGIN: not installed"
 }
 
 cmd_dev() {
@@ -208,12 +228,14 @@ cmd_check() {
   echo "== Migration from $OLD_MARKETPLACE"
   pending=$(migrate_state check .)
   if [ -n "$pending" ]; then echo "$pending"; else echo "  nothing to migrate"; fi
+  report_agy
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
-action=""; arg=""
+action=""; arg=""; agy=0
 while [ $# -gt 0 ]; do
   case $1 in
+    --agy) agy=1 ;;
     --dev|--check|--user) action=$1 ;;
     --project|--local|--refresh|--uninstall) action=$1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then arg=$2; shift; fi ;;
     --source) [ $# -gt 1 ] || { usage; exit 2; }; source_kind=$2; shift ;;
@@ -223,6 +245,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 case $source_kind in github|path) ;; *) echo "install: --source must be github or path" >&2; exit 2 ;; esac
+# --agy is a modifier: alone it installs into agy only; it never uninstalls (agy replaces in place)
+if [ "$agy" -eq 1 ]; then
+  case $action in
+    --dev|--uninstall) echo "install: --agy installs or refreshes only; it does not combine with $action" >&2; exit 2 ;;
+    "") cmd_agy; exit 0 ;;
+  esac
+fi
 case $action in
   --dev) cmd_dev ;;
   --project) cmd_install project "$arg" ;;
@@ -233,3 +262,4 @@ case $action in
   --uninstall) cmd_uninstall "$arg" ;;
   *) usage; exit 2 ;;
 esac
+if [ "$agy" -eq 1 ] && [ "$action" != --check ]; then cmd_agy; fi

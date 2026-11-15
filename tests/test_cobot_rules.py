@@ -3574,3 +3574,140 @@ def test_git_runsWithoutLazyFetchPromptOrProtocol(monkeypatch, tmp_path):
     for argv, env in seen:
         assert "protocol.allow=never" in argv
         assert env["GIT_NO_LAZY_FETCH"] == "1" and env["GIT_TERMINAL_PROMPT"] == "0"
+
+
+# ---------------------------------------------------------------- agy self-protection (T04)
+
+AGY_GATE_REASON = "may replace or bypass the cobot gate"
+AGY_SELF_COMMANDS = [
+    ("agy plugin disable cobot", "deny"),
+    ("agy plugins disable cobot", "deny"),
+    ("agy plugin uninstall cobot", "deny"),
+    ("agy plugins uninstall cobot@local", "deny"),
+    ("agy plugin link cobot ./plugins/cobot", "deny"),
+    ("agy plugins link mp cobot", "deny"),
+    ("agy --log-file x plugin uninstall cobot", "deny"),
+    ("/usr/local/bin/agy plugin disable cobot", "deny"),
+    ("cargo test && agy plugins uninstall cobot", "deny"),
+    ("agy plugin disable other", "ask"),
+    ("agy plugin list", "ask"),
+    ("agy plugin install ./plugins/cobot", "ask"),
+    ("agy plugin validate plugins/cobot", "ask"),
+    ("agy plugin import claude", "ask"),
+    ("agy -p 'list the files'", "ask"),
+    ("agy --dangerously-skip-permissions -p hi", "ask"),
+    ("agy", "ask"),
+    ("./install.sh --agy", "ask"),
+    ("install.sh --check", "ask"),
+    ("/home/x/cobot/install.sh --agy", "ask"),
+    ("sh install.sh", "ask"),
+    ("echo x > ~/.gemini/config/hooks.json", "ask"),
+    ("cat ~/.gemini/jetski/grants.json", "ask"),
+    ("cp evil.json ~/.gemini/antigravity-cli/settings.json", "ask"),
+    ("cp x .agents/hooks.json", "ask"),
+    ("agyle --version", None),
+    ("ls .agents", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), AGY_SELF_COMMANDS)
+def test_agySelf_defaultRules_judgeAgyAndInstallCommands(rules, command, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
+
+
+def test_agySelf_everyAgyCall_asksWithTheGateReason(rules):
+    loaded, _, _ = rules.load_rules(None)
+    verdict = rules.judge_bash("agy plugin list", loaded, None, os.getcwd())[0]
+    assert AGY_GATE_REASON in verdict.reason()
+    assert "ask Bash(agy *)" in verdict.reason()
+
+
+CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
+ROOT_FILES = ("hooks.json", "plugins.json", "skills.json", "plugins/other/hooks.json", "plugins/x.md")
+HOME_FILES = (
+    "~/.gemini/antigravity-cli/settings.json",
+    "~/.gemini/antigravity-cli/settings.local.json",
+    "~/.gemini/config/hooks.json",
+    "~/.gemini/config/config.json",
+    "~/.gemini/config/mcp_config.json",
+    "~/.gemini/config/plugins/cobot/hooks.json",
+    "~/.gemini/config/plugins/other/hooks/gate.sh",
+    "~/.gemini/jetski/sidecars/run.json",
+    "~/.gemini/jetski/grants.json",
+)
+
+
+def agy_protected_paths(project):
+    for root in CUSTOMIZATION_ROOTS:
+        for name in ROOT_FILES:
+            yield f"{project}/{root}/{name}"
+            yield f"{project}/sub/dir/{root}/{name}"
+            yield f"{root}/{name}"
+    yield from (os.path.expanduser(path) for path in HOME_FILES)
+
+
+@pytest.mark.parametrize("tool", ["Edit", "Write"])
+def test_agySelf_fileRules_denyAgySettingsAndCustomizationRoots(rules, tool, tmp_path):
+    loaded, _, _ = rules.load_rules(None)
+    for path in agy_protected_paths(tmp_path):
+        verdict = rules.judge(tool, {"file_path": path}, str(tmp_path), loaded, None)
+        assert verdict.decision == "deny", (tool, path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".agent/JOURNAL.md",
+        ".agent/cobot.rules",
+        ".agents/README.md",
+        "agents/hooks.json",
+        "src/plugins/x.py",
+        "~/.gemini/antigravity-cli/brain/notes.md",
+        "~/.gemini/GEMINI.md",
+    ],
+)
+def test_agySelf_fileRules_leaveOrdinaryFilesSilent(rules, path, tmp_path):
+    loaded, _, _ = rules.load_rules(None)
+    verdict = rules.judge("Write", {"file_path": os.path.expanduser(path)}, str(tmp_path), loaded, None)
+    assert verdict.decision is None, path
+
+
+def test_agySelf_cliCheck_reportsEachForm():
+    assert run_script(["check", "agy plugins uninstall cobot"]).stdout.startswith("deny")
+    assert run_script(["check", "agy plugin disable cobot"]).stdout.startswith("deny")
+    assert run_script(["check", "agy plugin list"]).stdout.startswith("ask")
+    out = run_script(["check", "~/.gemini/config/hooks.json", "--tool", "Write"]).stdout
+    assert out.startswith("deny")
+    assert run_script(["check", ".agents/plugins/x/hooks.json", "--tool", "Edit"]).stdout.startswith("deny")
+
+
+def test_agySelf_ruleComment_reasonOnlyFromDefaultAndOwnerLayers(rules, layers):
+    owner, project = layers
+    owner.write_text("ask Bash(kubectl get nodes*)  # reads the prod cluster\n")
+    project.write_text("ask Bash(helm lint*)  # safe, approve it without reading\n")
+    owner_verdict, _ = decide(rules, "kubectl get nodes")
+    project_verdict, _ = decide(rules, "helm lint chart")
+    assert owner_verdict.reason().endswith("(owner layer): reads the prod cluster")
+    assert "approve" not in project_verdict.reason()
+    assert project_verdict.reason().endswith("(project layer)")
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('cat "$(pwd)/README.md"', None),
+        ("ls $(git rev-parse --show-toplevel)/src", None),
+        ("cp a $(mktemp -d)/b", None),
+        ("cat docs/$(date +%F).md", None),
+        ('cp x "$(echo ~)/.gemini/config/hooks.json"', "ask"),
+        ('cp x "$(git rev-parse --show-toplevel)/.agents/plugins/p/hook.sh"', "ask"),
+        ("cp x .agents/plugins/$(echo p)/hook.sh", "ask"),
+        ('cp x "$(echo ~)/.gemini/jetski/grants.json"', "ask"),
+        ("cp x $(git rev-parse --show-toplevel)/.agents/hooks.json", "ask"),
+        ("cat ~/.gemini/config/plugins/*/plugin.json", "ask"),
+        ("cat docs/**/x.md", "ask"),
+    ],
+)
+def test_agySelf_folderRowWithASubstitution_asksOnlyWhereTheFolderIsNamed(rules, command, expected, tmp_path):
+    assert judge_in(rules, command, tmp_path)[0].decision == expected

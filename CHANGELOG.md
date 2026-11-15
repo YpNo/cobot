@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Self-protection under Antigravity (T04): the default rules deny editing or writing agy's
+  settings (`~/.gemini/antigravity-cli/settings*.json`), `~/.gemini/config/*` (hooks,
+  enablement, MCP servers, installed plugins) and `~/.gemini/jetski/*` (command sidecars, access
+  grants), and in every customization root (`.agents`, `.agent`, `_agents`, `_agent`, at any
+  depth) `hooks.json`, `plugins.json`, `skills.json` and `plugins/*`: a hook or plugin there runs
+  outside the gate. `agy plugin` and `agy plugins` `disable`, `uninstall` and `link` naming
+  cobot are denied; every other `agy` call asks ("may replace or bypass the cobot gate"), and so
+  does `install.sh`. A rule's trailing `# comment` now joins its reason, from the default and
+  owner layers only (repository text does not speak in a permission prompt). A folder row
+  (`<dir>/*`) meets a command substitution only where the token names the folder's last part
+  (`plugins/`, `config/`), so `cat "$(pwd)/README.md"` stays silent.
 - The rules gate under Antigravity (T03): a root `hooks.json` sends every agy tool call
   (`matcher: ".*"`) to `hooks/gate-agy.sh`, which runs `cobot-rules gate --runtime agy` under an
   8 s deadline and prints a deny with exit 0 on every failure (no or old `python3`, a non-zero

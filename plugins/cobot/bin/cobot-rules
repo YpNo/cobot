@@ -337,9 +337,12 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 }
 TOOLCHAIN_PROXIES = frozenset({"cargo"})  # ``cargo +nightly …``: rustup picks the toolchain
 FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
-RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#.*)?$")
-MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#.*)?$")
+RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#(.*))?$")
+MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#(.*))?$")
 LAYERS = ("default", "owner", "project")
+# a rule's trailing ``# comment`` joins its reason, except from the project layer: repository text
+# must not speak to the owner in a permission prompt
+NOTE_LAYERS = frozenset({"default", "owner"})
 
 
 @dataclass(frozen=True)
@@ -350,6 +353,7 @@ class Rule:
     agent: str | None
     layer: str
     line: int
+    note: str = ""  # the trailing comment, default and owner layers only
 
     def text(self) -> str:
         scope = f" @{self.agent}" if self.agent else ""
@@ -367,6 +371,7 @@ class Verdict:
     def reason(self) -> str:
         if self.rule:
             text = f"cobot rule: {self.rule.text()} ({self.rule.layer} layer)"
+            text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
         return f"{text} via {self.via}" if self.via else text
@@ -391,20 +396,21 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
         return None
     match = RULE_RE.match(stripped)
     if match:
-        decision, tool, pattern, agent = match.groups()
+        decision, tool, pattern, agent, comment = match.groups()
     else:
         mcp = MCP_RULE_RE.match(stripped)
         if not mcp:
             warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
             return None
-        decision, pattern, agent = mcp.groups()
+        decision, pattern, agent, comment = mcp.groups()
         tool = "mcp"
     if layer == "project" and decision == "allow":
         warnings.append(
             f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
         )
         return None
-    return Rule(decision, tool, pattern, agent, layer, number)
+    note = (comment or "").strip() if layer in NOTE_LAYERS else ""
+    return Rule(decision, tool, pattern, agent, layer, number, note)
 
 
 def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -> None:
@@ -2407,9 +2413,23 @@ def globstar(token: str) -> bool:
     return any(a + b in token for a, b in itertools.pairwise(stars))
 
 
+def folder_named(rule: Rule, token: str) -> bool:
+    """A folder row (``<dir>/*``) meets a token with a substitution only where the token names the
+    folder's last part with its ``/``: ``$(pwd)/README.md`` could be any path, and such a row would
+    otherwise ask on every one. A substitution that hides the whole folder is read like a variable,
+    which the gate does not resolve either. A glob reaches real files: it keeps the full check."""
+    if not rule.pattern.endswith("/*"):
+        return True
+    if all(shell.kind_of(key) == "glob" for key in shell.sentinels(token)):
+        return True
+    return rule.pattern[:-2].rsplit("/", 1)[-1] + "/" in token
+
+
 def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
     """Whether some text in place of the token's substitutions, or some file names for its globs,
     makes it a path the rule protects."""
+    if not folder_named(rule, token):
+        return False
     glob, fold = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     pattern = os.path.expanduser(rule.pattern)

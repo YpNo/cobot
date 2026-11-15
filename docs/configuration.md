@@ -34,6 +34,15 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 One rule per line: `decision Tool(pattern) [@agent]`, or `decision mcp__<server>__<tool>` for an
 MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`,
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
+A trailing `# comment` on a default or owner row joins the reason the gate gives, as in
+`ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped, so
+repository text never speaks in a permission prompt.
+
+A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
+path inside it ask too. With a command substitution in the path, it asks only where the path
+names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,
+`cat "$(pwd)/README.md"` does not; a substitution that hides the whole folder is read like a
+variable.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

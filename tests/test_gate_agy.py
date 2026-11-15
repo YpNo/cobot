@@ -412,6 +412,33 @@ def test_rootHooksJson_routesEveryToolThroughTheShim():
     assert hook == {"type": "command", "command": "sh ./hooks/gate-agy.sh", "timeout": 10}
 
 
+# ---------------------------------------------------------------- self-protection under agy (T04)
+
+
+@pytest.mark.parametrize(
+    "name, args",
+    [
+        ("write_to_file", {"TargetFile": "~/.gemini/config/hooks.json"}),
+        ("replace_file_content", {"TargetFile": "~/.gemini/antigravity-cli/settings.json"}),
+        ("edit_file", {"Path": "~/.gemini/jetski/grants.json"}),
+        ("write_file", {"Path": "{ws}/.agents/plugins/p/hooks.json"}),
+        ("multi_replace_file_content", {"TargetFile": "{ws}/sub/_agent/hooks.json"}),
+        ("run_command", {"CommandLine": "agy plugins uninstall cobot"}),
+    ],
+)
+def test_agySelf_underAgy_denied(rules, workspace, agy_home, name, args):
+    def fill(value):
+        return value.replace("{ws}", str(workspace)).replace("~", str(agy_home))
+
+    assert decide(rules, name, {k: fill(v) for k, v in args.items()}, [workspace]) == "deny"
+
+
+def test_agySelf_underAgy_agyCallAsksWithTheReason(rules, workspace):
+    data = answer(rules, payload("run_command", {"CommandLine": "agy plugin list"}, [workspace]))
+    assert data["decision"] == "force_ask"
+    assert data["reason"].endswith("may replace or bypass the cobot gate")
+
+
 def test_corpus_noAnswerEverAutoApproves():
     # defined last: pytest runs a module's tests in definition order, so CORPUS holds every answer
     assert len(CORPUS) > 50

@@ -4111,3 +4111,43 @@ def test_cdOperand_ordinaryVariables_staySilent(rules, fake_home, command):
 )
 def test_cdUnknown_wordNamingAProtectedFile_asks(rules, workspace, command):
     assert judge_in(rules, command, workspace)[0].decision == "ask", command
+
+
+# ---------------------------------------------------------------- residuals: parents and F-32
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -r ~/.gemini",
+        'rm -r "$HOME/.gemini"',
+        "unlink ~/.gemini",
+        "git rm -r ~/.gemini",
+        "RM -r ~/.Gemini",
+    ],
+)
+def test_parentDeletion_ofAProtectedFolder_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", ["rm -r ~/.cache/x", "rm -r build", "rmdir ws/docs"])
+def test_parentDeletion_ordinaryFolders_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home)[0].decision is None, command
+
+
+@pytest.mark.parametrize("command", ["ls", "git status", "cat README.md", "cd .. && cd vault && ls"])
+def test_protectedCwd_asksOnceNamingTheFolder(rules, workspace, command):
+    start = workspace / "vault" if not command.startswith("cd") else workspace / "docs"
+    verdict = judge_in(rules, command, start)[0]
+    assert verdict.decision == "ask", command
+    reason = verdict.reason()
+    assert "is inside a protected folder" in reason and "vault" in reason
+    assert "never Write rule at .agent/cobot.rules:1 (project layer)" in reason
+    assert "'ls'" not in reason and "'git'" not in reason
+
+
+def test_protectedCwd_ordinaryFolder_staysSilent(rules, workspace):
+    assert judge_in(rules, "ls", workspace / "docs")[0].decision is None
+    assert judge_in(rules, "git status", workspace)[0].decision is None

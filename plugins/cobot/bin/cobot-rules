@@ -2416,6 +2416,16 @@ CUSTOMIZATION_ROOTS_FOLDED = frozenset(root.casefold() for root in agy.CUSTOMIZA
 GLOB_CHARS = "*?["
 
 
+DESTROYING = frozenset({"rm", "rmdir", "unlink", "shred", "trash", "trash-put"})  # a folder vanishes
+
+
+def destroys(segment: list[str]) -> bool:
+    """Whether the segment deletes what it names: removing a protected folder's parent removes the
+    folder (``rm -r ~/.gemini``)."""
+    head = os.path.basename(segment[0]).lower() if segment else ""
+    return head in DESTROYING or (head == "git" and "rm" in segment[1:3])
+
+
 def relocates(segment: list[str]) -> bool:
     head = os.path.basename(segment[0]).lower() if segment else ""  # ``MV`` runs mv on APFS
     return head in RELOCATING or (head == "git" and "mv" in segment[1:3])
@@ -2438,7 +2448,12 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
 
 
 def word_touches(
-    token: str, cwd: str | None, protected: list[Rule], relocating: bool, anchors: frozenset[str]
+    token: str,
+    cwd: str | None,
+    protected: list[Rule],
+    relocating: bool,
+    anchors: frozenset[str],
+    destroying: bool = False,
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
@@ -2450,10 +2465,13 @@ def word_touches(
     forms = file_forms(token, cwd)
     if any(matches_file(r, forms, fold=True) for r in protected):
         return True
+    anchored = any(os.path.normpath(form).casefold() in anchors for form in forms)
+    if destroying and anchored:
+        return True
     if not relocating:
         return False
     named_root = os.path.basename(token.rstrip("/")).casefold() in CUSTOMIZATION_ROOTS_FOLDED
-    return named_root or os.path.normpath(forms[0]).casefold() in anchors
+    return named_root or anchored
 
 
 def protected_file_touched(
@@ -2477,21 +2495,51 @@ def protected_file_touched(
         jobs.append((paths, union(visited, start), False))
     for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
+        skipped = command_words(segment) if command else frozenset()
         relocating = command and relocates(segment)
+        destroying = command and destroys(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         for index, token in enumerate(segment):
-            if token.startswith("-") or index == program:
+            if token.startswith("-") or index == program or index in skipped:
                 continue
             for form in home_forms(token):
                 anchored = os.path.isabs(form) or form.startswith("~")
                 if any(
-                    word_touches(form, base, protected, relocating, anchors)
+                    word_touches(form, base, protected, relocating, anchors, destroying)
                     for base in bases[: 1 if anchored else None]
                 ):
                     return token
                 if moved and not anchored and names_a_protected_file(form, protected):
                     return token
+    return None
+
+
+def command_words(segment: list[str]) -> frozenset[int]:
+    """The indexes of the program word and the wrappers before it that carry no ``/``: PATH finds
+    them, never the working directory, so ``ls`` run inside a protected folder names no file in
+    it (F-32; ``protected_cwd`` asks for that folder instead)."""
+    program = strip_wrappers(segment)
+    at = len(segment) - len(program) if program else len(segment)
+    return frozenset(
+        i for i in range(min(at + 1, len(segment))) if "/" not in segment[i] and "=" not in segment[i]
+    )
+
+
+def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
+    """An ask when a command runs in a folder a ``never`` Edit/Write folder row protects: a command
+    without a file word (``make clean``, ``git clean -fdx``) still writes there (F-32)."""
+    rows = [
+        r
+        for r in rules
+        if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent and r.pattern.endswith("/*")
+    ]
+    for directory in directories:
+        forms = file_forms(os.path.join(directory, "x"), None)
+        found = next((r for r in rows if matches_file(r, forms, fold=True)), None)
+        if found:
+            note = f"the working directory '{directory}' is inside a protected folder"
+            return Verdict(ASK, None, f"{note}: {found.shown()} ({found.layer} layer)")
     return None
 
 
@@ -3028,8 +3076,12 @@ def judge_bash(
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
     placed = [(segment, dirs) for segment, _, _, dirs in entries]
+    directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()))
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
-    if touched:
+    in_protected = protected_cwd(directories, rules)
+    if in_protected:
+        best = in_protected
+    elif touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)

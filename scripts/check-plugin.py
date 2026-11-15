@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Plugin contract check (CI): SKILL.md sizes, description lengths, agent listing budget, protocol size,
-knowledge lines, the two manifests, strict YAML frontmatter.
+knowledge lines, the two manifests, strict YAML frontmatter, the Antigravity agents.
 
 Usage: python3 scripts/check-plugin.py [plugin dir]   exit 1 on any violation.
 """
@@ -11,6 +11,10 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "cobot" / "bin"))
+
+from _cobot_agy import AGENT_TIERS, AGY_TOOLS, agent_fields  # noqa: E402
 
 SKILL_MAX_LINES = 500
 SKILL_BODY_MAX_BYTES = 24_000  # agy skips a SKILL.md whose body is larger
@@ -29,6 +33,7 @@ CLAUDE_MANIFEST = ".claude-plugin/plugin.json"
 AGY_MANIFEST = ".antigravity-plugin/plugin.json"  # agy reads it first and ignores .claude-plugin/
 MANIFEST_AGREE = ("name", "version", "description", "license", "repository")
 CLAUDE_AGENTS = "claude-agents"  # Claude Code's agents, listed by file; agents/ holds agy's
+AGY_AGENTS = "agents"
 # strict YAML (agy parses frontmatter with a strict parser; Claude Code tolerates more)
 KEY_LINE = re.compile(r"([A-Za-z0-9_-]+):(?: (.*))?")
 BLOCK_SCALAR = re.compile(r"[|>][+-]?")
@@ -164,6 +169,41 @@ def agent_list_problems(plugin: Path) -> list[str]:
     return problems
 
 
+def twin_problems(plugin: Path) -> list[str]:
+    """Every Claude Code agent has its agy twin and the reverse (scripts/sync-agents.py writes them)."""
+    claude = {p.stem for p in (plugin / CLAUDE_AGENTS).glob("*.md")}
+    agy = {p.stem for p in (plugin / AGY_AGENTS).glob("*.md")}
+    problems = [
+        f"{plugin / CLAUDE_AGENTS / name}.md: no {AGY_AGENTS}/{name}.md (python3 scripts/sync-agents.py)"
+        for name in sorted(claude - agy)
+    ]
+    problems += [
+        f"{plugin / AGY_AGENTS / name}.md: no {CLAUDE_AGENTS}/{name}.md" for name in sorted(agy - claude)
+    ]
+    return problems
+
+
+def agy_agent_problems(agent: Path) -> list[str]:
+    """agy skips an agent whose tools are a string or whose model is not a tier, and accepts an
+    unknown tool name silently: hold all three, and keep it a subagent."""
+    fields = agent_fields(agent.read_text(encoding="utf-8"))
+    problems = strict_yaml(agent)
+    if fields.get("name") != agent.stem:
+        problems.append(f"{agent}: name {fields.get('name')!r} is not the file name")
+    tools = fields.get("tools")
+    if not isinstance(tools, list) or not tools:
+        problems.append(f"{agent}: tools must be a YAML list")
+    else:
+        problems += [f"{agent}: unknown agy tool {tool}" for tool in tools if tool not in AGY_TOOLS]
+    if fields.get("model") not in AGENT_TIERS:
+        problems.append(
+            f"{agent}: model {fields.get('model')!r} is not one of {', '.join(sorted(AGENT_TIERS))}"
+        )
+    if fields.get("mainAgent") != "false":
+        problems.append(f"{agent}: needs mainAgent: false (a subagent, never the session's agent)")
+    return problems
+
+
 def listed(fields: dict[str, str]) -> int:
     """Characters a skill adds to the model's listing: description plus when_to_use, or nothing
     for a user-only skill (Claude Code drops disable-model-invocation skills from the listing)."""
@@ -262,6 +302,9 @@ def protocol_problems(plugin: Path) -> tuple[list[str], int]:
 def check(plugin: Path) -> list[str]:
     problems = [*manifest_problems(plugin), *agent_list_problems(plugin), *background_spawns(plugin)]
     problems.extend(consult_problems(plugin))
+    problems.extend(twin_problems(plugin))
+    for agent in sorted((plugin / AGY_AGENTS).glob("*.md")):
+        problems.extend(agy_agent_problems(agent))
     skills = sorted((plugin / "skills").glob("*/SKILL.md"))
     for skill in skills:
         problems.extend(skill_problems(skill))

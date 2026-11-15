@@ -36,11 +36,18 @@ def manifests(root: Path, agents: list[str], **agy) -> None:
         (root / folder / "plugin.json").write_text(json.dumps({**MANIFEST, **extra}))
 
 
+AGY_AGENT = (
+    "---\nname: {name}\ndescription: d\ntools:\n  - view_file\nmodel: flash\nmainAgent: false\n---\nbody\n"
+)
+
+
 def agent(root: Path, name: str, description: str = "an agent") -> Path:
-    """A Claude Code agent in claude-agents/, listed in the manifest."""
+    """A Claude Code agent in claude-agents/, listed in the manifest, and its agy twin in agents/."""
     path = root / "claude-agents" / f"{name}.md"
     path.parent.mkdir(exist_ok=True)
     path.write_text(f"---\nname: {name}\ndescription: {description}\n---\nbody\n")
+    (root / "agents").mkdir(exist_ok=True)
+    (root / "agents" / f"{name}.md").write_text(AGY_AGENT.format(name=name))
     listed = json.loads((root / ".claude-plugin" / "plugin.json").read_text())["agents"]
     manifests(root, sorted({*listed, f"./claude-agents/{name}.md"}))
     return path
@@ -158,8 +165,8 @@ def test_check_manifestAgentsListDiffersFromTheFolder_fails(contract, plugin):
 
 def test_check_agentListingBudget_countsTheManifestListNotAgyAgents(contract, plugin, monkeypatch):
     monkeypatch.setattr(contract, "AGENT_BUDGET_TOKENS", 30)
-    (plugin / "agents").mkdir()
-    (plugin / "agents" / "a.md").write_text("---\nname: a\ndescription: " + "x" * 400 + "\n---\n")
+    twin = AGY_AGENT.format(name="a").replace("description: d", "description: " + "x" * 400)
+    (plugin / "agents" / "a.md").write_text(twin)
     assert not any("listing" in p for p in contract.check(plugin))
     agent(plugin, "b", "y" * 120)
     assert any("agents: listing" in p for p in contract.check(plugin))
@@ -218,3 +225,28 @@ def test_realPlugin_everyFrontmatterIsStrictYaml(contract):
     assert files
     problems = [f"{f}: {p}" for f in files for p in contract.yaml_problems(contract.frontmatter_text(f))]
     assert problems == []
+
+
+def test_check_claudeAgentWithoutAgyTwin_andTheReverse_fail(contract, plugin):
+    (plugin / "agents" / "a.md").unlink()
+    (plugin / "agents" / "stray.md").write_text(AGY_AGENT.format(name="stray"))
+    problems = contract.check(plugin)
+    assert any("claude-agents/a.md" in p and "no agents/a.md" in p for p in problems)
+    assert any("agents/stray.md" in p and "no claude-agents/stray.md" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    "old, new, expected",
+    [
+        ("  - view_file\n", "  - view_file\n  - teleport\n", "unknown agy tool teleport"),
+        ("tools:\n  - view_file\n", "tools: view_file, grep_search\n", "tools must be a YAML list"),
+        ("model: flash", "model: sonnet", "model 'sonnet'"),
+        ("model: flash", "model: flash_lite", "model 'flash_lite'"),
+        ("mainAgent: false\n", "", "mainAgent: false"),
+        ("name: a\n", "name: b\n", "name 'b'"),
+    ],
+)
+def test_check_agyAgentContract_isHeld(contract, plugin, old, new, expected):
+    twin = plugin / "agents" / "a.md"
+    twin.write_text(twin.read_text().replace(old, new))
+    assert any("agents/a.md" in p and expected in p for p in contract.check(plugin))

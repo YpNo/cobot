@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The nine agents under Antigravity (T02): `scripts/sync-agents.py` writes `agents/<n>.md` from
+  `claude-agents/<n>.md`, the body copied and agy's frontmatter set: tools as a YAML list mapped
+  to both agy file-tool families, `sonnet` as `flash`, the learner on `pro` (agy ignores
+  `effort`), `mainAgent: false`. The consultant and the learner get no command tool and
+  `commandExecutionPolicy: "off"`, since their read lists need an agent identity agy hooks do not
+  carry: under agy they read files and pages only. Builders are told to read their language skill,
+  since agy's preload is not relied on. `check-plugin` holds every agent's twin, a known agy
+  tool name (agy accepts an unknown one silently), the tier and `mainAgent: false`; the tables
+  live in `bin/_cobot_agy.py`, shared with the gate.
+
 ### Changed
 
 - The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to

@@ -2467,6 +2467,7 @@ GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env
 
 
 TAR_PROGRAMS = frozenset({"tar", "bsdtar", "gtar"})
+FOLDER_OPTIONS_MAX = 8  # folder options one segment may name; past it the segment asks
 TAR_VALUE_LETTERS = frozenset("fCbTXgNKVHL")  # old-style letters that take the next word
 LONG_PREFIX_MIN = 5  # getopt takes a unique prefix of a long option: ``--dir`` is ``--directory``
 GIT_FOLDER_VARIABLES = ("GIT_WORK_TREE=", "GIT_DIR=")
@@ -2791,18 +2792,28 @@ def protected_file_touched(
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
-        for folder in folder_options(segment) if command else []:
+        folders = folder_options(segment) if command else []
+        if len(folders) > FOLDER_OPTIONS_MAX:
+            return folders[-1]  # past the cap the segment asks rather than judge every folder
+        origin, joined = list(bases), set()
+        for folder in folders:
             for form in home_forms(folder):
                 if any(
-                    word_touches(form, base, protected, False, anchors, True, budget, True) for base in bases
+                    word_touches(form, base, protected, False, anchors, True, budget, True) for base in origin
                 ):
                     return folder
             homed_folder = os.path.expanduser(home_forms(folder)[-1])
-            bases = sorted({*bases, *(os.path.normpath(os.path.join(b, homed_folder)) for b in bases)})
+            joined.update(
+                os.path.normpath(os.path.join(b, homed_folder)) for b in origin
+            )  # linear, never compounded
+        bases = sorted({*bases, *joined})
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         if FILES_FROM in deleted:
             return "-files0-from"
-        merged = relocating and merges_into_an_anchor(segment, bases[0], anchors)
+        merged = relocating and next(
+            (found for found in (merges_into_an_anchor(segment, base, anchors) for base in bases) if found),
+            None,
+        )
         if merged:
             return merged
         if IMPLICIT_FOLDER in deleted and any(

@@ -3919,6 +3919,14 @@ def test_projectRow_fileAndMcpReasons_nameTheirPlace(rules, layers, tmp_path):
     assert called.reason() == "cobot rule: ask mcp rule at .agent/cobot.rules:2 (project layer)"
 
 
+def test_projectRow_unknownToolName_isNotShown(rules, layers):
+    _, project = layers
+    project.write_text("ask Approve-it-is-safe(x*)\n")
+    loaded, _, _ = rules.load_rules(None)
+    rule = next(r for r in loaded if r.layer == "project")
+    assert rule.shown() == "ask tool rule at .agent/cobot.rules:1"
+
+
 def test_defaultAndOwnerRows_keepTheirText(rules, layers):
     owner, _ = layers
     owner.write_text("ask Bash(kubectl get nodes*)  # reads the prod cluster\n")

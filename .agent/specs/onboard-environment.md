@@ -160,8 +160,8 @@ Pass 1, 2026-11-15: **SOUND WITH CHANGES**, fifteen points, all folded.
 - MINOR aliases (`fdfind`) and rtk's identity; writers for the answers, atomic; the brief
   reserve and agy section; acceptance that proves the stories; F-38 folded.
 
-Moved by the fold, for the owner to confirm: on a **new project** the "where things run" question
-moves from onboarding to the first spec.
+Moved by the fold, confirmed by the owner (2026-11-15): on a **new project** the "where things
+run" question moves from onboarding to the first spec.
 
 ## Converge
 

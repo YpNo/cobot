@@ -95,6 +95,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Under Antigravity the brief's own tool calls (`python3 -I <plugin>/bin/cobot-memory check`) no
+  longer ask: the installed plugin lives under the protected `~/.gemini/config/`, and running
+  one of cobot's own `bin/` tools is not writing it. Any other word naming that folder, a
+  redirection into it included, still asks (smoke `o1`).
 - `mise --version`, `-V`, `--help` and `-h` alone no longer ask: a lone info flag names no task
   (a flag followed by anything still asks, since it may precede one).
 - Consultants fell off their read list: in run 43584857035, 16 of 21 consultant sessions hit the

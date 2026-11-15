@@ -3711,3 +3711,37 @@ def test_agySelf_ruleComment_reasonOnlyFromDefaultAndOwnerLayers(rules, layers):
 )
 def test_agySelf_folderRowWithASubstitution_asksOnlyWhereTheFolderIsNamed(rules, command, expected, tmp_path):
     assert judge_in(rules, command, tmp_path)[0].decision == expected
+
+
+@pytest.fixture
+def agy_installed(rules, tmp_path, monkeypatch):
+    """The default rules, then cobot seen as installed in agy: under ~/.gemini/config/plugins/."""
+    loaded, _, _ = rules.load_rules(None)
+    home = tmp_path / "home"
+    root = home / ".gemini" / "config" / "plugins" / "cobot"
+    (root / "bin").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(rules, "plugin_root", lambda: root)
+    return loaded, root
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("python3 -I {bin}/cobot-memory check", None),
+        ("python3 {bin}/cobot-memory brief --budget 10", None),
+        ("{bin}/cobot-rules show", None),
+        ("python3 -I {bin}/cobot-deps brief", None),
+        ("python3 -I {bin}/cobot-memory learn x --promote", "ask"),
+        ("cp evil {bin}/cobot-rules", "ask"),
+        ("python3 -I {bin}/cobot-memory check > {bin}/cobot-rules", "ask"),
+        ("python3 -c 'print(1)' {bin}/cobot-rules", "ask"),
+        ("python3 -I {bin}/../hooks.json", "ask"),
+        ("sed -i s/a/b/ {bin}/cobot-rules", "ask"),
+        ("cat {root}/hooks.json", "ask"),
+    ],
+)
+def test_agySelf_ownToolsUnderAgyConfig_runSilentlyButStayProtected(rules, agy_installed, command, expected):
+    loaded, root = agy_installed
+    filled = command.replace("{bin}", str(root / "bin")).replace("{root}", str(root))
+    assert rules.judge_bash(filled, loaded, None, str(root.parent))[0].decision == expected, filled

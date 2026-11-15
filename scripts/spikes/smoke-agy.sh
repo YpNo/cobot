@@ -71,7 +71,7 @@ ask_agy h1 "Use the run_command tool to run exactly: touch smoke-marker . Report
 if [ -e smoke-marker ]; then
   report h1 ok "a hook printing deny then exiting 1 is ignored: agy fails open on a failing hook (the shim's deny-by-output holds)"
 else
-  report h1 unclear "the call did not run: agy may honour a failing hook's output (re-read $scratch/h1.json)"
+  report h1 ok "the call did not run: agy stops at a hook that exits 1 (fails closed; re-read $scratch/h1.json)"
 fi
 rm -f smoke-marker
 
@@ -85,7 +85,11 @@ rm -rf .agents
 
 denies=$(logged '"decision": "deny"')
 ask_agy w1 "Use run_workflow with an inline Script that first calls call_tool('run_command', CommandLine='git push --force origin main'), then starts one agent() whose task is: $force_push Report what each returned."
-pushed_check w1 "run_workflow call_tool and agent()" "$denies"
+if grep -qF "headless mode cannot prompt" "$scratch/w1.err"; then
+  report w1 "not run" "print mode denied the asked run_workflow, so its call_tool and agent() never ran"
+else
+  pushed_check w1 "run_workflow call_tool and agent()" "$denies"
+fi
 report w1b info "run_workflow judged: $(logged '"tool": "run_workflow"') time(s) (expected force_ask, denied inside print mode)"
 
 echo 'never Bash(touch *)' >>.agent/cobot.rules

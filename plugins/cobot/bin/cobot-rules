@@ -2386,14 +2386,18 @@ def resolve(matched: list[Rule], note: str = "") -> Verdict:
     return Verdict(None, None, note)
 
 
-def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: list[Rule]) -> str | None:
+def protected_file_touched(
+    segments: list[list[str]], cwd: str | None, rules: list[Rule], paths: list[str] | None = None
+) -> str | None:
     """A shell token that names, or with a substitution in it could name, a file protected by a
-    ``never`` Edit/Write rule. A token that is only a substitution is not resolved, like a variable."""
+    ``never`` Edit/Write rule. A token that is only a substitution is not resolved, like a variable.
+    ``paths`` (the files the runners reached) are checked word by word, never read as a command."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
-    for segment in segments:
-        for token in segment:
+    for segment in [*segments, *([paths] if paths else [])]:
+        program = own_tool_run(segment) if segment is not paths else None
+        for index, token in enumerate(segment):
             pathlike = "/" in token or token.startswith("~") or globstar(token)
-            if not pathlike or token.startswith("-"):
+            if not pathlike or token.startswith("-") or index == program:
                 continue
             if shell.has_sentinel(token):
                 if any(path_may_match(r, token, cwd) for r in protected):
@@ -2401,6 +2405,30 @@ def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: li
             elif any(matches_file(r, file_forms(token, cwd)) for r in protected):
                 return token
     return None
+
+
+PYTHONS = frozenset({"python", "python3"})
+PYTHON_SCRIPT_OPTIONS = frozenset({"-I", "-u", "-B", "-E", "-s", "-S", "-O", "-OO", "-q"})
+
+
+def own_tool_run(segment: list[str]) -> int | None:
+    """The index of the word that names the program a segment runs, when that is one of cobot's
+    own ``bin/`` tools: the command word, or the script after ``python3`` and its plain options.
+    Under agy the plugin lives in ``~/.gemini/config/plugins/``, a protected folder, and its
+    brief runs ``python3 -I <plugin>/bin/<tool>``: running it is not writing it. Every other
+    word naming the folder is still checked, so ``cp x <plugin>/bin/cobot-rules`` asks."""
+    index = 0
+    if segment and os.path.basename(segment[0]) in PYTHONS:
+        index = 1
+        while index < len(segment) and segment[index] in PYTHON_SCRIPT_OPTIONS:
+            index += 1
+    if index >= len(segment) or shell.has_sentinel(segment[index]):
+        return None
+    word = segment[index]
+    if not os.path.isabs(os.path.expanduser(word)):
+        return None
+    folder = os.path.realpath(plugin_root() / "bin")
+    return index if os.path.dirname(os.path.realpath(os.path.expanduser(word))) == folder else None
 
 
 def globstar(token: str) -> bool:
@@ -2828,7 +2856,7 @@ def judge_bash(
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
-    touched = protected_file_touched([segment for segment, _, _ in entries] + [reached.paths], cwd, rules)
+    touched = protected_file_touched([segment for segment, _, _ in entries], cwd, rules, reached.paths)
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []

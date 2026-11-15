@@ -42,13 +42,21 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
 - `PreToolUse` stdin adds `toolCall {id, name, args}`; the answer is `decision`: `allow` defers
   to the next hook or the default policy, `auto_approve` widens, `ask` respects a cached grant,
   `force_ask` does not, `deny` blocks (live; the built-in docs abridge `allow`).
-- **A hook that exits non-zero is logged and ignored: the call runs** (1.5.3 spike, live). cobot's
-  shim therefore prints a deny with exit 0 on every failure. *smoke*: the hook's output is
-  ignored too when it exits 1.
+- A hook that exits non-zero: on 1.5.3 the call ran (spike, live docs); on 1.5.9 a workspace
+  hook printing deny and exiting 1 blocked the call with "JSON hook … failed" (smoke `h1`).
+  cobot's shim still prints a deny with exit 0 on every failure, which holds either way.
+- Hook groups from every source merge by **name**: a workspace `.agents/hooks.json` group named
+  like the plugin's with `"enabled": false` switches the plugin's group off (smoke `h2`).
+  Workspace hooks ran before the plugin's (`h1`).
+- Print mode (`agy -p`) denies an ask it cannot prompt for ("headless mode cannot prompt"), so
+  a `force_ask` is a deny there (smoke `w1`, `b1`).
+- `run_command` saw the checkout's `.git` read-only (a `git push` could not update its
+  remote-tracking ref) (smoke `h2`).
 - `SessionStart` answers `{"injectSteps": [{"systemMessage": {"systemMessage": "…"}}]}`; no size
   limit is documented (docs, live). A user-message step would read as the owner's own words.
-- *smoke*: whether `PreToolUse` fires for an `invoke_subagent` child's calls and inside
-  `run_workflow` (`call_tool` runs pre-tool hooks and an unapproved ask is denied: docs).
+- `PreToolUse` fires for an `invoke_subagent` child's calls (smoke `g2`). *smoke*: inside
+  `run_workflow` (`call_tool` runs pre-tool hooks and an unapproved ask is denied: docs); not
+  reached in print mode, which denies the asked `run_workflow` itself.
 
 ## Tools
 

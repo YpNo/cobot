@@ -218,6 +218,24 @@ def test_brief_findingsFloorAndTail(memory, repo):
     assert len(brief) <= 3000 + 600
 
 
+@pytest.mark.parametrize("budget", [3000, 6000])
+def test_brief_longFindingsAndTail_stayWithinTheBudget(memory, repo, budget):
+    entry = "Changed: " + "y" * 900 + "\nOpen: o\nNext: n\n"
+    journal = f"# J\n\n## 2026-01-01 — one\n{entry}\n## 2026-01-02 — two\n{entry}"
+    agent = seed(repo, journal=journal, context=LONG_CONTEXT)
+    rows = "".join(f"| F-{i:02d} | seen {i} | {'observation ' * 60} | |\n" for i in range(1, 6))
+    header = "# F\n| # | Seen | Observation | Goes to |\n|---|---|---|---|\n"
+    (agent / "FINDINGS.md").write_text(header + rows)
+    (agent / "knowledge").mkdir()
+    (agent / "knowledge" / "gha.md").write_text("# k\n")
+    (agent / "specs").mkdir()
+    for i in range(20):
+        (agent / "specs" / f"spec-number-{i}.md").write_text("# s\n")
+    brief = memory.build_brief(memory.Memory(), budget, trust_check=False)
+    assert "## FINDINGS open: 5" in brief and "specs: spec-number-0" in brief
+    assert len(brief) <= budget
+
+
 def test_brief_longContextIsCapped(memory, repo):
     seed(repo, context="# x\n\nprofile: cli\n" + "\n".join(f"- constraint {i}" for i in range(400)))
     brief = memory.build_brief(memory.Memory(), 1500, trust_check=False)

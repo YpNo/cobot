@@ -33,8 +33,9 @@ glob lists a folder, it runs nothing).
 - Rules before autonomy: every change only adds asks or denies, or rewrites a reason; holds.
 - Proof not promises: each table row is a test; the bypass-aimed review runs after the build
   (lesson from the gate PRs: each found bypasses the challenger missed); holds.
-- Governance (`docs/01-decisions.md`): 28 (the gate's soundness target) gains the cd and case
-  rows; 6 and 20 hold; the others are not relevant.
+- Governance (`docs/01-decisions.md`): no decision changes (the protected-file check's reach is
+  documented in `docs/configuration.md` and the architecture security model); 6 and 20 hold;
+  the others are not relevant.
 - Architecture: plain layering, inside `cobot-rules`; no new module.
 - New dependencies: none (`glob` and `os` from the standard library).
 - Delivery: one branch `security/gate-residuals`, one PR; tasks below are the commits. The branch
@@ -120,8 +121,8 @@ None asked. Decisions taken (each expensive to undo is listed under Trade-offs):
    `realpath` in place and check the rest lexically (`path_may_match`). Regular files are
    already covered lexically. At most `GLOB_ENTRIES_MAX = 4096` entries and
    `GLOB_DEADLINE = 0.25` s per command; past either, ask.
-9. Docs (configuration known asks, architecture security model, decision 28 amended), CHANGELOG
-   Security, FINDINGS F-29..F-32 closed, the residuals named.
+9. Docs (configuration Rules and known asks, architecture security model), CHANGELOG Fixed,
+   FINDINGS F-29..F-32 closed, the residuals named.
 
 ## Tasks
 
@@ -133,7 +134,7 @@ None asked. Decisions taken (each expensive to undo is listed under Trade-offs):
 | T04 | F-31: directories threaded to the protected check, redirect targets, unknown-cd last parts; tests (stories 4, 5) | a | auth | T03 |
 | T05 | parent deletion and F-32 protected cwd; tests (stories 6, 7) | a | auth | T04 |
 | T06 | link globs through `os.scandir` with an entry cap and a deadline; tests (story 8); agy rows (story 9) | a | auth | T05 |
-| T07 | docs, CHANGELOG, decision 28, FINDINGS closed | b | — | T06 |
+| T07 | docs, CHANGELOG, FINDINGS closed | b | — | T06 |
 
 All `auth` tasks are test first; one lane, since every task edits `cobot-rules`.
 

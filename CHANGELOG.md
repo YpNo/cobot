@@ -100,6 +100,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Gate residuals (F-29 to F-32, both runtimes; `.agent/specs/gate-residuals.md`): a project
+  row's reason shows its place, not its pattern or tool name; `never` and `ask` path rows and the
+  program word compare without case (macOS volumes); `$HOME/` reads as `~/`, which the `~/.gemini`
+  rows missed; words and redirect targets after a `cd` resolve in the folder it reaches, and an
+  unknown `cd` asks for a protected file's name; deleting a protected folder's parent asks; a
+  command run inside a protected folder asks once naming the folder, no longer naming its
+  program as the file; a bare glob that reaches a symlink into a protected folder asks, with a
+  bounded scan.
 - The session brief stays within its budget: the findings block left no room for the knowledge
   and specs lines after it, so a full findings block pushed the brief past its 6 000 characters
   (cobot's own brief was at 6 265).

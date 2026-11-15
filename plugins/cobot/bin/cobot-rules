@@ -343,6 +343,7 @@ LAYERS = ("default", "owner", "project")
 # a rule's trailing ``# comment`` joins its reason, except from the project layer: repository text
 # must not speak to the owner in a permission prompt
 NOTE_LAYERS = frozenset({"default", "owner"})
+RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
 
 
 @dataclass(frozen=True)
@@ -360,6 +361,14 @@ class Rule:
         body = self.pattern if self.tool == "mcp" else f"{self.tool}({self.pattern})"
         return f"{self.decision} {body}{scope}"
 
+    def shown(self) -> str:
+        """The rule as a reason shows it: its text from the default and owner layers; from the
+        project layer only its place, since the pattern is repository text that would speak to
+        the owner in the prompt (F-29). The decision and tool come from fixed vocabularies."""
+        if self.layer in NOTE_LAYERS:
+            return self.text()
+        return f"{self.decision} {self.tool} rule at {RULES_FILE}:{self.line}"
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -370,7 +379,7 @@ class Verdict:
 
     def reason(self) -> str:
         if self.rule:
-            text = f"cobot rule: {self.rule.text()} ({self.rule.layer} layer)"
+            text = f"cobot rule: {self.rule.shown()} ({self.rule.layer} layer)"
             text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
@@ -2819,7 +2828,7 @@ def could_match(
     found = [r for r in bash_rules if r.decision == decision and any(viable(r, f) for f in forms)]
     if not found:
         return None
-    note = f"{hole} could match {found[0].text()} ({found[0].layer} layer)"
+    note = f"{hole} could match {found[0].shown()} ({found[0].layer} layer)"
     return Verdict(ASK, None, note), found
 
 
@@ -3203,9 +3212,6 @@ RUNTIMES = frozenset({"claude", "agy"})
 
 def agy_output(decision: str | None, reason: str) -> str:
     return json.dumps({"decision": AGY_DECISION[decision], "reason": reason[:REASON_LIMIT]})
-
-
-RULES_FILE = ".agent/cobot.rules"
 
 
 def rules_committed(workspaces: list[str]) -> bool:

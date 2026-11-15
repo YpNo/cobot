@@ -85,6 +85,11 @@ the check and the run, archive members not written on the command line, folder o
 other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
 `busybox find` or `fd -x`.
 
+A script that writes files is denied, whatever the host suggests: a Python script read from stdin
+or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,
+`shutil.move`, `os.replace` or `os.rename`, and `perl -i`. Edit and Write show you the diff and
+meet the path rules; a script is opaque to both. A script that only reads keeps its ask.
+
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern
 that starts with `*` could match any command holding one, and every such command then asks.

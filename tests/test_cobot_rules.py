@@ -4561,3 +4561,40 @@ def test_f33Review_findFromHomeWithAStartPath_staysSilent(rules, fake_home, comm
     _, home = fake_home
     (home / "projects" / "x").mkdir(parents=True)
     assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- edits by script (F-44, part)
+
+WRITING_SCRIPTS = [
+    "python3 - <<'EOF'\nopen('a.txt', 'w').write('x')\nEOF",
+    "python3 - <<'EOF'\nfrom pathlib import Path\nPath('a.txt').write_text('x')\nEOF",
+    "python3 <<'EOF'\nwith open(p, mode='a') as f:\n    f.write('x')\nEOF",
+    "python3 -c \"open('a', 'w').write('x')\"",
+    "python3 -I - <<'EOF'\nimport shutil\nshutil.move('a', 'b')\nEOF",
+    "python - <<'EOF'\nimport os\nos.replace('a.tmp', 'a')\nEOF",
+    "perl -pi -e 's/a/b/' x.txt",
+    "perl -i -pe 's/a/b/' x.txt",
+]
+
+
+@pytest.mark.parametrize("command", WRITING_SCRIPTS)
+def test_writingScript_isDeniedWithTheEditReason(rules, command):
+    verdict = decide(rules, command)[0]
+    assert verdict.decision == "deny", command
+    assert "Edit or Write" in verdict.reason()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python3 - <<'EOF'\nimport json\nprint(json.load(open('a.json')))\nEOF",
+        "python3 - <<'EOF'\nprint(open('wa.txt').read())\nEOF",
+        'python3 -c "print(1)"',
+    ],
+)
+def test_readingScript_keepsItsAsk(rules, command):
+    assert decide(rules, command)[0].decision == "ask", command
+
+
+def test_readingPerl_isNotDenied(rules):
+    assert decide(rules, "perl -ne 'print if /x/' x.txt")[0].decision != "deny"

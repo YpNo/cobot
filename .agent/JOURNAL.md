@@ -296,3 +296,12 @@ Decided in build: the name changes at every install (a refresh too); a bare agy 
 Open: the owner re-runs the smoke (h2 must now deny; h3 decides whether a workspace auto_approve can beat cobot's deny); the upstream agy issue (hook groups not namespaced per plugin) is the owner's to file.
 Next: owner pushes, runs ./install.sh --agy and the smoke again; then the harness row, wrap and the PR.
 verified: 6420ccc · pytest+cov, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, staged agy install (throwaway HOME)
+
+## 2026-11-15 — Antigravity T08: the second smoke run passes
+
+Changed: 38339f9 docs/harnesses.md Antigravity 1.5.9 row from the second run (validate, install, gate, gate in a subagent, brief ok; agents not run); mechanics: a workspace auto_approve did not override cobot's deny (h3), hook order varies between runs (h1).
+Why: the owner re-ran ./install.sh --agy (group cobot-<random>) and scripts/spikes/smoke-agy.sh on agy 1.5.9.
+Proof: g1, g2, h1, h2, h3, s1, s2, b1, o1 ok (gate log: four force-push denies, onboard's cobot-memory check without an ask); w1 not run (print mode denies the asked run_workflow); m1 not reached (no MCP server); S4 not run; markdownlint.
+Open: no cobot agent was invoked under agy (Agents not run); run_workflow's inner calls and the MCP name form stay unproven; the upstream agy issue on hook-group namespacing is the owner's to file.
+Next: wrap (full checks, review fan-out), then the PR for feat/antigravity.
+verified: 38339f9 · smoke-agy second run (owner), markdownlint

@@ -2,7 +2,8 @@
 """cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md) and the builder report check.
 
 Commands
-  gate                       read a PreToolUse payload on stdin; print a decision or nothing
+  gate [--runtime agy]       read a PreToolUse payload on stdin; print a decision or nothing
+                             (agy: always one decision, allow meaning no opinion)
   check  "<cmd>" [--tool T] [--agent A]   dry run: decision, rule, layer
   explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
   show                       the merged rule set with provenance
@@ -39,6 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
     tomllib = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _cobot_agy as agy  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
@@ -335,9 +337,12 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 }
 TOOLCHAIN_PROXIES = frozenset({"cargo"})  # ``cargo +nightly …``: rustup picks the toolchain
 FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
-RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#.*)?$")
-MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#.*)?$")
+RULE_RE = re.compile(r"^(never|ask|allow)\s+(\S+?)\((.*)\)\s*(?:@(\S+))?\s*(?:#(.*))?$")
+MCP_RULE_RE = re.compile(r"^(never|ask|allow)\s+(mcp__\S+)\s*(?:@(\S+))?\s*(?:#(.*))?$")
 LAYERS = ("default", "owner", "project")
+# a rule's trailing ``# comment`` joins its reason, except from the project layer: repository text
+# must not speak to the owner in a permission prompt
+NOTE_LAYERS = frozenset({"default", "owner"})
 
 
 @dataclass(frozen=True)
@@ -348,6 +353,7 @@ class Rule:
     agent: str | None
     layer: str
     line: int
+    note: str = ""  # the trailing comment, default and owner layers only
 
     def text(self) -> str:
         scope = f" @{self.agent}" if self.agent else ""
@@ -365,6 +371,7 @@ class Verdict:
     def reason(self) -> str:
         if self.rule:
             text = f"cobot rule: {self.rule.text()} ({self.rule.layer} layer)"
+            text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
         return f"{text} via {self.via}" if self.via else text
@@ -373,14 +380,17 @@ class Verdict:
 # ---------------------------------------------------------------- rule files
 
 
-def layer_paths(cwd: str | None) -> dict[str, Path]:
+def fixed_layer_paths() -> dict[str, Path]:
+    """The default and owner layers: neither depends on the project."""
     owner = os.environ.get("COBOT_RULES_OWNER")
-    paths = {
+    return {
         "default": plugin_root() / "rules" / "default.rules",
         "owner": Path(owner) if owner else config_dir() / "cobot.rules",
     }
-    paths["project"] = repo_root(cwd) / ".agent" / "cobot.rules"
-    return paths
+
+
+def layer_paths(cwd: str | None) -> dict[str, Path]:
+    return {**fixed_layer_paths(), "project": repo_root(cwd) / ".agent" / "cobot.rules"}
 
 
 def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
@@ -389,20 +399,30 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
         return None
     match = RULE_RE.match(stripped)
     if match:
-        decision, tool, pattern, agent = match.groups()
+        decision, tool, pattern, agent, comment = match.groups()
     else:
         mcp = MCP_RULE_RE.match(stripped)
         if not mcp:
             warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
             return None
-        decision, pattern, agent = mcp.groups()
+        decision, pattern, agent, comment = mcp.groups()
         tool = "mcp"
     if layer == "project" and decision == "allow":
         warnings.append(
             f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
         )
         return None
-    return Rule(decision, tool, pattern, agent, layer, number)
+    note = (comment or "").strip() if layer in NOTE_LAYERS else ""
+    return Rule(decision, tool, pattern, agent, layer, number, note)
+
+
+def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -> None:
+    if not path.is_file():
+        return
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        rule = parse_rule(line, layer, number, warnings)
+        if rule:
+            rules.append(rule)
 
 
 def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
@@ -410,13 +430,20 @@ def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]
     warnings: list[str] = []
     paths = layer_paths(cwd)
     for layer, path in paths.items():
-        if not path.is_file():
-            continue
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            rule = parse_rule(line, layer, number, warnings)
-            if rule:
-                rules.append(rule)
+        read_layer(layer, path, rules, warnings)
     return rules, warnings, paths
+
+
+def load_rules_agy(workspaces: list[str]) -> tuple[list[Rule], list[str]]:
+    """The default and owner layers, and the project layer of every workspace agy names: a
+    model-written Cwd cannot drop a project ``never``."""
+    rules: list[Rule] = []
+    warnings: list[str] = []
+    for layer, path in fixed_layer_paths().items():
+        read_layer(layer, path, rules, warnings)
+    for project in dict.fromkeys(repo_root(w) / ".agent" / "cobot.rules" for w in workspaces):
+        read_layer("project", project, rules, warnings)
+    return rules, warnings
 
 
 # ---------------------------------------------------------------- command analysis
@@ -2361,21 +2388,92 @@ def resolve(matched: list[Rule], note: str = "") -> Verdict:
     return Verdict(None, None, note)
 
 
-def protected_file_touched(segments: list[list[str]], cwd: str | None, rules: list[Rule]) -> str | None:
-    """A shell token that names, or with a substitution in it could name, a file protected by a
-    ``never`` Edit/Write rule. A token that is only a substitution is not resolved, like a variable."""
+RELOCATING = frozenset({"mv", "ln", "cp", "rsync", "install", "rename"})  # a folder appears or moves
+GLOB_CHARS = "*?["
+
+
+def relocates(segment: list[str]) -> bool:
+    head = os.path.basename(segment[0]) if segment else ""
+    return head in RELOCATING or (head == "git" and "mv" in segment[1:3])
+
+
+def protected_anchors(protected: list[Rule]) -> frozenset[str]:
+    """The folders holding an absolute protected pattern, and their parents below HOME: moving or
+    linking one carries the protected files with it (``mv ~/.gemini/config x``)."""
+    home, anchors = os.path.expanduser("~"), set()
+    for rule in protected:
+        pattern = os.path.expanduser(rule.pattern)
+        if not os.path.isabs(pattern):
+            continue
+        literal = pattern[: min((pattern.find(c) for c in GLOB_CHARS if c in pattern), default=len(pattern))]
+        folder = literal.rstrip("/") if literal.endswith("/") else os.path.dirname(literal)
+        while folder not in (home, "/", "") and folder.startswith(home + "/"):
+            anchors.add(folder)
+            folder = os.path.dirname(folder)
+    return frozenset(anchors)
+
+
+def word_touches(
+    token: str, cwd: str | None, protected: list[Rule], relocating: bool, anchors: frozenset[str]
+) -> bool:
+    """Whether one shell word names, or could name, a protected file. A bare word is a path in the
+    working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
+    is only a substitution is not resolved, like a variable, while a bare glob reaches real files."""
+    pathlike = "/" in token or token.startswith("~") or globstar(token)
+    if shell.has_sentinel(token):
+        bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
+        return (pathlike or bare_glob) and any(path_may_match(r, token, cwd) for r in protected)
+    forms = file_forms(token, cwd)
+    if any(matches_file(r, forms) for r in protected):
+        return True
+    if not relocating:
+        return False
+    named_root = os.path.basename(token.rstrip("/")) in agy.CUSTOMIZATION_ROOTS
+    return named_root or os.path.normpath(forms[0]) in anchors
+
+
+def protected_file_touched(
+    segments: list[list[str]], cwd: str | None, rules: list[Rule], paths: list[str] | None = None
+) -> str | None:
+    """A shell word that names, or with a hole in it could name, a file protected by a ``never``
+    Edit/Write rule, or that moves or links a customization root or a protected folder.
+    ``paths`` (the files the runners reached) are checked word by word, never read as a command."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
-    for segment in segments:
-        for token in segment:
-            pathlike = "/" in token or token.startswith("~") or globstar(token)
-            if not pathlike or token.startswith("-"):
+    anchors = protected_anchors(protected)
+    for segment in [*segments, *([paths] if paths else [])]:
+        command = segment is not paths
+        program = own_tool_run(segment) if command else None
+        relocating = command and relocates(segment)
+        for index, token in enumerate(segment):
+            if token.startswith("-") or index == program:
                 continue
-            if shell.has_sentinel(token):
-                if any(path_may_match(r, token, cwd) for r in protected):
-                    return token
-            elif any(matches_file(r, file_forms(token, cwd)) for r in protected):
+            if word_touches(token, cwd, protected, relocating, anchors):
                 return token
     return None
+
+
+PYTHONS = frozenset({"python", "python3"})
+PYTHON_SCRIPT_OPTIONS = frozenset({"-I", "-u", "-B", "-E", "-s", "-S", "-O", "-OO", "-q"})
+
+
+def own_tool_run(segment: list[str]) -> int | None:
+    """The index of the word that names the program a segment runs, when that is one of cobot's
+    own ``bin/`` tools: the command word, or the script after ``python3`` and its plain options.
+    Under agy the plugin lives in ``~/.gemini/config/plugins/``, a protected folder, and its
+    brief runs ``python3 -I <plugin>/bin/<tool>``: running it is not writing it. Every other
+    word naming the folder is still checked, so ``cp x <plugin>/bin/cobot-rules`` asks."""
+    index = 0
+    if segment and os.path.basename(segment[0]) in PYTHONS:
+        index = 1
+        while index < len(segment) and segment[index] in PYTHON_SCRIPT_OPTIONS:
+            index += 1
+    if index >= len(segment) or shell.has_sentinel(segment[index]):
+        return None
+    word = segment[index]
+    if not os.path.isabs(os.path.expanduser(word)):
+        return None
+    folder = os.path.realpath(plugin_root() / "bin")
+    return index if os.path.dirname(os.path.realpath(os.path.expanduser(word))) == folder else None
 
 
 def globstar(token: str) -> bool:
@@ -2388,9 +2486,33 @@ def globstar(token: str) -> bool:
     return any(a + b in token for a, b in itertools.pairwise(stars))
 
 
+def reads_like_a_variable(token: str, key: str) -> bool:
+    """A substitution stands for a whole unknown path where it leads the token (``$(pwd)/x``) or
+    names its last part (``docs/$(date).md``); glued inside a folder name (``plu$(x)ins/``) or
+    standing for a folder between literal ones (``.agents/$(x)/h.sh``), it does not."""
+    at = token.index(key)
+    return at == 0 or (token[at - 1] == "/" and "/" not in token[at + len(key) :])
+
+
+def folder_named(rule: Rule, token: str) -> bool:
+    """A folder row (``<dir>/*``) meets a token with a substitution through the full check unless
+    every substitution reads like a variable and the token does not name the folder's last part
+    with its ``/``: otherwise such a row would ask on every ``$(pwd)/README.md``. A substitution
+    that hides the whole folder is read like a variable, which the gate does not resolve either. A
+    glob reaches real files: it keeps the full check."""
+    if not rule.pattern.endswith("/*"):
+        return True
+    holes = [key for key in shell.sentinels(token) if shell.kind_of(key) != "glob"]
+    if not holes or not all(reads_like_a_variable(token, key) for key in holes):
+        return True
+    return rule.pattern[:-2].rsplit("/", 1)[-1] + "/" in token
+
+
 def path_may_match(rule: Rule, token: str, cwd: str | None) -> bool:
     """Whether some text in place of the token's substitutions, or some file names for its globs,
     makes it a path the rule protects."""
+    if not folder_named(rule, token):
+        return False
     glob, fold = path_glob(os.path.expanduser(token))
     forms = [glob] if os.path.isabs(glob) else [glob, os.path.join(cwd or os.getcwd(), glob)]
     pattern = os.path.expanduser(rule.pattern)
@@ -2789,7 +2911,7 @@ def judge_bash(
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
-    touched = protected_file_touched([segment for segment, _, _ in entries] + [reached.paths], cwd, rules)
+    touched = protected_file_touched([segment for segment, _, _ in entries], cwd, rules, reached.paths)
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
@@ -2823,10 +2945,14 @@ def file_forms(path: str, cwd: str | None) -> list[str]:
 
 
 def matches_file(rule: Rule, forms: list[str]) -> bool:
+    """A form matches the pattern, at any depth for a relative one; a folder row (``<dir>/*``)
+    also protects the folder itself, which a move or a link would carry away."""
     pattern = os.path.expanduser(rule.pattern)
+    patterns = [pattern, pattern[:-2]] if pattern.endswith("/*") else [pattern]
     for form in forms:
-        if fnmatch.fnmatchcase(form, pattern) or fnmatch.fnmatchcase(form, f"*/{pattern}"):
-            return True
+        for each in patterns:
+            if fnmatch.fnmatchcase(form, each) or fnmatch.fnmatchcase(form, f"*/{each}"):
+                return True
     return False
 
 
@@ -3037,7 +3163,115 @@ def gate(stdin: str) -> str | None:
     return hook_output(verdict.decision, reason)
 
 
-VALUE_OPTIONS = {"check": {"tool", "agent"}, "explain": {"tool", "agent"}, "sync": {"settings"}}
+# ---------------------------------------------------------------- the gate under agy (spec antigravity)
+
+AGY_DECISION = {None: "allow", ASK: "force_ask", DENY: "deny"}  # allow defers; never auto_approve
+BY_NAME = {agy.NO_OPINION: None, agy.ASK: ASK, agy.DENY: DENY}
+NO_WORKSPACE = "no workspacePaths: the project rules are unknown"
+UNCOMMITTED_RULES = (
+    "a new workspace reads the committed rules: .agent/cobot.rules is uncommitted or not in git"
+)
+RUNTIMES = frozenset({"claude", "agy"})
+
+
+def agy_output(decision: str | None, reason: str) -> str:
+    return json.dumps({"decision": AGY_DECISION[decision], "reason": reason[:REASON_LIMIT]})
+
+
+RULES_FILE = ".agent/cobot.rules"
+
+
+def rules_committed(workspaces: list[str]) -> bool:
+    """Every workspace is in git, its .agent is a real folder, and its .agent/cobot.rules, when
+    present, is tracked with no change: an ignored file (cobot's foreign mode excludes .agent) is
+    not in a new checkout, and ``git status`` says nothing about it."""
+    for workspace in workspaces:
+        root = repo_root(workspace)
+        if (root / ".agent").is_symlink():
+            return False
+        status = git(["status", "--porcelain", "--", RULES_FILE], root)
+        if status is None or status:
+            return False
+        if (root / RULES_FILE).exists() and git(
+            ["ls-files", "--error-unmatch", "--", RULES_FILE], root
+        ) is None:
+            return False
+    return bool(workspaces)
+
+
+def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdict:
+    """The verdict for one translated agy call: the strictest over its Claude-shaped calls."""
+    if plan.decision is not None:
+        return Verdict(BY_NAME[plan.decision], None, plan.note)
+    if not workspaces:
+        return Verdict(ASK, None, NO_WORKSPACE)
+    if plan.needs_committed_rules:
+        return (
+            Verdict(None, None, plan.note)
+            if rules_committed(workspaces)
+            else Verdict(ASK, None, UNCOMMITTED_RULES)
+        )
+    rules, warnings = load_rules_agy(workspaces)
+    for warning in warnings:
+        print(f"cobot gate: {warning}", file=sys.stderr)
+    best = Verdict(None, None, plan.note or "no rule matched")
+    calls = list(plan.calls)
+    for tool, tool_input in plan.calls:
+        if tool in FILE_TOOLS:
+            calls += [
+                (tool, {"file_path": alias})
+                for alias in agy.root_aliases(tool_input["file_path"], workspaces)
+            ]
+    for tool, tool_input in calls:
+        verdict = judge(tool, tool_input, plan.cwd or cwd or workspaces[0], rules, None)
+        if outranks(verdict, best):
+            best = verdict
+    if plan.at_least_ask and best.decision is None:
+        return Verdict(ASK, None, plan.note)
+    return best
+
+
+def agy_workspaces(value: object) -> list[str]:
+    """agy's workspacePaths when it is a list of absolute paths, else none: a call that needs the
+    project then asks, rather than reading a folder the hook's own cwd would pick."""
+    if isinstance(value, list) and all(isinstance(path, str) and os.path.isabs(path) for path in value):
+        return list(value)
+    return []
+
+
+def gate_agy(stdin: str) -> str:
+    """One agy decision for a PreToolUse payload; any failure denies (agy runs a call whose hook
+    fails)."""
+    try:
+        payload = json.loads(stdin)
+        call = payload["toolCall"]
+        name, args = str(call["name"]), call.get("args") or {}
+        if not isinstance(args, dict):
+            raise TypeError("toolCall.args is not an object")
+        workspaces = agy_workspaces(payload.get("workspacePaths"))
+        plan = agy.translate(name, args, agy.known_servers(Path.home(), workspaces))
+        verdict = judge_plan(plan, workspaces, payload.get("cwd"))
+        head = str(
+            args.get("CommandLine") or args.get("Input") or args.get("TargetFile") or args.get("Path") or ""
+        )
+        log_event(
+            {"tool": name, "head": head[:120], "decision": verdict.decision, "reason": verdict.reason()}
+        )
+        reason = verdict.reason()
+        base = plan.cwd or payload.get("cwd") or (workspaces[0] if workspaces else None)
+        if base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
+            reason += stamp_suffix(base)  # no project, no stamp: the hook's own folder is the plugin
+    except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
+        return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
+    return agy_output(verdict.decision, reason)
+
+
+VALUE_OPTIONS = {
+    "check": {"tool", "agent"},
+    "explain": {"tool", "agent"},
+    "sync": {"settings"},
+    "gate": {"runtime"},
+}
 SWITCHES: dict[str, set[str]] = {}
 
 
@@ -3150,7 +3384,11 @@ def main(argv: list[str]) -> int:
         return 2
     command = positional[0] if positional else ""
     if command == "gate":
-        output = gate(sys.stdin.read())
+        runtime = options.get("runtime", "claude")
+        if runtime not in RUNTIMES:
+            print(f"cobot-rules: unknown runtime {runtime!r} (claude or agy)", file=sys.stderr)
+            return 2
+        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read())
         if output:
             print(output)
         return 0

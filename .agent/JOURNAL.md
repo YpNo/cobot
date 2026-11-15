@@ -2,6 +2,22 @@
 
 Append-only, newest at the bottom. One entry per working session or task group.
 
+## 2026-11-11 — 0.3.0 input: Antigravity support, elephant-goldfish-model challenged
+
+Changed: docs/design-inputs/antigravity-0.3.0.md (replaces the shape of owner-ideas-03 §3).
+Why: the owner needs cobot under agy at work quickly and named google/elephant-goldfish-model as a source of ideas, every finding challenged first.
+Proof: agy 1.5.3 validate spikes on a scratch copy: the plugin as is loads 0 agents; with .antigravity-plugin/plugin.json and a root hooks.json, 29 then 30 skills (onboard's argument-hint is invalid YAML, quoting fixes it); agents/<n>/agent.md adapters also load in Claude Code as cobot:x:x (rejected); Claude agents listed by file in .claude-plugin/plugin.json replace agents/ (claude -p listing: exactly nine cobot agents), agy then validates with one warning. Challenger SOUND WITH CHANGES, fifteen points folded (fail open on python failure, bin not on PATH, allow means defer in agy, ask → force_ask, matcher .*, agent scopes vanish, agy settings ungated).
+Open: S3 (hooks in subagents, fail open, brief size, MCP names) and S4 need the owner's signed-in agy; four owner questions in the file.
+Next: owner answers, then the 0.3.0 spec.
+
+## 2026-11-12 — spec antigravity written and challenged
+
+Changed: .agent/specs/antigravity.md (large; eight stories, T01–T08) on feat/antigravity, which carries the design input's two commits.
+Why: owner decisions 2026-11-11 — 0.3.0 is Antigravity only, after the 0.2.0 tag.
+Proof: hook shapes read from antigravity.google/docs (hooks, build-plugins, mcp, subagents); challenger pass 1 SOUND WITH CHANGES (twelve points: workspace hooks file and installed copy writable, plugin-folder cwd, first-underscore MCP split, orchestration prompts, cap cut, userMessage framing, builders' skills, unsafe smoke) → folded; pass 2 SOUND WITH CHANGES (seven: Cwd chose the project layer, strictest split asked on reads, foreign subagent Workspace, agy ask carve-out, message shape, weak fail-open probe, line cap) → folded. Spec 299 lines.
+Open: build waits for the 0.2.0 tag; T08 needs the owner's signed-in agy; unverified: hooks in subagents, timeout behaviour, copy or link on install, eager MCP name form.
+Next: owner finishes 0.2.0 (ship on gcp-platform, paid eval run, PR 8), then /cobot:build antigravity.
+
 ## 2026-11-13 — compacted 2026-11-06 → 2026-11-13 (50 entries)
 - 2026-11-06 design v1.1, R0 bootstrap and R1 (0.1.0): manifests, challenger, gate shim and rules engine, cobot-memory and the protocol, agents, first skills and evals; dogfooded on cartridge-os; F-05 entry wrappers looked through.
 - 2026-11-07 owner decisions 17–26; headscale dogfood in foreign mode; make targets resolved from the Makefile (F-06); R1.1 slice 1 (learning, currency, learner, knowledge-refresh) and slice 2 (ship, contribute, security-sweep, compaction, python/typescript/terraform builders); private remote, eval harness, rename to cobot (ADR-0004).
@@ -213,3 +229,88 @@ Proof: replay of the 41 asked commands through main and this branch (37 ask on b
 Open: the drop in stops is unproven until a live session; the questions rule is measured by the owner's next spec.
 Next: owner pushes fix/fewer-approvals and merges.
 verified: 89b01d4 · pytest+cov, ruff, shellcheck, markdownlint, plugin validate, check-plugin, memory check, latex replay, gate probes
+
+## 2026-11-15 — Antigravity spec on agy 1.5.9, challenger pass 3
+
+Changed: feat/antigravity rebased onto main 24a71af (journal entries kept in date order); design input gains "Facts re-read 2026-11-15 (agy 1.5.9)", every row sourced; spec folds them (89d4c26: both file-tool families, run_workflow force_ask, invoke_subagent Workspace as a mode in either shape, orchestration allow lists, plugin MCP names, one SessionStart shape, refresh by reinstall, learner on pro) and challenger pass 3 (4eeb4d0); spec 298 lines.
+Why: the owner's agy session report (/home/ypno/workspace/cobot-agy-report.md), checked against agy changelog 1.5.9, the live hooks and permissions pages, the built-in docs and an agy plugin validate probe; where the report and the live docs disagree (file-tool names, run_command Cwd, invoke_subagent shape) the gate accepts both.
+Proof: live docs confirm allow defers and auto_approve widens, so the gate design holds; validate accepts flash_lite and an unknown tool name silently, and names both file-tool families in its matcher hints; challenger pass 3 SOUND WITH CHANGES (BLOCKER: .agent, _agents, _agent customization roots, config.json, sidecars and other plugins outside the never rows; MAJOR: manage_task send_input to a REPL, workflow agents' finish; six MINOR), every point checked at its source and folded; markdownlint, check-plugin exit 0.
+Open: whether PreToolUse fires for an invoke_subagent child stays the smoke's (T08); nothing built yet.
+Next: owner reviews the spec; then /cobot:build antigravity from T01.
+verified: 4eeb4d0 · source checks, challenger pass 3, markdownlint, check-plugin
+
+## 2026-11-15 — Antigravity T01: the tree split
+
+Changed: Claude Code's nine agents moved to plugins/cobot/claude-agents/, listed by file in .claude-plugin/plugin.json (agents/ is left to agy); .antigravity-plugin/plugin.json with the same name, version, description, license, repository; check-plugin gains manifest agreement, manifest list = folder, 24 000-byte skill bodies and a strict-YAML frontmatter check (stdlib, the subset cobot uses), and is split into small functions; install.sh's overlap report, test_cli_flags, the mechanics note, architecture and the design tree read claude-agents/; onboard's argument-hint quoted, contribute's description folded.
+Why: spec antigravity T01; agy loads .antigravity-plugin/ first and skips any frontmatter its strict parser rejects.
+Proof: the strict-YAML check flags exactly what PyYAML 6.0.3 rejects in the tree (onboard, contribute; the learn template is not a loaded skill) and every test case was checked against it; agy 1.5.9 plugin validate: 30 skills (onboard now loads), 0 agents, exactly the one hooks/hooks.json warning, nothing written to a throwaway HOME; claude plugin validate --strict (plugin and marketplace) passes; full suite 98.70 %, ruff, shellcheck, markdownlint, check-plugin, memory check exit 0.
+Open: Claude Code listing the nine agents from the manifest rests on validate and spike S2b (2026-11-12), not re-run live; the twin check (every claude-agents/<n>.md has agents/<n>.md) lands with T02.
+Next: T02 (lane a) and T03 (lane b, risk, test first).
+verified: a597651 · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, memory check, PyYAML cross-check
+
+## 2026-11-15 — Antigravity T02 and T03: the agents and the gate under agy
+
+Changed: T02 (5097dda) scripts/sync-agents.py writes the nine agy agents from claude-agents/ (tools mapped to both file-tool families, sonnet as flash, learner on pro, mainAgent false; consultant and learner without a command tool, commandExecutionPolicy "off", a line saying so; builders told to read their language skill; the report-hook sentence rewritten); bin/_cobot_agy.py holds the tables and the call translation; check-plugin holds twins, known agy tool names, tiers, mainAgent. T03 (269e3ca) cobot-rules gate --runtime agy (load_rules_agy over every workspacePaths entry, judge_plan, gate_agy), hooks/gate-agy.sh (stdin buffered, 8 s deadline, every failure a deny with exit 0), root hooks.json group cobot, PreToolUse ".*", timeout 10.
+Why: spec antigravity T02 and T03 (risk, test first).
+Proof: tests written first and seen failing (test_agents_sync 18, test_gate_agy 73 incl. every shim failure path as a subprocess, the corpus scan for auto_approve, a symlinked HOME); my review found a real bypass first (the file forms dropped the path as written, so a ~ rule missed under a symlinked HOME), test then fix; agy 1.5.9 plugin validate: skills 30, agents 9, hooks 1, the one hooks/hooks.json warning, nothing written to a throwaway HOME; claude plugin validate --strict (plugin, marketplace); full suite 2354 passed, 98.63 %; ruff, shellcheck, markdownlint, check-plugin, sync --check.
+Decided in build: SessionStart joins hooks.json with T05, whose command it runs; the gate's in-process failure denies under agy (Claude Code's asks), matching the shim; a relative run_command Cwd asks; the agy path is judged in three forms, not only parent-resolved.
+Open: whether PreToolUse fires inside an invoke_subagent child or a workflow agent is T08's; F-28 (the Claude Code gate misses a never rule through a symlinked folder) belongs to its own branch from main.
+Next: T04 (self-protection rows, lane b), T05 and T06 (lane a).
+verified: 269e3ca · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check
+
+## 2026-11-15 — Antigravity T04 to T06: self-protection, the brief, install
+
+Changed: T04 (b4aacd5) default rules deny Edit/Write of ~/.gemini/antigravity-cli/settings*.json, ~/.gemini/config/*, ~/.gemini/jetski/* and, in .agents, .agent, _agents, _agent at any depth, hooks.json, plugins.json, skills.json, plugins/*; never agy plugin(s) disable|uninstall|link naming cobot; ask Bash(agy) and Bash(agy *), ask Bash(install.sh*); a rule's trailing comment joins its reason (default and owner layers only); a folder row meets a substitution only where the token names the folder's last part. T05 (aa239cd) cobot-session start --runtime agy: one injectSteps system message, project from workspacePaths[0], protocol then the agy section (≤ 1 200) then counts and brief, serialised ≤ 10 000 cut from the tail; hooks/session-agy.sh; SessionStart in hooks.json (flat, as agy's hooks.md documents). T06 (63a3542) install.sh --agy (validate then install, a modifier, refuses --dev and --uninstall), --check reports agy; cobot-memory check warns on agy-discovered names in .agent/.
+Why: spec antigravity T04, T05, T06.
+Proof: tests written first and seen failing (agySelf 70 rows in test_cobot_rules plus 7 through gate_agy; test_cobot_session 14 incl. the shim as a subprocess with a leaked CLAUDE_PLUGIN_ROOT; test_install -k agy 12 with a fake agy recording argv; agyLegacy 2); a real agy brief from this checkout: section 981 chars, answer 9 429 serialised; agy 1.5.9 plugin validate: skills 30, agents 9, hooks 1, the one warning, nothing written to a throwaway HOME; claude plugin validate --strict (plugin, marketplace); full suite 2439 passed, 98.67 %; ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, memory check.
+Decided in build: `agy` and `agy *` rather than the spec's `agy*`, which also matched `agyle`; the reason comes from a rule comment, not a new rule field in the file syntax; the folder-row narrowing, since `ask` on every `$(pwd)/x` path would have reached Claude Code users too (a substitution hiding the whole folder is read like a variable, as before; globs keep the full check); both agy shims unset CLAUDE_PLUGIN_ROOT; the agy error path prints the protocol and the error line (the spec said the protocol alone; the line names what failed, as under Claude Code).
+Open: whether PreToolUse fires inside an invoke_subagent child or a workflow agent, and whether agy shows the injectSteps brief, are T08's; README's `allow Bash(agy plugin validate*)` owner line and the "no agy session open, clone at a tag" notes land with T07.
+Next: T07 (version 0.3.0, release.yml manifest check, ADR-0007, mechanics and harness docs, README, smoke-agy.sh), then the owner's smoke run (T08).
+verified: 63a3542 · pytest+cov, ruff, shellcheck, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check
+
+## 2026-11-15 — Antigravity T07: version, record, smoke script
+
+Changed: version 0.3.0 in both manifests and the marketplace; release.yml greps the Antigravity manifest too; ADR-0007 and the decision 1 amendment; docs/reference/antigravity-mechanics.md (agy 1.5.9 facts, each with its source); docs/harnesses.md (one row per runtime and version); README Antigravity section with the named gaps and the `allow Bash(agy plugin validate*)` owner line; architecture rows (adapter, agy agents, security note) and configuration rows (`--agy`, `--check`, COBOT_GATE_DEADLINE, the MCP config files read); wrap and spec say a reviewer that did not run is `not run`, never clean (E8); scripts/spikes/smoke-agy.sh (nine checks, S4 not run).
+Why: spec antigravity T07.
+Proof: sh -n and shellcheck on the smoke script; markdownlint over every .md; check-plugin, sync-agents --check; claude plugin validate --strict (plugin, marketplace); agy 1.5.9 validate with a throwaway HOME: skills 30, agents 9, hooks 1, one warning; full suite 98.67 %.
+Decided in build: the harness record splits Claude Code by named run (2.1.322 eval run, 2.1.311 validate, the 2026-11-06 spikes), so a cell is ok only where a run checked it; no run has checked the Claude Code gate inside a subagent, so that cell says not run; the CHANGELOG stays [Unreleased] (the A2UI knowledge PR is 0.3.0 too); the README's clone command names v0.3.0, which exists once tagged.
+Open: T08, the owner's smoke run, fills the Antigravity row before the PR; the smoke script has not run anywhere yet (it needs a signed-in agy and the real HOME).
+Next: owner pushes feat/antigravity, runs ./install.sh --agy then sh scripts/spikes/smoke-agy.sh, and pastes the result lines; then the harness row, wrap and the PR.
+verified: 356f882 · pytest+cov, ruff, shellcheck, sh -n, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check
+
+## 2026-11-15 — Antigravity T08: the owner's smoke run, one blocker
+
+Changed: a6ac3df the gate no longer asks on cobot's own bin/ tool runs from agy's config folder (own_tool_run; runner-reached paths checked apart); docs/harnesses.md Antigravity 1.5.9 row filled from the run; mechanics facts: a failing hook blocks on 1.5.9 (h1), hook groups merge by name (h2), print mode denies an ask, the child's calls reach the gate (g2); smoke messages for h1 and w1.
+Why: the owner ran ./install.sh --agy and scripts/spikes/smoke-agy.sh signed in on agy 1.5.9 (2026-11-15).
+Proof: g1, g2, b1, s1, o1 ok; h2 FAILS (a workspace .agents/hooks.json group named cobot with enabled false: the forced push reached the bare remote, no gate log entry); w1 and m1 not reached; tests for the fix written first and seen failing (11 rows); full suite 98.67 %, ruff, shellcheck, sh -n, markdownlint.
+Open: h2 is a BLOCKER for the PR: any repository can commit .agents/hooks.json or .agent/hooks.json with {"cobot": {"enabled": false}} and the gate is gone; the fix is the owner's call (a per-install group name, a workspace scan, an upstream agy issue). Unknown: how agy combines an auto_approve from a workspace hook with cobot's deny (not in the smoke yet).
+Next: owner decides the h2 fix; then build it, add the precedence check to the smoke, owner re-runs it.
+verified: a6ac3df · pytest+cov, ruff, shellcheck, sh -n, markdownlint, smoke-agy (owner, 2026-11-15)
+
+## 2026-11-15 — Antigravity: the hook-name bypass closed
+
+Changed: 6420ccc install.sh --agy stages a copy with the hook group renamed cobot-<16 random hex> (od from /dev/urandom), validates and installs it, removes it; the agy brief adds a warning line after the agy section naming workspace hooks.json, plugins.json or plugins/ in .agents, .agent, _agents, _agent from each workspace up to its repository root (five shown); the smoke refuses an installed group still named cobot and gains h3 (a workspace auto_approve beside cobot's deny) and s2 (the warning); README, ADR-0007, mechanics, configuration, harnesses, CHANGELOG.
+Why: smoke h2 (2026-11-15); the owner chose a random name plus the scan.
+Proof: tests written first and seen failing (install 6, session 7); the real agy 1.5.9 installed the staged copy into a throwaway HOME ("hooks: 1 installed (cobot-<random>)") and the staged folder was gone after; full suite 98.68 %, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Decided in build: the name changes at every install (a refresh too); a bare agy plugin install of the checkout keeps the guessable name, so the README says to install through the script; the warning sits in the never-cut head of the brief.
+Open: the owner re-runs the smoke (h2 must now deny; h3 decides whether a workspace auto_approve can beat cobot's deny); the upstream agy issue (hook groups not namespaced per plugin) is the owner's to file.
+Next: owner pushes, runs ./install.sh --agy and the smoke again; then the harness row, wrap and the PR.
+verified: 6420ccc · pytest+cov, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, staged agy install (throwaway HOME)
+
+## 2026-11-15 — Antigravity T08: the second smoke run passes
+
+Changed: 6fc4bea docs/harnesses.md Antigravity 1.5.9 row from the second run (validate, install, gate, gate in a subagent, brief ok; agents not run); mechanics: a workspace auto_approve did not override cobot's deny (h3), hook order varies between runs (h1).
+Why: the owner re-ran ./install.sh --agy (group cobot-<random>) and scripts/spikes/smoke-agy.sh on agy 1.5.9.
+Proof: g1, g2, h1, h2, h3, s1, s2, b1, o1 ok (gate log: four force-push denies, onboard's cobot-memory check without an ask); w1 not run (print mode denies the asked run_workflow); m1 not reached (no MCP server); S4 not run; markdownlint.
+Open: no cobot agent was invoked under agy (Agents not run); run_workflow's inner calls and the MCP name form stay unproven; the upstream agy issue on hook-group namespacing is the owner's to file.
+Next: wrap (full checks, review fan-out), then the PR for feat/antigravity.
+verified: 6fc4bea · smoke-agy second run (owner), markdownlint
+
+## 2026-11-15 — Antigravity wrap: converge, reviews folded, PR ready
+
+Changed: cae50d4 the code review's eight findings (substitution position in folder rows, workspacePaths validated, no crash on an asked push without a project, no git call for fixed layers, the agy section names the plugin once and is never cut, the workspace warning capped, the staged install drops caches, names itself and fails per step); d46f1fd the security review's (bare words resolve against the working directory, a folder row covers the folder, moving or linking onto a customization root or a protected parent asks, writes through a symlinked root judged by its name, an ignored or symlinked .agent/cobot.rules counts as uncommitted, top-level Workspace counts, run_workflow names relative, both and large scripts, workspace plugin MCP servers known, a default-name group warns, the random name never printed and check-plugin refuses one in the tree); history a0ca4af..HEAD rewritten to drop the owner's live group name before any push; CONTEXT.md verified commands dated today; the spec's Converge filled.
+Why: /cobot:wrap of spec antigravity; the security reviewer found a BLOCKER (a model-written Cwd inside a protected folder made shell writes silent) and three MAJOR (relocation and symlinks around the never rows, an ignored rules file passing as committed, the live group name in committed records).
+Proof: every story's acceptance command passed today; full suite 2507 passed, 98.72 %; ruff, shellcheck, markdownlint, check-plugin (with the group-name check), sync-agents --check, claude plugin validate --strict (plugin, marketplace), agy 1.5.9 validate and a real staged install into a throwaway HOME (the output masks the name), memory check exit 0; each finding reproduced before its fix and its test seen failing; the gha consult found four low, pre-existing points; cobot-deps check --fresh: no supported lockfile.
+Open: F-29 (a project rule's pattern reaches the permission prompt), F-30 (case-insensitive volumes miss the never rows), F-31 (a bare word after an in-command cd), F-28 (fix/gate-symlinked-paths, not merged); reviewed but not folded: schedule is judged by a deny-list (only TimerCondition asks); the gha consult's low points (dotted grep in release.yml, undocumented contents: write, adhoc npm pins, actionlint's ubuntu-26.04); no cobot agent run under agy, run_workflow's inner calls and the MCP name form unproven; the agy issue on hook-group namespacing is the owner's to file.
+Next: owner re-runs ./install.sh --agy to rotate the group name, pushes feat/antigravity (a plain push: the rewrite started after the pushed a0ca4af), and opens the PR.
+verified: d46f1fd · pytest+cov, ruff, shellcheck, sh -n, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, staged agy install (throwaway HOME), memory check, cobot-deps check --fresh

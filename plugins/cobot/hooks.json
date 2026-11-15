@@ -1,0 +1,23 @@
+{
+  "cobot": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "sh ./hooks/session-agy.sh",
+        "timeout": 30
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ./hooks/gate-agy.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

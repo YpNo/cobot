@@ -1,7 +1,7 @@
 ---
 name: onboard
 description: First contact with a repository, or a refresh when the stack changed. Resolves trust (owner identity, trusted root commit, or foreign mode with memory outside the tree), fingerprints the stack, runs and records the verified commands, proposes the profile, writes .agent/CONTEXT.md, JOURNAL.md and FINDINGS.md from the templates, and proposes owner-layer allow lines for the verified commands. On a new project it asks the owner instead of fingerprinting. Use when the session brief says the repository is untrusted or has no memory, or when CONTEXT.md is stale.
-argument-hint: [--foreign] [what a new project is for]
+argument-hint: "[--foreign] [what a new project is for]"
 disable-model-invocation: true
 ---
 

@@ -4,6 +4,7 @@ procedures carry no dated knowledge."""
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -26,10 +27,36 @@ def skill(root: Path, name: str, description: str, extra: str = "", body: str = 
     return folder
 
 
+MANIFEST = {"name": "p", "version": "1.0.0", "description": "d", "license": "MIT", "repository": "r"}
+
+
+def manifests(root: Path, agents: list[str], **agy) -> None:
+    for folder, extra in ((".claude-plugin", {"agents": agents}), (".antigravity-plugin", agy)):
+        (root / folder).mkdir(exist_ok=True)
+        (root / folder / "plugin.json").write_text(json.dumps({**MANIFEST, **extra}))
+
+
+AGY_AGENT = (
+    "---\nname: {name}\ndescription: d\ntools:\n  - view_file\nmodel: flash\nmainAgent: false\n---\nbody\n"
+)
+
+
+def agent(root: Path, name: str, description: str = "an agent") -> Path:
+    """A Claude Code agent in claude-agents/, listed in the manifest, and its agy twin in agents/."""
+    path = root / "claude-agents" / f"{name}.md"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(f"---\nname: {name}\ndescription: {description}\n---\nbody\n")
+    (root / "agents").mkdir(exist_ok=True)
+    (root / "agents" / f"{name}.md").write_text(AGY_AGENT.format(name=name))
+    listed = json.loads((root / ".claude-plugin" / "plugin.json").read_text())["agents"]
+    manifests(root, sorted({*listed, f"./claude-agents/{name}.md"}))
+    return path
+
+
 @pytest.fixture
 def plugin(tmp_path):
-    (tmp_path / "agents").mkdir()
-    (tmp_path / "agents" / "a.md").write_text("---\nname: a\ndescription: an agent\n---\nbody\n")
+    manifests(tmp_path, [])
+    agent(tmp_path, "a")
     (tmp_path / "protocol.md").write_text("protocol\n")
     return tmp_path
 
@@ -104,7 +131,7 @@ def test_check_protocolMissing_isReportedNotRaised(contract, plugin):
 def test_check_skillNamingAnAgentWithoutForegroundFlag_fails(contract, plugin):
     # an Agent call that omits run_in_background started in the background in 22 of 23 calls
     # (eval run 43584857035): the skill then reported before the agent did
-    (plugin / "agents" / "consultant.md").write_text("---\nname: consultant\ndescription: d\n---\nbody\n")
+    agent(plugin, "consultant", "d")
     skill(plugin, "consult", "router", body="One `Agent` call, `subagent_type: cobot:consultant`.\n")
     skill(plugin, "learn", "forked", "agent: cobot:consultant\n", body="No spawn named here.\n")
     problems = contract.check(plugin)
@@ -112,3 +139,132 @@ def test_check_skillNamingAnAgentWithoutForegroundFlag_fails(contract, plugin):
     assert not any("learn" in p for p in problems)
     skill(plugin, "wrap", "fan-out", body="One `cobot:consultant` (`run_in_background: false`).\n")
     assert not any("wrap" in p for p in contract.check(plugin))
+
+
+def test_check_theFixturePlugin_passes(contract, plugin):
+    assert contract.check(plugin) == []
+
+
+def test_check_manifestsDisagree_fails(contract, plugin):
+    manifests(plugin, ["./claude-agents/a.md"], version="1.0.1")
+    assert any("version" in p and "manifests disagree" in p for p in contract.check(plugin))
+
+
+def test_check_agyManifestMissing_fails(contract, plugin):
+    (plugin / ".antigravity-plugin" / "plugin.json").unlink()
+    assert any(".antigravity-plugin/plugin.json: missing" in p for p in contract.check(plugin))
+
+
+def test_check_manifestAgentsListDiffersFromTheFolder_fails(contract, plugin):
+    (plugin / "claude-agents" / "unlisted.md").write_text("---\nname: unlisted\ndescription: d\n---\n")
+    manifests(plugin, ["./claude-agents/a.md", "./claude-agents/gone.md"])
+    problems = contract.check(plugin)
+    assert any("unlisted.md" in p and "not in the manifest" in p for p in problems)
+    assert any("gone.md" in p and "no such file" in p for p in problems)
+
+
+def test_check_agentListingBudget_countsTheManifestListNotAgyAgents(contract, plugin, monkeypatch):
+    monkeypatch.setattr(contract, "AGENT_BUDGET_TOKENS", 30)
+    twin = AGY_AGENT.format(name="a").replace("description: d", "description: " + "x" * 400)
+    (plugin / "agents" / "a.md").write_text(twin)
+    assert not any("listing" in p for p in contract.check(plugin))
+    agent(plugin, "b", "y" * 120)
+    assert any("agents: listing" in p for p in contract.check(plugin))
+
+
+def test_check_skillBodyOver24000Bytes_fails(contract, plugin):
+    skill(plugin, "big", "d", body="é" * 12_001)  # 24 002 bytes, 12 001 characters
+    skill(plugin, "edge", "d", body="x" * contract.SKILL_BODY_MAX_BYTES)
+    problems = contract.check(plugin)
+    assert any("big" in p and "24002 bytes" in p for p in problems)
+    assert not any("edge" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    [
+        "argument-hint: [--foreign] [what a new project is for]\n",  # two flow sequences
+        "description: keeps the rules: reads the constraints\n",  # a mapping inside a plain scalar
+        "description: the gate #1 asks\n",  # a comment silently cuts the value
+        'description: "never closed\n',
+        "description: [never closed\n",
+        "paths:\n  - [a] b\n",
+        "description: ends with a colon:\n",
+        "tools: @reserved\n",
+    ],
+)
+def test_yamlProblems_notStrictYaml_isReported(contract, frontmatter):
+    assert contract.yaml_problems(frontmatter)
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    [
+        'argument-hint: "[--foreign] [what a new project is for]"\n',
+        "argument-hint: [spec, slug]\n",
+        "description: >-\n  folded: colons and # hashes are text here\n",
+        "description: a plain scalar\n  continued on a second line\n",
+        'paths:\n  - "**/*.rs"\n  - Cargo.toml\n',
+        "description: 'single: quoted'\n",
+        "tools: Read, Grep, Glob\n",
+        "url: https://example.com/a#b\n",
+    ],
+)
+def test_yamlProblems_strictYaml_isClean(contract, frontmatter):
+    assert contract.yaml_problems(frontmatter) == []
+
+
+def test_check_skillWithNonStrictFrontmatter_fails(contract, plugin):
+    skill(plugin, "onboard", "d", "argument-hint: [--foreign] [what]\n")
+    assert any("onboard" in p and "strict YAML" in p for p in contract.check(plugin))
+
+
+def test_realPlugin_everyFrontmatterIsStrictYaml(contract):
+    plugin = SCRIPT.parents[1] / "plugins" / "cobot"
+    files = [*plugin.glob("skills/*/SKILL.md"), *plugin.glob("*agents/*.md")]
+    assert files
+    problems = [f"{f}: {p}" for f in files for p in contract.yaml_problems(contract.frontmatter_text(f))]
+    assert problems == []
+
+
+def test_check_claudeAgentWithoutAgyTwin_andTheReverse_fail(contract, plugin):
+    (plugin / "agents" / "a.md").unlink()
+    (plugin / "agents" / "stray.md").write_text(AGY_AGENT.format(name="stray"))
+    problems = contract.check(plugin)
+    assert any("claude-agents/a.md" in p and "no agents/a.md" in p for p in problems)
+    assert any("agents/stray.md" in p and "no claude-agents/stray.md" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    "old, new, expected",
+    [
+        ("  - view_file\n", "  - view_file\n  - teleport\n", "unknown agy tool teleport"),
+        ("tools:\n  - view_file\n", "tools: view_file, grep_search\n", "tools must be a YAML list"),
+        ("model: flash", "model: sonnet", "model 'sonnet'"),
+        ("model: flash", "model: flash_lite", "model 'flash_lite'"),
+        ("mainAgent: false\n", "", "mainAgent: false"),
+        ("name: a\n", "name: b\n", "name 'b'"),
+    ],
+)
+def test_check_agyAgentContract_isHeld(contract, plugin, old, new, expected):
+    twin = plugin / "agents" / "a.md"
+    twin.write_text(twin.read_text().replace(old, new))
+    assert any("agents/a.md" in p and expected in p for p in contract.check(plugin))
+
+
+def test_installNames_aLiveHookGroupNameInTheTree_fails(tmp_path):
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader("check_plugin_names", "scripts/check-plugin.py")
+    spec = importlib.util.spec_from_loader("check_plugin_names", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    name = "cobot-" + "a1" * 8  # built, so this file never holds one
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "run.md").write_text(f"group {name} installed\n")
+    (tmp_path / "ok.md").write_text("group cobot-<random> installed\n")
+    assert module.install_name_problems(tmp_path) == [
+        f"docs/run.md: an installed hook group name ({name}): redact it"
+    ]
+    assert module.install_name_problems(tmp_path / "docs" / "..") != []

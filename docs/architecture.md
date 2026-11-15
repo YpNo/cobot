@@ -11,15 +11,17 @@ For agents and architects. The README is for people; the full design and its rea
 | Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/cobot/protocol.md` |
 | Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/cobot-rules`, `rules/default.rules` |
 | Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree; the tree state (new, existing, inside another repository, not a repository) picks onboard's path | `bin/cobot-memory`, `bin/cobot-session` |
-| Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
+| Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `claude-agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Report check | `PostToolUse` hook on Agent: a builder report without a command and an exit code goes back | `hooks/report.sh` → `bin/cobot-rules report` |
+| Antigravity adapter | the same policy under agy (ADR-0007): a root `hooks.json` sends every tool call to the gate, which translates agy's call and answers `allow` (no opinion), `force_ask` or `deny`, a deny on every failure; SessionStart prints the brief as one `injectSteps` system message with an agy section; no report check (no agy hook sees a subagent's report) | `hooks.json`, `hooks/gate-agy.sh`, `hooks/session-agy.sh` → `bin/cobot-rules gate --runtime agy`, `bin/cobot-session start --runtime agy`, `bin/_cobot_agy.py` |
 
 ## Roster
 
 | Kind | Members | Where |
 |---|---|---|
-| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `plugins/cobot/agents/` |
+| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `plugins/cobot/claude-agents/`, listed by file in `.claude-plugin/plugin.json` |
+| Agy agents | the same nine, written by `scripts/sync-agents.py` from `claude-agents/` (agy tool names, tiers, `mainAgent: false`; consultant and learner without a command tool) | `plugins/cobot/agents/`, read by agy through `.antigravity-plugin/plugin.json` |
 | Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep`; onboard, rules and security-sweep are typed by the owner (`disable-model-invocation`) | `plugins/cobot/skills/` |
 | Consult router | `/cobot:consult [domain]` spawns one `consultant` per domain in one message (parallel); procedures for `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api` | `plugins/cobot/skills/consult/`, `domains/` |
 | Knowledge skills (always listed: `paths:` does not gate plugin skills, so each description carries its triggers, ≤ 350 chars) | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-shell`, `lang-fallback`, `fw-react`, `fw-next`, `fw-vue`, `expert-api`, `expert-gitea`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh` | `plugins/cobot/skills/` |
@@ -102,3 +104,9 @@ verb, since a personal project cannot hold the IAM deny policy that would refuse
 
 Hooks run as the user. An untrusted repository's `.agent/` is never injected into the session;
 that protection is advisory for the model's own reads.
+
+Under agy the project layer comes from every `workspacePaths` entry, never from the model's
+`Cwd`; a bare word is also read as a path in the `Cwd`, so a command run inside a protected folder
+asks, and a write through a symlinked customization root is judged by the root's name. agy ignores a hook's exit code, so the shim's last word is always a decision line. Its
+settings, config, grants and every customization root's hook and plugin files are `never` rows
+in the default layer, for both runtimes: a hook written there would run outside the gate.

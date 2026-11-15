@@ -5,9 +5,10 @@
 #   --refresh [DIR]       uninstall and reinstall at the installed scope (project or local): the cache only refreshes on a version change
 #   --local [DIR]         same, at local scope (foreign repositories: never committed)
 #   --user                install at user scope (reserved for the switch, docs/03-switch-plan.md)
-#   --check               report Claude Code, marketplace, installed scopes and the legacy scaffold
+#   --check               report Claude Code, marketplace, installed scopes, the legacy scaffold and agy
 #   --uninstall [SCOPE]   uninstall from SCOPE (project | local | user; default project)
 #   --source github|path  where the marketplace comes from (default: path = this checkout)
+#   --agy                 also (or alone: only) validate and install this checkout into Antigravity (agy), user scope; it refreshes too
 set -eu
 
 REPO_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +32,7 @@ OLD_CONF=$CLAUDE_DIR/$OLD_PLUGIN
 NEW_CONF=$CLAUDE_DIR/$PLUGIN
 source_kind=path
 
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
 
 need_claude() {
   command -v claude >/dev/null 2>&1 || { echo "install: claude not found on PATH" >&2; exit 1; }
@@ -114,6 +115,51 @@ retire_old_marketplace() { # before the new marketplace registers: a folder carr
   return 0
 }
 
+# agy merges hook groups by name across sources, so a repository's .agents/hooks.json naming the
+# plugin's group with "enabled": false switches it off (smoke h2): each install gets a group name
+# no committed file can know. The staged copy is validated, installed, then removed.
+AGY_GROUP_LINE='  "cobot": {'
+
+stage_agy() { # DIR: copy the plugin into DIR/cobot with a random hook group name
+  # called as `stage_agy … || exit 1`, where set -e does not apply: every step fails on its own
+  name="cobot-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+  [ ${#name} -eq 22 ] || { echo "install: no random hook group name" >&2; return 1; }
+  cp -R "$PLUGIN_DIR" "$1/cobot" || { echo "install: cannot stage the plugin" >&2; return 1; }
+  # caches of a local test run stay out of the install
+  find "$1/cobot" -name __pycache__ -type d -prune -exec rm -rf {} + || return 1
+  sed "s/^$AGY_GROUP_LINE\$/  \"$name\": {/" "$PLUGIN_DIR/hooks.json" >"$1/cobot/hooks.json" || return 1
+  grep -q "^  \"$name\": {\$" "$1/cobot/hooks.json" || {
+    echo "install: hooks.json has no '$AGY_GROUP_LINE' line to rename; nothing installed" >&2
+    return 1
+  }
+  # the name is a secret of this install: never printed, so it stays out of logs and records
+  echo "agy: hook group renamed to a random name for this install"
+}
+
+cmd_agy() { # validate, then install: agy replaces an installed copy in place and restores it on failure
+  command -v agy >/dev/null 2>&1 || { echo "install: agy not found on PATH" >&2; exit 1; }
+  stage=$(mktemp -d) || { echo "install: no temporary folder" >&2; exit 1; }
+  trap 'rm -rf "$stage"' EXIT
+  stage_agy "$stage" || exit 1
+  echo "agy: validating $stage/cobot (staged from $PLUGIN_DIR; run this with no agy session open)"
+  agy plugin validate "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
+  echo "agy: installing $stage/cobot at user scope"
+  # agy prints the installed group's name: shown masked, so it stays out of terminal logs
+  rc=0; agy plugin install "$stage/cobot" >"$stage/install.log" 2>&1 || rc=$?
+  sed -E 's/cobot-[0-9a-f]{16}/cobot-<random>/g' "$stage/install.log"
+  if [ "$rc" -ne 0 ]; then
+    echo "install: agy plugin install failed (exit $rc); agy keeps the previous copy, if one was installed" >&2
+    exit 1
+  fi
+}
+
+report_agy() {
+  echo "== Antigravity (agy)"
+  if ! command -v agy >/dev/null 2>&1; then echo "  agy: not found"; return 0; fi
+  echo "  agy $(agy --version 2>/dev/null || echo 'version unknown')"
+  agy plugin list 2>/dev/null | grep "$PLUGIN" || echo "  $PLUGIN: not installed"
+}
+
 cmd_dev() {
   echo "alias claude-cobot='claude --plugin-dir \"$PLUGIN_DIR\"'"
   echo "# session only: nothing is written. Verify with:"
@@ -167,7 +213,8 @@ count_links_into_legacy() {
 }
 
 report_overlaps() {
-  for file in "$PLUGIN_DIR"/agents/*.md; do
+  # the agents Claude Code loads: check-plugin holds the manifest's list equal to this folder
+  for file in "$PLUGIN_DIR"/claude-agents/*.md; do
     [ -e "$file" ] || continue
     name=$(basename "$file" .md)
     if [ -e "$CLAUDE_DIR/agents/$name.md" ] || [ -L "$CLAUDE_DIR/agents/$name.md" ]; then
@@ -207,12 +254,14 @@ cmd_check() {
   echo "== Migration from $OLD_MARKETPLACE"
   pending=$(migrate_state check .)
   if [ -n "$pending" ]; then echo "$pending"; else echo "  nothing to migrate"; fi
+  report_agy
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
-action=""; arg=""
+action=""; arg=""; agy=0
 while [ $# -gt 0 ]; do
   case $1 in
+    --agy) agy=1 ;;
     --dev|--check|--user) action=$1 ;;
     --project|--local|--refresh|--uninstall) action=$1; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then arg=$2; shift; fi ;;
     --source) [ $# -gt 1 ] || { usage; exit 2; }; source_kind=$2; shift ;;
@@ -222,6 +271,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 case $source_kind in github|path) ;; *) echo "install: --source must be github or path" >&2; exit 2 ;; esac
+# --agy is a modifier: alone it installs into agy only; it never uninstalls (agy replaces in place)
+if [ "$agy" -eq 1 ]; then
+  case $action in
+    --dev|--uninstall) echo "install: --agy installs or refreshes only; it does not combine with $action" >&2; exit 2 ;;
+    "") cmd_agy; exit 0 ;;
+  esac
+fi
 case $action in
   --dev) cmd_dev ;;
   --project) cmd_install project "$arg" ;;
@@ -232,3 +288,4 @@ case $action in
   --uninstall) cmd_uninstall "$arg" ;;
   *) usage; exit 2 ;;
 esac
+if [ "$agy" -eq 1 ] && [ "$action" != --check ]; then cmd_agy; fi

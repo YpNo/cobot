@@ -90,7 +90,8 @@ def test_parseCli_valueMayStartWithDashes():
 
 
 def mentions():
-    roots = [PLUGIN / "hooks", PLUGIN / "skills", PLUGIN / "agents", REPO / "scripts"]
+    roots = [PLUGIN / "hooks", PLUGIN / "skills", PLUGIN / "claude-agents", PLUGIN / "agents"]
+    roots.append(REPO / "scripts")
     roots.append(REPO / ".github" / "workflows")
     tree = [p for root in roots if root.is_dir() for p in root.rglob("*") if p.is_file()]
     files = [PLUGIN / "protocol.md", *tree]

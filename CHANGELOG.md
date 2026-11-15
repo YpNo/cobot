@@ -6,8 +6,80 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Antigravity record (T07): ADR-0007 amends decision 1 to "Claude Code first; the
+  Antigravity CLI supported from the same tree, its gaps named";
+  `docs/reference/antigravity-mechanics.md` dates every agy fact cobot relies on, with its source;
+  `docs/harnesses.md` holds one row per runtime and version, each cell `ok`, `fails` or `not run`
+  from a named run; a README Antigravity section names the gaps; `scripts/spikes/smoke-agy.sh`
+  is the owner's live smoke (a scratch repository with a local bare remote, the real HOME, never
+  `--dangerously-skip-permissions`; S4 `not run`). `wrap` and `spec` say a reviewer that did not
+  run is `not run`, never clean.
+- Install into Antigravity (T06): `./install.sh --agy` runs `agy plugin validate` on
+  `plugins/cobot`, then `agy plugin install` of it at user scope; the same command refreshes (agy
+  replaces the copy in place and restores it on failure), so it never uninstalls first. A failed
+  validate installs nothing and a failed install exits 1 with the agy exit code. `--agy` is a
+  modifier: alone it installs into agy only, beside `--project`, `--local`, `--user` or
+  `--refresh` it runs that action then the agy install, in either order, and it refuses `--dev`
+  and `--uninstall`. `--check` reports agy's version and whether cobot is installed there.
+  `cobot-memory check` warns when `.agent/` holds `hooks.json`, `plugins`, `plugins.json`,
+  `rules`, `skills`, `skills.json` or `workflows`: `.agent/` is also an agy customization root.
+- The session brief under Antigravity (T05): the root `hooks.json` runs `hooks/session-agy.sh` at
+  SessionStart, which prints `cobot-session start --runtime agy`: one `injectSteps` system
+  message (agy presents a user message as the owner's own words), the project from
+  `workspacePaths[0]` ("project unknown" without an absolute folder there, and no tool runs), the
+  protocol, then an agy section of at most 1 200 characters (the absolute plugin and `bin/` paths,
+  agy's tool names, the owner-typed skills, security-sweep and learn through `invoke_subagent`
+  only, builder proof requested and not enforced, builders not proven gated), then the rule
+  counts and the brief, whose budget shrinks by the section. The serialised answer stays within
+  10 000 characters, cut from the tail. Both agy shims unset `CLAUDE_PLUGIN_ROOT`, so a value
+  leaked from a Claude Code process cannot point the tools at another copy.
+- Self-protection under Antigravity (T04): the default rules deny editing or writing agy's
+  settings (`~/.gemini/antigravity-cli/settings*.json`), `~/.gemini/config/*` (hooks,
+  enablement, MCP servers, installed plugins) and `~/.gemini/jetski/*` (command sidecars, access
+  grants), and in every customization root (`.agents`, `.agent`, `_agents`, `_agent`, at any
+  depth) `hooks.json`, `plugins.json`, `skills.json` and `plugins/*`: a hook or plugin there runs
+  outside the gate. `agy plugin` and `agy plugins` `disable`, `uninstall` and `link` naming
+  cobot are denied; every other `agy` call asks ("may replace or bypass the cobot gate"), and so
+  does `install.sh`. A rule's trailing `# comment` now joins its reason, from the default and
+  owner layers only (repository text does not speak in a permission prompt). A folder row
+  (`<dir>/*`) meets a command substitution only where the token names the folder's last part
+  (`plugins/`, `config/`), so `cat "$(pwd)/README.md"` stays silent.
+- The rules gate under Antigravity (T03): a root `hooks.json` sends every agy tool call
+  (`matcher: ".*"`) to `hooks/gate-agy.sh`, which runs `cobot-rules gate --runtime agy` under an
+  8 s deadline and prints a deny with exit 0 on every failure (no or old `python3`, a non-zero
+  exit, no decision, a timeout), since agy runs a call whose hook fails. The adapter answers
+  `allow` (agy's "no opinion"), `force_ask` or `deny`, never `auto_approve`. It reads the
+  project rules of every `workspacePaths` entry, never from the model's `Cwd`, which drives only
+  the Makefile, mise and package.json expansion. `run_command` and `manage_task` input are
+  judged as Bash (input to a running task always asks); both file-tool families as Edit and
+  Write, the path judged as written, parent-resolved and fully resolved; MCP calls as
+  `mcp__<server>__<tool>`, an eager name split at a known server or at every `_`, the strictest
+  split winning. `invoke_subagent` in a `branch` or `share` workspace asks while
+  `.agent/cobot.rules` is uncommitted, `run_workflow` always asks with the script's hash,
+  `define_subagent` is denied, and any tool cobot does not know asks.
+- The nine agents under Antigravity (T02): `scripts/sync-agents.py` writes `agents/<n>.md` from
+  `claude-agents/<n>.md`, the body copied and agy's frontmatter set: tools as a YAML list mapped
+  to both agy file-tool families, `sonnet` as `flash`, the learner on `pro` (agy ignores
+  `effort`), `mainAgent: false`. The consultant and the learner get no command tool and
+  `commandExecutionPolicy: "off"`, since their read lists need an agent identity agy hooks do not
+  carry: under agy they read files and pages only. Builders are told to read their language skill,
+  since agy's preload is not relied on. `check-plugin` holds every agent's twin, a known agy
+  tool name (agy accepts an unknown one silently), the tier and `mainAgent: false`; the tables
+  live in `bin/_cobot_agy.py`, shared with the gate.
+
 ### Changed
 
+- Version 0.3.0 in both plugin manifests and the marketplace; `release.yml` checks the
+  Antigravity manifest against the tag too.
+- The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to
+  `claude-agents/`, listed by file in `.claude-plugin/plugin.json`, which leaves `agents/` to the
+  Antigravity agents; `.antigravity-plugin/plugin.json` carries the same name, version,
+  description, license and repository. `check-plugin` holds the two manifests in agreement, the
+  manifest's list equal to the folder, every skill body within agy's 24 000 bytes and every
+  frontmatter strict YAML, which quoted `onboard`'s `argument-hint` and folded `contribute`'s
+  description (agy skipped `onboard`; a strict parser rejects both).
 - `lang-rust` lists the crates a Rust CLI starts with (F-20): clap, serde, serde_json, tempfile,
   assert_cmd and predicates, beside proptest; every crate row re-read on crates.io, dated by the
   version's own publish date, with the MSRV of each.
@@ -23,6 +95,41 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Security review fixes (wrap), both runtimes where the gate is shared:
+  - a bare word is a path in the working directory too, so a command run with its working
+    directory inside a protected folder (agy's `Cwd: ~/.gemini/config/plugins` with
+    `rm -r cobot`, or `tee hooks.json` inside `.agents/`) asks;
+  - a protected folder row covers the folder itself, and moving or linking onto a customization
+    root (`mv x .agents`, `ln -s docs .agents`) or a protected folder's parent (`mv ~/.gemini …`)
+    asks;
+  - under agy a write through a symlinked customization root, cobot's foreign-mode `.agent`
+    included, is judged by the root's name;
+  - a branch or share subagent asks while `.agent/cobot.rules` is ignored, untracked, or under a
+    symlinked `.agent`;
+  - a top-level `Workspace` beside `Subagents` counts; `run_workflow` names a relative script path,
+    both forms, and a large or special file without reading it;
+  - MCP servers of workspace plugins are known servers, so a known prefix never hides them;
+  - the agy brief warns when the installed hook group kept its default name;
+  - `install.sh --agy` and the smoke no longer print the random group name, and `check-plugin`
+    fails on one written into the tree.
+- Review fixes under Antigravity (wrap): a substitution counts as an unknown whole path only
+  where it leads the path or names its last part, so `.agents/plu$(x)ins/…` and `.agents/$(x)/…`
+  ask again; a `workspacePaths` that is not a list of absolute paths asks instead of reading
+  folders the hook's cwd picks; an asked push without a project no longer crashes the gate; the
+  default and owner layers load without a git call; the agy section names the plugin folder once
+  and is never cut, and the workspace warning is capped; `install.sh --agy` leaves Python caches
+  out of the staged copy, names it in its log, and fails on every staging step.
+- Under Antigravity a repository could switch the gate off: agy merges hook groups by name, so a
+  committed `.agents/hooks.json` with `{"cobot": {"enabled": false}}` disabled cobot's group
+  (smoke `h2`). `install.sh --agy` now installs a staged copy whose group is named
+  `cobot-<16 random hex>`, new at each install, and the agy brief warns, naming the files, when
+  a workspace holds `hooks.json`, `plugins.json` or `plugins/` in `.agents`, `.agent`, `_agents`
+  or `_agent` from the workspace up to the repository root. The smoke gains `h3` (a workspace
+  `auto_approve` beside cobot's deny) and `s2` (the warning).
+- Under Antigravity the brief's own tool calls (`python3 -I <plugin>/bin/cobot-memory check`) no
+  longer ask: the installed plugin lives under the protected `~/.gemini/config/`, and running
+  one of cobot's own `bin/` tools is not writing it. Any other word naming that folder, a
+  redirection into it included, still asks (smoke `o1`).
 - `mise --version`, `-V`, `--help` and `-h` alone no longer ask: a lone info flag names no task
   (a flag followed by anything still asks, since it may precede one).
 - Consultants fell off their read list: in run 43584857035, 16 of 21 consultant sessions hit the

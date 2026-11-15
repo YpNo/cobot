@@ -2,7 +2,8 @@
 
 For agents and architects. Everything cobot reads, where it lives, and what changes when you set
 it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills` or
-`~/.claude/settings.json` (ADR-0003).
+`~/.claude/settings.json` (ADR-0003), and under Antigravity nothing in `~/.gemini` except through
+`agy plugin install` (ADR-0007).
 
 ## Install
 
@@ -12,9 +13,10 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `./install.sh --local [DIR]` | the same at local scope, for a repository you do not own: never committed |
 | `./install.sh --refresh [DIR]` | uninstalls and reinstalls at the scope found there: the plugin cache only refreshes on a version change, so after editing a checkout this is how a dogfood repository picks it up |
 | `./install.sh --dev` | prints a session-only alias using `claude --plugin-dir`; writes nothing |
-| `./install.sh --check` | reports Claude Code, the marketplace, installed scopes, the legacy scaffold and name overlaps |
+| `./install.sh --check` | reports Claude Code, the marketplace, installed scopes, the legacy scaffold, name overlaps and, when `agy` is on PATH, agy's version and whether cobot is installed there |
 | `./install.sh --uninstall [SCOPE]` | reverses an install (`project`, `local` or `user`) |
 | `./install.sh --user` | user scope, reserved for the switch ([03-switch-plan.md](03-switch-plan.md)) |
+| `./install.sh --agy` | Antigravity: a staged copy of the plugin whose hook group is named `cobot-<16 random hex>` (agy merges groups by name, so a repository could switch off a known one), then `agy plugin validate` and `agy plugin install` of it at user scope; the same command refreshes, with a new name, and never uninstalls first. A modifier: beside `--project`, `--local`, `--user` or `--refresh` it runs that action, then the agy install |
 
 ## Files and environment
 
@@ -28,12 +30,23 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
+| `COBOT_GATE_DEADLINE` | seconds, 1 to 8 | `8` | agy gate shim: the deadline before it answers deny (agy's hook timeout is 10) |
+| `~/.gemini/config/mcp_config.json`, `~/.gemini/config/plugins/*/mcp_config.json` or `mcp.json` | read only | absent | agy MCP server names, so an eager `mcp_<server>_<tool>` call splits at a known server |
 
 ## Rules
 
 One rule per line: `decision Tool(pattern) [@agent]`, or `decision mcp__<server>__<tool>` for an
 MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)`,
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
+A trailing `# comment` on a default or owner row joins the reason the gate gives, as in
+`ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped, so
+repository text never speaks in a permission prompt.
+
+A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
+path inside it ask too. With a command substitution in the path, it asks only where the path
+names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,
+`cat "$(pwd)/README.md"` does not; a substitution that hides the whole folder is read like a
+variable.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

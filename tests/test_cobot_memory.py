@@ -897,3 +897,26 @@ def test_git_everyCall_turnsTheRepositorysFsmonitorOff(memory, monkeypatch, tmp_
     _cobot_common.repo_trust(tmp_path, tmp_path / ".agent")
     width = len(_cobot_common.NO_FSMONITOR)
     assert seen and all(argv[1 : 1 + width] == _cobot_common.NO_FSMONITOR for argv in seen)
+
+
+# ---------------------------------------------------------------- agy discovery (spec antigravity, story 7)
+
+
+def test_check_agyLegacy_warnsOnWhatAgyWouldLoadFromDotAgent(memory, repo):
+    mem = memory.Memory()
+    memory.cmd_init(mem, {"profile": "cli"}, set())
+    for folder in ("skills", "workflows"):
+        (mem.dir / folder).mkdir()
+    (mem.dir / "hooks.json").write_text("{}")
+    out = memory.cmd_check(mem)
+    (line,) = [line for line in out.splitlines() if "Antigravity" in line]
+    assert line.startswith("warning: .agent/ holds hooks.json, skills, workflows")
+    assert "agy loads them" in line
+
+
+def test_check_agyLegacy_silentOnCobotsOwnFiles(memory, repo):
+    mem = memory.Memory()
+    memory.cmd_init(mem, {"profile": "cli"}, set())
+    (mem.dir / "specs").mkdir(exist_ok=True)
+    (mem.dir / "rules.md").write_text("not a folder named rules")
+    assert "Antigravity" not in memory.cmd_check(mem)

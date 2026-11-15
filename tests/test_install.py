@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -35,7 +37,24 @@ def home(tmp_path):
     return tmp_path
 
 
-TOOLS = ("sh", "sed", "grep", "readlink", "basename", "dirname", "pwd", "true", "mv", "rm", "ln")
+TOOLS = (
+    "sh",
+    "sed",
+    "grep",
+    "readlink",
+    "basename",
+    "dirname",
+    "pwd",
+    "true",
+    "mv",
+    "rm",
+    "ln",
+    "cp",
+    "mktemp",
+    "od",
+    "tr",
+    "find",
+)
 
 
 def hermetic_bin(home_dir, fake_claude):
@@ -281,3 +300,165 @@ def test_install_refresh_removesOldMarketplaceWhenNoneRemain(home, old_state):
     assert "removed marketplace agentic-partner" in result.stdout
     # the real CLI clears the record itself; the fake leaves the file, so the report shows
     assert "settings.json still has extraKnownMarketplaces.agentic-partner" in result.stdout
+
+
+# ---------------------------------------------------------------- --agy (spec antigravity, story 6)
+
+FAKE_AGY = """#!/bin/sh
+echo "$*" >> "$HOME/agy-argv"
+case "$1 $2" in
+  "--version ") echo "1.5.9" ;;
+  "plugin validate")
+    [ -e "$HOME/agy-fail-validate" ] && { echo "invalid manifest" >&2; exit 1; }
+    echo "ok" ;;
+  "plugin install")
+    [ -e "$HOME/agy-fail-install" ] && { echo "boom" >&2; exit 4; }
+    rm -rf "$HOME/agy-installed-copy" && cp -R "$3" "$HOME/agy-installed-copy"
+    echo "hooks : 1 installed ($(sed -n 's/^  "\\(cobot-[0-9a-f]*\\)".*/\\1/p' "$3/hooks.json"))" ;;
+  "plugin list")
+    if [ -e "$HOME/agy-installed" ]; then echo "cobot 0.3.0 enabled"; else echo "No plugins installed."; fi ;;
+  *) echo "fake agy: $*" ;;
+esac
+"""
+
+
+def with_agy(home_dir, fake_claude=True):
+    exe = hermetic_bin(home_dir, fake_claude) / "agy"
+    exe.write_text(FAKE_AGY)
+    exe.chmod(0o755)
+    return home_dir
+
+
+def agy_calls(home_dir):
+    argv = home_dir / "agy-argv"
+    return argv.read_text().splitlines() if argv.exists() else []
+
+
+def staged_pair(home_dir):
+    """The validate and install calls name one staged copy, never the checkout; it is gone after."""
+    calls = agy_calls(home_dir)
+    assert [c.rsplit(" ", 1)[0] for c in calls] == ["plugin validate", "plugin install"], calls
+    validated, installed = (c.rsplit(" ", 1)[1] for c in calls)
+    assert validated == installed and installed != str(PLUGIN) and installed.endswith("/cobot")
+    assert not os.path.exists(installed)
+    return installed
+
+
+def installed_group(home_dir):
+    hooks = json.loads((home_dir / "agy-installed-copy" / "hooks.json").read_text())
+    (name,) = hooks
+    return name, hooks[name]
+
+
+def test_install_agy_validatesThenInstallsTheCheckout(home):
+    result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    assert result.returncode == 0, result.stderr
+    staged_pair(home)
+    assert "no agy session open" in result.stdout
+
+
+@pytest.mark.parametrize("args", [["--agy", "--project", "{t}"], ["--project", "{t}", "--agy"]])
+def test_install_agy_isAModifier_bothOrdersRunBoth(home, tmp_path, args):
+    target = tmp_path / "repo"
+    target.mkdir()
+    result = run_install([a.replace("{t}", str(target)) for a in args], with_agy(home))
+    assert result.returncode == 0, result.stderr
+    assert "installed cobot@cobot --scope project" in result.stdout
+    staged_pair(home)
+
+
+def test_install_agy_failedValidate_installsNothingAndFailsLoudly(home):
+    with_agy(home)
+    (home / "agy-fail-validate").write_text("")
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    (call,) = agy_calls(home)
+    assert call.startswith("plugin validate ") and not os.path.exists(call.rsplit(" ", 1)[1])
+    assert "agy plugin validate failed" in result.stderr
+
+
+def test_install_agy_failedInstall_failsLoudly(home):
+    with_agy(home)
+    (home / "agy-fail-install").write_text("")
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    assert "agy plugin install failed (exit 4)" in result.stderr
+    assert "previous copy" in result.stderr
+
+
+def test_install_agy_withoutAgy_exitsOne(home):
+    result = run_install(["--agy"], home)
+    assert result.returncode == 1
+    assert "agy not found" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "args", [["--agy", "--uninstall"], ["--uninstall", "user", "--agy"], ["--dev", "--agy"]]
+)
+def test_install_agy_neverUninstallsAndRefusesTheOtherActions(home, args):
+    result = run_install(args, with_agy(home))
+    assert result.returncode == 2
+    assert not any("uninstall" in call for call in agy_calls(home))
+
+
+def test_install_agy_refreshNeverUninstallsFromAgy(home, tmp_path):
+    result = run_install(["--refresh", str(tmp_path), "--agy"], with_agy(home))
+    assert result.returncode == 0, result.stderr
+    staged_pair(home)
+
+
+def test_install_check_reportsAgyState(home):
+    with_agy(home)
+    result = run_install(["--check"], home)
+    assert "== Antigravity" in result.stdout and "1.5.9" in result.stdout
+    assert "cobot: not installed" in result.stdout
+    (home / "agy-installed").write_text("")
+    result = run_install(["--check", "--agy"], home)
+    assert result.returncode == 0
+    assert "cobot 0.3.0 enabled" in result.stdout
+    assert "plugin install" not in "\n".join(agy_calls(home))
+
+
+def test_install_check_withoutAgy_saysNotFound(home):
+    result = run_install(["--check"], home)
+    assert "agy: not found" in result.stdout
+
+
+def test_install_agy_hookGroupHasARandomNameEachInstall(home):
+    checkout = (PLUGIN / "hooks.json").read_text()
+    with_agy(home, fake_claude=False)
+    names = []
+    for _ in range(2):
+        assert run_install(["--agy"], home).returncode == 0
+        name, group = installed_group(home)
+        assert re.fullmatch(r"cobot-[0-9a-f]{16}", name), name
+        assert group == json.loads(checkout)["cobot"]
+        names.append(name)
+    assert names[0] != names[1]
+    assert (PLUGIN / "hooks.json").read_text() == checkout
+    assert (home / "agy-installed-copy" / "bin" / "cobot-rules").is_file()
+
+
+def test_install_agy_leavesPythonCachesOutAndNamesTheStagedCopy(home):
+    cache = PLUGIN / "bin" / "__pycache__"
+    created = not cache.exists()
+    cache.mkdir(exist_ok=True)
+    (cache / "stray.pyc").write_bytes(b"x")
+    try:
+        result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    finally:
+        (cache / "stray.pyc").unlink()
+        if created:
+            cache.rmdir()
+    assert result.returncode == 0, result.stderr
+    assert not list((home / "agy-installed-copy").rglob("__pycache__"))
+    staged = agy_calls(home)[0].rsplit(" ", 1)[1]
+    assert f"validating {staged} (staged from {PLUGIN}" in result.stdout
+
+
+def test_install_agy_neverPrintsTheGroupName(home):
+    result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    assert result.returncode == 0, result.stderr
+    name, _ = installed_group(home)
+    assert name not in result.stdout + result.stderr
+    assert "1 installed (cobot-<random>)" in result.stdout

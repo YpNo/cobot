@@ -2210,7 +2210,22 @@ def expand_segment(segment: list[str], here: Dirs, depth: int, reached: Reached)
 
 
 def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
-    """``expand_segment`` for the segment as written."""
+    """``expand_segment`` for the segment as written; the commands a ``find`` runs follow it."""
+    argv = strip_wrappers(segment)
+    if argv[:1] == ["find"] and depth < MAX_EXPANSION:
+        bodies = [body for body in find_bodies(argv) if body]
+        origin = show(" ".join(argv), shell.REGISTRY)[:MAX_ORIGIN]
+        tail = [
+            (t, o or origin, d)
+            for body in bodies
+            for t, o, d in expand_segment(body, here, depth + 1, reached)
+        ]
+        return [*expand_plain(segment, here, depth, reached), *tail]
+    return expand_plain(segment, here, depth, reached)
+
+
+def expand_plain(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
+    """``expand_cased`` without the ``find`` bodies."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
     globbed = not literal and all_glob(segment) and prefix_key(segment, plain) is None and argv_runner(plain)
@@ -2435,14 +2450,15 @@ GIO_DELETING = frozenset({"trash", "remove", "rm"})
 GIO_MOVING = frozenset({"move", "mv", "rename", "copy", "cp"})
 FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})  # what it runs is not followed
 FIND_LEADING = frozenset({"-H", "-L", "-P"})  # options before the start paths; -D and -O take a value
-IMPLICIT_FOLDER = -1  # a ``find`` with no start path deletes under the folder it runs in
+IMPLICIT_FOLDER = -1  # a deleting ``find`` also deletes under the folder it runs in
+FILES_FROM = -2  # a deleting ``find`` whose start paths come from a file or stdin
 
 
 # options naming the folder a command writes in, by program: (short options, long options)
 FOLDER_OPTIONS = {
-    "tar": (("-C",), ("--directory",)),
+    "tar": (("-C",), ("--directory", "--one-top-level")),
     "bsdtar": (("-C",), ("--directory",)),
-    "gtar": (("-C",), ("--directory",)),
+    "gtar": (("-C",), ("--directory", "--one-top-level")),
     "unzip": (("-d",), ()),
     "patch": (("-d",), ("--directory",)),
     "git": (("-C",), ("--work-tree", "--git-dir")),
@@ -2450,34 +2466,51 @@ FOLDER_OPTIONS = {
 GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
 
 
+TAR_PROGRAMS = frozenset({"tar", "bsdtar", "gtar"})
+TAR_VALUE_LETTERS = frozenset("fCbTXgNKVHL")  # old-style letters that take the next word
+LONG_PREFIX_MIN = 5  # getopt takes a unique prefix of a long option: ``--dir`` is ``--directory``
+GIT_FOLDER_VARIABLES = ("GIT_WORK_TREE=", "GIT_DIR=")
+
+
+def long_named(word: str, longs: tuple[str, ...]) -> bool:
+    name = word.split("=", 1)[0]
+    return len(name) >= LONG_PREFIX_MIN and any(option.startswith(name) for option in longs)
+
+
 def folder_options(segment: list[str]) -> list[str]:
-    """The folders a segment's options name as the place it writes (F-33): ``tar -C`` and
-    ``--directory``, ``unzip -d``, ``patch -d`` and ``--directory``, ``git -C``, ``--work-tree``
-    and ``--git-dir`` (before git's verb only: ``git commit -C`` is a commit), in separate,
-    attached and ``=`` forms; for ``tar`` also a cluster ending in ``C`` (``-xC dir``)."""
+    """The folders a segment names as the place it writes (F-33): ``tar -C``, ``--directory`` and
+    ``--one-top-level``, ``unzip -d``, ``patch -d`` and ``--directory``, ``git -C``,
+    ``--work-tree`` and ``--git-dir`` (before git's verb only: ``git commit -C`` is a commit), and
+    ``GIT_WORK_TREE``/``GIT_DIR`` assignments; in separate, attached, ``=``, abbreviated long and
+    clustered short forms, and tar's old-style first word (``tar xfC e.tar dir``)."""
+    found = [w.split("=", 1)[1] for w in segment if w.startswith(GIT_FOLDER_VARIABLES)]
     argv = program_of(segment)
     head = argv[0] if argv else ""
     if head not in FOLDER_OPTIONS:
-        return []
+        return [value for value in found if value]
     shorts, longs = FOLDER_OPTIONS[head]
-    found, i = [], 1
+    letters = "".join(option[1] for option in shorts)
+    i = 1
+    if head in TAR_PROGRAMS and argv[1:2] and argv[1][:1].isalpha():
+        takers = [letter for letter in argv[1] if letter in TAR_VALUE_LETTERS]
+        found += [argv[2 + n] for n, letter in enumerate(takers) if letter == "C" and 2 + n < len(argv)]
+        i = 2 + len(takers)
     while i < len(argv):
         word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
         if head == "git" and not word.startswith("-"):
             break  # the verb: what follows is its own options
-        name = word.split("=", 1)[0]
-        if name in longs:
+        if word.startswith("--") and long_named(word, longs):
             found.append(word.split("=", 1)[1] if "=" in word else following)
             i += 1 if "=" in word else 2
             continue
-        short = next((o for o in shorts if word.startswith(o)), None)
-        cluster = head in ("tar", "bsdtar", "gtar") and re.fullmatch(r"-[a-zA-Z]*C", word)
-        if short and not word.startswith("--"):
-            found.append(word[len(short) :] or following)
-            i += 1 if word[len(short) :] else 2
-        elif cluster:
-            found.append(following)
-            i += 2
+        cluster = (
+            re.fullmatch(rf"-([a-zA-Z]*?)([{letters}])(.*)", word)
+            if letters and not word.startswith("--")
+            else None
+        )
+        if cluster:
+            found.append(cluster.group(3) or following)
+            i += 1 if cluster.group(3) else 2
         else:
             i += 2 if head == "git" and word in GIT_VALUE_OPTIONS else 1
     return [value for value in found if value]
@@ -2499,14 +2532,44 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
         return frozenset(range(at + 1, len(segment)))
     if head != "find" or not FIND_ACTIONS & set(argv):
         return frozenset()
-    i = 1
-    while i < len(argv) and (argv[i] in FIND_LEADING or argv[i] in ("-D", "-O") or argv[i].startswith("-O")):
-        i += 2 if argv[i] in ("-D", "-O") else 1
-    starts = []
-    while i < len(argv) and not argv[i].startswith(("-", "(", "!", ",")):
-        starts.append(at + i)
+    if "-files0-from" in argv:
+        return frozenset({FILES_FROM})
+    inside = {at + i for i in find_body_indexes(argv)}
+    words = {at + i for i in range(1, len(argv))} - inside
+    return frozenset(words | {IMPLICIT_FOLDER})
+
+
+def find_body_indexes(argv: list[str]) -> set[int]:
+    """The indexes of the words an ``-exec``, ``-execdir``, ``-ok`` or ``-okdir`` runs, up to its
+    ``;`` or ``+``, the terminator included."""
+    found, i = set(), 0
+    while i < len(argv):
+        if argv[i] in FIND_ACTIONS - {"-delete"}:
+            j = i + 1
+            while j < len(argv) and argv[j] not in (";", "+"):
+                found.add(j)
+                j += 1
+            found.add(j)
+            i = j
         i += 1
-    return frozenset(starts) if starts else frozenset({IMPLICIT_FOLDER})
+    return found
+
+
+def find_bodies(argv: list[str]) -> list[list[str]]:
+    """The commands a ``find`` runs on what it finds, each judged like a command of its own."""
+    bodies, current = [], None
+    for word in argv:
+        if current is not None:
+            if word in (";", "+"):
+                bodies.append(current)
+                current = None
+            else:
+                current.append(word)
+        elif word in FIND_ACTIONS - {"-delete"}:
+            current = []
+    if current:
+        bodies.append(current)
+    return [body for body in bodies if body]
 
 
 def enters(segment: list[str]) -> bool:
@@ -2634,6 +2697,25 @@ def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relo
     return relocating and bool(literal) and any(globs_meet(name, root) for root in CUSTOMIZATION_ROOTS_FOLDED)
 
 
+def merges_into_an_anchor(segment: list[str], base: str, anchors: frozenset[str]) -> str | None:
+    """The source of a copy or move into a folder that holds a protected folder's parent, when it
+    may land on that parent: its name is the next folder down (``cp -r x/.gemini ~``), or it
+    copies a folder's contents (a trailing ``/``, a hole). ``cp a ~`` stays silent."""
+    words = [w for w in program_of(segment)[1:] if not w.startswith("-")]
+    if len(words) < 2:
+        return None
+    target = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(words[-1])[-1])))
+    folder = target.casefold().rstrip("/") + "/"
+    children = {a[len(folder) :].split("/")[0] for a in anchors if a.startswith(folder)}
+    if not children:
+        return None
+    for source in words[:-1]:
+        name = os.path.basename(source.rstrip("/")).casefold()
+        if source.endswith("/") or shell.has_sentinel(source) or name in children:
+            return source
+    return None
+
+
 def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
     """Whether a folder holds a protected folder's parent: HOME and ``/`` hold ``~/.gemini``, so
     deleting them deletes it (``rm -r ~``, ``find ~ -delete``)."""
@@ -2718,12 +2800,24 @@ def protected_file_touched(
             homed_folder = os.path.expanduser(home_forms(folder)[-1])
             bases = sorted({*bases, *(os.path.normpath(os.path.join(b, homed_folder)) for b in bases)})
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
+        if FILES_FROM in deleted:
+            return "-files0-from"
+        merged = relocating and merges_into_an_anchor(segment, bases[0], anchors)
+        if merged:
+            return merged
         if IMPLICIT_FOLDER in deleted and any(
             word_touches(".", base, protected, relocating, anchors, True, budget, entering) for base in bases
         ):
             return segment[0]
         for index, token in enumerate(segment):
             destroying = index in deleted
+            value = token.split("=", 1)[1] if "=" in token else ""
+            if value and any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for form in home_forms(os.path.expanduser(value) if value.startswith("~") else value)
+                for base in bases
+            ):
+                return token
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):

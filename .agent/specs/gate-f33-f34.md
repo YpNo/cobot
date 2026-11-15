@@ -1,6 +1,6 @@
 # Spec — deletes, folder options and project text on stderr (findings F-33, F-34)
 
-size: small-medium · profile: library · owner: YpNo · date: 2026-11-15 · revision 1 · built on
+size: small-medium · profile: library · owner: YpNo · date: 2026-11-15 · revision 2 (challenger pass folded) · built on
 `main` `8ceaf95` (gate-residuals merged as PR 57)
 
 ## Goal
@@ -86,7 +86,22 @@ Residuals named: archive members not on the command line (`tar -xf e.tar` with
 
 ## Challenger verdict
 
-pending
+Pass 1, 2026-11-15: **SOUND WITH CHANGES**, eight points, folded after T01–T04 (each row a test):
+
+- BLOCKER start paths are not only the words before the first expression (paths after it are
+  accepted) → every word of a deleting `find` outside what it runs counts.
+- MAJOR what `-exec`/`-execdir`/`-ok`/`-okdir` run was not judged → each body is judged as a
+  command of its own (rules and the protected check); `--` no longer hides the start paths; a
+  deleting `find` with `-files0-from` asks.
+- MAJOR a copy or move into a folder holding a protected folder's parent → asks when a source
+  carries the next folder's name or copies a folder's contents (a trailing `/`, a hole); `cp a ~`
+  stays silent.
+- MAJOR folder options: abbreviated long options, short clusters for every tool, tar's old-style
+  first word, `GIT_WORK_TREE`/`GIT_DIR`, `--one-top-level`.
+- MAJOR an `=` value of any program (`of=`, `--target-directory=`, `--output=`) is checked as a
+  path word.
+- MINOR the `;` rows now use `\;`; the known asks are named; `explain`, `show` and `sync` print
+  project rules on the owner's own stdout by design.
 
 ## Converge
 

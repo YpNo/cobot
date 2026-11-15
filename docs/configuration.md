@@ -42,7 +42,8 @@ A trailing `# comment` on a default or owner row joins the reason the gate gives
 `ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped and a
 project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), and a warning
 about one names its line only (`project:4: unreadable rule ignored`), so repository text never
-speaks in a permission prompt or on the hook's stderr.
+speaks in a permission prompt or on the hook's stderr. `/cobot:rules explain`, `show` and `sync`
+print the project rules on your own terminal, by design.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
@@ -74,7 +75,9 @@ The protected-file check reads a path the way the shell and the disk will
 - a command whose working folder is inside a `never` folder row asks once, naming the folder.
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
-`git -C ~ …` and `tar -C ~ …` (HOME holds `~/.gemini`); `find ~ -exec … {} +` of any command;
+`git -C ~ …`, `git -C .. …` from a project directly in HOME, and `tar -C ~ …` (HOME holds
+`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` body meets the rows its
+command meets (`find … -exec rm -rf {} +` asks like `rm -rf`);
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between

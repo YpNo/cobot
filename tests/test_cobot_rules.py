@@ -4376,8 +4376,8 @@ def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_pat
     [
         "find ~/.gemini -delete",
         "find ~ -name .gemini -exec rm -r {} +",
-        "find ~/.gemini -execdir rm {} ;",
-        "find ~/.gemini -ok rm {} ;",
+        "find ~/.gemini -execdir rm {} \\;",
+        "find ~/.gemini -ok rm {} \\;",
         "find -L ~/.gemini -maxdepth 2 -delete",
         "gio trash ~/.gemini",
         "gio remove ~/.gemini",
@@ -4444,4 +4444,66 @@ def test_f33_folderOption_namingAProtectedFolderOrItsParent_asks(rules, fake_hom
 def test_f33_ordinaryFolderOptions_staySilent(rules, fake_home, command):
     _, home = fake_home
     (home / "ws" / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- F-33 challenger folds
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find -delete ~/.gemini",
+        "find . -name x -delete ~/.gemini",
+        "find -name '*' -delete ~",
+        "find -- ~/.gemini -delete",
+        "printf x | find -files0-from - -delete",
+        "find . -maxdepth 0 -exec rm -r ~/.gemini \\;",
+        "find . -maxdepth 0 -exec mv ~/.gemini /tmp/g \\;",
+        "cp -r payload/.gemini ~",
+        "mv payload/.gemini ~",
+        "rsync -a payload/ ~/",
+        "tar xfC e.tar ~/.gemini",
+        "tar --dir=$HOME/.gemini -xf e.tar",
+        "tar --direc ~/.gemini -xf e.tar",
+        "unzip -qod ~/.gemini e.zip",
+        "unzip -od $HOME/.gemini e.zip",
+        "patch -sd ~/.gemini -p1 -i p",
+        "patch --dir=$HOME/.gemini -p1 -i p",
+        "GIT_WORK_TREE=$HOME/.gemini git checkout -- config",
+        "tar --one-top-level=$HOME/.gemini -xf e.tar",
+        "dd if=x of=$HOME/.gemini/config/plugins/x",
+        "dd if=x of=~/.gemini/config/x",
+        "cp --target-directory=$HOME/.gemini/config x",
+        "curl --output=$HOME/.gemini/config/x u",
+    ],
+)
+def test_f33Fold_formsTheChallengerFound_ask(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+def test_f33Fold_execBody_meetsTheNeverRows(rules, fake_home):
+    _, home = fake_home
+    assert (
+        judge_in(rules, "find . -maxdepth 0 -exec git push --force origin main \\;", home / "ws")[0].decision
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find . -name '*.pyc' -delete",
+        "find ~/src -name node_modules -prune -exec ls {} +",
+        "dd if=a of=b",
+        "curl --output=out.json u",
+        "env DESTDIR=/tmp/stage ls",
+        "tar -czf out.tgz -C src .",
+    ],
+)
+def test_f33Fold_ordinaryForms_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    (home / "src").mkdir(exist_ok=True)
     assert judge_in(rules, command, home / "ws")[0].decision is None, command

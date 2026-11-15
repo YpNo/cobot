@@ -2701,20 +2701,48 @@ def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relo
 def merges_into_an_anchor(segment: list[str], base: str, anchors: frozenset[str]) -> str | None:
     """The source of a copy or move into a folder that holds a protected folder's parent, when it
     may land on that parent: its name is the next folder down (``cp -r x/.gemini ~``), or it
-    copies a folder's contents (a trailing ``/``, a hole). ``cp a ~`` stays silent."""
-    words = [w for w in program_of(segment)[1:] if not w.startswith("-")]
-    if len(words) < 2:
+    copies a folder's contents (a trailing ``/`` or ``/.``, ``-T``, a variable, a hole, find's
+    ``{}``). The target is ``-t``/``--target-directory`` when given, else the last word.
+    ``cp a ~`` stays silent."""
+    target, sources, contents = merge_parts(program_of(segment)[1:])
+    if target is None or not sources:
         return None
-    target = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(words[-1])[-1])))
-    folder = target.casefold().rstrip("/") + "/"
+    folder = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1]))).casefold()
+    folder = folder.rstrip("/") + "/"
     children = {a[len(folder) :].split("/")[0] for a in anchors if a.startswith(folder)}
     if not children:
         return None
-    for source in words[:-1]:
+    for source in sources:
         name = os.path.basename(source.rstrip("/")).casefold()
-        if source.endswith("/") or shell.has_sentinel(source) or name in children:
+        unknown = shell.has_sentinel(source) or "$" in source or "{}" in source
+        whole = source.endswith(("/", "/.")) or source == "."
+        if contents or unknown or whole or name in children:
             return source
     return None
+
+
+def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
+    """A copy or move's target, its sources, and whether it copies into the target itself
+    (``-T``): ``-t DIR``, ``-tDIR``, ``--target-directory[=]DIR`` and a cluster ending in ``t``."""
+    target, sources, contents, i = None, [], False, 0
+    while i < len(args):
+        word = args[i]
+        following = args[i + 1] if i + 1 < len(args) else None
+        if word.startswith("--target-directory"):
+            target, i = (word.split("=", 1)[1], i + 1) if "=" in word else (following, i + 2)
+            continue
+        if word in ("-T", "--no-target-directory") or re.fullmatch(r"-[a-zA-Z]*T[a-zA-Z]*", word):
+            contents = True
+        cluster = re.fullmatch(r"-([a-zA-Z]*)t(.*)", word) if not word.startswith("--") else None
+        if cluster:
+            target, i = (cluster.group(2), i + 1) if cluster.group(2) else (following, i + 2)
+            continue
+        if not word.startswith("-"):
+            sources.append(word)
+        i += 1
+    if target is None and len(sources) >= 2:
+        target = sources.pop()
+    return target, sources, contents
 
 
 def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:

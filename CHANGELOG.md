@@ -76,6 +76,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `expert-gha` learned two lines from the curriculo CI run: pin zizmor-action's `version:` to the
+  local audit's CLI, and a floating `channel = "stable"` in rust-toolchain.toml moves CI with each
+  Rust release. Curated from `learn/gha`: a release snapshot, a superseded line and a private
+  repository source were left out (F-42).
 - Version 0.3.0 in both plugin manifests and the marketplace; `release.yml` checks the
   Antigravity manifest against the tag too.
 - The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to

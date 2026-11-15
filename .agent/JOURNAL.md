@@ -88,3 +88,11 @@ Proof: 13 tests (8 writing scripts denied, reading scripts keep their ask, perl 
 Open: F-44's other items (sed -i and redirects into .agent/ or .github/workflows, the attribution line, the commit allow offer, parked builder notes, the cobot-deps hint) stay open.
 Next: owner pushes fix/edits-not-scripts and opens its PR; the onboarding environment spec follows.
 verified: cae8c52 · pytest+cov (2790), ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate (rebased onto main 204bd3c)
+
+## 2026-11-15 — release 0.3.0 cut
+Changed: f787e05 CHANGELOG Unreleased cut to [0.3.0] - 2026-11-15 with a summary (Antigravity from one tree, the gate's path gaps in both runtimes, project rules shown by place, writing scripts denied, A2UI and gha knowledge, the brief budget); the three manifests already carry 0.3.0.
+Why: the owner asked to cut 0.3.0; its scope (Antigravity and A2UI) is merged, with the gate PRs 54, 57, 59, 61.
+Proof: release.yml's version check run locally (plugin.json, the Antigravity manifest, marketplace.json and the CHANGELOG heading agree); its notes extraction gives 176 lines; markdownlint; check-plugin. Currency read 2026-11-15: the four pinned actions are their latest releases; ruff 0.17.4 against 0.17.5, markdownlint-cli2 0.24.0 against 0.24.1, Claude Code 2.1.322 in CI against 2.1.325 (2.1.311 local): patch gaps, the owner's call.
+Open: the onboarding environment build (spec on feat/onboard-environment) is not in 0.3.0; F-35 to F-44 open.
+Next: owner pushes chore/release-0.3.0, merges, then pushes the annotated tag v0.3.0; release.yml publishes the GitHub release.
+verified: f787e05 · release version check, notes extraction, markdownlint, check-plugin

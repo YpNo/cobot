@@ -277,3 +277,12 @@ Decided in build: the harness record splits Claude Code by named run (2.1.322 ev
 Open: T08, the owner's smoke run, fills the Antigravity row before the PR; the smoke script has not run anywhere yet (it needs a signed-in agy and the real HOME).
 Next: owner pushes feat/antigravity, runs ./install.sh --agy then sh scripts/spikes/smoke-agy.sh, and pastes the result lines; then the harness row, wrap and the PR.
 verified: 356f882 · pytest+cov, ruff, shellcheck, sh -n, markdownlint, claude and agy plugin validate, check-plugin, sync-agents --check, memory check
+
+## 2026-11-15 — Antigravity T08: the owner's smoke run, one blocker
+
+Changed: a6ac3df the gate no longer asks on cobot's own bin/ tool runs from agy's config folder (own_tool_run; runner-reached paths checked apart); docs/harnesses.md Antigravity 1.5.9 row filled from the run; mechanics facts: a failing hook blocks on 1.5.9 (h1), hook groups merge by name (h2), print mode denies an ask, the child's calls reach the gate (g2); smoke messages for h1 and w1.
+Why: the owner ran ./install.sh --agy and scripts/spikes/smoke-agy.sh signed in on agy 1.5.9 (2026-11-15).
+Proof: g1, g2, b1, s1, o1 ok; h2 FAILS (a workspace .agents/hooks.json group named cobot with enabled false: the forced push reached the bare remote, no gate log entry); w1 and m1 not reached; tests for the fix written first and seen failing (11 rows); full suite 98.67 %, ruff, shellcheck, sh -n, markdownlint.
+Open: h2 is a BLOCKER for the PR: any repository can commit .agents/hooks.json or .agent/hooks.json with {"cobot": {"enabled": false}} and the gate is gone; the fix is the owner's call (a per-install group name, a workspace scan, an upstream agy issue). Unknown: how agy combines an auto_approve from a workspace hook with cobot's deny (not in the smoke yet).
+Next: owner decides the h2 fix; then build it, add the precedence check to the smoke, owner re-runs it.
+verified: a6ac3df · pytest+cov, ruff, shellcheck, sh -n, markdownlint, smoke-agy (owner, 2026-11-15)

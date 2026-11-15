@@ -23,7 +23,8 @@ user-invocable: false
 
 A screen is a contract with a person who cannot see your intent. Design from the person's task
 inward: who, on what device, with which input, under which constraints. Quote the status of every
-fact you rely on (`references/web.md`, `references/devices.md`, `references/stitch.md`); when a
+fact you rely on (`references/web.md`, `references/devices.md`, `references/stitch.md`,
+`references/a2ui.md`); when a
 line is older than its threshold (versions 30 days, idiom 90) or the question falls outside them,
 say so and propose `/cobot:learn ui <question>` instead of guessing.
 
@@ -70,6 +71,16 @@ to one: Material 3 (Expressive is an update, not a new version) for Android-adja
 Google-flavoured products; shadcn/ui on Radix and Tailwind v4 for React 19 product UI; the
 framework's own primitives for Vue or Svelte; plain CSS with tokens when there is no framework.
 Versions: `references/web.md`. Never two systems in one surface.
+
+## Agent-driven UI
+
+Propose A2UI (`references/a2ui.md`) only when the product's own agent renders UI for its end
+users; a screen a person designs is built from the component system above. The agent's output
+is data, validated against the catalog the app owns, never code; every catalog component keeps
+the non-negotiables and the tokens, so the agent can only compose accessible parts. Pin the
+pre-1.0 packages exactly and re-read the protocol version: v1.0 still takes breaking changes.
+Before choosing it, compare MCP Apps (HTML in a sandboxed iframe), AG-UI (a transport A2UI can
+ride on) and AI SDK generative UI (tool results mapped to your own React components).
 
 ## Device profiles
 

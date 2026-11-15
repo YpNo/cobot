@@ -2161,6 +2161,7 @@ class Reached:
 
     paths: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
+    visited: Dirs = frozenset()  # every directory a command may run in (None: one is unknown)
 
     def add(self, targets: list[str], writes: list[str]) -> None:
         self.paths.extend(target_words(targets))
@@ -2185,9 +2186,10 @@ def expand_everywhere(
     return out
 
 
-def expand_segment(
-    segment: list[str], here: Dirs, depth: int, reached: Reached
-) -> list[tuple[list[str], str]]:
+Placed = tuple[list[str], str, Dirs]  # a command, the runner it came from, where it may run
+
+
+def expand_segment(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
     """The segment, or the commands it runs when it is a resolvable runner or wrapper, tagged with
     the outermost origin. A segment holding a substitution is expanded only when every hole sits in
     a leading assignment's value: elsewhere the substituted text could be the code the runner runs.
@@ -2201,7 +2203,7 @@ def expand_segment(
     return expand_cased(segment, here, depth, reached)
 
 
-def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[tuple[list[str], str]]:
+def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
     """``expand_segment`` for the segment as written."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
@@ -2210,14 +2212,14 @@ def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -
     issued = frozenset(hole_keys(plain)) if globbed else frozenset()
     expansions = expand_everywhere(plain, here, issued) if expandable else None
     if not expansions or (globbed and not globs_reach_inner(plain, expansions)):
-        return [(segment, "")]
+        return [(segment, "", here)]
     origin = show(" ".join(plain), shell.REGISTRY)[:MAX_ORIGIN]
-    out: list[tuple[list[str], str]] = []
+    out: list[Placed] = []
     for parts, start in expansions:
         reached.add(flatten([targets for _, targets, _ in parts]), flatten([writes for *_, writes in parts]))
         texts = [text for text, *_ in parts]
         entries, _ = expand_script(texts, start, shell_state("\n".join(texts)), depth + 1, reached)
-        out.extend((tokens, origin) for tokens, _ in entries)
+        out.extend((tokens, origin, dirs) for tokens, _, dirs in entries)
     return out
 
 
@@ -2228,7 +2230,7 @@ def expand_script(
     depth: int,
     reached: Reached,
     starts: dict[str, Dirs] | None = None,
-) -> tuple[list[tuple[list[str], str]], Dirs]:
+) -> tuple[list[Placed], Dirs]:
     """Expand every segment of a script given as lines, recursively up to MAX_EXPANSION levels, each
     from the directories in effect where it runs; return the directories in effect at the end too.
     Redirection targets of the bodies go to ``reached``; ``starts`` gets the directories each
@@ -2237,7 +2239,7 @@ def expand_script(
     for text in texts:
         items.extend([LINE, *shell_items(text)] if items else shell_items(text))
     placed, end = walk_directories(items, dirs, state)
-    out: list[tuple[list[str], str]] = []
+    out: list[Placed] = []
     anywhere = end
     for segment, here in placed:
         anywhere = union(anywhere, here)
@@ -2246,6 +2248,7 @@ def expand_script(
         out.extend(expand_segment(segment, here, depth, reached))
     if starts is not None:
         starts[ANYWHERE] = anywhere
+    reached.visited = union(reached.visited, anywhere)
     return out, end
 
 
@@ -2258,12 +2261,12 @@ def expand_units(
     scanned: shell.Scan, origin: str, dirs: Dirs, state: ShellState, reached: Reached, entries: list
 ) -> None:
     """Expand the command, then every substitution body it runs from the directories in effect
-    where the substitution sits, into ``entries`` as (segment, origin, unit). A body is a forked
+    where the substitution sits, into ``entries`` as (segment, origin, unit, dirs). A body is a forked
     subshell: it shares the whole command's state."""
     reached.add(scanned.targets, scanned.writes)
     starts: dict[str, Dirs] = {}
     placed, _ = expand_script([scanned.outer], dirs, state, 0, reached, starts)
-    entries.extend((segment, via or origin, scanned) for segment, via in placed)
+    entries.extend((segment, via or origin, scanned, here) for segment, via, here in placed)
     for hole in scanned.holes.values():
         if hole.body is not None:
             here = starts.get(hole.key, starts[ANYWHERE])
@@ -2454,23 +2457,73 @@ def word_touches(
 
 
 def protected_file_touched(
-    segments: list[list[str]], cwd: str | None, rules: list[Rule], paths: list[str] | None = None
+    placed: list[tuple[list[str], Dirs]],
+    cwd: str | None,
+    rules: list[Rule],
+    paths: list[str] | None = None,
+    visited: Dirs = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
-    Edit/Write rule, or that moves or links a customization root or a protected folder.
-    ``paths`` (the files the runners reached) are checked word by word, never read as a command."""
+    Edit/Write rule, or that moves or links a customization root or a protected folder. Each word
+    is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
+    redirection and runner targets) are checked word by word, never read as a command, in every
+    directory the script visits."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
     anchors = protected_anchors(protected)
-    for segment in [*segments, *([paths] if paths else [])]:
-        command = segment is not paths
+    start = directories_of(Path(cwd or os.getcwd()))
+    homed = home_cd_targets([segment for segment, _ in placed])
+    jobs = [(segment, dirs, True) for segment, dirs in placed]
+    if paths:
+        jobs.append((paths, union(visited, start), False))
+    for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
+        bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         for index, token in enumerate(segment):
             if token.startswith("-") or index == program:
                 continue
-            if any(word_touches(form, cwd, protected, relocating, anchors) for form in home_forms(token)):
-                return token
+            for form in home_forms(token):
+                anchored = os.path.isabs(form) or form.startswith("~")
+                if any(
+                    word_touches(form, base, protected, relocating, anchors)
+                    for base in bases[: 1 if anchored else None]
+                ):
+                    return token
+                if moved and not anchored and names_a_protected_file(form, protected):
+                    return token
     return None
+
+
+def home_cd_targets(segments: list[list[str]]) -> set[str]:
+    """The folders a ``cd`` or ``pushd`` reaches through ``~``, ``$HOME`` or ``${HOME}``, read as
+    HOME. The directory walk leaves them unknown (a quoted ``~`` is a folder of that name, and the
+    script may assign HOME), so runners stay opaque after them; the protected check also reads
+    every word in them, which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    folders = set()
+    for segment in segments:
+        argv = directory_verb(segment)
+        if not argv or argv[0] not in ("cd", "pushd"):
+            continue
+        for word in (w for w in argv[1:] if not w.startswith("-")):
+            homed = home_forms(word)[-1]
+            if homed.startswith("~") and not shell.has_sentinel(homed):
+                folders.add(os.path.normpath(os.path.expanduser(homed)))
+    return folders
+
+
+def names_a_protected_file(word: str, protected: list[Rule]) -> bool:
+    """Whether a relative word's last part matches, without case, the last part of a protected
+    file row (not a folder row): after a ``cd`` the gate cannot follow, ``tee settings.json`` may
+    be writing ``.claude/settings.json``."""
+    if shell.has_sentinel(word):
+        return False
+    name = os.path.basename(word.rstrip("/")).casefold()
+    return any(
+        fnmatch.fnmatchcase(name, os.path.basename(r.pattern).casefold())
+        for r in protected
+        if not r.pattern.endswith("/*") and os.path.basename(r.pattern).strip("*")
+    )
 
 
 HOME_WORDS = ("$HOME", "${HOME}")
@@ -2970,17 +3023,18 @@ def judge_bash(
     holes = shell.REGISTRY  # every hole of the command, its bodies and its runners' inner commands
     with_values = not CAT_DEFINITION_RE.search(command)
     reached = Reached()
-    entries: list[tuple[list[str], str, shell.Scan]] = []
+    entries: list[tuple[list[str], str, shell.Scan, Dirs]] = []
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
     best = Verdict(None, None, "no rule matched")
-    touched = protected_file_touched([segment for segment, _, _ in entries], cwd, rules, reached.paths)
+    placed = [(segment, dirs) for segment, _, _, dirs in entries]
+    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     if touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
     config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
-    for segment, origin, unit in entries:
+    for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
         if origin:

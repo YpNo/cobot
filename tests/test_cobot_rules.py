@@ -4038,3 +4038,76 @@ def test_homeVariable_readsLikeTilde(rules, fake_home, command):
 def test_homeVariable_ordinaryPaths_staySilent(rules, fake_home, command):
     _, home = fake_home
     assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+# ---------------------------------------------------------------- residuals: F-31 cd
+
+
+@pytest.fixture
+def workspace(rules, tmp_path, layers):
+    """A working tree with ``.claude/``, ``.agents/``, ``docs/`` and a protected ``vault/``."""
+    _, project = layers
+    project.write_text("never Write(*/vault/*)\n")
+    for folder in (".claude", ".agents", "docs", "vault"):
+        (tmp_path / folder).mkdir()
+    (tmp_path / "vault" / "key.txt").write_text("k")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd .claude && tee settings.json",
+        "cd .agents; tee hooks.json",
+        "pushd vault && cat key.txt",
+        "cd docs && cd ../.claude && cp /tmp/x settings.local.json",
+        "cd .claude && echo x > settings.json",
+        "cd .agents && echo x >> hooks.json",
+        "cd .agents && tee plugins/x.sh",
+        "cd .claude && tee ./settings.json",
+        "cd .claude || exit; tee settings.json",
+    ],
+)
+def test_cdWalk_bareWordAfterACd_isAPathInThatFolder(rules, workspace, command):
+    verdict = judge_in(rules, command, workspace)[0]
+    assert verdict.decision == "ask", command
+    assert "protected" in verdict.reason()
+
+
+@pytest.mark.parametrize(
+    "command", ["cd docs && tee notes.md", "cd docs; cat README.md", "cd .claude && ls", 'cd "$d" && tee x']
+)
+def test_cdWalk_ordinaryWordsAfterACd_staySilent(rules, workspace, command):
+    assert judge_in(rules, command, workspace)[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd $HOME/.gemini/config && rm -r plugins",
+        "cd ${HOME}/.gemini/config; rm -r plugins",
+        "pushd $HOME/.gemini/config/ && ls",
+        "cd ~/.gemini && rm -r config",
+        "cd ~ && rm -r .gemini/config",
+    ],
+)
+def test_cdOperand_thatCouldBeAProtectedFolder_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['cd "$(git rev-parse --show-toplevel)" && ls', "cd $HOME/src/app && ls", "cd $TMPDIR && ls"],
+)
+def test_cdOperand_ordinaryVariables_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['cd "$d" && tee settings.json', 'cd "$d" && echo x > hooks.json', "cd $(x) && cp a Settings.local.json"],
+)
+def test_cdUnknown_wordNamingAProtectedFile_asks(rules, workspace, command):
+    assert judge_in(rules, command, workspace)[0].decision == "ask", command

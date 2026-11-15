@@ -103,6 +103,23 @@ Pass 1, 2026-11-15: **SOUND WITH CHANGES**, eight points, folded after T01–T04
 - MINOR the `;` rows now use `\;`; the known asks are named; `explain`, `show` and `sync` print
   project rules on the owner's own stdout by design.
 
+## Review
+
+2026-11-15, independent reviewer on `8ceaf95..159578a`: no regression (no ask or deny became
+none across the 1 700-string test corpus); folded, each with a test:
+
+- BLOCKER folder options joined every base built so far (work doubled per option, past the hook
+  timeout at 14) → values join the segment's own bases only; past eight options the segment asks.
+- BLOCKER `-execdir` and `-okdir` bodies were judged in the payload folder → judged in each start
+  path and its parent.
+- MAJOR copy and move forms: the `-t`/`--target-directory` target, `-T`, `/.`, a variable and
+  `{}` as contents copies; merges checked from every base.
+- MINOR the implicit folder only when `find` names no start path; `gfind`.
+
+Residuals named: extracting after a `cd` into a protected folder (`cd ~/.gemini && tar -xf …`);
+`busybox find`, `fd -x`; a variable naming a protected folder; very long commands (over the
+hook's timeout already before this branch).
+
 ## Converge
 
 pending

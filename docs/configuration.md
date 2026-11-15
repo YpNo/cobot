@@ -81,8 +81,9 @@ command meets (`find … -exec rm -rf {} +` asks like `rm -rf`);
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
-the check and the run, archive members not written on the command line, and folder options of
-other tools (`7z -o`, `cpio -D`).
+the check and the run, archive members not written on the command line, folder options of
+other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
+`busybox find` or `fd -x`.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

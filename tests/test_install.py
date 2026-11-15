@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -35,7 +37,23 @@ def home(tmp_path):
     return tmp_path
 
 
-TOOLS = ("sh", "sed", "grep", "readlink", "basename", "dirname", "pwd", "true", "mv", "rm", "ln")
+TOOLS = (
+    "sh",
+    "sed",
+    "grep",
+    "readlink",
+    "basename",
+    "dirname",
+    "pwd",
+    "true",
+    "mv",
+    "rm",
+    "ln",
+    "cp",
+    "mktemp",
+    "od",
+    "tr",
+)
 
 
 def hermetic_bin(home_dir, fake_claude):
@@ -292,7 +310,9 @@ case "$1 $2" in
   "plugin validate")
     [ -e "$HOME/agy-fail-validate" ] && { echo "invalid manifest" >&2; exit 1; }
     echo "ok" ;;
-  "plugin install") [ -e "$HOME/agy-fail-install" ] && { echo "boom" >&2; exit 4; }; echo "Installed cobot" ;;
+  "plugin install")
+    [ -e "$HOME/agy-fail-install" ] && { echo "boom" >&2; exit 4; }
+    rm -rf "$HOME/agy-installed-copy" && cp -R "$3" "$HOME/agy-installed-copy"; echo "Installed cobot" ;;
   "plugin list")
     if [ -e "$HOME/agy-installed" ]; then echo "cobot 0.3.0 enabled"; else echo "No plugins installed."; fi ;;
   *) echo "fake agy: $*" ;;
@@ -312,10 +332,26 @@ def agy_calls(home_dir):
     return argv.read_text().splitlines() if argv.exists() else []
 
 
+def staged_pair(home_dir):
+    """The validate and install calls name one staged copy, never the checkout; it is gone after."""
+    calls = agy_calls(home_dir)
+    assert [c.rsplit(" ", 1)[0] for c in calls] == ["plugin validate", "plugin install"], calls
+    validated, installed = (c.rsplit(" ", 1)[1] for c in calls)
+    assert validated == installed and installed != str(PLUGIN) and installed.endswith("/cobot")
+    assert not os.path.exists(installed)
+    return installed
+
+
+def installed_group(home_dir):
+    hooks = json.loads((home_dir / "agy-installed-copy" / "hooks.json").read_text())
+    (name,) = hooks
+    return name, hooks[name]
+
+
 def test_install_agy_validatesThenInstallsTheCheckout(home):
     result = run_install(["--agy"], with_agy(home, fake_claude=False))
     assert result.returncode == 0, result.stderr
-    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+    staged_pair(home)
     assert "no agy session open" in result.stdout
 
 
@@ -326,7 +362,7 @@ def test_install_agy_isAModifier_bothOrdersRunBoth(home, tmp_path, args):
     result = run_install([a.replace("{t}", str(target)) for a in args], with_agy(home))
     assert result.returncode == 0, result.stderr
     assert "installed cobot@cobot --scope project" in result.stdout
-    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+    staged_pair(home)
 
 
 def test_install_agy_failedValidate_installsNothingAndFailsLoudly(home):
@@ -334,7 +370,8 @@ def test_install_agy_failedValidate_installsNothingAndFailsLoudly(home):
     (home / "agy-fail-validate").write_text("")
     result = run_install(["--agy"], home)
     assert result.returncode == 1
-    assert agy_calls(home) == [f"plugin validate {PLUGIN}"]
+    (call,) = agy_calls(home)
+    assert call.startswith("plugin validate ") and not os.path.exists(call.rsplit(" ", 1)[1])
     assert "agy plugin validate failed" in result.stderr
 
 
@@ -365,7 +402,7 @@ def test_install_agy_neverUninstallsAndRefusesTheOtherActions(home, args):
 def test_install_agy_refreshNeverUninstallsFromAgy(home, tmp_path):
     result = run_install(["--refresh", str(tmp_path), "--agy"], with_agy(home))
     assert result.returncode == 0, result.stderr
-    assert agy_calls(home) == [f"plugin validate {PLUGIN}", f"plugin install {PLUGIN}"]
+    staged_pair(home)
 
 
 def test_install_check_reportsAgyState(home):
@@ -383,3 +420,18 @@ def test_install_check_reportsAgyState(home):
 def test_install_check_withoutAgy_saysNotFound(home):
     result = run_install(["--check"], home)
     assert "agy: not found" in result.stdout
+
+
+def test_install_agy_hookGroupHasARandomNameEachInstall(home):
+    checkout = (PLUGIN / "hooks.json").read_text()
+    with_agy(home, fake_claude=False)
+    names = []
+    for _ in range(2):
+        assert run_install(["--agy"], home).returncode == 0
+        name, group = installed_group(home)
+        assert re.fullmatch(r"cobot-[0-9a-f]{16}", name), name
+        assert group == json.loads(checkout)["cobot"]
+        names.append(name)
+    assert names[0] != names[1]
+    assert (PLUGIN / "hooks.json").read_text() == checkout
+    assert (home / "agy-installed-copy" / "bin" / "cobot-rules").is_file()

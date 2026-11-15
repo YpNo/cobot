@@ -95,6 +95,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Under Antigravity a repository could switch the gate off: agy merges hook groups by name, so a
+  committed `.agents/hooks.json` with `{"cobot": {"enabled": false}}` disabled cobot's group
+  (smoke `h2`). `install.sh --agy` now installs a staged copy whose group is named
+  `cobot-<16 random hex>`, new at each install, and the agy brief warns, naming the files, when
+  a workspace holds `hooks.json`, `plugins.json` or `plugins/` in `.agents`, `.agent`, `_agents`
+  or `_agent` from the workspace up to the repository root. The smoke gains `h3` (a workspace
+  `auto_approve` beside cobot's deny) and `s2` (the warning).
 - Under Antigravity the brief's own tool calls (`python3 -I <plugin>/bin/cobot-memory check`) no
   longer ask: the installed plugin lives under the protected `~/.gemini/config/`, and running
   one of cobot's own `bin/` tools is not writing it. Any other word naming that folder, a

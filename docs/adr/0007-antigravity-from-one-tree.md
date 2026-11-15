@@ -42,4 +42,10 @@ no agent identity, and hooks run in the plugin folder with nothing on PATH.
 - Every agy fact the design relies on is dated in `docs/reference/antigravity-mechanics.md` and
   re-read when agy's version moves.
 - A body edit to a Claude agent needs `python3 scripts/sync-agents.py`; CI fails until it runs.
+- agy merges hook groups by name across sources, so a repository's committed `.agents/hooks.json`
+  could switch off a group named `cobot` (smoke `h2`, 2026-11-15). `install.sh --agy` installs a
+  staged copy whose group is `cobot-<16 random hex>`, new at each install; a bare `agy plugin
+  install` of the checkout keeps the guessable name. The agy brief names any workspace
+  `hooks.json`, `plugins.json` or `plugins/` from the workspace up to the repository root. An
+  upstream issue asks agy to namespace a plugin's hook groups as it does its tools and skills.
 - Session grants, the debug path and cobot-reverse are 0.4.0, for both runtimes.

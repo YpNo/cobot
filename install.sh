@@ -115,12 +115,31 @@ retire_old_marketplace() { # before the new marketplace registers: a folder carr
   return 0
 }
 
+# agy merges hook groups by name across sources, so a repository's .agents/hooks.json naming the
+# plugin's group with "enabled": false switches it off (smoke h2): each install gets a group name
+# no committed file can know. The staged copy is validated, installed, then removed.
+AGY_GROUP_LINE='  "cobot": {'
+
+stage_agy() { # DIR: copy the plugin into DIR/cobot with a random hook group name
+  name="cobot-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+  cp -R "$PLUGIN_DIR" "$1/cobot"
+  sed "s/^$AGY_GROUP_LINE\$/  \"$name\": {/" "$PLUGIN_DIR/hooks.json" >"$1/cobot/hooks.json"
+  grep -q "^  \"$name\": {\$" "$1/cobot/hooks.json" || {
+    echo "install: hooks.json has no '$AGY_GROUP_LINE' line to rename; nothing installed" >&2
+    return 1
+  }
+  echo "agy: hook group named $name for this install"
+}
+
 cmd_agy() { # validate, then install: agy replaces an installed copy in place and restores it on failure
   command -v agy >/dev/null 2>&1 || { echo "install: agy not found on PATH" >&2; exit 1; }
+  stage=$(mktemp -d) || { echo "install: no temporary folder" >&2; exit 1; }
+  trap 'rm -rf "$stage"' EXIT
+  stage_agy "$stage" || exit 1
   echo "agy: validating $PLUGIN_DIR (run this with no agy session open)"
-  agy plugin validate "$PLUGIN_DIR" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
+  agy plugin validate "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
   echo "agy: installing $PLUGIN_DIR at user scope"
-  rc=0; agy plugin install "$PLUGIN_DIR" || rc=$?
+  rc=0; agy plugin install "$stage/cobot" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "install: agy plugin install failed (exit $rc); agy keeps the previous copy, if one was installed" >&2
     exit 1

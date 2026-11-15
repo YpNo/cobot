@@ -108,8 +108,13 @@ The gate, the session brief, the skills and the nine agents come along. What agy
   the consultant and the learner get no command tool there: no `git log` or `gh api` reads.
 - **`/onboard`, `/rules` and `/security-sweep` can be started by the model.** agy has no
   owner-only skills; the brief tells the model to wait for you to type them.
-- **The gate fails closed by its answer.** agy runs a call whose hook fails, so the gate prints
-  a deny on every failure it can see. A machine without `sh` would still fail open.
+- **The gate fails closed by its answer.** It prints a deny on every failure it can see, whatever
+  agy does with a failing hook. A machine without `sh` would still fail open.
+- **A repository's own agy hooks run beside the gate.** agy merges hook groups by name, so a
+  committed `.agents/hooks.json` naming cobot's group could switch it off. `install.sh --agy`
+  gives the group a random name at each install: install through it, not with a bare
+  `agy plugin install`. The brief warns when a workspace holds hooks or plugins; read them
+  before you let the session run.
 
 Every `agy` command asks, because `agy plugin install` replaces plugins and a nested `agy -p` runs
 outside the gate. To quiet the read-only form, add to `~/.claude/cobot.rules`:

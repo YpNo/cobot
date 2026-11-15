@@ -180,3 +180,43 @@ def test_agy_hooksJson_runsTheSessionShimFlat():
     (handler,) = hooks["SessionStart"]
     assert handler["command"] == "sh ./hooks/session-agy.sh"
     assert "matcher" not in handler and handler["timeout"] == 30
+
+
+@pytest.mark.parametrize(
+    "found",
+    [
+        ".agents/hooks.json",
+        ".agent/hooks.json",
+        "_agents/plugins.json",
+        "_agent/plugins",
+        "sub/.agents/hooks.json",
+    ],
+)
+def test_agy_workspaceHooksOrPlugins_warnBeforeTheBrief(session, project, found):
+    workspace = project / "sub" if found.startswith("sub/") else project
+    target = project / found
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.mkdir() if found.endswith("plugins") else target.write_text("{}")
+    text = message(session.agy_answer(agy_payload([workspace])))
+    warning = text.index(session.WORKSPACE_WARNING)
+    assert text.index(session.AGY_HEADING) < warning < text.index("\nrules: ")
+    assert str(target) in text
+    assert "Tell the owner" in text
+
+
+def test_agy_workspaceParentAboveTheRepository_isNotScanned(session, project):
+    (project.parent / ".agents").mkdir()
+    (project.parent / ".agents" / "hooks.json").write_text("{}")
+    (project / ".agents").mkdir()
+    (project / ".agents" / "skills.json").write_text("{}")
+    assert session.WORKSPACE_WARNING not in message(session.agy_answer(agy_payload([project])))
+
+
+def test_agy_workspaceWarning_listsAtMostAFew(session, project):
+    for root in ("_agents", "_agent", ".agents", ".agent"):
+        (project / root).mkdir(exist_ok=True)
+        for name in ("hooks.json", "plugins.json"):
+            (project / root / name).write_text("{}")
+    line = session.workspace_warning([str(project)])
+    assert line.count(str(project)) == session.WORKSPACE_SHOWN
+    assert line.endswith("and 3 more")

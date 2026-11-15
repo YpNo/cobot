@@ -16,7 +16,7 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `./install.sh --check` | reports Claude Code, the marketplace, installed scopes, the legacy scaffold, name overlaps and, when `agy` is on PATH, agy's version and whether cobot is installed there |
 | `./install.sh --uninstall [SCOPE]` | reverses an install (`project`, `local` or `user`) |
 | `./install.sh --user` | user scope, reserved for the switch ([03-switch-plan.md](03-switch-plan.md)) |
-| `./install.sh --agy` | Antigravity: `agy plugin validate`, then `agy plugin install` of this checkout at user scope; the same command refreshes and never uninstalls first. A modifier: beside `--project`, `--local`, `--user` or `--refresh` it runs that action, then the agy install |
+| `./install.sh --agy` | Antigravity: a staged copy of the plugin whose hook group is named `cobot-<16 random hex>` (agy merges groups by name, so a repository could switch off a known one), then `agy plugin validate` and `agy plugin install` of it at user scope; the same command refreshes, with a new name, and never uninstalls first. A modifier: beside `--project`, `--local`, `--user` or `--refresh` it runs that action, then the agy install |
 
 ## Files and environment
 

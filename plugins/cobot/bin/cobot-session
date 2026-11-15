@@ -28,6 +28,12 @@ DEADLINE = 25  # seconds shared by every tool call; the hook has 30
 RUNTIMES = ("claude", "agy")
 AGY_SECTION_CAP = 1_200
 AGY_HEADING = "## cobot under Antigravity"
+# agy loads hooks and plugins from these roots in every folder from the workspace up to the
+# repository root; a hook there runs beside the gate and may answer before it (smoke h1, h2)
+CUSTOMIZATION_ROOTS = (".agents", ".agent", "_agents", "_agent")
+CUSTOMIZATION_FILES = ("hooks.json", "plugins.json", "plugins")
+WORKSPACE_WARNING = "warning: agy customizations in this workspace run beside cobot's gate"
+WORKSPACE_SHOWN = 5
 
 
 def protocol_text() -> str:
@@ -120,6 +126,37 @@ the report.
     return text[:AGY_SECTION_CAP]
 
 
+def folders_to_root(workspace: Path) -> list[Path]:
+    """The workspace and its parents up to the repository root holding ``.git``; the workspace
+    alone outside a repository."""
+    chain = [workspace, *workspace.parents]
+    for index, folder in enumerate(chain):
+        if (folder / ".git").exists():
+            return chain[: index + 1]
+    return [workspace]
+
+
+def workspace_warning(workspaces: list[str]) -> str:
+    """One line naming the hook and plugin files agy would load beside cobot, or empty."""
+    found = [
+        str(folder / root / name)
+        for workspace in workspaces
+        if os.path.isabs(workspace) and os.path.isdir(workspace)
+        for folder in folders_to_root(Path(workspace))
+        for root in CUSTOMIZATION_ROOTS
+        for name in CUSTOMIZATION_FILES
+        if (folder / root / name).exists()
+    ]
+    if not found:
+        return ""
+    found = list(dict.fromkeys(found))
+    more = f" and {len(found) - WORKSPACE_SHOWN} more" if len(found) > WORKSPACE_SHOWN else ""
+    return (
+        f"{WORKSPACE_WARNING} and may answer before it. Tell the owner before your first tool call,"
+        f" and do not edit them: {', '.join(found[:WORKSPACE_SHOWN])}{more}"
+    )
+
+
 def agy_project(payload: dict) -> str | None:
     """The first workspace, when it is an absolute folder; hooks run in the plugin folder."""
     paths = payload.get("workspacePaths") or []
@@ -139,9 +176,19 @@ def agy_answer(stdin: str) -> str:
     try:
         head.append(agy_section())
         payload = json.loads(stdin) if stdin.strip() else {}
-        project = agy_project(payload if isinstance(payload, dict) else {})
+        payload = payload if isinstance(payload, dict) else {}
+        project = agy_project(payload)
+        paths = payload.get("workspacePaths")
+        warning = workspace_warning(
+            [p for p in paths if isinstance(p, str)] if isinstance(paths, list) else []
+        )
+        head += [warning] if warning else []
         room = TOTAL_CAP - sum(len(part) for part in head)
-        tail = brief_parts(project, room) if project else ["cobot session: project unknown (no workspace folder)"]
+        tail = (
+            brief_parts(project, room)
+            if project
+            else ["cobot session: project unknown (no workspace folder)"]
+        )
     except Exception as error:  # noqa: BLE001 - a session must still start
         tail = [error_line(error)]
     fixed = "\n\n".join(head)

@@ -30,7 +30,8 @@ The 2026-11-15 run, line by line:
   ran for it: agy 1.5.9 stops at a failing hook, workspace hooks first.
 - `h2` **fails**: with `.agents/hooks.json` holding a group `cobot` with `enabled: false`, the
   forced push went through and the gate log has no entry: hook groups merge by name across
-  sources, so a committed repository file can switch the plugin's gate off.
+  sources, so a committed repository file can switch the plugin's gate off. Fixed after the run
+  (a random group name per install); the next run's `h2` and `h3` decide the Gate cell.
 - `w1` not reached: the gate asked on `run_workflow`, and print mode denies an ask it cannot
   prompt for, so the workflow's own calls never ran.
 - `b1` ok: a `branch` child after an uncommitted `.agent/cobot.rules` line asked.

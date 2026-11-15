@@ -54,3 +54,11 @@ Decided in build: the runner walk stays as it is (cd ~ && make test still asks);
 Open: F-33 (find -delete, tar -C and other folder options), F-34 (project text on stderr); residuals named in the spec (second-hole links, other variables, profile CDPATH, a hung mount, the over-budget reason).
 Next: owner pushes chore/journal-compact-0.3, then feat/a2ui-knowledge and security/gate-residuals, one PR each, the tidy PR first.
 verified: 3dfc5f3 · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, noise check, latency (rebased onto main 3b93474)
+
+## 2026-11-15 — findings F-35 to F-44 from two dogfood sessions
+Changed: 704f936 .agent/FINDINGS.md gains ten rows from the owner's curriculo /cobot:ship run and the first ha-manager session (onboard, spec, build).
+Why: the owner asked to check how cobot behaved there and to record the results.
+Proof: two read-only reviews of the transcripts; each claim re-checked here: cobot-rules check gives none for the outward commands (F-36), report() skips async_launched (F-35), lang-rust says stable 1.99.1 (F-37), the onboard templates write exit 0 and 'were run' (F-38), _cobot_deps.py:522 prints its hint unconditionally (F-44); a read of a protected file asking is a documented known ask, not recorded.
+Open: F-33 and F-34 stay open on main until security/gate-f33-f34 lands (paused, review fold not built).
+Next: owner pushes docs/findings-dogfood-1115 and opens its PR; the owner picks which findings become the next spec.
+verified: 704f936 · markdownlint, cobot-memory check

@@ -2,7 +2,8 @@
 """cobot-rules: the rules gate (docs/02-design.md section 6, .agent/specs/r1.md) and the builder report check.
 
 Commands
-  gate                       read a PreToolUse payload on stdin; print a decision or nothing
+  gate [--runtime agy]       read a PreToolUse payload on stdin; print a decision or nothing
+                             (agy: always one decision, allow meaning no opinion)
   check  "<cmd>" [--tool T] [--agent A]   dry run: decision, rule, layer
   explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
   show                       the merged rule set with provenance
@@ -39,6 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
     tomllib = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _cobot_agy as agy  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
@@ -405,18 +407,35 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
     return Rule(decision, tool, pattern, agent, layer, number)
 
 
+def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -> None:
+    if not path.is_file():
+        return
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        rule = parse_rule(line, layer, number, warnings)
+        if rule:
+            rules.append(rule)
+
+
 def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
     rules: list[Rule] = []
     warnings: list[str] = []
     paths = layer_paths(cwd)
     for layer, path in paths.items():
-        if not path.is_file():
-            continue
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            rule = parse_rule(line, layer, number, warnings)
-            if rule:
-                rules.append(rule)
+        read_layer(layer, path, rules, warnings)
     return rules, warnings, paths
+
+
+def load_rules_agy(workspaces: list[str]) -> tuple[list[Rule], list[str]]:
+    """The default and owner layers, and the project layer of every workspace agy names: a
+    model-written Cwd cannot drop a project ``never``."""
+    rules: list[Rule] = []
+    warnings: list[str] = []
+    paths = layer_paths(workspaces[0])
+    read_layer("default", paths["default"], rules, warnings)
+    read_layer("owner", paths["owner"], rules, warnings)
+    for project in dict.fromkeys(repo_root(w) / ".agent" / "cobot.rules" for w in workspaces):
+        read_layer("project", project, rules, warnings)
+    return rules, warnings
 
 
 # ---------------------------------------------------------------- command analysis
@@ -3037,7 +3056,87 @@ def gate(stdin: str) -> str | None:
     return hook_output(verdict.decision, reason)
 
 
-VALUE_OPTIONS = {"check": {"tool", "agent"}, "explain": {"tool", "agent"}, "sync": {"settings"}}
+# ---------------------------------------------------------------- the gate under agy (spec antigravity)
+
+AGY_DECISION = {None: "allow", ASK: "force_ask", DENY: "deny"}  # allow defers; never auto_approve
+BY_NAME = {agy.NO_OPINION: None, agy.ASK: ASK, agy.DENY: DENY}
+NO_WORKSPACE = "no workspacePaths: the project rules are unknown"
+UNCOMMITTED_RULES = (
+    "a new workspace reads the committed rules: .agent/cobot.rules is uncommitted or not in git"
+)
+RUNTIMES = frozenset({"claude", "agy"})
+
+
+def agy_output(decision: str | None, reason: str) -> str:
+    return json.dumps({"decision": AGY_DECISION[decision], "reason": reason[:REASON_LIMIT]})
+
+
+def rules_committed(workspaces: list[str]) -> bool:
+    """Every workspace is in git and its .agent/cobot.rules has no uncommitted change."""
+    for workspace in workspaces:
+        status = git(["status", "--porcelain", "--", ".agent/cobot.rules"], repo_root(workspace))
+        if status is None or status:
+            return False
+    return bool(workspaces)
+
+
+def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdict:
+    """The verdict for one translated agy call: the strictest over its Claude-shaped calls."""
+    if plan.decision is not None:
+        return Verdict(BY_NAME[plan.decision], None, plan.note)
+    if not workspaces:
+        return Verdict(ASK, None, NO_WORKSPACE)
+    if plan.needs_committed_rules:
+        return (
+            Verdict(None, None, plan.note)
+            if rules_committed(workspaces)
+            else Verdict(ASK, None, UNCOMMITTED_RULES)
+        )
+    rules, warnings = load_rules_agy(workspaces)
+    for warning in warnings:
+        print(f"cobot gate: {warning}", file=sys.stderr)
+    best = Verdict(None, None, plan.note or "no rule matched")
+    for tool, tool_input in plan.calls:
+        verdict = judge(tool, tool_input, plan.cwd or cwd or workspaces[0], rules, None)
+        if outranks(verdict, best):
+            best = verdict
+    if plan.at_least_ask and best.decision is None:
+        return Verdict(ASK, None, plan.note)
+    return best
+
+
+def gate_agy(stdin: str) -> str:
+    """One agy decision for a PreToolUse payload; any failure denies (agy runs a call whose hook
+    fails)."""
+    try:
+        payload = json.loads(stdin)
+        call = payload["toolCall"]
+        name, args = str(call["name"]), call.get("args") or {}
+        if not isinstance(args, dict):
+            raise TypeError("toolCall.args is not an object")
+        workspaces = [str(path) for path in payload.get("workspacePaths") or []]
+        plan = agy.translate(name, args, agy.known_servers(Path.home()))
+        verdict = judge_plan(plan, workspaces, payload.get("cwd"))
+        head = str(
+            args.get("CommandLine") or args.get("Input") or args.get("TargetFile") or args.get("Path") or ""
+        )
+        log_event(
+            {"tool": name, "head": head[:120], "decision": verdict.decision, "reason": verdict.reason()}
+        )
+    except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
+        return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
+    reason = verdict.reason()
+    if name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
+        reason += stamp_suffix(plan.cwd or payload.get("cwd") or workspaces[0])
+    return agy_output(verdict.decision, reason)
+
+
+VALUE_OPTIONS = {
+    "check": {"tool", "agent"},
+    "explain": {"tool", "agent"},
+    "sync": {"settings"},
+    "gate": {"runtime"},
+}
 SWITCHES: dict[str, set[str]] = {}
 
 
@@ -3150,7 +3249,11 @@ def main(argv: list[str]) -> int:
         return 2
     command = positional[0] if positional else ""
     if command == "gate":
-        output = gate(sys.stdin.read())
+        runtime = options.get("runtime", "claude")
+        if runtime not in RUNTIMES:
+            print(f"cobot-rules: unknown runtime {runtime!r} (claude or agy)", file=sys.stderr)
+            return 2
+        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read())
         if output:
             print(output)
         return 0

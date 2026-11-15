@@ -1,0 +1,16 @@
+{
+  "cobot": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ./hooks/gate-agy.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

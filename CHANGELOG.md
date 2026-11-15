@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The rules gate under Antigravity (T03): a root `hooks.json` sends every agy tool call
+  (`matcher: ".*"`) to `hooks/gate-agy.sh`, which runs `cobot-rules gate --runtime agy` under an
+  8 s deadline and prints a deny with exit 0 on every failure (no or old `python3`, a non-zero
+  exit, no decision, a timeout), since agy runs a call whose hook fails. The adapter answers
+  `allow` (agy's "no opinion"), `force_ask` or `deny`, never `auto_approve`. It reads the
+  project rules of every `workspacePaths` entry, never from the model's `Cwd`, which drives only
+  the Makefile, mise and package.json expansion. `run_command` and `manage_task` input are
+  judged as Bash (input to a running task always asks); both file-tool families as Edit and
+  Write, the path judged as written, parent-resolved and fully resolved; MCP calls as
+  `mcp__<server>__<tool>`, an eager name split at a known server or at every `_`, the strictest
+  split winning. `invoke_subagent` in a `branch` or `share` workspace asks while
+  `.agent/cobot.rules` is uncommitted, `run_workflow` always asks with the script's hash,
+  `define_subagent` is denied, and any tool cobot does not know asks.
 - The nine agents under Antigravity (T02): `scripts/sync-agents.py` writes `agents/<n>.md` from
   `claude-agents/<n>.md`, the body copied and agy's frontmatter set: tools as a YAML list mapped
   to both agy file-tool families, `sonnet` as `flash`, the learner on `pro` (agy ignores

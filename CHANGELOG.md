@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A2UI knowledge in `expert-ui` (knowledge only, no code): `references/a2ui.md` holds the
+  protocol, packages and neighbours read from primary sources on 2026-11-15; an "Agent-driven UI"
+  rule says when to propose it (the product's own agent renders UI for its end users), that the
+  agent's output is data checked against the app's catalog, and to pin the pre-1.0 packages
+  exactly; the ui consult audits a repository's A2UI catalog and flags a version range.
 - The Antigravity record (T07): ADR-0007 amends decision 1 to "Claude Code first; the
   Antigravity CLI supported from the same tree, its gaps named";
   `docs/reference/antigravity-mechanics.md` dates every agy fact cobot relies on, with its source;

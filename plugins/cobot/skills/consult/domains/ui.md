@@ -43,6 +43,8 @@ every fact. The argument narrows the audit to one path.
    `color-scheme` or `prefers-color-scheme` handling where a dark theme exists; `light-dark()`
    without `color-scheme: light dark`; status by colour alone; text rendered in images;
    placeholders used as labels; `aria-*` contradicting native semantics; more than one `h1`.
+   A repository that depends on `@a2ui/*` or `a2ui-*`: audit the catalog's components like any
+   other, and report a version range on a pre-1.0 A2UI package (`references/a2ui.md`).
 6. **Tokens.** Raw colours, sizes or durations in components beside a token system; the same
    value under two names; dark mode as inverted colours rather than mode values; generated
    output edited by hand (differs from what the token file would produce).

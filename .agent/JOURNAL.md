@@ -62,3 +62,11 @@ Proof: two read-only reviews of the transcripts; each claim re-checked here: cob
 Open: F-33 and F-34 stay open on main until security/gate-f33-f34 lands (paused, review fold not built).
 Next: owner pushes docs/findings-dogfood-1115 and opens its PR; the owner picks which findings become the next spec.
 verified: 704f936 · markdownlint, cobot-memory check
+
+## 2026-11-15 — spec onboard-environment, challenged
+Changed: ef359d5 .agent/specs/onboard-environment.md (revision 2, 8 stories, T01–T06) on feat/onboard-environment.
+Why: the owner asked that onboarding detect or ask the development environment (Docker or Podman, mise, distrobox, missing tools) and advise helpers such as RTK; four answers before drafting (machine profile, propose installs, curated advice, ask per repository).
+Proof: the gate already unwraps rtk, mise exec and distrobox enter (cobot-rules check, 2026-11-15); challenger SOUND WITH CHANGES, fifteen points folded (BLOCKER: --version probes could run a repository-chosen binary or shim).
+Open: the fold moves the 'where things run' question on a new project from onboarding to the first spec, for the owner to confirm; F-38 is folded into this spec.
+Next: owner confirms the move, then /cobot:build onboard-environment from T01.
+verified: ef359d5 · markdownlint

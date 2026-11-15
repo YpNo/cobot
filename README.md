@@ -84,6 +84,37 @@ or `--dev` to try cobot for one session without installing anything.
 
 Language skills, experts and builders load on their own when your files need them.
 
+## Antigravity
+
+cobot also runs in the Antigravity CLI (`agy` 1.5.9 or newer) from the same folder. Clone at a
+release tag, close every agy session, then install at user scope (the same command refreshes):
+
+```bash
+git clone --branch v0.3.0 https://github.com/YpNo/cobot.git
+```
+
+```bash
+cobot/install.sh --agy
+```
+
+The gate, the session brief, the skills and the nine agents come along. What agy cannot carry:
+
+- **Builder proof is asked for, not enforced.** No agy hook sees a subagent's report; read the
+  commands and exit codes yourself before you trust one.
+- **Builders are not proven gated yet.** Whether agy runs hooks for a subagent's tool calls is
+  what [scripts/spikes/smoke-agy.sh](scripts/spikes/smoke-agy.sh) checks; until it has run,
+  review a builder's diff before anything outward. Results: [docs/harnesses.md](docs/harnesses.md).
+- **The read-only agents read files only.** agy's hooks don't say which agent is calling, so
+  the consultant and the learner get no command tool there: no `git log` or `gh api` reads.
+- **`/onboard`, `/rules` and `/security-sweep` can be started by the model.** agy has no
+  owner-only skills; the brief tells the model to wait for you to type them.
+- **The gate fails closed by its answer.** agy runs a call whose hook fails, so the gate prints
+  a deny on every failure it can see. A machine without `sh` would still fail open.
+
+Every `agy` command asks, because `agy plugin install` replaces plugins and a nested `agy -p` runs
+outside the gate. To quiet the read-only form, add to `~/.claude/cobot.rules`:
+`allow Bash(agy plugin validate*)`.
+
 ## Safety
 
 The gate asks before anything outward or hard to undo, and some things it never allows. It never
@@ -100,6 +131,7 @@ For agents and architects:
 - [`.agent/CONTEXT.md`](.agent/CONTEXT.md): this repository's working context and verified commands
 - [docs/architecture.md](docs/architecture.md): layers, roster, flow, security model
 - [docs/configuration.md](docs/configuration.md): install options, rule syntax, files, MCP servers
+- [docs/harnesses.md](docs/harnesses.md) and [docs/reference/antigravity-mechanics.md](docs/reference/antigravity-mechanics.md): what was run where, and the agy facts cobot relies on
 - [docs/development.md](docs/development.md): checks, evals, CI/CD, releasing, contributing
 - [docs/02-design.md](docs/02-design.md) and [docs/adr/](docs/adr/): the design and its decisions
 

@@ -6,7 +6,7 @@ design, not proposals.
 | # | Topic | Decision |
 |---|---|---|
 | 0 | Starting point | **Blank slate.** Old scaffold ideas may be reused only after being challenged, updated and stripped of dead or deprecated content. |
-| 1 | Antigravity / Gemini | Out of scope for now. Claude Code only. |
+| 1 | Antigravity / Gemini | Out of scope for now. Claude Code only. **Amended 2026-11-15 by ADR-0007:** Claude Code first; the Antigravity CLI supported from the same tree, its gaps named. |
 | 2 | Spec-kit | Absorb its ideas into one lightweight planning path. Projects are small; efficiency over ceremony. |
 | 3 | Languages, first release | Rust, Go, Python, TypeScript, HCL (Terraform). Shell and Lua through a fallback. |
 | 4 | Delivery stack | GitHub Actions first, with everything around CI/CD, release and security. GitLab CI, ArgoCD, Crossplane, OPA later. |

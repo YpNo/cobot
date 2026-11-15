@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The Antigravity record (T07): ADR-0007 amends decision 1 to "Claude Code first; the
+  Antigravity CLI supported from the same tree, its gaps named";
+  `docs/reference/antigravity-mechanics.md` dates every agy fact cobot relies on, with its source;
+  `docs/harnesses.md` holds one row per runtime and version, each cell `ok`, `fails` or `not run`
+  from a named run; a README Antigravity section names the gaps; `scripts/spikes/smoke-agy.sh`
+  is the owner's live smoke (a scratch repository with a local bare remote, the real HOME, never
+  `--dangerously-skip-permissions`; S4 `not run`). `wrap` and `spec` say a reviewer that did not
+  run is `not run`, never clean.
 - Install into Antigravity (T06): `./install.sh --agy` runs `agy plugin validate` on
   `plugins/cobot`, then `agy plugin install` of it at user scope; the same command refreshes (agy
   replaces the copy in place and restores it on failure), so it never uninstalls first. A failed
@@ -63,6 +71,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Version 0.3.0 in both plugin manifests and the marketplace; `release.yml` checks the
+  Antigravity manifest against the tag too.
 - The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to
   `claude-agents/`, listed by file in `.claude-plugin/plugin.json`, which leaves `agents/` to the
   Antigravity agents; `.antigravity-plugin/plugin.json` carries the same name, version,

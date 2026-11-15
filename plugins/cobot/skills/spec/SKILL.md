@@ -54,7 +54,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    MINOR items become a line in the spec or a finding. Record the verdict and the date.
 7. **Hand over.** Print the challenger verdict as the word it returned (`SOUND`, `SOUND WITH
    CHANGES` or `UNSOUND`) with the points folded, then the task table and the open questions,
-   then stop. The owner starts the build with `/cobot:build <slug>`.
+   then stop. The owner starts the build with `/cobot:build <slug>`. A challenger or consultant
+   that did not run is `not run`, never clean.
 
 Rules of the conceptor: one spec per change; no code; no version numbers without a dated
 source (ask the matching `lang-*` or `expert-*` skill, or propose `/cobot:learn`); stories carry

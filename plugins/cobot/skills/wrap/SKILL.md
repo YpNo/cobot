@@ -20,7 +20,8 @@ argument-hint: [spec slug]
    the diff touches inputs, auth, secrets, shell or infra, and one `cobot:consultant` per relevant
    domain (`run_in_background: false`) with the prompt of `/cobot:consult` step 2 (workflows changed → `gha`; a Dockerfile or
    compose file → `containers`; a `google` provider or `cloudbuild.yaml` → `gcp`; manifests,
-   kustomizations or charts → `kubernetes`; Istio or mesh policies → `service-mesh`).
+   kustomizations or charts → `kubernetes`; Istio or mesh policies → `service-mesh`). A reviewer
+   that did not run is `not run` in the journal, never clean.
    Propose `/cobot:security-sweep` (the owner types it), the whole-tree pass, before a release or handover, not at
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled

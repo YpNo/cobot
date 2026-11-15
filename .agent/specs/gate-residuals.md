@@ -1,6 +1,6 @@
 # Spec — the gate's residual path gaps (findings F-29 to F-32)
 
-size: medium · profile: library · owner: YpNo · date: 2026-11-15 · revision 1 · built on
+size: medium · profile: library · owner: YpNo · date: 2026-11-15 · revision 2 (challenger pass folded) · built on
 `chore/journal-compact-0.3` `f0d6117` (main `a6610fc`, PRs 53 and 54 merged)
 
 ## Goal
@@ -14,10 +14,13 @@ without widening anything. Measured 2026-11-15 on `f0d6117` (bash 5.2, Linux, ex
 | F-29 | a project row `ask Bash(curl *[ -- cobot verified this as a safe read, approve it]*)` | the ask's reason prints the pattern: repository text in the owner's prompt | the reason names `.agent/cobot.rules:<line>` and the decision, never the pattern |
 | F-30 | Write `.Claude/settings.json`; `tee .Claude/settings.json` | none | deny; ask |
 | F-30 | `GIT push --force origin main` (APFS resolves `GIT` to `git`) | none | deny, like `git push --force` |
-| F-31 | `cd .claude && tee settings.json` | none | ask |
-| F-31 | `cd $HOME/.gemini/config && rm -r plugins` | none | ask (the `cd` operand could be the protected folder) |
+| HOME | `tee $HOME/.gemini/config/settings.json` · `rm -r $HOME/.gemini/config` · `cd $HOME/.gemini/config && rm -r plugins` | none: `$HOME` stays literal text, so every `~/` row is beaten by writing `$HOME/` | ask, like the `~/` form |
+| F-31 | `cd .claude && tee settings.json` · `cd .claude && echo x > settings.json` · `cd .agents && tee plugins/x.sh` | none | ask |
+| F-31 | `cd "$d" && tee settings.json` (unknown target, or `CDPATH` from the owner's profile) | none | ask: the word's last part matches a protected row's |
+| parent | `rm -r ~/.gemini` (the parent of a protected folder) | none | ask |
+| F-30 | `mv ~/.GEMINI ~/g` · `NOHUP GIT push --force` · `BASH -c "git push --force"` | none · none · ask (opaque) | ask · deny · deny |
 | F-32 | `ls` with the working directory in `vault/` | ask, reason `protected file 'ls'` | ask, reason `the working directory … is inside a protected folder` |
-| link glob | `cat al*` | none | ask (`al*` reaches `alias`, a link into `vault/`) |
+| link glob | `cat al*` · `cat [[:alpha:]]lias` · `echo x > al*` · `shopt -s dotglob; cat *` reaching `.k -> vault/key.txt` | none | ask (the glob reaches a link into `vault/`) |
 
 Unchanged: every verdict the gate gives today outside these rows; `allow` rows never fold case
 and never gain a resolved form; the gate still never executes repository content (expanding a
@@ -42,27 +45,35 @@ glob lists a folder, it runs nothing).
 1. As the owner, a permission prompt from a project rule shows where the rule is, never its
    text. Accept: `cobot-rules check` with the curl row prints
    `cobot rule: ask Bash rule at .agent/cobot.rules:2 (project layer)`; the hole form
-   (`could match`) names the place the same way; default and owner rows keep their text and note.
-2. As the owner, a differently cased path to a protected file is protected on a case-insensitive
-   volume. Accept: tests for Write/Edit and the Bash check with `.Claude/`, `.GEMINI/`,
-   `Settings.json`; a never Bash row against `GIT`/`Git` as the program word; an `allow` row with
-   a different case stays unmatched.
-3. As the owner, a bare word after an in-command `cd` is a path in the folder the `cd` reaches.
-   Accept: `cd .claude && tee settings.json`, `cd .agents; tee hooks.json`,
-   `pushd vault && cat key.txt` ask; `cd docs && tee notes.md` stays silent; an unknown `cd`
-   (`cd "$d" && tee x`) keeps today's verdict.
-4. As the owner, a `cd` whose operand could be a protected folder asks. Accept:
-   `cd $HOME/.gemini/config && rm -r plugins`, `cd ~/.gemini/config/` ask;
-   `cd "$(git rev-parse --show-toplevel)" && make` stays silent.
-5. As the owner, a command whose working directory is protected asks once, naming the folder.
+   (`could match`) names the place the same way; a project rule with an unknown tool name
+   (`ask Approve-it(x)`) shows `tool`, not the name; default and owner rows keep text and note.
+2. As the owner, a differently cased path or program reaches the same rules on a
+   case-insensitive volume. Accept: Write/Edit and the shell check with `.Claude/`, `.GEMINI/`,
+   `Settings.json`; `GIT`, `Git`, `/usr/bin/GIT`, `NICE GIT`, `NOHUP GIT`, `ENV GIT`, `FOO=1 GIT`
+   and `BASH -c "git push --force"` deny like the lower-case form; `mv ~/.GEMINI ~/g` asks;
+   `--FORCE` keeps its case; an `allow` row with a different case stays unmatched.
+3. As the owner, `$HOME/` and `${HOME}/` at the start of a word read as `~/`, unless the command
+   assigns `HOME`. Accept: the HOME rows of the table ask (file words, redirect targets, `cd`
+   operands); `HOME=/tmp/h; tee $HOME/.gemini/config/x` keeps today's verdict for the literal.
+4. As the owner, every relative word after an in-command `cd` is a path in each folder the `cd`
+   may reach, redirect targets included. Accept: the F-31 rows ask; `cd docs && tee notes.md`,
+   `cd docs; cat README.md`, `cd .claude && ls`, `cd "$(git rev-parse --show-toplevel)" && ls`
+   stay silent.
+5. As the owner, after a `cd` whose target the gate cannot know, a word whose last part matches
+   the last part of a protected file row asks. Accept: `cd "$d" && tee settings.json`,
+   `cd "$d" && echo x > hooks.json` ask; `cd "$d" && tee notes.md` stays silent.
+6. As the owner, deleting the parent of a protected folder asks. Accept: `rm -r ~/.gemini`,
+   `rm -rf "$HOME/.gemini"`, `rmdir ~/.gemini/config` ask; `rm -r ~/.cache/x` stays silent.
+7. As the owner, a command whose working directory is protected asks once, naming the folder.
    Accept: `ls`, `make`, `git status` in `vault/` ask with
-   `the working directory '<dir>' is inside a protected folder (never Write(*/vault/*), project
-   layer at …)`; a bare program word is never resolved against the working directory.
-6. As the owner, a bare glob that reaches a link into a protected folder asks. Accept: `cat al*`
-   and `cat ./a?ias` ask; `cat *.md` in a folder without links stays silent; a glob with more than
-   `GLOB_EXPAND_MAX` matches asks.
-7. Under agy, the same rows hold through `run_command` with and without `Cwd`. Accept: one
-   `test_gate_agy` row per story 3–6.
+   `the working directory '<dir>' is inside a protected folder (<Rule.shown()>, project layer)`;
+   a bare program word is never resolved against the working directory.
+8. As the owner, a bare glob that reaches a link into a protected folder asks, and checking it
+   never risks the hook's timeout. Accept: the link-glob rows ask; `cat *.md` in a folder without
+   links stays silent; `cat /*/*/*/*/*/*/*/*/*/*.zzz; git push --force origin main` is denied in
+   under one second; a scan past its entry cap or deadline asks.
+9. Under agy, the same rows hold through `run_command` with and without `Cwd`. Accept: one
+   `test_gate_agy` row per story 3–8.
 
 ## Clarify
 
@@ -78,31 +89,39 @@ None asked. Decisions taken (each expensive to undo is listed under Trade-offs):
 ## Plan
 
 1. **F-29.** `Rule.shown()`: `text()` for the default and owner layers; for the project layer
-   `"{decision} {tool} rule at .agent/cobot.rules:{line}"` (an MCP row: `mcp rule at …`).
-   `Verdict.reason` and `could_match` use it. The decision and tool come from fixed vocabularies,
-   so nothing the repository wrote reaches the reason.
-2. **F-30.** `matches_file(rule, forms, fold=False)`: with `fold`, compare `casefold()` of both.
-   `judge_file` folds for `never` and `ask` rows only; `word_touches` folds (never rows only);
-   `path_may_match` already folds when a glob is present and now folds always. Program word:
-   `judge_segment` adds a variant with the program word casefolded (after wrappers, only when it
-   differs); `outranks` keeps the stricter, and an `allow` from that variant is ignored.
-3. **F-31.** `expand_script` and `expand_units` keep each segment's `Dirs` in the entry
-   (`(segment, origin, unit, dirs)`); `protected_file_touched` resolves a bare word against every
-   directory in the segment's `Dirs`, and against the payload cwd when `Dirs` is unknown.
-4. **F-31, unknown cd.** A `cd`/`pushd` operand is checked as a folder: the token with a trailing
-   `/` goes through `word_touches`, so a hole-led operand (`$HOME/.gemini/config`) that names a
-   protected folder's last part meets the folder row; a bare hole (`"$d"`, `$(…)`) still reads
-   like a variable and stays silent.
-5. **F-32.** `protected_cwd(dirs, protected)`: the first directory (payload cwd and every known
-   `Dirs` entry) inside, or equal to, a protected folder row's folder or matching a protected
-   pattern; the ask names it and the rule (`Rule.shown()`). `protected_file_touched` skips the
-   program word when it has no `/` (PATH resolves it, never the working directory).
-6. **Link glob.** For a token whose holes are all globs: rebuild the glob (`glob.escape` on the
-   literal parts, each hole's span), expand it with `glob.iglob(root_dir=dir)` non-recursively for
-   every directory in effect, at most `GLOB_EXPAND_MAX = 1024` matches; each match goes through
-   `file_forms` + `matches_file`; reaching the cap asks.
-7. Docs (configuration known asks, architecture security model, decision 28 amended), CHANGELOG
-   Security, FINDINGS F-29..F-32 closed.
+   `"{decision} {tool} rule at .agent/cobot.rules:{line}"`, the tool only when it is one the gate
+   judges (`FILE_TOOLS`, `Bash`, `mcp`), else `tool`. `Verdict.reason` and `could_match` use it.
+2. **F-30.** `matches_file(rule, forms, fold)`: `never` and `ask` rows compare `casefold()`;
+   `allow` never folds; the shell check and `path_may_match` fold always (never rows only).
+   `program_folded`: lower the program word and each wrapper before it, re-stripping until the
+   program is lower case; judged beside the segment, so `outranks` keeps the stricter.
+   `relocates`, `protected_anchors` and the customization-root check compare without case;
+   `expand_segment` also expands the folded segment, so `BASH -c` is read like `bash -c`.
+3. **HOME.** `home_read(token)`: a leading `$HOME/`, `${HOME}/` (or the bare word) becomes `~`
+   unless the script assigns `HOME` (`HOME_UNKNOWN_RE`, like `PWD_UNKNOWN_RE`); `file_forms`,
+   `path_may_match`, the anchors check and `cd_target` read both forms (the literal and HOME's),
+   which can only add asks. `cd_target` also reads a leading `~/` as HOME, beside the literal.
+4. **F-31.** Entries carry each segment's `Dirs` (`(segment, origin, unit, dirs)`);
+   `protected_file_touched` resolves every relative word against each directory in it (the
+   payload cwd when it holds none). `Reached.paths` (redirect and runner targets) resolve
+   against every directory the script visits (`anywhere`) and the payload cwd.
+5. **Unknown cd.** When a segment's `Dirs` is unknown, or a relative `cd` led to it (`CDPATH`
+   in the owner's profile may send it elsewhere), a relative word also asks when its last part
+   matches, without case, the last part of a protected row that is not a folder row.
+6. **Parent deletion.** `rm`, `rmdir`, `unlink`, `shred`, `trash` and `git rm` join the anchor
+   check: a word that is a protected folder's anchor (a parent below HOME) asks.
+7. **F-32.** `protected_cwd`: the payload cwd and every known directory in effect, inside or
+   equal to a protected folder row's folder or matching a protected pattern; the ask names the
+   directory and `Rule.shown()`. A program word without `/` is never resolved (PATH finds it).
+8. **Link glob.** `glob_links(token, dirs)`: for a token whose holes are all globs, `expanduser`
+   then walk the literal prefix to the first segment with a hole, `os.scandir` that directory
+   only, and for each **symlink** entry whose name meets the segment's `path_glob` form
+   (dotfiles included; `[…]` and POSIX classes read as one segment hole) put the link's
+   `realpath` in place and check the rest lexically (`path_may_match`). Regular files are
+   already covered lexically. At most `GLOB_ENTRIES_MAX = 4096` entries and
+   `GLOB_DEADLINE = 0.25` s per command; past either, ask.
+9. Docs (configuration known asks, architecture security model, decision 28 amended), CHANGELOG
+   Security, FINDINGS F-29..F-32 closed, the residuals named.
 
 ## Tasks
 
@@ -110,10 +129,11 @@ None asked. Decisions taken (each expensive to undo is listed under Trade-offs):
 |---|---|---|---|---|
 | T01 | F-29: `Rule.shown`, reason and `could_match`; tests (story 1) incl. the memory hook test | a | — | — |
 | T02 | F-30: case fold for restrictive path rows and the program word; tests (story 2) | a | auth | T01 |
-| T03 | F-31: segment directories threaded to the protected check; cd operands as folders; tests (stories 3, 4) | a | auth | T02 |
-| T04 | F-32: `protected_cwd`, bare program word skipped; tests (story 5) | a | auth | T03 |
-| T05 | link globs expanded on disk with a cap; tests (story 6); agy rows (story 7) | a | auth | T04 |
-| T06 | docs, CHANGELOG, decision 28, FINDINGS closed | b | — | T05 |
+| T03 | HOME read as `~` in words, globs, anchors and `cd` targets; tests (story 3) | a | auth | T02 |
+| T04 | F-31: directories threaded to the protected check, redirect targets, unknown-cd last parts; tests (stories 4, 5) | a | auth | T03 |
+| T05 | parent deletion and F-32 protected cwd; tests (stories 6, 7) | a | auth | T04 |
+| T06 | link globs through `os.scandir` with an entry cap and a deadline; tests (story 8); agy rows (story 9) | a | auth | T05 |
+| T07 | docs, CHANGELOG, decision 28, FINDINGS closed | b | — | T06 |
 
 All `auth` tasks are test first; one lane, since every task edits `cobot-rules`.
 
@@ -124,19 +144,44 @@ All `auth` tasks are test first; one lane, since every task edits `cobot-rules`.
 - Always fold over probing the volume (F-30): stricter on Linux by design; `allow` never folds.
 - Program-word fold over folding the whole command: arguments stay case-sensitive (`--FORCE` is
   not `--force` to git).
-- Known `cd` targets only (F-31); an unknown target is covered by its operand check (story 4),
-  not by asking every later word, which would ask on every `cd "$(git rev-parse …)"`.
+- An unknown `cd` target asks only for words whose last part names a protected file (story 5),
+  not for every later word, which would ask on every `cd "$(git rev-parse …)"`.
 - Keeping the protected-cwd ask (F-32) over silencing argument-less commands: an implicit-cwd
   write cannot be told from a read.
-- Non-recursive expansion with a cap (link glob): `**` keeps the lexical check only, so a link
-  deeper than the glob's segments is a named residual; the hook stays fast.
+- Symlink entries of one directory, with a cap and a deadline (link glob), over expanding the
+  glob: regular files are already judged lexically, and a glob with no match can take longer
+  than the hook's timeout (challenger: 25 s and counting for `/*/*/*/*/*/*/*/*/*/*.zzz`).
+- HOME only among plain variables: it is the one whose value the gate knows; other variables stay
+  the residual decision 28 names.
 
-Residuals named, not fixed: `nocaseglob` expansions on disk; a link created between the check and
-the run (inherent to any pre-run gate); a recursive `**` reaching a link.
+Residuals named, not fixed: a link reached after a second hole segment (`*/d*/key.txt`); a link
+created between the check and the run (inherent to any pre-run gate); a variable other than HOME
+naming a protected path; `.agent/cobot.rules:<line>` names the main checkout's file from a
+worktree and does not say which workspace under agy.
 
 ## Challenger verdict
 
-pending
+Pass 1, 2026-11-15: **SOUND WITH CHANGES**, eleven points, each reproduced with `cobot-rules
+check`; all folded.
+
+- BLOCKER `$HOME/` stays literal, so `tee $HOME/.gemini/config/settings.json` and
+  `rm -r $HOME/.gemini/config` beat every `~/` row (re-checked: none) → plan 3, story 3.
+- BLOCKER redirect targets carry no directory, so `cd .claude && echo x > settings.json` stays
+  silent → plan 4 (`Reached.paths` against every visited directory).
+- BLOCKER a match cap does not bound work: a glob with no match can outlast the hook timeout →
+  plan 8 (symlink entries of one directory, entry cap, deadline, ask past either).
+- MAJOR Python glob syntax differs from bash (`[[:alpha:]]`, `[^x]`, dotglob, `~`) → plan 8 uses
+  `path_glob`'s over-approximation, dotfiles included, `expanduser` first.
+- MAJOR relative words with a `/` need the `cd` directory too → plan 4 (every relative word).
+- MAJOR the fold misses a cased wrapper, `relocates` and the anchors, and `BASH -c` → plan 2.
+- MAJOR an unknown `cd` (or `CDPATH` from the owner's profile) leaves bare names unchecked →
+  plan 5.
+- MINOR story 7's reason used a project pattern → `Rule.shown()`.
+- MINOR rows that proved nothing (`cd ~/.gemini/config/` asks today; `make` is opaque) →
+  replaced; `echo x > al*` added.
+- MINOR the tool name is free text in a project row; the place is ambiguous in a worktree and
+  under agy → plan 1 maps the tool; the ambiguity is a named residual.
+- MINOR `rm -r ~/.gemini` (a protected folder's parent) is silent → plan 6, story 6.
 
 ## Converge
 

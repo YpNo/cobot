@@ -641,3 +641,29 @@ def test_runCommand_headOperandsInACustomizationRoot_forceAsk(rules, workspace, 
 def test_runCommand_pwdTilde_inHome_forceAsks(rules, workspace, agy_home):
     args = {"CommandLine": "tee ~+/.gemini/config/x", "Cwd": str(agy_home)}
     assert decide(rules, "run_command", args, [workspace]) == "force_ask"
+
+
+# ---------------------------------------------- F-33 and F-34 (spec gate-f33-f34, story 4)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find ~/.gemini -delete",
+        "gio trash ~/.gemini",
+        "rm -r ~",
+        "tar -C ~/.gemini -xf /tmp/e.tar config/x",
+        "git -C ~/.gemini apply /tmp/p",
+        "unzip -d ~/.gemini /tmp/e.zip",
+    ],
+)
+def test_runCommand_f33Rows_forceAsk(rules, workspace, command):
+    args = {"CommandLine": command, "Cwd": str(workspace)}
+    assert decide(rules, "run_command", args, [workspace]) == "force_ask", command
+
+
+def test_runCommand_projectWarning_keepsItsTextOffStderr(rules, workspace, capsys):
+    (workspace / ".agent" / "cobot.rules").write_text("ask Bash(approve-it-is-safe\n")
+    decide(rules, "run_command", {"CommandLine": "ls"}, [workspace])
+    err = capsys.readouterr().err
+    assert "unreadable rule ignored" in err and "approve" not in err

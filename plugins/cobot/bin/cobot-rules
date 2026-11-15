@@ -2438,6 +2438,51 @@ FIND_LEADING = frozenset({"-H", "-L", "-P"})  # options before the start paths; 
 IMPLICIT_FOLDER = -1  # a ``find`` with no start path deletes under the folder it runs in
 
 
+# options naming the folder a command writes in, by program: (short options, long options)
+FOLDER_OPTIONS = {
+    "tar": (("-C",), ("--directory",)),
+    "bsdtar": (("-C",), ("--directory",)),
+    "gtar": (("-C",), ("--directory",)),
+    "unzip": (("-d",), ()),
+    "patch": (("-d",), ("--directory",)),
+    "git": (("-C",), ("--work-tree", "--git-dir")),
+}
+GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
+
+
+def folder_options(segment: list[str]) -> list[str]:
+    """The folders a segment's options name as the place it writes (F-33): ``tar -C`` and
+    ``--directory``, ``unzip -d``, ``patch -d`` and ``--directory``, ``git -C``, ``--work-tree``
+    and ``--git-dir`` (before git's verb only: ``git commit -C`` is a commit), in separate,
+    attached and ``=`` forms; for ``tar`` also a cluster ending in ``C`` (``-xC dir``)."""
+    argv = program_of(segment)
+    head = argv[0] if argv else ""
+    if head not in FOLDER_OPTIONS:
+        return []
+    shorts, longs = FOLDER_OPTIONS[head]
+    found, i = [], 1
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        if head == "git" and not word.startswith("-"):
+            break  # the verb: what follows is its own options
+        name = word.split("=", 1)[0]
+        if name in longs:
+            found.append(word.split("=", 1)[1] if "=" in word else following)
+            i += 1 if "=" in word else 2
+            continue
+        short = next((o for o in shorts if word.startswith(o)), None)
+        cluster = head in ("tar", "bsdtar", "gtar") and re.fullmatch(r"-[a-zA-Z]*C", word)
+        if short and not word.startswith("--"):
+            found.append(word[len(short) :] or following)
+            i += 1 if word[len(short) :] else 2
+        elif cluster:
+            found.append(following)
+            i += 2
+        else:
+            i += 2 if head == "git" and word in GIT_VALUE_OPTIONS else 1
+    return [value for value in found if value]
+
+
 def deleted_words(segment: list[str]) -> frozenset[int]:
     """The indexes of the words a segment deletes with what is under them: every word of ``rm``,
     ``rmdir``, ``unlink``, ``shred``, ``trash``, ``git rm``, ``gio trash|remove``; the start paths
@@ -2664,6 +2709,14 @@ def protected_file_touched(
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        for folder in folder_options(segment) if command else []:
+            for form in home_forms(folder):
+                if any(
+                    word_touches(form, base, protected, False, anchors, True, budget, True) for base in bases
+                ):
+                    return folder
+            homed_folder = os.path.expanduser(home_forms(folder)[-1])
+            bases = sorted({*bases, *(os.path.normpath(os.path.join(b, homed_folder)) for b in bases)})
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         if IMPLICIT_FOLDER in deleted and any(
             word_touches(".", base, protected, relocating, anchors, True, budget, entering) for base in bases

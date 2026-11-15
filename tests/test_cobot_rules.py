@@ -4407,3 +4407,41 @@ def test_f33_ordinaryDeletions_staySilent(rules, fake_home, command):
     _, home = fake_home
     (home / "ws" / "src").mkdir(exist_ok=True)
     assert judge_in(rules, command, home / "ws")[0].decision is None, command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -C ~/.gemini -xf /tmp/e.tar config/x",
+        "tar --directory=$HOME/.gemini -xf /tmp/e.tar",
+        "tar --directory ~/.gemini -xf /tmp/e.tar",
+        "tar -xf /tmp/e.tar -C~/.gemini",
+        "tar -C /tmp -C ~/.gemini -xf e.tar",
+        "unzip -d ~/.gemini /tmp/e.zip",
+        "unzip /tmp/e.zip -d ~/.gemini",
+        "git -C ~/.gemini apply /tmp/p",
+        "git -C $HOME/.gemini checkout .",
+        "patch -d ~/.gemini -p1 -i /tmp/p",
+        "patch --directory=~/.gemini -p1 -i /tmp/p",
+        "tar -C ~ -xf /tmp/e.tar .gemini/config/x",
+    ],
+)
+def test_f33_folderOption_namingAProtectedFolderOrItsParent_asks(rules, fake_home, command):
+    _, home = fake_home
+    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -C src -xf a.tar",
+        "git -C src status",
+        "unzip -d out a.zip",
+        "tar -cf a.tar -C src .",
+        "patch -d src -p1 -i p",
+    ],
+)
+def test_f33_ordinaryFolderOptions_staySilent(rules, fake_home, command):
+    _, home = fake_home
+    (home / "ws" / "src").mkdir(exist_ok=True)
+    assert judge_in(rules, command, home / "ws")[0].decision is None, command

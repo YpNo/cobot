@@ -26,8 +26,11 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
 | `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
 | `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
+| `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
+| `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
 | `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live; Claude Code's sandbox keeps it read-only to Bash, so with the sandbox on the owner runs `cobot-memory init --add-identity` or `--trust-root` in their own terminal |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
+| `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the shims folders it does not trust, the distrobox it runs in |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
 | `COBOT_GATE_DEADLINE` | seconds, 1 to 8 | `8` | agy gate shim: the deadline before it answers deny (agy's hook timeout is 10) |

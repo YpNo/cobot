@@ -113,14 +113,14 @@ Unchanged: the gate's unwrapping of `rtk`, `mise exec` and `distrobox enter` (ch
 
 ## Tasks
 
-| id | task | lane | risk | deps |
-|---|---|---|---|---|
-| T01 | `cobot-env` presence detection, untrusted PATH entries, the profile and its writers; tests incl. the marker | a | auth | — |
-| T02 | default ask rows for install routes; `cobot-env` silent; tests | b | auth | — |
-| T03 | `references/workstation.md`, verified at build time | c | — | — |
-| T04 | onboard step 3b, N3, the spec skill's new-project question, missing tools, advice | a | — | T01, T03 |
-| T05 | `runs:` header, templates (F-38), brief line and reserve, agy section | a | — | T01 |
-| T06 | eval cases (question order, no prefix in CI), docs, decision 29, CHANGELOG | b | — | T04, T05 |
+| id | task | lane | risk | deps | done |
+|---|---|---|---|---|---|
+| T01 | `cobot-env` presence detection, untrusted PATH entries, the profile and its writers; tests incl. the marker | a | auth | — | [x] 31b99fc |
+| T02 | default ask rows for install routes; `cobot-env` silent; tests | b | auth | — | [x] 817c242 |
+| T03 | `references/workstation.md`, verified at build time | c | — | — | [x] 631a93d |
+| T04 | onboard step 3b, N3, the spec skill's new-project question, missing tools, advice | a | — | T01, T03 | [x] 49dae0f |
+| T05 | `runs:` header, templates (F-38), brief line and reserve, agy section | a | — | T01 | [x] fbd26dd, 943e396 |
+| T06 | eval cases (question order, no prefix in CI), docs, decision 29, CHANGELOG | b | — | T04, T05 | [x] this commit |
 
 ## Trade-offs
 
@@ -165,4 +165,24 @@ run" question moves from onboarding to the first spec.
 
 ## Converge
 
-pending
+Built 2026-11-16 on `main` `bcef2d0` (merged into the branch, `ff11827`); every task in the main
+thread, tests first. The spec held against that main: the capped brief keeps the preamble, so
+`runs:` survives with Verified commands, Constraints and Environment; step 3b sits after the
+`trust not recorded:` step.
+
+Decided in build:
+
+- `prefer` and `decline` write under `~/.claude/cobot/`, which Claude Code's sandbox keeps
+  read-only to Bash: they print `answer not recorded:` with the command for the owner's terminal
+  and exit 1, the way init handles trust.
+- `cobot-env detect <program>…` also looks up the programs onboarding needs, with the same
+  untrusted-entry rule, and prints a `choices:` line, so the "more than one way" test is code,
+  not prose. The repository root is found by a `.git` walk, not git: git could be a program the
+  repository chooses.
+- The JOURNAL template has no entry at all (F-38): `journal add` writes the first one, so there
+  is nothing to delete by hand.
+- `mise install` used to pass silently in a mise repository; it asks now by its own row.
+
+Residuals: F-36 stays open beyond the install routes (`git config --global`, `gh auth`, `rustup`);
+workstation.md's dated lines are outside the knowledge scan (F-46); the two eval cases are not run
+yet (paid), and `onboard-runs-question` needs two engines on the runner.

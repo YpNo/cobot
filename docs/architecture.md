@@ -13,6 +13,7 @@ For agents and architects. The README is for people; the full design and its rea
 | Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree; the tree state (new, existing, inside another repository, not a repository) picks onboard's path | `bin/cobot-memory`, `bin/cobot-session` |
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `claude-agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
+| Environment | the machine by presence (engines, runtime managers, isolation, container, OS and package manager, helpers), executing nothing: a hit on a PATH entry the repository controls or a shim is reported as not trusted; the owner's install route and declined helpers per host in `~/.claude/cobot/machine.md`; one line in the brief; the `runs:` header (decision 29) | `bin/cobot-env`, `bin/_cobot_env.py`, `skills/onboard/references/workstation.md` |
 | Report check | `PostToolUse` hook on Agent: a builder report without a command and an exit code goes back | `hooks/report.sh` → `bin/cobot-rules report` |
 | Antigravity adapter | the same policy under agy (ADR-0007): a root `hooks.json` sends every tool call to the gate, which translates agy's call and answers `allow` (no opinion), `force_ask` or `deny`, a deny on every failure; SessionStart prints the brief as one `injectSteps` system message with an agy section; no report check (no agy hook sees a subagent's report) | `hooks.json`, `hooks/gate-agy.sh`, `hooks/session-agy.sh` → `bin/cobot-rules gate --runtime agy`, `bin/cobot-session start --runtime agy`, `bin/_cobot_agy.py` |
 
@@ -60,6 +61,10 @@ plugins/cobot/bin/cobot-memory learn --promote --dry-run '{"topic": "go", "entri
 
 ```bash
 plugins/cobot/bin/cobot-deps check --fresh
+```
+
+```bash
+plugins/cobot/bin/cobot-env detect cargo uv
 ```
 
 `cobot-usage [--since DATE] [--session PREFIX] [--json]` reads this repository's local Claude Code

@@ -6,7 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `cobot-env` learns the machine's development environment by presence: container engines
+  (docker that is podman, or talks to a podman, Colima or OrbStack socket, counts once), runtime
+  managers, isolation (distrobox, toolbox, nix, devcontainer), the container the session runs in,
+  the OS and package manager, and the helpers cobot benefits from. It runs no program: a hit on a
+  PATH entry under the repository, a relative entry or a mise or asdf shim is reported as not
+  trusted and never followed. `cobot-env prefer` and `decline` record the owner's install route
+  and declined helpers in `~/.claude/cobot/machine.md`, per host or host/container (decision 29).
+- Onboarding asks where things run (engine, where builds run, runtime manager) in one question
+  call before it runs any command, only when the machine offers more than one way, and writes
+  CONTEXT.md's `runs:` header; the verified commands stay bare. A new project asks it in its
+  first spec. A missing program gets its install command in the owner's route, printed, never
+  run; absent helpers get one printed line, with `skills/onboard/references/workstation.md`
+  holding the routes, package names and helpers.
+- The session brief carries one machine line (at most 160 characters) after the memory brief.
+- The default rules ask on every install route cobot prints: `mise use`, `mise install`,
+  `brew install`, `uv tool install`, `pipx install`, `nix profile install` and the apt, dnf,
+  pacman, zypper and apk installs. `mise install` used to pass silently.
+- Eval cases `onboard-runs-question` (one question, before the first command, `runs:` written)
+  and `ship-runs-bare` (no local prefix in ci.yml).
+
 ### Fixed
+
+- The onboard templates no longer claim proof before anything ran (F-38): the verified table's
+  placeholders say `not run yet`, the journal template has no entry to delete by hand, and
+  `cobot-memory init` writes the `none yet` row itself on a new tree.
 
 - Eval Bash can write its own workspace again: the eval job and the documented local command set
   `TMPDIR` outside `/tmp`, which the eval sandbox denies (anthropics/claude-code#104631, confirmed

@@ -136,3 +136,11 @@ Proof: cobot-memory and new-project tests 113 passed; ruff check and format; Cod
 Open: alert 1 on main closes once this merges, if CodeQL agrees.
 Next: owner pushes fix/trust-readonly.
 verified: 6be627e · pytest (memory, new-project), ruff
+
+## 2026-11-16 — security-auditor spec, challenger pass folded
+Changed: 49c8cdf, e868798 .agent/specs/security-auditor.md: a cobot:auditor agent (inherit, high effort, no commands under agy), the gate's @consultant scope for cobot:auditor only, security-sweep as a main-thread router (counted inventory, per-pack units plus a repo-wide unit above 200 files, at most five; merge, cap, then a fresh check of MEDIUM and above), one confidence scale, CORE-INJECT-05 for document languages, two eval cases.
+Why: the owner asked whether a security agent is missing after F-45; answers 2026-11-16: inherit and high, per pack when large, a fresh checker for MEDIUM and above, trust boundaries in /cobot:spec later.
+Proof: challenger SOUND WITH CHANGES, eleven points folded; two checked by hand: sync-agents NO_COMMANDS holds consultant and learner only, and cobot-rules check gives none for an unrelated agent (no global ask Bash(*)).
+Open: F-45 stays open until the build; the new decision takes the next free number (29 is the onboard-environment spec's).
+Next: owner pushes feat/security-auditor and opens its PR; /cobot:build security-auditor after it merges.
+verified: e868798 · challenger pass, gate dry runs, markdownlint

@@ -139,30 +139,14 @@ Silent and unchanged:
 
 Asked 2026-11-16 in one call; the owner took every recommended default.
 
-- **Q1** Literal-content shell writes and in-place editors:
-  - a) deny, any file except `/dev`;
-  - b) deny in the project only;
-  - c) ask.
-
-  **Answer:** a). The fold narrows "except `/dev`" to five exact paths (challenger 7): stricter, in
-  the answer's direction.
-- **Q2** Forge-CLI deletions:
-  - a) never, like `gh api -X DELETE`;
-  - b) ask.
-
-  **Answer:** a). `glab ci delete` and the `tea` deletions move from ask to never.
-- **Q3** Which git config calls ask:
-  - a) global/system writes plus local exec keys;
-  - b) global writes only;
-  - c) every global call.
-
-  **Answer:** a).
-- **Q4** Commands that print a credential:
-  - a) ask;
-  - b) never;
-  - c) leave silent.
-
-  **Answer:** a).
+- **Q1** Literal shell writes and in-place editors: a) deny, any file except `/dev` · b) deny in
+  the project only · c) ask. **Answer:** a). The fold narrows "except `/dev`" to five exact paths
+  (challenger 7): stricter, in the answer's direction.
+- **Q2** Forge-CLI deletions: a) never, like `gh api -X DELETE` · b) ask. **Answer:** a).
+  `glab ci delete` and the `tea` deletions move from ask to never.
+- **Q3** Which git config calls ask: a) global/system writes plus local exec keys · b) global
+  writes only · c) every global call. **Answer:** a).
+- **Q4** Commands that print a credential: a) ask · b) never · c) leave silent. **Answer:** a).
 
 ## Plan
 
@@ -298,13 +282,9 @@ story 6 (scanner ownership) has not been challenged again: second pass not run.
 | 16 | MINOR | the consult-fan-out grader would stop seeing the agent-scoped ask | story 5 |
 | 17 | MINOR | the greedy rule regex takes a `)` in a note into the pattern | story 1, note lint |
 
-Checked clear by the challenger:
-- `sync` renders the never rows;
-- precedence holds;
-- the read-only agents' allows cover none of the new rows;
-- the unwrapping of `bash -c`, `distrobox`, `find -exec`, `timeout` and `nice`;
-- the commit-message substitution stays silent;
-- agy reaches `judge_bash`.
+Checked clear by the challenger: `sync` renders the never rows; precedence holds; the read-only
+agents' allows cover none of the new rows; `bash -c`, `distrobox`, `find -exec`, `timeout` and
+`nice` unwrap; the commit-message substitution stays silent; agy reaches `judge_bash`.
 
 ## Converge
 

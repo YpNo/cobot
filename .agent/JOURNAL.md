@@ -96,3 +96,11 @@ Proof: release.yml's version check run locally (plugin.json, the Antigravity man
 Open: the onboarding environment build (spec on feat/onboard-environment) is not in 0.3.0; F-35 to F-44 open.
 Next: owner pushes chore/release-0.3.0, merges, then pushes the annotated tag v0.3.0; release.yml publishes the GitHub release.
 verified: f787e05 · release version check, notes extraction, markdownlint, check-plugin
+
+## 2026-11-16 — the brief keeps Environment; the spec list stops growing
+Changed: ffed454 cobot-memory cap_sections gives room to the preamble, then Verified commands, Constraints and Environment in that priority, each only when it fits, then the rest in order; the brief's spec tail past three names the count and the three newest by date: (specs_by_date); onboard step 6 names the order; CHANGELOG Fixed; tests first.
+Why: cobot-memory check warned that cobot's brief dropped Environment (the rtk hook, git settings, versions); the owner asked to fix the brief rather than trim CONTEXT.md, once a journal compaction was shown not to help (the brief reads only the two newest entries, and the journal is 98 of 400 lines).
+Proof: four tests failed first (two cap_sections, the spec tail, the 20-spec budget case); two older tests changed with the order (Shape now fits once a huge Environment is skipped; Environment outranks Stack); cobot's own brief keeps Environment, 6000 of 6000, no warning; full suite 2794 passed, 98.69 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: cobot-memory check still prints every spec name on its own line (a check, not the brief).
+Next: owner pushes fix/brief-environment and opens its PR.
+verified: ffed454 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check

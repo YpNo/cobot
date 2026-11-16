@@ -112,3 +112,11 @@ Proof: four tests failed first (two cap_sections, the spec tail, the 20-spec bud
 Open: cobot-memory check still prints every spec name on its own line (a check, not the brief).
 Next: owner pushes fix/brief-environment and opens its PR.
 verified: ffed454 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check
+
+## 2026-11-16 — init reports a read-only config dir; the eval case hands trust to the owner
+Changed: 170028e cobot-memory init --trust-root and --add-identity catch the OSError writing ~/.claude/cobot, print 'trust not recorded:' with a quoted cd-and-init command for the owner's terminal and exit 1 (TRUST_NOT_RECORDED); onboard step 2 and N3 carry on and hand the command over; new-project-onboard gains the trust-handed-to-owner grader and its description; configuration.md and the mechanics note name the sandbox's protected config dir; CHANGELOG Fixed; tests first.
+Why: the dispatched eval run 43927352477 on main (TMPDIR fix proven: every arm wrote, foreign-onboard 3 of 3) failed on new-project-onboard 0.89: init crashed with EROFS on ~/.claude/cobot in all three runs and one run stopped; the sandboxing docs say most of the config dir is read-only to Bash in sessions too, and allowWrite does not lift it. The owner asked for the fix.
+Proof: three tests failed first (read-only trust-root, add-identity, main exit code); full suite 2803 passed, 98.69 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; one local new-project-onboard run scored 1.00 (2.1.311: Bash inherits a writable CLAUDE_CONFIG_DIR there, init wrote, the next Bash call no longer saw the file, and the report named init --trust-root).
+Open: CI pins Claude Code 2.1.322, the local run used 2.1.311; the CI side is proven by a dispatched run after merge.
+Next: owner pushes fix/trust-readonly, opens and merges its PR, then dispatches the *-onboard eval run on main.
+verified: 170028e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, one eval case

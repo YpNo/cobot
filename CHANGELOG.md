@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
   in sessions as in evals. init still writes the memory, then prints `trust not recorded:` with
   the command for the owner's own terminal, and exits 1. The onboard skill carries on and hands
   that command to the owner; a `new-project-onboard` grader checks the report names it.
+- `new-project-onboard`'s `no-second-onboard` grader no longer fails a report that says "Don't
+  re-run onboard": a re-run preceded by "don't", "do not" or "never" is the advice the skill
+  asks for, not a second onboard (run 43950232416).
 
 ## [0.3.0] - 2026-11-15
 

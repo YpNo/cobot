@@ -144,3 +144,11 @@ Proof: challenger SOUND WITH CHANGES, eleven points folded; two checked by hand:
 Open: F-45 stays open until the build; the new decision takes the next free number (29 is the onboard-environment spec's).
 Next: owner pushes feat/security-auditor and opens its PR; /cobot:build security-auditor after it merges.
 verified: e868798 · challenger pass, gate dry runs, markdownlint
+
+## 2026-11-16 — no-second-onboard passes a negated re-run; worktrees move into the project
+Changed: 3271a30 new-project-onboard's no-second-onboard pattern skips a re-run preceded by don't (both apostrophes), do not or never, with seven grader tests and a CHANGELOG Fixed line; 9240b04 markdownlint ignores .claude/worktrees/**.
+Why: dispatched run 43950232416 on main proved the TMPDIR and trust fixes (foreign-onboard 3 of 3, trust-handed-to-owner 3 of 3) and failed only on a report ending "Don't re-run onboard.", the advice step N4 asks for. The owner moved branch worktrees from the /tmp scratchpad into .claude/worktrees/ (already gitignored) to stop the cd-outside-the-project prompts, with each worktree removed once merged; from the main checkout markdownlint then read the worktrees' copies (759 files instead of 315).
+Proof: four negated reports failed first, three real re-run reports still fail; the same pattern checked in node; full suite 2810 passed, 98.69 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; a planted bad file under .claude/worktrees/ is linted with the old config and skipped with the new one; one local new-project-onboard run scored 1.00 (2.1.311).
+Open: the CI side is proven by a dispatched *-onboard run after merge.
+Next: owner pushes fix/eval-negated-onboard and opens its PR.
+verified: 9240b04 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, one eval case

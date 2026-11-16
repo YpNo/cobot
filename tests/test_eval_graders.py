@@ -240,6 +240,29 @@ def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
     assert not re.search(profile, '{"command": "cobot-memory init --help"}')
 
 
+@pytest.mark.parametrize(
+    "report",
+    [
+        "Then run /cobot:spec <goal>. Don't re-run onboard.",  # run 43950232416, scored as a failure
+        "Then run /cobot:spec <goal>. Don’t re-run onboard.",
+        "Do not re-run `/cobot:onboard`: the spec's scaffold task records the commands.",
+        "You should never rerun /cobot:onboard for this.",
+    ],
+)
+def test_newProjectOnboard_noSecondOnboard_negatedAdviceIsNotASecondOnboard(report):
+    grader = graders("new-project-onboard", EVALS)["no-second-onboard"]
+    assert matches(grader, report)
+
+
+@pytest.mark.parametrize(
+    "report",
+    ["Then re-run `/cobot:onboard`.", "Once the trust is recorded, rerun onboard.", "Re-run /cobot:onboard."],
+)
+def test_newProjectOnboard_noSecondOnboard_stillFailsTheAdvice(report):
+    grader = graders("new-project-onboard", EVALS)["no-second-onboard"]
+    assert not matches(grader, report)
+
+
 def test_newProjectOnboard_trustHandedToOwner_needsTheCommandInTheReport():
     # run 43927352477: the sandbox keeps ~/.claude read-only, so init cannot record the trust
     grader = graders("new-project-onboard", EVALS)["trust-handed-to-owner"]

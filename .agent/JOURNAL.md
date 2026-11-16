@@ -97,6 +97,14 @@ Open: the onboarding environment build (spec on feat/onboard-environment) is not
 Next: owner pushes chore/release-0.3.0, merges, then pushes the annotated tag v0.3.0; release.yml publishes the GitHub release.
 verified: f787e05 · release version check, notes extraction, markdownlint, check-plugin
 
+## 2026-11-15 — spec onboard-environment, challenged
+Changed: ef359d5 .agent/specs/onboard-environment.md (revision 2, 8 stories, T01–T06) on feat/onboard-environment.
+Why: the owner asked that onboarding detect or ask the development environment (Docker or Podman, mise, distrobox, missing tools) and advise helpers such as RTK; four answers before drafting (machine profile, propose installs, curated advice, ask per repository).
+Proof: the gate already unwraps rtk, mise exec and distrobox enter (cobot-rules check, 2026-11-15); challenger SOUND WITH CHANGES, fifteen points folded (BLOCKER: --version probes could run a repository-chosen binary or shim).
+Open: the fold moves the 'where things run' question on a new project from onboarding to the first spec, for the owner to confirm; F-38 is folded into this spec.
+Next: owner confirms the move, then /cobot:build onboard-environment from T01.
+verified: ef359d5 · markdownlint
+
 ## 2026-11-16 — eval runs outside /tmp; two blocked cases restored
 Changed: 2a5546c ci.yml's eval step sets TMPDIR under RUNNER_TEMP (the traces upload follows it), docs/development.md's local command uses ~/.cache/cobot-evals, the mechanics note corrected with anthropics/claude-code#104631; cc88212 foreign-onboard and new-project-onboard back under evals/, foreign-onboard's tree graders skip writes under .agent, cobot-memory init --foreign names .git/info/exclude, a grader test; proof-quoted stays blocked, now on the run's missing Rust toolchain; d0beb0f CHANGELOG.
 Why: the owner asked to check for an existing upstream issue (#104631 and #104797 were open, with a TMPDIR workaround), posted a 2.1.325 confirmation, and asked to apply the workaround.
@@ -152,14 +160,6 @@ Proof: four negated reports failed first, three real re-run reports still fail; 
 Open: the CI side is proven by a dispatched *-onboard run after merge.
 Next: owner pushes fix/eval-negated-onboard and opens its PR.
 verified: 9240b04 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, one eval case
-
-## 2026-11-15 — spec onboard-environment, challenged
-Changed: ef359d5 .agent/specs/onboard-environment.md (revision 2, 8 stories, T01–T06) on feat/onboard-environment.
-Why: the owner asked that onboarding detect or ask the development environment (Docker or Podman, mise, distrobox, missing tools) and advise helpers such as RTK; four answers before drafting (machine profile, propose installs, curated advice, ask per repository).
-Proof: the gate already unwraps rtk, mise exec and distrobox enter (cobot-rules check, 2026-11-15); challenger SOUND WITH CHANGES, fifteen points folded (BLOCKER: --version probes could run a repository-chosen binary or shim).
-Open: the fold moves the 'where things run' question on a new project from onboarding to the first spec, for the owner to confirm; F-38 is folded into this spec.
-Next: owner confirms the move, then /cobot:build onboard-environment from T01.
-verified: ef359d5 · markdownlint
 
 ## 2026-11-16 — onboard-environment built: cobot-env, the runs: header, install routes ask
 Changed: ff11827 main bcef2d0 merged into the spec branch; 31b99fc bin/cobot-env and _cobot_env.py (presence detection, untrusted PATH entries, machine.md per host, choices line); 817c242 install-route ask rows; 631a93d skills/onboard/references/workstation.md; fbd26dd runs: header, claim-nothing templates and init's none-yet row (F-38), the machine line in the brief (reserve +160), agy section names cobot-env; 49dae0f onboard step 3b, missing programs, helper line, N3, the spec skill's new-project question; 943e396 cobot-env in the CLI hygiene checks; be16b6b decision 29, eval cases onboard-runs-question and ship-runs-bare, ship reads runs: as local, docs, CHANGELOG, F-38 closed, F-46 added, spec converged.

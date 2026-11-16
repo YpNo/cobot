@@ -229,6 +229,48 @@ def test_decide_defaultRules_returnsExpectedDecision(rules, command, expected):
     assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
 
 
+# spec onboard-environment story 5: every install route cobot emits asks (with F-36); reads,
+# searches and cobot-env itself stay silent
+INSTALL_ROUTES = [
+    ("mise use -g ripgrep@14", "ask"),
+    ("mise use --global node@22", "ask"),
+    ("mise use python@3.13", "ask"),
+    ("mise install", "ask"),
+    ("mise install rust@1.99", "ask"),
+    ("brew install ripgrep", "ask"),
+    ("uv tool install ruff", "ask"),
+    ("pipx install ruff", "ask"),
+    ("cargo install rtk", "ask"),
+    ("npm install -g @biomejs/biome", "ask"),
+    ("apt install jq", "ask"),
+    ("apt-get install -y jq", "ask"),
+    ("dnf install jq", "ask"),
+    ("pacman -S jq", "ask"),
+    ("pacman -Sy jq", "ask"),
+    ("zypper install jq", "ask"),
+    ("zypper in jq", "ask"),
+    ("apk add jq", "ask"),
+    ("nix profile install nixpkgs#jq", "ask"),
+    ("distrobox enter dev -- apt-get install -y jq", "ask"),
+    ("rtk proxy mise use -g jq@1", "ask"),
+    ("mise ls", None),
+    ("mise exec -- cargo test", None),
+    ("brew list", None),
+    ("apt list --installed", None),
+    ("pacman -Ss jq", None),
+    ("cobot-env detect cargo", None),
+    ("cobot-env prefer mise", None),
+    ("cobot-env decline rtk", None),
+    ("python3 -I /home/me/.claude/plugins/cobot/bin/cobot-env brief", None),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), INSTALL_ROUTES)
+def test_decide_installRoutes_askAndCobotEnvSilent(rules, command, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(command, loaded, None, os.getcwd())[0].decision == expected
+
+
 RESERVED_AND_WRAPPER_OPTIONS = [
     ("! git push", "ask"),
     ("{ git push; }", "ask"),
@@ -819,7 +861,8 @@ def judge_in(rules, command, cwd):
         ("mise exec cargo test", "ask"),
         ("mise exec --", "ask"),
         ("mise ls", None),
-        ("mise install", None),
+        # not a task, but an install route: it asks by its own row (spec onboard-environment)
+        ("mise install", "ask"),
         # a lone info flag names no task (latex-resume-generator asked on `mise --version`)
         ("mise --version", None),
         ("mise -V", None),

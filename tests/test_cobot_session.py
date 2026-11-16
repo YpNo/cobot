@@ -258,3 +258,54 @@ def test_agy_defaultHookGroupName_warnsToReinstall(session, project, tmp_path):
     assert (
         text.index(session.AGY_HEADING) < text.index(session.DEFAULT_GROUP_WARNING) < text.index("\nrules: ")
     )
+
+
+# ---------------------------------------------------------------- the machine line (onboard-environment)
+
+MACHINE = "machine: " + "m" * (160 - len("machine: "))
+KNOWLEDGE = "knowledge: " + "k" * 69
+DEPS = "deps: " + "d" * 74
+
+
+def full_tools(name, args, cwd, clock=None):
+    """Every tool at its largest: the memory brief fills its budget, each line its cap."""
+    if name == "cobot-memory" and args[:1] == ["brief"]:
+        return "B" * int(args[args.index("--budget") + 1])
+    return {
+        "cobot-rules": "rules: never=1",
+        "cobot-env": MACHINE,
+        "cobot-deps": DEPS,
+    }.get(name, KNOWLEDGE)
+
+
+def test_session_reserve_coversTheMachineLine(session):
+    import _cobot_env
+
+    assert session.LINES_RESERVE >= 500 + _cobot_env.BRIEF_CAP
+
+
+def test_claude_machineLine_afterTheMemoryBrief_andKeptAtTheMaximum(session, project, monkeypatch):
+    monkeypatch.setattr(session, "run_tool", full_tools)
+    context = session.build_payload(json.dumps({"cwd": str(project)}))
+    assert len(context) <= session.TOTAL_CAP
+    assert context.index("BBBB") < context.index(MACHINE) < context.index(KNOWLEDGE) < context.index(DEPS)
+    assert context.endswith(DEPS)
+
+
+def test_agy_maximumWarnings_keepTheMachineAndDepsLines(session, project, monkeypatch):
+    monkeypatch.setattr(session, "run_tool", full_tools)
+    monkeypatch.setattr(session, "default_group_warning", lambda *_: session.DEFAULT_GROUP_WARNING)
+    monkeypatch.setattr(session, "workspace_warning", lambda *_: "w" * session.WORKSPACE_WARNING_CAP)
+    out = session.agy_answer(agy_payload([project]))
+    text = message(out)
+    assert len(out) <= session.TOTAL_CAP
+    assert MACHINE in text and text.endswith(DEPS)
+
+
+def test_machineLine_realTool_isOneLine(session, project):
+    line = session.run_tool("cobot-env", ["brief"], str(project))
+    assert line.startswith("machine: ") and "\n" not in line
+
+
+def test_agy_section_namesCobotEnv(session):
+    assert "cobot-env" in session.agy_section()

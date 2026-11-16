@@ -15,7 +15,8 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    present → GitHub; the `origin` host contains `gitea` → Gitea, `gitlab` → GitLab, `github.com` →
    GitHub; else ask the owner once and record `forge:` in CONTEXT.md. A Gitea repository may keep
    `.github/workflows` (Gitea reads it when `.gitea/workflows` is absent): `forge: gitea` decides. Read
-   CONTEXT.md (profile, `forge`, verified commands, constraints), the existing pipeline files
+   CONTEXT.md (profile, `forge`, verified commands, constraints; `runs:` is how the owner runs
+   them locally, so CI runs the verified commands bare, never with its prefix), the existing pipeline files
    (`.github/workflows/*`, `.gitea/workflows/*` or `.gitlab-ci.yml`), `Dockerfile*` and
    `compose*.y*ml`, and the forge's expert: `expert-gha` with its `references/actions.md` (for
    Gitea too, plus `expert-gitea` for what Gitea ignores), or `expert-gitlab-ci` with its

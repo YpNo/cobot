@@ -98,6 +98,13 @@ FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
 ROUTED = "open → "
 TRUST_NOT_RECORDED = "trust not recorded:"  # init exits 1 when its output holds this
+# the CONTEXT template's verified rows (claiming nothing), and the row init writes on a new tree
+PLACEHOLDER_ROWS = (
+    "| unit tests | `<command>` | <not run yet> | — |\n"
+    "| lint | `<command>` | <not run yet> | — |\n"
+    "| build | `<command>` | <not run yet> | — |\n"
+)
+NONE_YET_ROW = "| — | none yet: the first spec's scaffold task records them | — | {{DATE}} |\n"
 KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md"})
 AGENT_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
@@ -416,8 +423,12 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
 # ---------------------------------------------------------------- writes
 
 
-def template(name: str, profile: str, repo_name: str) -> str:
+def template(name: str, profile: str, repo_name: str, new_tree: bool = False) -> str:
+    """A memory template filled in; on a new tree, CONTEXT.md's verified table holds the one
+    ``none yet`` row instead of the placeholders (F-38: nothing ran, so nothing is claimed)."""
     text = (plugin_root() / "skills" / "onboard" / "templates" / name).read_text(encoding="utf-8")
+    if new_tree and name == "CONTEXT.md":
+        text = text.replace(PLACEHOLDER_ROWS, NONE_YET_ROW)
     return text.replace("{{PROFILE}}", profile).replace("{{NAME}}", repo_name).replace("{{DATE}}", date.today().isoformat())
 
 
@@ -470,12 +481,13 @@ def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
         lines.extend(write_never_push_rules(mem, external))
     mem.dir.mkdir(parents=True, exist_ok=True)
     profile = options.get("profile", "library")
+    new_tree = mem.tree().startswith("new")
     for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md"):
         target = mem.dir / name
         if target.exists():
             lines.append(f"kept {target}")
         else:
-            target.write_text(template(name, profile, mem.root.name), encoding="utf-8")
+            target.write_text(template(name, profile, mem.root.name, new_tree), encoding="utf-8")
             lines.append(f"wrote {target}")
     if "add-identity" in flags:
         lines.append(add_identity(mem))

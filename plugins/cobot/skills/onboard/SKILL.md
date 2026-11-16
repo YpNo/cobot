@@ -11,7 +11,7 @@ disable-model-invocation: true
    `cobot-memory init` (it only creates what is missing, such as FINDINGS.md), add the header
    fields `check` lists as missing to CONTEXT.md, and when `check` warns that JOURNAL.md is long,
    offer `cobot-memory compact --dry-run`, then `compact --summary "<your summary of the folded
-   entries>"`. Then go to step 4 and correct only what changed.
+   entries>"`. Then go to step 3b and correct only what changed.
    The `tree:` line picks the path. `not a git repository` or `inside another repository`: offer
    `git init -b main` here and run it only on the owner's yes; never write `.agent/` at another
    repository's root. `new (…)`: after step 2, follow **New project** below instead of steps 3–7.
@@ -31,6 +31,20 @@ disable-model-invocation: true
 3. **Init.** `cobot-memory init --profile <p>` with the profile you propose (`spike`, `script`,
    `cli`, `library`, `service`, `infra`) and one line of reasoning. Legacy memory (an
    `ARCHITECTURE.md`, a newest-on-top journal) is kept as is; the tools read it unchanged.
+3b. **Where things run**, before any command (decision 29). Run `cobot-env detect <program>…`
+   with the programs the manifests' commands need (`cargo`, `uv`, `npm`); it runs nothing. Its
+   `choices:` line names what the machine offers more than one way of (engine, where builds run,
+   runtime manager), recommendation first, from the repository's runtime files. With choices: one
+   `AskUserQuestion` call, one question per topic, recommendation first, plus the install route
+   when a program is `absent` and `answers:` has no route; with `none`, no question. Write the
+   answer as the header field `runs:` (`runs: podman · builds: distrobox enter dev --`; `runs: host`
+   with one way) and a route with `cobot-env prefer <route>` (`answer not recorded:` → its command
+   goes in the report, like trust). Step 4 runs its commands that way and records them bare: CI
+   runs them bare. A `not trusted:` line names a program on a PATH entry the repository controls:
+   never run it, and name it in the report and under Open. In foreign mode that line also names
+   every mise or asdf shim (a stranger's pin file picks the version): never run those either. In
+   the owner's own repository a `shims:` line names them instead: tools the owner installed, at
+   the version the repository pins; step 4 runs them as usual.
 4. **Fingerprint.** For a small repository, read the manifests yourself; for a large one, fork
    the built-in Explore agent per subsystem. Detect languages, package manager, test runner,
    linter, formatter, type checker, CI. **Before the first build or test of a compiled stack**
@@ -45,6 +59,14 @@ disable-model-invocation: true
    tools how far the lockfiles are behind and whether advisories exist, caches the answer for
    seven days, and reports; it upgrades nothing. Put the one-line result in the journal entry
    and the gaps worth a decision under Open.
+   **Missing program.** A verified or needed command whose program is `absent` gets one
+   Environment line and one journal Open line with the install command in the owner's route, from
+   `${CLAUDE_PLUGIN_ROOT}/skills/onboard/references/workstation.md`: `mise install` when the
+   repository pins the version, else `mise use -g <tool>@<version>` labelled an owner-level change,
+   a package from the map, or `distrobox enter <box> -- …`. Print it; never run it (the gate asks).
+   **Helpers.** Print one line naming the helpers `detect` lists as absent and not declined, with
+   what each saves (workstation.md) and `cobot-env decline <helper>` to stop the advice. It never
+   takes a question slot; run `decline` only when the owner says so.
 5. **Agent files.** Read the repository's other agent-facing files: a root `CLAUDE.md`,
    `AGENTS.md`, `GEMINI.md` or `CONTEXT.md`, `.agents/` and `.claude/` skills and rules,
    `.github/copilot-instructions.md`, and any other `.agent/*.md` (a legacy `HANDOFF.md`; the
@@ -52,7 +74,8 @@ disable-model-invocation: true
    finding (`cobot-memory findings add`). A project skill that covers a `lang-*` or cobot skill's
    ground stays: CONTEXT.md and the governance file override cobot's defaults; name the overlap
    in the journal entry, and propose `/cobot:learn` for domain knowledge cobot has no home for.
-6. **CONTEXT.md.** Fill profile, goal, stack, environment, verified commands, constraints,
+6. **CONTEXT.md.** Fill profile, goal, `runs:`, stack, environment (from `cobot-env detect`:
+   engines, managers, isolation, container, missing programs; never PATH or home paths), verified commands, constraints,
    applies / does not apply, and a Shape section of at most twenty lines. Stay under 120 lines.
    In a foreign repository, read `CONTRIBUTING.md`, `AI_POLICY.md` (or the equivalent), the DCO
    or CLA note and the project's own agent instructions first, and copy their hard constraints
@@ -81,8 +104,9 @@ disable-model-invocation: true
    the inner command; Claude Code's own permission rules match the command as typed, so synced
    lines cover the plain form only. Print the lines and offer to append them to
    `~/.claude/cobot.rules`. Never touch `settings.json`; the owner applies what `sync` renders.
-8. **Journal.** Replace the template entry's fields with what you did (`cobot-memory journal
-   add`). Report: trust path taken, profile, the verified commands, what you could not verify.
+8. **Journal.** The template has no entry: write the first with `cobot-memory journal add`
+   (`Changed / Why / Proof / Open / Next`, Proof only what ran). Report: trust path taken, profile,
+   `runs:`, the verified commands, what you could not verify, the helper line.
 
 ## New project (`tree: new …`)
 
@@ -101,11 +125,13 @@ N2. **Ask.** The goal is the owner's words: this skill's argument, else one pros
 
 N3. **Write.** `cobot-memory init --profile <p>`, with `--trust-root` when there is no remote
     (`trust not recorded:` as in step 2).
-    CONTEXT.md: the header from the answers; Stack `- decided by the first spec`; Environment: the
-    runtimes present and `df -h .` against the 10 GB guard; Verified commands: one row
-    `| — | none yet: the first spec's scaffold task records them | — | <date> |`; Constraints and
+    CONTEXT.md: the header from the answers, `runs: host` until the first spec asks where things
+    run with the stack (no environment question here); Stack `- decided by the first spec`;
+    Environment from `cobot-env detect` only (it runs nothing) and `df -h .` against the 10 GB
+    guard; Verified commands: init wrote the one `none yet` row, keep it; Constraints and
     Applies from the owner's standards; Shape `- nothing built yet`. Run `cobot-deps check` (no
     lockfile is the expected answer). No fingerprint, no rules dry run: there is no command yet.
+    Print the helper line as step 4 does.
 
 N4. **Journal** as step 8, and report the next step: `/cobot:spec <goal>`. Never tell the owner
     to onboard again: build records the scaffold's proof commands as the verified commands.

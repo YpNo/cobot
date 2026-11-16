@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""cobot-env: the machine's development environment by presence, and the owner's answers per host.
+
+Commands
+  detect [<program>...] [--json]   engines, runtime managers, isolation, container, OS, package
+                                   managers, helpers and the named programs; the repository's
+                                   runtime files; the choices onboarding asks about
+  brief                            one line for the session brief (at most 160 characters)
+  show                             this host's key, the profile file and the owner's answers
+  prefer <route>                   record the install route: mise, brew, apt, dnf, pacman, zypper,
+                                   apk, nix, distrobox:<box>
+  decline <helper>                 stop advising a curated helper: rtk, ripgrep, fd, jq, gh
+  -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
+
+Detection runs no program (decision 29): a hit on a PATH entry under the repository or a relative
+entry is reported as not trusted. A hit in a mise or asdf shims folder is a shim in the owner's
+repositories and not trusted in a foreign one (.agent a symlink, cobot-memory init --foreign).
+Neither is followed. The profile is
+~/.claude/cobot/machine.md, one section per host or host/container; it holds answers only. When
+the config directory is read-only (Claude Code's sandbox), prefer and decline print
+`answer not recorded:` with the command for the owner's terminal and exit 1.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
+import _cobot_env as env  # noqa: E402
+from _cobot_common import HelpRequested, UsageError, cobot_config_dir, parse_cli  # noqa: E402
+
+VALUE_OPTIONS: dict[str, set[str]] = {}
+SWITCHES = {"detect": {"json"}}
+ONE_ARGUMENT = {"prefer": "a route", "decline": "a helper"}
+
+
+def profile_path() -> Path:
+    return cobot_config_dir() / "machine.md"
+
+
+def report(found: dict, path: Path) -> str:
+    """The detect report, one topic per line."""
+    given = env.answers(found["key"], path)
+    present = [k for k, v in found["helpers"].items() if env.runnable(v, found)]
+    absent = [k for k, v in found["helpers"].items() if not env.runnable(v, found)]
+    picks = env.choices(found)
+    lines = [
+        f"key: {found['key']}",
+        f"os: {found['os']} · package managers: {', '.join(found['package_managers']) or 'none'}",
+        f"inside: {found['inside'] or 'no container'}",
+        f"engines: {', '.join(found['engines']) or 'none'}",
+        f"managers: {', '.join(found['managers']) or 'none'}",
+        f"isolation: {', '.join(found['isolation']) or 'none'}",
+        f"helpers: present {', '.join(present) or 'none'}; absent {', '.join(absent) or 'none'}",
+    ]
+    if found["untrusted"]:
+        why = " (foreign repository: shims too)" if found["foreign"] else ""
+        lines.append(f"not trusted{why}: {'; '.join(found['untrusted'])}; cobot never runs these")
+    if found["shims"]:
+        lines.append(
+            f"shims: {'; '.join(found['shims'])}; tools the owner installed, at the version the"
+            " repository pins: commands may run them"
+        )
+    if found["programs"]:
+        lines.append("programs: " + "; ".join(f"{k} {v or 'absent'}" for k, v in found["programs"].items()))
+    lines.append(f"repository: {', '.join(found['repository']) or 'no runtime files'}")
+    asked = "; ".join(f"{topic} {' | '.join(opts)} (recommended {rec})" for topic, opts, rec in picks)
+    lines.append(f"choices: {asked or 'none (one way only: no question)'}")
+    declined = ", ".join(given["declined"]) or "none"
+    lines.append(f"answers: route {given['route'] or 'none'}; declined {declined} ({path})")
+    return "\n".join(lines)
+
+
+def show(found: dict, path: Path) -> str:
+    given = env.answers(found["key"], path)
+    return "\n".join(
+        [
+            f"key: {found['key']}",
+            f"profile: {path}{'' if path.is_file() else ' (not written yet)'}",
+            f"route: {given['route'] or 'none'}",
+            f"declined: {', '.join(given['declined']) or 'none'}",
+        ]
+    )
+
+
+def run(command: str, arguments: list[str], flags: set[str]) -> str:
+    programs = tuple(arguments) if command == "detect" else ()
+    found = env.detect(Path(os.getcwd()), os.environ, programs=programs)
+    path = profile_path()
+    if command == "detect" and "json" in flags:
+        data = {**found, "choices": env.choices(found), "answers": env.answers(found["key"], path)}
+        return json.dumps(data, indent=1)
+    if command == "detect":
+        return report(found, path)
+    if command == "brief":
+        return env.brief(found, path)
+    if command == "show":
+        return show(found, path)
+    if command == "prefer":
+        return env.prefer(arguments[0], found["key"], path)
+    return env.decline(arguments[0], found["key"], path)
+
+
+def main(argv: list[str]) -> int:
+    try:
+        positional, _, flags = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
+    except HelpRequested:
+        print(__doc__.strip())
+        return 0
+    except UsageError as error:
+        print(f"cobot-env: {error}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
+    command, arguments = (positional[0], positional[1:]) if positional else ("", [])
+    if command not in ("detect", "brief", "show", *ONE_ARGUMENT):
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    if command in ONE_ARGUMENT and len(arguments) != 1:
+        print(f"cobot-env: {command} takes {ONE_ARGUMENT[command]}", file=sys.stderr)
+        return 2
+    try:
+        print(run(command, arguments, flags))
+    except ValueError as error:
+        print(f"cobot-env: {error}", file=sys.stderr)
+        return 2
+    except env.NotRecorded as error:
+        print(error)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

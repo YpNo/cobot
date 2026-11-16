@@ -97,6 +97,14 @@ Open: the onboarding environment build (spec on feat/onboard-environment) is not
 Next: owner pushes chore/release-0.3.0, merges, then pushes the annotated tag v0.3.0; release.yml publishes the GitHub release.
 verified: f787e05 · release version check, notes extraction, markdownlint, check-plugin
 
+## 2026-11-15 — spec onboard-environment, challenged
+Changed: ef359d5 .agent/specs/onboard-environment.md (revision 2, 8 stories, T01–T06) on feat/onboard-environment.
+Why: the owner asked that onboarding detect or ask the development environment (Docker or Podman, mise, distrobox, missing tools) and advise helpers such as RTK; four answers before drafting (machine profile, propose installs, curated advice, ask per repository).
+Proof: the gate already unwraps rtk, mise exec and distrobox enter (cobot-rules check, 2026-11-15); challenger SOUND WITH CHANGES, fifteen points folded (BLOCKER: --version probes could run a repository-chosen binary or shim).
+Open: the fold moves the 'where things run' question on a new project from onboarding to the first spec, for the owner to confirm; F-38 is folded into this spec.
+Next: owner confirms the move, then /cobot:build onboard-environment from T01.
+verified: ef359d5 · markdownlint
+
 ## 2026-11-16 — eval runs outside /tmp; two blocked cases restored
 Changed: 2a5546c ci.yml's eval step sets TMPDIR under RUNNER_TEMP (the traces upload follows it), docs/development.md's local command uses ~/.cache/cobot-evals, the mechanics note corrected with anthropics/claude-code#104631; cc88212 foreign-onboard and new-project-onboard back under evals/, foreign-onboard's tree graders skip writes under .agent, cobot-memory init --foreign names .git/info/exclude, a grader test; proof-quoted stays blocked, now on the run's missing Rust toolchain; d0beb0f CHANGELOG.
 Why: the owner asked to check for an existing upstream issue (#104631 and #104797 were open, with a TMPDIR workaround), posted a 2.1.325 confirmation, and asked to apply the workaround.
@@ -152,3 +160,28 @@ Proof: four negated reports failed first, three real re-run reports still fail; 
 Open: the CI side is proven by a dispatched *-onboard run after merge.
 Next: owner pushes fix/eval-negated-onboard and opens its PR.
 verified: 9240b04 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, one eval case
+
+## 2026-11-16 — onboard-environment built: cobot-env, the runs: header, install routes ask
+Changed: ff11827 main bcef2d0 merged into the spec branch; 31b99fc bin/cobot-env and _cobot_env.py (presence detection, untrusted PATH entries, machine.md per host, choices line); 817c242 install-route ask rows; 631a93d skills/onboard/references/workstation.md; fbd26dd runs: header, claim-nothing templates and init's none-yet row (F-38), the machine line in the brief (reserve +160), agy section names cobot-env; 49dae0f onboard step 3b, missing programs, helper line, N3, the spec skill's new-project question; 943e396 cobot-env in the CLI hygiene checks; be16b6b decision 29, eval cases onboard-runs-question and ship-runs-bare, ship reads runs: as local, docs, CHANGELOG, F-38 closed, F-46 added, spec converged.
+Why: /cobot:build onboard-environment (spec rev 2, challenger SOUND WITH CHANGES; the owner confirmed the new-project move).
+Proof: each task's tests failed first (module missing; 19 install rows none; five memory and four session tests); full suite 2922 passed, 98.52 %; ruff 0.17.4 check and format, markdownlint-cli2 0.24.0, check-plugin, sync-agents --check, claude plugin validate --strict (plugin, marketplace), shellcheck on the two fixtures, memory check; cobot-env detect on this machine 0.11 s with Python start, the marker stub never ran; both fixtures ran in a scratch HOME and trusted their root commit; apt-cache and the mise registry checked locally for workstation.md.
+Decided in build: prefer and decline print answer not recorded: with the owner's command when the config directory is read-only; detect takes program names and prints choices:; the repository root is found by a .git walk, not git; the journal template has no entry; mise install now asks (a mise-task test expectation changed).
+Open: the two eval cases are not run (paid); onboard-runs-question needs docker and podman on the runner; F-36 stays open beyond the install routes; F-46 (workstation.md outside the knowledge scan); rtk's licence and the non-Debian package names are reported, not verified.
+Next: owner pushes feat/onboard-environment and opens the PR with the body in PR-onboard-environment.md at the worktree root (untracked); a dispatched eval run for the two new cases.
+verified: be16b6b · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, shellcheck (fixtures), memory check
+
+## 2026-11-16 — onboard-environment: evals cannot ask, shims may run
+Changed: f3a16e3 cobot-env reports mise and asdf shims apart from not-trusted repository hits (found shims; the report counts them present), onboard step 3b runs them, docs, decision 29 and CHANGELOG reworded; 7d68086 onboard-runs-question's one-question and question-before-command moved to evals-blocked/ with the reason, the prompt has the report state the question, graders no-question-tool and question-stated, a test refusing any grader that needs a question call; 15205dc F-47.
+Why: the parent session's local run scored 0.67: AskUserQuestion was not in the session (eval runs use dontAsk, which denies it even when allowed_tools grants it; headless docs), and python3 and uv resolved only to mise shims, which step 3b said never to run, so nothing was verified.
+Proof: the new env tests and the grader rule failed first (KeyError shims; both moved graders rejected); full suite 2946 passed, 98.52 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate --strict (plugin, marketplace), memory check; onboard-runs-question run locally on 2.1.311 with --scaffold: 1.00, and it ran python3 -m unittest through a mise shim (a first run without --scaffold had an empty workspace and does not count).
+Open: neither case has run in CI on 2.1.322; F-47 (init --trust-root writes ~/.claude/cobot while check reads the run's CLAUDE_CONFIG_DIR); F-36, F-46 as before.
+Next: owner pushes feat/onboard-environment and opens the PR with the body in PR-onboard-environment.md at the worktree root (untracked); a dispatched eval run for both cases.
+verified: 15205dc · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check, eval onboard-runs-question (local, 1 run)
+
+## 2026-11-16 — onboard-environment: shims not trusted in foreign mode
+Changed: f20b2b6 cobot-env reads foreign mode from a .agent symlink at the repository root (no git call) and then puts every mise or asdf shim under not trusted, never under shims; runnable() decides what onboarding may run; the report says 'not trusted (foreign repository: shims too)'; the onboard skill, cobot-env's usage, _cobot_env's docstring, decision 29, architecture and CHANGELOG say both cases.
+Why: the owner's decision on f3a16e3, relayed by the parent session ('I follow your recommandation'): shims run in the owner's own repositories and are untrusted in foreign mode, as the spec had it.
+Proof: three tests failed first (KeyError foreign twice; the foreign run listed three shims under shims), then passed: foreign repository reports a mise shim as not trusted, the owner's repository as a shim, and the foreign path never lists a shim under shims (mise and asdf, helpers and programs, report and data); full suite 2949 passed, 98.52 %; ruff check and format, markdownlint, check-plugin, sync-agents --check, claude plugin validate --strict (plugin, marketplace), memory check.
+Open: any .agent symlink counts as foreign, so a planted one only makes shims stricter; the eval cases still have not run in CI on 2.1.322; F-36, F-46, F-47 as before.
+Next: owner pushes feat/onboard-environment and opens the PR with the body in PR-onboard-environment.md at the worktree root (untracked).
+verified: f20b2b6 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check

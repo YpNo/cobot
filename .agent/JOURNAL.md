@@ -112,3 +112,11 @@ Proof: four tests failed first (two cap_sections, the spec tail, the 20-spec bud
 Open: cobot-memory check still prints every spec name on its own line (a check, not the brief).
 Next: owner pushes fix/brief-environment and opens its PR.
 verified: ffed454 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check
+
+## 2026-11-16 — F-45 recorded: the security sweep on curriculo
+Changed: 12ec912 .agent/FINDINGS.md gains F-45.
+Why: the owner asked to check the curriculo /cobot:security-sweep and to record what it missed.
+Proof: the sweep's consultant transcript read; cobot-rules check --agent cobot:consultant gives none for git log --all --diff-filter=A, zizmor, cargo-deny and gitleaks, and ask for cd into the packs folder; the install-action README and cargo-deny-action's Dockerfile at the pinned SHA read; the skipped history scan run by hand on curriculo found no secret file in 106 commits.
+Open: F-45 is not fixed; the curriculo follow-ups (cargo deny check advisories, cargo audit, a LaTeX escaping pass, the cargo-deny-action download) are the owner's.
+Next: owner pushes docs/sweep-findings and opens its PR.
+verified: 12ec912 · findings list, markdownlint

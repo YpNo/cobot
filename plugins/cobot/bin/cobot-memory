@@ -480,7 +480,7 @@ def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
     if "add-identity" in flags:
         lines.append(add_identity(mem))
     if "trust-root" in flags:
-        lines.append(add_trusted_root(mem))
+        lines.append(add_root_commit(mem))
     return "\n".join(lines)
 
 
@@ -518,7 +518,7 @@ def add_identity(mem: Memory) -> str:
     return f"identity {'added' if added else 'already present'}: {line}"
 
 
-def add_trusted_root(mem: Memory) -> str:
+def add_root_commit(mem: Memory) -> str:
     roots = root_commits(mem.root)
     if not roots:
         return "trust-root: no commit yet"

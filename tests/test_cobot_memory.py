@@ -88,8 +88,8 @@ def test_trust_rootCommitListedOutsideRepo(memory, repo):
     (repo / ".agent" / ".trusted").write_text("planted")  # a clone can ship this; it must not count
     assert not memory.Memory().trust()[0]
     mem = memory.Memory()
-    assert "root commit added" in memory.add_trusted_root(mem)
-    assert "already present" in memory.add_trusted_root(mem)
+    assert "root commit added" in memory.add_root_commit(mem)
+    assert "already present" in memory.add_root_commit(mem)
     trusted, reason = mem.trust()
     assert trusted and "trusted" in reason
 
@@ -132,7 +132,7 @@ def test_init_addIdentity(memory, repo):
     assert "already present" in memory.add_identity(memory.Memory())
     commit(repo)
     assert "root commit added" in memory.cmd_init(memory.Memory(), {}, {"trust-root"})
-    assert "no commit yet" not in memory.add_trusted_root(memory.Memory())
+    assert "no commit yet" not in memory.add_root_commit(memory.Memory())
 
 
 @pytest.fixture

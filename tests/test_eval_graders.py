@@ -293,3 +293,35 @@ def test_foreignOnboard_treeGraders_countRepositoryFilesNotTheMemory(name):
     assert pattern.search('{"file_path":"/run/home/cwd/demo.go","content":"x"}')
     assert pattern.search('{"file_path":"/run/home/cwd/docs/agent.md"}')
     assert not pattern.search('{"file_path":"/run/home/cwd/.agent/CONTEXT.md","content":"x"}')
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_graders_neverRequireAQuestionCall(case):
+    # eval runs use dontAsk, which denies AskUserQuestion even when allowed_tools lists it: a
+    # grader that needs a call, or orders one, can never pass (onboard-runs-question, 2026-11-16).
+    # The raw text is read: a tool_order names its tools in nested maps front_matter skips.
+    found = graders(case)
+    for path in sorted((EVALS / case / "graders").glob("*.md")):
+        if re.search(r"(?m)^\s*tool: AskUserQuestion\s*$", path.read_text(encoding="utf-8")):
+            grader = found[path.stem]
+            assert grader.get("type") == "tool_used" and grader.get("max") == "0", f"{case}/{path.stem}"
+
+
+def test_onboardRunsQuestion_questionStated_needsTheQuestionNotAMention():
+    grader = graders("onboard-runs-question")["question-stated"]
+    stated = (
+        "runs: host. This was the recommended option and the only question the machine raised"
+        " (host or distrobox for builds)."
+    )
+    assert matches(grader, stated)
+    assert matches(grader, "I would have asked whether to build with podman or docker; I took podman.")
+    assert matches(grader, "Question I would ask: where things run (engine: podman | docker).")
+    assert not matches(grader, "Onboarding is done; the podman build failed with exit 125.")
+    assert not matches(grader, "runs: podman. Verified: python3 -m unittest discover -s tests.")
+
+
+def test_onboardRunsQuestion_questionCallGraders_waitInBlocked():
+    blocked = graders("onboard-runs-question", BLOCKED)
+    assert set(blocked) == {"one-question", "question-before-command"}
+    readme = (BLOCKED / "README.md").read_text(encoding="utf-8")
+    assert "onboard-runs-question/graders/one-question.md" in readme and "dontAsk" in readme

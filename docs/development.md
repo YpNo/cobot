@@ -5,7 +5,9 @@ date each last ran, are in [`.agent/CONTEXT.md`](../.agent/CONTEXT.md).
 
 ## Prerequisites
 
-- Claude Code 2.1.285 or newer (`claude --version`).
+- Claude Code 2.1.285 or newer (`claude --version`): `claude plugin validate` is one of the
+  checks. The Antigravity CLI 1.5.9 or newer (`agy --version`) only to validate or smoke the agy
+  side.
 - Python 3.12 or newer on `PATH` as `python3`; the plugin's scripts use the standard library only.
 - POSIX `sh` and `git`. For development: `uv` (runs pinned `ruff`, `pytest`, `shellcheck`) and
   `npx` (markdownlint).
@@ -31,6 +33,21 @@ npx --yes markdownlint-cli2@0.24.0 "**/*.md"
 ```bash
 claude plugin validate plugins/cobot --strict && claude plugin validate . --strict && python3 scripts/check-plugin.py
 ```
+
+The Antigravity agents in `plugins/cobot/agents/` are written from `claude-agents/`: edit the
+Claude Code agent, then run `python3 scripts/sync-agents.py`. The check (also a test) and agy's
+own validation, in a throwaway HOME so nothing touches `~/.gemini`:
+
+```bash
+python3 scripts/sync-agents.py --check
+```
+
+```bash
+HOME=$(mktemp -d) agy plugin validate plugins/cobot
+```
+
+agy warns once that `hooks/hooks.json` is never loaded: that file is Claude Code's, and the
+warning is expected.
 
 ## Evals
 
@@ -58,8 +75,10 @@ the plugin against a no-plugin baseline, `--ablation none` runs one arm, `--runs
 `--case <glob>` keep a check cheap. A grader that cannot pass for a reason outside cobot waits in
 `plugins/cobot/evals-blocked/` (its README says what blocks it).
 
-Live spikes that need a logged-in CLI, rerun when a Claude Code upgrade may change hook
-behaviour: `sh scripts/spikes/spike-coexistence.sh` and `sh scripts/spikes/spike-r1.sh`.
+Live spikes need a signed-in CLI and run in the owner's terminal. Rerun them when a host upgrade
+may change hook behaviour: `sh scripts/spikes/spike-coexistence.sh` and
+`sh scripts/spikes/spike-r1.sh` for Claude Code, `./install.sh --agy && sh
+scripts/spikes/smoke-agy.sh` for agy. Their results go into [harnesses.md](harnesses.md).
 
 ## CI/CD
 
@@ -128,3 +147,14 @@ Settings → Social preview.
 Branches `feat/`, `fix/`, `docs/`, `chore/`, `security/`; Conventional Commits without
 attribution trailers; one spec is one branch and one pull request, one task one commit; tests
 with every behaviour change; the design and the ADRs are the source of truth for scope.
+
+Keep the main checkout on `main` and do branch work in a worktree under `.claude/worktrees/`
+(ignored by git and by markdownlint), removed once its pull request merges:
+
+```bash
+git worktree add -b docs/my-change .claude/worktrees/my-change origin/main
+```
+
+A directory marketplace (`install.sh --project` with the default `--source path`) serves the
+main checkout: every install or `--refresh` copies whatever is checked out there, so a branch
+left checked out would reach every repository cobot is installed in.

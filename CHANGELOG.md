@@ -27,15 +27,25 @@ All notable changes to this project are documented here. The format follows
 - The default rules ask on every install route cobot prints: `mise use`, `mise install`,
   `brew install`, `uv tool install`, `pipx install`, `nix profile install` and the apt, dnf,
   pacman, zypper and apk installs. `mise install` used to pass silently.
-- Eval cases `onboard-runs-question` (one question, before the first command, `runs:` written)
-  and `ship-runs-bare` (no local prefix in ci.yml).
+- Eval cases `onboard-runs-question` (the question the report states, `runs:` written) and
+  `ship-runs-bare` (no local prefix in ci.yml). The graders for one question asked before the
+  first command wait in `evals-blocked/`: an eval run cannot call `AskUserQuestion`.
+
+### Changed
+
+- The README is written for the person using cobot and names Claude Code and the Antigravity CLI
+  as two supported hosts: what cobot does, both installs, configuration, usage with each host's
+  command form, the differences under agy, and the sections the owner's standard asks for.
+- The docs match the code on `main`: the session brief's caps and section priority, init's
+  `trust not recorded:`, the gate's failure behaviour per runtime, mise and asdf shims (not
+  trusted in foreign mode), and branch work in `.claude/worktrees/` (docs/development.md, which
+  also gains the agy checks and smoke).
 
 ### Fixed
 
 - The onboard templates no longer claim proof before anything ran (F-38): the verified table's
   placeholders say `not run yet`, the journal template has no entry to delete by hand, and
   `cobot-memory init` writes the `none yet` row itself on a new tree.
-
 - Eval Bash can write its own workspace again: the eval job and the documented local command set
   `TMPDIR` outside `/tmp`, which the eval sandbox denies (anthropics/claude-code#104631, confirmed
   on Claude Code 2.1.325). `foreign-onboard` and `new-project-onboard` are back in the suite; their

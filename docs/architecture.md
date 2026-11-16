@@ -9,8 +9,9 @@ For agents and architects. The README is for people; the full design and its rea
 | Layer | What | Where |
 |---|---|---|
 | Protocol | ≤ 3k-char orchestrator rules injected at session start | `plugins/cobot/protocol.md` |
-| Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; blocks on failure | `hooks/gate.sh` → `bin/cobot-rules`, `rules/default.rules` |
-| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree; the tree state (new, existing, inside another repository, not a repository) picks onboard's path | `bin/cobot-memory`, `bin/cobot-session` |
+| Gate | `PreToolUse` hook on Bash, Edit, Write, NotebookEdit and MCP tools; three rule layers; never widens; an error while judging asks, a gate that cannot run or exits non-zero blocks (exit 2 in the shim) | `hooks/gate.sh` → `bin/cobot-rules`, `rules/default.rules` |
+| Memory | `.agent/CONTEXT.md`, `JOURNAL.md`, `FINDINGS.md`, `specs/`, `knowledge/`; trusted repositories only; foreign mode keeps memory outside the tree; the tree state (new, existing, inside another repository, not a repository) picks onboard's path; `cobot-memory init` writes the memory even when the config folder is read-only, then prints `trust not recorded:` with the command for the owner's terminal and exits 1 | `bin/cobot-memory` |
+| Session brief | at most 10 000 characters: the protocol, rule counts, the memory brief (at most 6 000; when capped, Verified commands, Constraints and then Environment get room first, each only when it fits, and dropped sections are named; past three specs, their count and the three newest by `date:`), then the machine, knowledge and dependency lines | `hooks/session.sh` → `bin/cobot-session`, `bin/cobot-memory brief` |
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `claude-agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Environment | the machine by presence (engines, runtime managers, isolation, container, OS and package manager, helpers), executing nothing: a hit on a PATH entry the repository controls is reported as not trusted and never run, a mise or asdf shim as a shim (not trusted in foreign mode); the owner's install route and declined helpers per host in `~/.claude/cobot/machine.md`; one line in the brief; the `runs:` header (decision 29) | `bin/cobot-env`, `bin/_cobot_env.py`, `skills/onboard/references/workstation.md` |
@@ -76,29 +77,33 @@ session; this is the history a routing decision needs (design §10).
 
 The gate is argv and pattern matching: it stops honest and careless attempts, not determined
 obfuscation. Interpreters running code, task runners and remote execution are opaque and ask.
+`mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string and container or
+sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`, `nix develop -c`, …)
+are looked through and the command behind them is judged.
+
 A command substitution is judged by what it runs: a quote-aware scanner (`bin/_cobot_shell.py`)
 gives each `$(…)`, backtick and process substitution body to the same rules, and the
 substitution itself asks only where its text could decide which program runs or make a `never`
 or `ask` row match; anything outside the scanner's model asks. A substitution that is a whole
 argument is not resolved for the protected-file check, like a variable, and a variable's value
-reaching arithmetic is not followed (`read x < f; echo $((x))`). Brace expansion is computed
-as bash does it; a glob is a hole standing for zero or more file names, judged like a split
-substitution (.agent/specs/gate-expansion.md). The soundness target, in the scanner's module: a
-hole in the command's words, a substitution or a glob, is never silent where some text in its
-place, for a glob some set of file names, would change which program runs or make a rule match
-the form that names what runs. An agent-scoped allow counts on globs only when each is anchored
-by literal text that cannot be an option. A `${…}` with an operator word is a hole too, and a
-locale string `$"…"` a hole with its untranslated text as known value; `never` and `ask` rows
-read every place a verb could start past options the gate does not know
-(.agent/specs/gate-findings.md). For the read-only agents, a segment that could write a file
-or run a program (a guarded option, a `curl` option outside its read set, a redirection into a
-file in the command or a runner body) never matches their read list; the scanner's
-`Scan.writes` holds the targets a redirection writes. A read whose program the repository's
-files choose (a toolchain file, cargo or npm config, `trivy.yaml`, a Dockerfile) counts for
-them only in a repository trusted by identity whose deciding files match origin's default
-branch (.agent/specs/gate-repo-config.md); every git call cobot makes turns `core.fsmonitor` off. `mise` tasks, `make` targets (read from the Makefile), a shell's `-c` string
-and container or sandbox entry wrappers (`distrobox enter`, `toolbox run`, `docker exec`,
-`nix develop -c`, …) are looked through and the command behind them is judged.
+reaching arithmetic is not followed (`read x < f; echo $((x))`). The soundness target, in the
+scanner's module: a hole in the command's words (a substitution, a glob, a `${…}` with an
+operator word) is never silent where some text in its place, for a glob some set of file names,
+would change which program runs or make a rule match the form that names what runs.
+
+For the read-only agents, a segment that could write a file or run a program never matches
+their read list (the scanner's `Scan.writes` holds the targets a redirection writes), and a read
+whose program the repository's files choose counts only in a repository trusted by identity
+whose deciding files match origin's default branch. Every git call cobot makes turns
+`core.fsmonitor` off.
+
+Each rule, with the asks it costs and what it does not cover, has one home in
+[configuration.md](configuration.md): [Rules](configuration.md#rules) for protected paths,
+braces, globs, `${…}`, `$"…"` and options before the verb;
+[What the read lists never cover](configuration.md#what-the-read-lists-never-cover) and
+[Repository configuration and trust](configuration.md#repository-configuration-and-trust) for
+the agents' read lists. The specs behind them: `.agent/specs/gate-expansion.md`,
+`gate-findings.md`, `gate-repo-config.md` and `gate-residuals.md`.
 
 MCP tools are judged by name: a read (`list`, `get`, `describe`, `search`, `read` first, and no
 write word joined to it as in `get_or_create`) and the desktop app's own UI tools are silent;
@@ -112,6 +117,9 @@ that protection is advisory for the model's own reads.
 
 Under agy the project layer comes from every `workspacePaths` entry, never from the model's
 `Cwd`; every word is also read as a path in the `Cwd` and in each folder a `cd` reaches, and a
-command whose `Cwd` is inside a protected folder asks, naming it, and a write through a symlinked customization root is judged by the root's name. agy ignores a hook's exit code, so the shim's last word is always a decision line. Its
-settings, config, grants and every customization root's hook and plugin files are `never` rows
-in the default layer, for both runtimes: a hook written there would run outside the gate.
+command whose `Cwd` is inside a protected folder asks, naming it, and a write through a
+symlinked customization root is judged by the root's name. agy 1.5.3 ran the call when a hook
+failed and 1.5.9 stops at one, so the shim does not rely on its exit code: its last word is
+always a decision line. Its settings, config, grants and every customization root's hook and
+plugin files are `never` rows in the default layer, for both runtimes: a hook written there
+would run outside the gate.

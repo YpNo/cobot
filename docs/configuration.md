@@ -28,12 +28,12 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
 | `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live; Claude Code's sandbox keeps it read-only to Bash, so with the sandbox on the owner runs `cobot-memory init --add-identity` or `--trust-root` in their own terminal |
+| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
-| `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the shims folders it does not trust, the distrobox it runs in |
+| `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the mise and asdf shims folders (a hit there is a shim, not trusted in foreign mode; decision 29), the distrobox it runs in |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
-| `COBOT_GATE_DEADLINE` | seconds, 1 to 8 | `8` | agy gate shim: the deadline before it answers deny (agy's hook timeout is 10) |
+| `COBOT_GATE_DEADLINE` | seconds, 1 to 8 | `8` | agy gate shim: the deadline before it answers deny (the hook's timeout in the root `hooks.json` is 10) |
 | `~/.gemini/config/mcp_config.json`, `~/.gemini/config/plugins/*/mcp_config.json` or `mcp.json` | read only | absent | agy MCP server names, so an eager `mcp_<server>_<tool>` call splits at a known server |
 
 ## Rules
@@ -132,9 +132,10 @@ value. A locale string `$"…"` is a hole whose known value is its untranslated 
 $"publish"` is denied.
 
 Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
-from the default layer) silences the gate; `ask` prompts; otherwise Claude Code's own
+from the default layer) silences the gate; `ask` prompts; otherwise the host's own
 permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's
-UI tools, which are otherwise silent. The gate never emits `allow`.
+UI tools, which are otherwise silent. Under Claude Code the gate never emits `allow`; under agy
+it answers `allow` meaning no opinion, `force_ask` for an ask, and never `auto_approve`.
 
 `/cobot:rules check "<command>"` dry-runs the gate, `explain` names every matching rule, and
 `sync` renders the hard wall (a `permissions.deny` block and the owner's `allow` lines, in plain

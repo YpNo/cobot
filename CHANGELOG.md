@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Eval Bash can write its own workspace again: the eval job and the documented local command set
+  `TMPDIR` outside `/tmp`, which the eval sandbox denies (anthropics/claude-code#104631, confirmed
+  on Claude Code 2.1.325). `foreign-onboard` and `new-project-onboard` are back in the suite; their
+  first full runs scored 1.00. `foreign-onboard`'s tree graders no longer count a write to the
+  memory under `.agent`, and `cobot-memory init --foreign` names `.git/info/exclude`. The
+  builder's proof grader stays in `evals-blocked/`, now for the run's missing Rust toolchain.
+
 ## [0.3.0] - 2026-11-15
 
 cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,

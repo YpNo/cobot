@@ -187,6 +187,65 @@ def test_report_shimHit_isPresentAndRunnable_repositoryHitIsNot(cli, machine, mo
     assert "not trusted: jq via repository" in line and "python3" not in line
 
 
+# the owner's decision on f3a16e3 (2026-11-16): shims run in the owner's repositories, and in a
+# foreign one (memory outside the tree, .agent a symlink) they are not trusted, as the spec had it
+
+
+def foreign(machine, tmp_path):
+    external = tmp_path / "data" / "cobot" / "repos" / "github.com" / "other" / "repo"
+    external.mkdir(parents=True)
+    (machine["repo"] / ".agent").symlink_to(external, target_is_directory=True)
+
+
+def mise_shims(machine, *names):
+    shims = machine["home"] / ".local" / "share" / "mise" / "shims"
+    for name in names:
+        executable(shims, name)
+    machine["env"]["PATH"] = f"{shims}{os.pathsep}{machine['bin']}"
+    return shims
+
+
+def test_detect_foreignRepository_miseShimIsNotTrusted(machine, tmp_path):
+    foreign(machine, tmp_path)
+    shims = mise_shims(machine, "jq")
+    found = detect(machine)
+    assert found["foreign"] is True
+    assert found["untrusted"] == [f"jq via mise shim ({shims / 'jq'})"]
+    assert not env_mod.runnable(found["helpers"]["jq"], found)
+
+
+def test_detect_ownerRepository_miseShimIsAShim(machine):
+    (machine["repo"] / ".agent").mkdir()
+    shims = mise_shims(machine, "jq")
+    found = detect(machine)
+    assert found["foreign"] is False
+    assert found["shims"] == [f"jq via mise shim ({shims / 'jq'})"] and found["untrusted"] == []
+    assert env_mod.runnable(found["helpers"]["jq"], found)
+
+
+def test_foreignRepository_neverListsAShimUnderShims(cli, machine, monkeypatch, capsys, tmp_path):
+    foreign(machine, tmp_path)
+    mise_shims(machine, "python3", "rg")
+    asdf = machine["home"] / ".asdf" / "shims"
+    executable(asdf, "uv")
+    monkeypatch.chdir(machine["repo"])
+    monkeypatch.setenv("HOME", str(machine["home"]))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("PATH", f"{machine['env']['PATH']}{os.pathsep}{asdf}")
+    found = env_mod.detect(machine["repo"], os.environ, fs_root=machine["fs"], programs=("python3", "uv"))
+    assert found["shims"] == []
+    assert [u.split(" (")[0] for u in found["untrusted"]] == [
+        "rg via mise shim",
+        "python3 via mise shim",
+        "uv via asdf shim",
+    ]
+    assert cli.main(["detect", "python3", "uv"]) == 0
+    out = capsys.readouterr().out
+    assert "\nshims:" not in out
+    assert "\nnot trusted (foreign repository: shims too): rg via mise shim" in out
+    assert "helpers: present none; absent rtk, ripgrep, fd, jq, gh" in out
+
+
 def test_detect_miseDataDir_shimsReportedAsShim(machine, tmp_path):
     shims = tmp_path / "mise-data" / "shims"
     executable(shims, "gh")

@@ -2,10 +2,12 @@
 
 Detection reads files and environment variables only. It never runs a program, so nothing a
 repository chooses runs: not a binary on a PATH entry it controls, not a mise or asdf shim, not a
-direnv hook. A hit on a PATH entry under the repository root or a relative entry is not trusted;
-a hit in a shims folder is reported as a shim (a tool the owner installed, at the version the
-repository pins). Neither is followed: no link resolved, no file read. Nothing detected is
-stored; the profile holds only what the owner answered.
+direnv hook. A hit on a PATH entry under the repository root or a relative entry is not trusted.
+A hit in a shims folder is a shim in the owner's own repositories (a tool the owner installed, at
+the version the repository pins, which onboarding may run) and not trusted in a foreign one
+(``.agent`` a symlink to memory outside the tree), where a stranger's pin file picks it. Neither
+is followed: no link resolved, no file read. Nothing detected is stored; the profile holds only
+what the owner answered.
 """
 
 from __future__ import annotations
@@ -104,6 +106,13 @@ def find_root(cwd: Path) -> Path:
     return cwd
 
 
+def foreign_memory(root: Path) -> bool:
+    """Foreign mode: the repository's ``.agent`` is a symlink to memory outside the tree
+    (``cobot-memory init --foreign``). Any symlink counts, so a planted one only makes shims
+    stricter."""
+    return (root / ".agent").is_symlink()
+
+
 def shim_folders(env: Mapping[str, str]) -> dict[Path, str]:
     home = Path(env.get("HOME") or Path.home())
     data = Path(env.get("XDG_DATA_HOME") or home / ".local" / "share")
@@ -127,21 +136,23 @@ def classify(entry: str, cwd: Path, root: Path, shims: dict[Path, str]) -> tuple
 
 
 class Scanner:
-    """Looks names up along PATH as the shell would, remembering every untrusted hit."""
+    """Looks names up along PATH as the shell would, remembering every untrusted hit. In a foreign
+    repository a shim counts as untrusted too: its version comes from a stranger's pin file."""
 
-    def __init__(self, cwd: Path, env: Mapping[str, str]) -> None:
+    def __init__(self, cwd: Path, env: Mapping[str, str], foreign: bool = False) -> None:
         root = Path(os.path.realpath(find_root(cwd)))
         shims = shim_folders(env)
         self.entries = [classify(e, cwd, root, shims) for e in env.get("PATH", "").split(os.pathsep)]
-        self.untrusted: list[Hit] = []  # repository and relative entries: never run
-        self.shims: list[Hit] = []  # shims folders: never followed by detection, runnable
+        self.foreign = foreign
+        self.untrusted: list[Hit] = []  # repository and relative entries, and foreign shims: never run
+        self.shims: list[Hit] = []  # shims in the owner's repositories: never followed, runnable
 
     def find(self, name: str) -> Hit | None:
         for folder, via in self.entries:
             candidate = folder / name
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 hit = Hit(name, str(candidate), via)
-                seen = self.untrusted if via == VIA_REPOSITORY else self.shims
+                seen = self.untrusted if via == VIA_REPOSITORY or self.foreign else self.shims
                 if via and hit not in seen:
                     seen.append(hit)
                 return hit
@@ -290,7 +301,8 @@ def detect(
     bad = [name for name in programs if not PROGRAM_RE.fullmatch(name)]
     if bad:
         raise ValueError(f"not a program name: {', '.join(bad)}")
-    scanner = Scanner(cwd, env)
+    root = find_root(cwd)
+    scanner = Scanner(cwd, env, foreign=foreign_memory(root))
     where = inside(env, fs_root)
     pms = [key for key, names in PACKAGE_MANAGERS.items() if (hit := scanner.first(names)) and not hit.via]
     found = {
@@ -303,11 +315,20 @@ def detect(
         "isolation": isolation(scanner, fs_root),
         "helpers": {key: shown(scanner.first(names)) for key, names in HELPERS.items()},
         "programs": {name: shown(scanner.find(name)) for name in programs},
-        "repository": repository_files(find_root(cwd)),
+        "repository": repository_files(root),
+        "foreign": scanner.foreign,
     }
     found["untrusted"] = [f"{described(hit)} ({hit.path})" for hit in scanner.untrusted]
     found["shims"] = [f"{described(hit)} ({hit.path})" for hit in scanner.shims]
     return found
+
+
+def runnable(value: str | None, found: dict) -> bool:
+    """Whether a lookup's value (``shown``) is a program onboarding may run: present, not on a
+    repository entry, and not a shim in a foreign repository."""
+    if value is None or value.startswith(f"via {VIA_REPOSITORY}"):
+        return False
+    return not (found["foreign"] and value.startswith("via "))
 
 
 # ---------------------------------------------------------------- choices for the per-repo question

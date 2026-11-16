@@ -41,9 +41,10 @@ disable-model-invocation: true
    with one way) and a route with `cobot-env prefer <route>` (`answer not recorded:` → its command
    goes in the report, like trust). Step 4 runs its commands that way and records them bare: CI
    runs them bare. A `not trusted:` line names a program on a PATH entry the repository controls:
-   never run it, and name it in the report and under Open. A `shims:` line names programs reached
-   through a mise or asdf shim: tools the owner installed, at the version the repository pins;
-   step 4 runs them as usual.
+   never run it, and name it in the report and under Open. In foreign mode that line also names
+   every mise or asdf shim (a stranger's pin file picks the version): never run those either. In
+   the owner's own repository a `shims:` line names them instead: tools the owner installed, at
+   the version the repository pins; step 4 runs them as usual.
 4. **Fingerprint.** For a small repository, read the manifests yourself; for a large one, fork
    the built-in Explore agent per subsystem. Detect languages, package manager, test runner,
    linter, formatter, type checker, CI. **Before the first build or test of a compiled stack**

@@ -14,7 +14,8 @@ All notable changes to this project are documented here. The format follows
   the OS and package manager, and the helpers cobot benefits from. It runs no program: a hit on a
   PATH entry under the repository or a relative entry is reported as not trusted and never run;
   a mise or asdf shim is reported as a shim, which onboarding may run (a tool the owner
-  installed); detection follows neither. `cobot-env prefer` and `decline` record the owner's install route
+  installed), except in foreign mode, where a stranger's pin file picks the version and the shim
+  is not trusted either; detection follows neither. `cobot-env prefer` and `decline` record the owner's install route
   and declined helpers in `~/.claude/cobot/machine.md`, per host or host/container (decision 29).
 - Onboarding asks where things run (engine, where builds run, runtime manager) in one question
   call before it runs any command, only when the machine offers more than one way, and writes

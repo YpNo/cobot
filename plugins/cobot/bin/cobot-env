@@ -13,8 +13,9 @@ Commands
   -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
 Detection runs no program (decision 29): a hit on a PATH entry under the repository or a relative
-entry is reported as not trusted, a hit in a mise or asdf shims folder as a shim; neither is
-followed. The profile is
+entry is reported as not trusted. A hit in a mise or asdf shims folder is a shim in the owner's
+repositories and not trusted in a foreign one (.agent a symlink, cobot-memory init --foreign).
+Neither is followed. The profile is
 ~/.claude/cobot/machine.md, one section per host or host/container; it holds answers only. When
 the config directory is read-only (Claude Code's sandbox), prefer and decline print
 `answer not recorded:` with the command for the owner's terminal and exit 1.
@@ -43,9 +44,8 @@ def profile_path() -> Path:
 def report(found: dict, path: Path) -> str:
     """The detect report, one topic per line."""
     given = env.answers(found["key"], path)
-    repository = f"via {env.VIA_REPOSITORY}"
-    present = [k for k, v in found["helpers"].items() if v and not v.startswith(repository)]
-    absent = [k for k, v in found["helpers"].items() if not v or v.startswith(repository)]
+    present = [k for k, v in found["helpers"].items() if env.runnable(v, found)]
+    absent = [k for k, v in found["helpers"].items() if not env.runnable(v, found)]
     picks = env.choices(found)
     lines = [
         f"key: {found['key']}",
@@ -57,7 +57,8 @@ def report(found: dict, path: Path) -> str:
         f"helpers: present {', '.join(present) or 'none'}; absent {', '.join(absent) or 'none'}",
     ]
     if found["untrusted"]:
-        lines.append(f"not trusted: {'; '.join(found['untrusted'])}; cobot never runs these")
+        why = " (foreign repository: shims too)" if found["foreign"] else ""
+        lines.append(f"not trusted{why}: {'; '.join(found['untrusted'])}; cobot never runs these")
     if found["shims"]:
         lines.append(
             f"shims: {'; '.join(found['shims'])}; tools the owner installed, at the version the"

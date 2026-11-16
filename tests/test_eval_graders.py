@@ -240,6 +240,13 @@ def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
     assert not re.search(profile, '{"command": "cobot-memory init --help"}')
 
 
+def test_newProjectOnboard_trustHandedToOwner_needsTheCommandInTheReport():
+    # run 43927352477: the sandbox keeps ~/.claude read-only, so init cannot record the trust
+    grader = graders("new-project-onboard", EVALS)["trust-handed-to-owner"]
+    assert matches(grader, "Run in your own terminal: cd /x && cobot-memory init --trust-root")
+    assert not matches(grader, "The root commit is trusted. Next: /cobot:spec <goal>.")
+
+
 def test_newProjectOnboard_fixtureRootCommitIsUniquePerRun(tmp_path):
     # a fixed root is public; once trusted, any repository merging it in would be trusted too
     roots = []

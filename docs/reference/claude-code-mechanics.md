@@ -193,6 +193,12 @@ eval exit code 2 for partial runs.
   `TMPDIR=$HOME/evaltmp` (2.1.325, 2026-11-16; 2.1.311 and 2.1.322 failed the same way). The eval
   job sets `TMPDIR` under `$RUNNER_TEMP`. A `scaffold_script` runs outside the sandbox and can
   seed files, including `~/.claude/cobot/trusted`, which Bash then reads.
+- Sandboxed Bash cannot write most of the config directory (`~/.claude` or `CLAUDE_CONFIG_DIR`),
+  in interactive sessions as in evals, and an `allowWrite` entry does not lift it (sandboxing
+  docs, read 2026-11-16). In run 43927352477 (2.1.322) `cobot-memory init --trust-root` failed
+  with `EROFS` on `~/.claude/cobot` in all three new-project-onboard runs, while `--foreign`
+  wrote `~/.local/share/cobot`. init now writes the memory, prints `trust not recorded:` with the
+  command for the owner's own terminal, and exits 1.
 - Eval grading (plugin-evals docs, checked against run 43496720467): every `tool_used` grader on
   `Skill` is left out of the score in a two-arm run unless it sets `arm: both`, so a "never ran
   the skill" check needs it; `tool_used` also counts a subagent's calls and has no main-thread

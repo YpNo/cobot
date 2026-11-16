@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from datetime import date
 
@@ -132,6 +133,48 @@ def test_init_addIdentity(memory, repo):
     commit(repo)
     assert "root commit added" in memory.cmd_init(memory.Memory(), {}, {"trust-root"})
     assert "no commit yet" not in memory.add_trusted_root(memory.Memory())
+
+
+@pytest.fixture
+def readonly_config(repo):
+    """The config directory as Claude Code's sandbox leaves it to Bash: present, not writable."""
+    if os.geteuid() == 0:
+        pytest.skip("root writes through a read-only mode")
+    config_root = os.environ["CLAUDE_CONFIG_DIR"]
+    os.makedirs(config_root, exist_ok=True)
+    os.chmod(config_root, 0o500)
+    yield config_root
+    os.chmod(config_root, 0o700)
+
+
+def test_init_trustRoot_readOnlyConfig_writesMemoryAndNamesTheOwnerCommand(memory, repo, readonly_config):
+    commit(repo)
+    out = memory.cmd_init(memory.Memory(), {}, {"trust-root"})
+    assert (repo / ".agent" / "CONTEXT.md").is_file()
+    assert memory.TRUST_NOT_RECORDED in out
+    assert os.path.join(readonly_config, "cobot", "trusted") in out
+    assert f"cd {shlex.quote(str(repo))} && " in out and "init --trust-root" in out
+    assert not memory.Memory().trust()[0]
+
+
+def test_init_addIdentity_readOnlyConfig_namesTheOwnerCommand(memory, repo, readonly_config):
+    remote(repo, "origin", "https://github.com/YpNo/x")
+    out = memory.cmd_init(memory.Memory(), {}, {"add-identity"})
+    assert memory.TRUST_NOT_RECORDED in out and "init --add-identity" in out
+    assert "identity added" not in out
+
+
+def test_main_init_trustNotRecorded_exitsOneWithoutTraceback(memory, repo, readonly_config, capsys):
+    commit(repo)
+    assert memory.main(["init", "--trust-root"]) == 1
+    captured = capsys.readouterr()
+    assert memory.TRUST_NOT_RECORDED in captured.out and "Traceback" not in captured.err
+
+
+def test_main_init_trustRecorded_exitsZero(memory, repo, capsys):
+    commit(repo)
+    assert memory.main(["init", "--trust-root"]) == 0
+    assert "root commit added" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- brief

@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import date
 from pathlib import Path
@@ -96,6 +97,7 @@ DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
 ROUTED = "open → "
+TRUST_NOT_RECORDED = "trust not recorded:"  # init exits 1 when its output holds this
 KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md"})
 AGENT_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
@@ -491,13 +493,28 @@ def append_unique(path: Path, line: str) -> bool:
     return True
 
 
+def trust_not_recorded(mem: Memory, path: Path, error: OSError, flag: str) -> str:
+    """The owner's way out when Bash cannot write the trust files: Claude Code's sandbox keeps most
+    of the config directory read-only to Bash, even with an allowWrite entry, so only the owner's
+    own shell can record trust. The session never works around it."""
+    return (
+        f"{TRUST_NOT_RECORDED} cannot write {path} ({error.strerror}); Claude Code's sandbox keeps the"
+        f" config directory read-only to Bash. The memory files above are written. The owner runs, in"
+        f" their own terminal: cd {shlex.quote(str(mem.root))} && {shlex.quote(str(Path(__file__).resolve()))} init {flag}"
+    )
+
+
 def add_identity(mem: Memory) -> str:
     origin = remotes(mem.root).get("origin")
     parts = host_owner_repo(origin) if origin else None
     if not parts:
         return "identity: no origin remote to take the owner from"
     line = f"{parts[0]}/{parts[1]}"
-    added = append_unique(cobot_config_dir() / "identities", line)
+    path = cobot_config_dir() / "identities"
+    try:
+        added = append_unique(path, line)
+    except OSError as error:
+        return trust_not_recorded(mem, path, error, "--add-identity")
     return f"identity {'added' if added else 'already present'}: {line}"
 
 
@@ -505,7 +522,11 @@ def add_trusted_root(mem: Memory) -> str:
     roots = root_commits(mem.root)
     if not roots:
         return "trust-root: no commit yet"
-    added = append_unique(cobot_config_dir() / "trusted", f"{roots[0]} {mem.root.name}")
+    path = cobot_config_dir() / "trusted"
+    try:
+        added = append_unique(path, f"{roots[0]} {mem.root.name}")
+    except OSError as error:
+        return trust_not_recorded(mem, path, error, "--trust-root")
     return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
 
 
@@ -922,7 +943,10 @@ def main(argv: list[str]) -> int:
     if command == "path":
         print(mem.dir)
     elif command == "init":
-        print(cmd_init(mem, options, flags))
+        out = cmd_init(mem, options, flags)
+        print(out)
+        if TRUST_NOT_RECORDED in out:
+            return 1
     elif command == "stamp":
         print(cmd_stamp(mem))
     elif command == "trust":

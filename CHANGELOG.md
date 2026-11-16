@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
   first full runs scored 1.00. `foreign-onboard`'s tree graders no longer count a write to the
   memory under `.agent`, and `cobot-memory init --foreign` names `.git/info/exclude`. The
   builder's proof grader stays in `evals-blocked/`, now for the run's missing Rust toolchain.
+- The session brief keeps CONTEXT.md's Environment section: when the brief is capped, Verified
+  commands, Constraints and then Environment get room first, each only when it fits, so a huge
+  Environment still never pushes out the commands. The brief's spec list no longer grows with
+  every spec: past three it gives the count and the three newest by their `date:`.
 
 ## [0.3.0] - 2026-11-15
 

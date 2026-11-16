@@ -78,9 +78,13 @@ from _cobot_knowledge import (  # noqa: E402
 
 DEFAULT_BUDGET = 6000
 CONTEXT_CAP = 2500  # the least CONTEXT.md gets in the brief
-KEPT_SECTIONS = ("verified commands", "constraints")  # what a capped brief keeps first
+# what a capped brief keeps first, in this order of priority; each only when it fits
+KEPT_SECTIONS = ("verified commands", "constraints", "environment")
 CONTEXT_MAX = 4000  # the most, when a short journal leaves room
 ENTRY_CAP = 1200
+SPECS_SHOWN = 3  # the brief names the newest specs only; the folder lists them all
+SPEC_HEAD_CHARS = 400  # where a spec's header line, with its date, sits
+SPEC_DATE_RE = re.compile(r"\bdate: (\d{4}-\d{2}-\d{2})\b")
 FINDINGS_FLOOR = 400
 SECTION_MARKER_RESERVE = 120
 BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
@@ -163,6 +167,18 @@ class Memory:
     def specs(self) -> list[str]:
         folder = self.dir / "specs"
         return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+    def specs_by_date(self) -> list[str]:
+        """Spec names, newest first by the ``date:`` in their head; undated ones last, by name."""
+        dated, undated = [], []
+        for name in self.specs():
+            head = (self.dir / "specs" / f"{name}.md").read_text(encoding="utf-8", errors="replace")[:SPEC_HEAD_CHARS]
+            found = SPEC_DATE_RE.search(head)
+            if found:
+                dated.append((found.group(1), name))
+            else:
+                undated.append(name)
+        return [name for _, name in sorted(dated, reverse=True)] + undated
 
 
 # ---------------------------------------------------------------- tree state (new projects)
@@ -260,14 +276,18 @@ def section_name(section: str) -> str:
 
 
 def cap_sections(text: str, limit: int) -> str:
-    """Cap on ``## `` boundaries: the preamble and the sections in KEPT_SECTIONS get room first,
-    then the others in order until one does not fit; the rest are dropped and named, so the owner
-    can see what the brief no longer carries and reorder CONTEXT.md if it matters."""
+    """Cap on ``## `` boundaries: the preamble, then the sections in KEPT_SECTIONS in their
+    priority order, get room first, each only when it fits (a huge Environment never displaces the
+    commands); then the others in document order until one does not fit. Kept sections keep their
+    document order; the rest are dropped and named, so the owner can see what the brief no longer
+    carries and reorder CONTEXT.md if it matters."""
     if len(text) <= limit:
         return text
     sections = [section for section in re.split(r"(?m)^(?=## )", text) if section]
     budget = limit - SECTION_MARKER_RESERVE
-    first = [i for i, s in enumerate(sections) if i == 0 or section_name(s).lower() in KEPT_SECTIONS]
+    priority = {name: rank for rank, name in enumerate(KEPT_SECTIONS)}
+    kept_names = [i for i, s in enumerate(sections) if i and section_name(s).lower() in priority]
+    first = [0, *sorted(kept_names, key=lambda i: priority[section_name(sections[i]).lower()])]
     chosen: set[int] = set()
     used = 0
     for i in first:
@@ -368,8 +388,11 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     tail = []
     if mem.knowledge_topics():
         tail.append("knowledge: " + ", ".join(mem.knowledge_topics()))
-    if mem.specs():
-        tail.append("specs: " + ", ".join(mem.specs()))
+    specs = mem.specs_by_date()
+    if len(specs) > SPECS_SHOWN:
+        tail.append(f"specs: {len(specs)}, latest {', '.join(specs[:SPECS_SHOWN])}; all in .agent/specs/")
+    elif specs:
+        tail.append("specs: " + ", ".join(sorted(specs)))
     others = other_agent_files(mem)
     if others:
         tail.append("also in .agent (read on demand): " + ", ".join(others))

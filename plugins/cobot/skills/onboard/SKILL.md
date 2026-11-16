@@ -67,7 +67,8 @@ disable-model-invocation: true
    lines copied verbatim under Tasks, so `/cobot:build <NNN-slug>` continues them; the folders
    stay as history; then the `speckit-*` skills and `.specify/` can go.
    Then run `cobot-memory check` again: it names header fields still missing and CONTEXT
-   sections the brief drops; Verified commands and Constraints must stay in the brief.
+   sections the brief drops; Verified commands, Constraints and Environment, in that order of
+   priority, must stay in the brief.
 7. **Rules.** Dry-run each verified command with `cobot-rules check "<command>"`. The gate is
    already silent for a command no rule matches; an owner line `allow Bash(<command>*)` matters
    where `check` prints `ask` (a default `ask` rule, or a command the gate cannot see into, such

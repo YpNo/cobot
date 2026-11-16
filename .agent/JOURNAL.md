@@ -104,3 +104,11 @@ Proof: eval-ro-repro on 2.1.325 scored 0.50 with the default TMPDIR and 1.00 out
 Open: the rust-builder appended to src/lib.rs with cat >> and a heredoc in the builder-routing run (F-44, seen again); CI pins Claude Code 2.1.322, the workaround was proven on 2.1.325 and the eval job has not run with it yet.
 Next: owner pushes fix/eval-tmpdir and opens its PR; one dispatched eval run (inputs.cases: *-onboard) proves the CI side.
 verified: d0beb0f · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, zizmor, claude plugin validate, three eval cases
+
+## 2026-11-16 — the brief keeps Environment; the spec list stops growing
+Changed: ffed454 cobot-memory cap_sections gives room to the preamble, then Verified commands, Constraints and Environment in that priority, each only when it fits, then the rest in order; the brief's spec tail past three names the count and the three newest by date: (specs_by_date); onboard step 6 names the order; CHANGELOG Fixed; tests first.
+Why: cobot-memory check warned that cobot's brief dropped Environment (the rtk hook, git settings, versions); the owner asked to fix the brief rather than trim CONTEXT.md, once a journal compaction was shown not to help (the brief reads only the two newest entries, and the journal is 98 of 400 lines).
+Proof: four tests failed first (two cap_sections, the spec tail, the 20-spec budget case); two older tests changed with the order (Shape now fits once a huge Environment is skipped; Environment outranks Stack); cobot's own brief keeps Environment, 6000 of 6000, no warning; full suite 2794 passed, 98.69 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: cobot-memory check still prints every spec name on its own line (a check, not the brief).
+Next: owner pushes fix/brief-environment and opens its PR.
+verified: ffed454 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check

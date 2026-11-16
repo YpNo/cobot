@@ -55,7 +55,8 @@ needs the sandbox backend (`bubblewrap` and `socat` on
 Linux; on Ubuntu also the AppArmor user-namespace restriction lifted, as the eval job does).
 `--scaffold` runs each case's `fixture.sh` to seed the workspace; the default two-arm run scores
 the plugin against a no-plugin baseline, `--ablation none` runs one arm, `--runs 1` and
-`--case <glob>` keep a check cheap.
+`--case <glob>` keep a check cheap. A grader that cannot pass for a reason outside cobot waits in
+`plugins/cobot/evals-blocked/` (its README says what blocks it).
 
 Live spikes that need a logged-in CLI, rerun when a Claude Code upgrade may change hook
 behaviour: `sh scripts/spikes/spike-coexistence.sh` and `sh scripts/spikes/spike-r1.sh`.

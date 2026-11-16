@@ -441,7 +441,7 @@ def cmd_init(mem: Memory, options: dict[str, str], flags: set[str]) -> str:
         if exclude.parent.is_dir() and ".agent" not in read_lines(exclude):
             with exclude.open("a", encoding="utf-8") as handle:
                 handle.write(".agent\n")
-        lines.append(f"foreign mode: {mem.dir} -> {external}; .agent excluded from git")
+        lines.append(f"foreign mode: {mem.dir} -> {external}; .agent excluded from git (.git/info/exclude)")
         lines.extend(write_never_push_rules(mem, external))
     mem.dir.mkdir(parents=True, exist_ok=True)
     profile = options.get("profile", "library")

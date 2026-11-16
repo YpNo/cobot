@@ -201,3 +201,11 @@ Proof: every Goal row measured with cobot-rules check on 4288978; the challenger
 Open: two live bypasses of existing rows (-R/--repo, gh aliases, unwrapped runners) until T01 lands; story 6's reworked design has not had a second challenger pass; F-36, F-40, F-44 stay open until the build.
 Next: owner decides whether T01 ships alone and whether to run a second challenger pass, then /cobot:build gate-f36-f40-f44.
 verified: 00f33b3 · gate dry runs, challenger pass
+
+## 2026-11-17 — gate T01: rows reach the commands they name
+Changed: ab9bb3a -R/--repo between a gh or glab group and its verb dropped, gh built-in aliases (gh 2.103.3 help) rewritten, fd -x/-X bodies judged, parallel and watch opaque; 97b18ef after a bypass review: every cobra reading of options before a gh/glab group or verb (moved after the verb, repository options dropped), an escaped or quoted ; is a word, fd -Hx clusters start a body, pkexec, run0, setsid, tmux, GNU parallel's family and job queues ask like xargs, busybox unwrapped, a gh user alias or extension asks with gh alias set|import, gh api kept out of the drop; docs/configuration.md, CHANGELOG Security.
+Why: the challenger of spec gate-f36-f40-f44 found live bypasses of existing never and ask rows in 0.3.0 (gh release -R o/r create v1, gh release new, gh pr new, watch git push, fd -x); the owner chose to ship T01 alone first.
+Proof: tests first (five failing, then five more after the review); a security reviewer attacked ab9bb3a and its four HIGH and two MEDIUM forms were each reproduced, then fixed with tests; an existing test (owner allow on a hole-free canonical form) caught a regression in the first cobra reading, fixed by dropping the repository options; consultant reads unchanged against the old gate; full suite 2970 passed, 98.55 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: gt and tea option placement not checked (not installed); watch git status now asks; T02–T06 of the spec pending; a second challenger pass on story 6 not run.
+Next: owner pushes security/gate-f36-f40-f44 and opens its PR (spec plus T01); T02–T06 follow on a new branch.
+verified: 97b18ef · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, bypass review

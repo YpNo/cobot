@@ -39,11 +39,14 @@ so every run costs money. `tests/test_eval_graders.py` checks the suite for free
 compiles, no case has more than one judge, every fixture runs clean.
 
 ```bash
-cd plugins/cobot && PATH="$PWD/bin:$PATH" claude plugin eval . --trust-plugin --scaffold --allow-tools Bash Write Edit "WebFetch(domain:github.com)" "WebFetch(domain:api.github.com)"
+mkdir -p ~/.cache/cobot-evals && cd plugins/cobot && TMPDIR="$HOME/.cache/cobot-evals" PATH="$PWD/bin:$PATH" claude plugin eval . --trust-plugin --scaffold --allow-tools Bash Write Edit "WebFetch(domain:github.com)" "WebFetch(domain:api.github.com)"
 ```
 
 Eval sessions do not get the plugin's `bin/` on PATH the way an installed plugin does, hence
-the prefix.
+the prefix. Each run lives under `TMPDIR`, and the eval sandbox denies Bash writes under `/tmp`,
+`/var/tmp`, `/dev/shm` and `/run/shm`, so with the default `TMPDIR` Bash cannot write its own
+workspace ([anthropics/claude-code#104631](https://github.com/anthropics/claude-code/issues/104631));
+any folder outside those works.
 
 A case's `allowed_tools` grants only read-only tools; `Bash`, `Write`, `Edit` and `WebFetch` come
 from `--allow-tools`, and that grant applies to every case in the run, so `allowed_tools` cannot
@@ -52,8 +55,8 @@ needs the sandbox backend (`bubblewrap` and `socat` on
 Linux; on Ubuntu also the AppArmor user-namespace restriction lifted, as the eval job does).
 `--scaffold` runs each case's `fixture.sh` to seed the workspace; the default two-arm run scores
 the plugin against a no-plugin baseline, `--ablation none` runs one arm, `--runs 1` and
-`--case <glob>` keep a check cheap. Eval Bash cannot write anywhere, the workspace included, so
-the cases that need it wait in `plugins/cobot/evals-blocked/` (its README says what blocks each).
+`--case <glob>` keep a check cheap. A grader that cannot pass for a reason outside cobot waits in
+`plugins/cobot/evals-blocked/` (its README says what blocks it).
 
 Live spikes that need a logged-in CLI, rerun when a Claude Code upgrade may change hook
 behaviour: `sh scripts/spikes/spike-coexistence.sh` and `sh scripts/spikes/spike-r1.sh`.

@@ -406,6 +406,12 @@ def layer_paths(cwd: str | None) -> dict[str, Path]:
     return {**fixed_layer_paths(), "project": repo_root(cwd) / ".agent" / "cobot.rules"}
 
 
+def shown_line(layer: str, line: str) -> str:
+    """A warning's copy of the rule line: the default and owner layers only. A project line is
+    repository text, and a hook's stderr may reach the owner, so it is named by its place (F-34)."""
+    return f": {line}" if layer in NOTE_LAYERS else ""
+
+
 def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule | None:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -416,14 +422,12 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
     else:
         mcp = MCP_RULE_RE.match(stripped)
         if not mcp:
-            warnings.append(f"{layer}:{number}: unreadable rule ignored: {stripped}")
+            warnings.append(f"{layer}:{number}: unreadable rule ignored{shown_line(layer, stripped)}")
             return None
         decision, pattern, agent, comment = mcp.groups()
         tool = "mcp"
     if layer == "project" and decision == "allow":
-        warnings.append(
-            f"{layer}:{number}: allow is not accepted from the project layer, ignored: {stripped}"
-        )
+        warnings.append(f"{layer}:{number}: allow is not accepted from the project layer, ignored")
         return None
     note = (comment or "").strip() if layer in NOTE_LAYERS else ""
     return Rule(decision, tool, pattern, agent, layer, number, note)
@@ -2206,7 +2210,23 @@ def expand_segment(segment: list[str], here: Dirs, depth: int, reached: Reached)
 
 
 def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
-    """``expand_segment`` for the segment as written."""
+    """``expand_segment`` for the segment as written; the commands a ``find`` runs follow it."""
+    argv = strip_wrappers(segment)
+    if argv[:1] and argv[0].lower() in FIND_PROGRAMS and depth < MAX_EXPANSION:
+        origin = show(" ".join(argv), shell.REGISTRY)[:MAX_ORIGIN]
+        tail = [
+            (t, o or origin, d)
+            for action, body in find_bodies(argv)
+            for t, o, d in expand_segment(
+                body, execdir_folders(argv, here) if action in FIND_IN_FOLDER else here, depth + 1, reached
+            )
+        ]
+        return [*expand_plain(segment, here, depth, reached), *tail]
+    return expand_plain(segment, here, depth, reached)
+
+
+def expand_plain(segment: list[str], here: Dirs, depth: int, reached: Reached) -> list[Placed]:
+    """``expand_cased`` without the ``find`` bodies."""
     plain = strip_wrappers(segment)
     literal = not hole_keys(segment) or holes_only_in_assignments(segment, plain)
     globbed = not literal and all_glob(segment) and prefix_key(segment, plain) is None and argv_runner(plain)
@@ -2427,12 +2447,160 @@ def program_of(segment: list[str]) -> list[str]:
     return strip_wrappers(program_folded(segment) or segment)
 
 
-def destroys(segment: list[str]) -> bool:
-    """Whether the segment deletes what it names: removing a protected folder's parent removes the
-    folder (``rm -r ~/.gemini``, behind any wrapper)."""
+GIO_DELETING = frozenset({"trash", "remove", "rm"})
+GIO_MOVING = frozenset({"move", "mv", "rename", "copy", "cp"})
+FIND_ACTIONS = frozenset({"-delete", "-exec", "-execdir", "-ok", "-okdir"})  # what it runs is judged apart
+FIND_IN_FOLDER = frozenset({"-execdir", "-okdir"})  # run in the folder of each entry found
+FIND_PROGRAMS = frozenset({"find", "gfind"})
+FIND_LEADING = frozenset({"-H", "-L", "-P"})  # options before the start paths; -D and -O take a value
+IMPLICIT_FOLDER = -1  # a deleting ``find`` also deletes under the folder it runs in
+FILES_FROM = -2  # a deleting ``find`` whose start paths come from a file or stdin
+
+
+# options naming the folder a command writes in, by program: (short options, long options)
+FOLDER_OPTIONS = {
+    "tar": (("-C",), ("--directory", "--one-top-level")),
+    "bsdtar": (("-C",), ("--directory",)),
+    "gtar": (("-C",), ("--directory", "--one-top-level")),
+    "unzip": (("-d",), ()),
+    "patch": (("-d",), ("--directory",)),
+    "git": (("-C",), ("--work-tree", "--git-dir")),
+}
+GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
+
+
+TAR_PROGRAMS = frozenset({"tar", "bsdtar", "gtar"})
+FOLDER_OPTIONS_MAX = 8  # folder options one segment may name; past it the segment asks
+TAR_VALUE_LETTERS = frozenset("fCbTXgNKVHL")  # old-style letters that take the next word
+LONG_PREFIX_MIN = 5  # getopt takes a unique prefix of a long option: ``--dir`` is ``--directory``
+GIT_FOLDER_VARIABLES = ("GIT_WORK_TREE=", "GIT_DIR=")
+
+
+def long_named(word: str, longs: tuple[str, ...]) -> bool:
+    name = word.split("=", 1)[0]
+    return len(name) >= LONG_PREFIX_MIN and any(option.startswith(name) for option in longs)
+
+
+def folder_options(segment: list[str]) -> list[str]:
+    """The folders a segment names as the place it writes (F-33): ``tar -C``, ``--directory`` and
+    ``--one-top-level``, ``unzip -d``, ``patch -d`` and ``--directory``, ``git -C``,
+    ``--work-tree`` and ``--git-dir`` (before git's verb only: ``git commit -C`` is a commit), and
+    ``GIT_WORK_TREE``/``GIT_DIR`` assignments; in separate, attached, ``=``, abbreviated long and
+    clustered short forms, and tar's old-style first word (``tar xfC e.tar dir``)."""
+    found = [w.split("=", 1)[1] for w in segment if w.startswith(GIT_FOLDER_VARIABLES)]
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    return head in DESTROYING or (head == "git" and "rm" in argv[1:3])
+    if head not in FOLDER_OPTIONS:
+        return [value for value in found if value]
+    shorts, longs = FOLDER_OPTIONS[head]
+    letters = "".join(option[1] for option in shorts)
+    i = 1
+    if head in TAR_PROGRAMS and argv[1:2] and argv[1][:1].isalpha():
+        takers = [letter for letter in argv[1] if letter in TAR_VALUE_LETTERS]
+        found += [argv[2 + n] for n, letter in enumerate(takers) if letter == "C" and 2 + n < len(argv)]
+        i = 2 + len(takers)
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        if head == "git" and not word.startswith("-"):
+            break  # the verb: what follows is its own options
+        if word.startswith("--") and long_named(word, longs):
+            found.append(word.split("=", 1)[1] if "=" in word else following)
+            i += 1 if "=" in word else 2
+            continue
+        cluster = (
+            re.fullmatch(rf"-([a-zA-Z]*?)([{letters}])(.*)", word)
+            if letters and not word.startswith("--")
+            else None
+        )
+        if cluster:
+            found.append(cluster.group(3) or following)
+            i += 1 if cluster.group(3) else 2
+        else:
+            i += 2 if head == "git" and word in GIT_VALUE_OPTIONS else 1
+    return [value for value in found if value]
+
+
+def deleted_words(segment: list[str]) -> frozenset[int]:
+    """The indexes of the words a segment deletes with what is under them: every word of ``rm``,
+    ``rmdir``, ``unlink``, ``shred``, ``trash``, ``git rm``, ``gio trash|remove``; the start paths
+    of a ``find`` with a deleting or running action (IMPLICIT_FOLDER when it names none). Removing
+    a protected folder's parent removes the folder (``rm -r ~/.gemini``, behind any wrapper)."""
+    argv = program_of(segment)
+    at = len(segment) - len(argv)
+    head = argv[0] if argv else ""
+    if (
+        head in DESTROYING
+        or (head == "git" and "rm" in argv[1:3])
+        or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
+    ):
+        return frozenset(range(at + 1, len(segment)))
+    if head not in FIND_PROGRAMS or not FIND_ACTIONS & set(argv):
+        return frozenset()
+    if "-files0-from" in argv:
+        return frozenset({FILES_FROM})
+    inside = {at + i for i in find_body_indexes(argv)}
+    words = {at + i for i in range(1, len(argv))} - inside
+    return frozenset(words if find_starts(argv) else words | {IMPLICIT_FOLDER})
+
+
+def find_starts(argv: list[str]) -> list[int]:
+    """The indexes of the start paths before a ``find``'s first expression (past ``-H``, ``-L``,
+    ``-P``, ``-D x``, ``-Ox`` and ``--``): with none, it searches the folder it runs in."""
+    i = 1
+    while i < len(argv) and (argv[i] in FIND_LEADING or argv[i] in ("-D", "--") or argv[i].startswith("-O")):
+        i += 2 if argv[i] == "-D" else 1
+    starts = []
+    while i < len(argv) and not argv[i].startswith(("-", "(", "!", ",")):
+        starts.append(i)
+        i += 1
+    return starts
+
+
+def find_body_indexes(argv: list[str]) -> set[int]:
+    """The indexes of the words an ``-exec``, ``-execdir``, ``-ok`` or ``-okdir`` runs, up to its
+    ``;`` or ``+``, the terminator included."""
+    found, i = set(), 0
+    while i < len(argv):
+        if argv[i] in FIND_ACTIONS - {"-delete"}:
+            j = i + 1
+            while j < len(argv) and argv[j] not in (";", "+"):
+                found.add(j)
+                j += 1
+            found.add(j)
+            i = j
+        i += 1
+    return found
+
+
+def find_bodies(argv: list[str]) -> list[tuple[str, list[str]]]:
+    """The commands a ``find`` runs on what it finds, with the action that runs each, so each is
+    judged like a command of its own."""
+    bodies, action, current = [], "", None
+    for word in argv:
+        if current is not None:
+            if word in (";", "+"):
+                bodies.append((action, current))
+                current = None
+            else:
+                current.append(word)
+        elif word in FIND_ACTIONS - {"-delete"}:
+            action, current = word, []
+    if current:
+        bodies.append((action, current))
+    return [(action, body) for action, body in bodies if body]
+
+
+def execdir_folders(argv: list[str], here: Dirs) -> Dirs:
+    """Where ``-execdir`` and ``-okdir`` run their command: the folder of each entry found, so at
+    least each start path and its parent (an entry deeper down is not followed)."""
+    if here is None:
+        return None
+    folders = set()
+    for index in find_starts(argv) or [None]:
+        for base in here:
+            start = Path(os.path.normpath(base / os.path.expanduser(argv[index]))) if index else base
+            folders.update({start, start.parent})
+    return frozenset(folders)
 
 
 def enters(segment: list[str]) -> bool:
@@ -2444,7 +2612,8 @@ def enters(segment: list[str]) -> bool:
 def relocates(segment: list[str]) -> bool:
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    return head in RELOCATING or (head == "git" and "mv" in argv[1:3])
+    gio = head == "gio" and bool(argv[1:2]) and argv[1] in GIO_MOVING
+    return head in RELOCATING or (head == "git" and "mv" in argv[1:3]) or gio
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -2559,6 +2728,60 @@ def glob_meets_anchor(token: str, cwd: str | None, anchors: frozenset[str], relo
     return relocating and bool(literal) and any(globs_meet(name, root) for root in CUSTOMIZATION_ROOTS_FOLDED)
 
 
+def merges_into_an_anchor(segment: list[str], base: str, anchors: frozenset[str]) -> str | None:
+    """The source of a copy or move into a folder that holds a protected folder's parent, when it
+    may land on that parent: its name is the next folder down (``cp -r x/.gemini ~``), or it
+    copies a folder's contents (a trailing ``/`` or ``/.``, ``-T``, a variable, a hole, find's
+    ``{}``). The target is ``-t``/``--target-directory`` when given, else the last word.
+    ``cp a ~`` stays silent."""
+    target, sources, contents = merge_parts(program_of(segment)[1:])
+    if target is None or not sources:
+        return None
+    folder = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1]))).casefold()
+    folder = folder.rstrip("/") + "/"
+    children = {a[len(folder) :].split("/")[0] for a in anchors if a.startswith(folder)}
+    if not children:
+        return None
+    for source in sources:
+        name = os.path.basename(source.rstrip("/")).casefold()
+        unknown = shell.has_sentinel(source) or "$" in source or "{}" in source
+        whole = source.endswith(("/", "/.")) or source == "."
+        if contents or unknown or whole or name in children:
+            return source
+    return None
+
+
+def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
+    """A copy or move's target, its sources, and whether it copies into the target itself
+    (``-T``): ``-t DIR``, ``-tDIR``, ``--target-directory[=]DIR`` and a cluster ending in ``t``."""
+    target, sources, contents, i = None, [], False, 0
+    while i < len(args):
+        word = args[i]
+        following = args[i + 1] if i + 1 < len(args) else None
+        if word.startswith("--target-directory"):
+            target, i = (word.split("=", 1)[1], i + 1) if "=" in word else (following, i + 2)
+            continue
+        if word in ("-T", "--no-target-directory") or re.fullmatch(r"-[a-zA-Z]*T[a-zA-Z]*", word):
+            contents = True
+        cluster = re.fullmatch(r"-([a-zA-Z]*)t(.*)", word) if not word.startswith("--") else None
+        if cluster:
+            target, i = (cluster.group(2), i + 1) if cluster.group(2) else (following, i + 2)
+            continue
+        if not word.startswith("-"):
+            sources.append(word)
+        i += 1
+    if target is None and len(sources) >= 2:
+        target = sources.pop()
+    return target, sources, contents
+
+
+def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
+    """Whether a folder holds a protected folder's parent: HOME and ``/`` hold ``~/.gemini``, so
+    deleting them deletes it (``rm -r ~``, ``find ~ -delete``)."""
+    folder = os.path.normpath(form).casefold().rstrip("/") + "/"
+    return any(anchor.startswith(folder) for anchor in anchors)
+
+
 def word_touches(
     token: str,
     cwd: str | None,
@@ -2593,7 +2816,7 @@ def word_touches(
     if any(matches_file(r, forms, fold=True) for r in protected):
         return True
     anchored = any(os.path.normpath(form).casefold() in anchors for form in forms)
-    if destroying and anchored:
+    if destroying and (anchored or any(holds_an_anchor(form, anchors) for form in forms)):
         return True
     if not relocating:
         return False
@@ -2624,11 +2847,46 @@ def protected_file_touched(
     for segment, dirs, command in jobs:
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
-        destroying = command and destroys(segment)
+        deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
         bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        folders = folder_options(segment) if command else []
+        if len(folders) > FOLDER_OPTIONS_MAX:
+            return folders[-1]  # past the cap the segment asks rather than judge every folder
+        origin, joined = list(bases), set()
+        for folder in folders:
+            for form in home_forms(folder):
+                if any(
+                    word_touches(form, base, protected, False, anchors, True, budget, True) for base in origin
+                ):
+                    return folder
+            homed_folder = os.path.expanduser(home_forms(folder)[-1])
+            joined.update(
+                os.path.normpath(os.path.join(b, homed_folder)) for b in origin
+            )  # linear, never compounded
+        bases = sorted({*bases, *joined})
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
+        if FILES_FROM in deleted:
+            return "-files0-from"
+        merged = relocating and next(
+            (found for found in (merges_into_an_anchor(segment, base, anchors) for base in bases) if found),
+            None,
+        )
+        if merged:
+            return merged
+        if IMPLICIT_FOLDER in deleted and any(
+            word_touches(".", base, protected, relocating, anchors, True, budget, entering) for base in bases
+        ):
+            return segment[0]
         for index, token in enumerate(segment):
+            destroying = index in deleted
+            value = token.split("=", 1)[1] if "=" in token else ""
+            if value and any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for form in home_forms(os.path.expanduser(value) if value.startswith("~") else value)
+                for base in bases
+            ):
+                return token
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):
@@ -3201,6 +3459,40 @@ def judge_segment(
     return best
 
 
+WRITING_SCRIPT = "a script that writes files: edit them with Edit or Write, not a script (cobot protocol)"
+PYTHON_RE = re.compile(r"python(?:\d+(?:\.\d+)?)?")
+# what a Python script calls to write a file: open() or .open() with a writing mode, the pathlib
+# writers, and the moves and copies of os and shutil
+PYTHON_WRITES_RE = re.compile(
+    r"\bopen\([^,)]*,\s*(?:mode\s*=\s*)?[rbt]*['\"][rbt]*[wax+]"
+    r"|\.open\(\s*(?:mode\s*=\s*)?['\"][rbt]*[wax+]"
+    r"|\.write_(?:text|bytes)\("
+    r"|\bshutil\.(?:copy\w*|move)\("
+    r"|\bos\.(?:replace|rename)\("
+)
+
+
+def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
+    """Whether a segment edits files through an interpreter: a Python script read from stdin or
+    ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
+    diff the owner sees and whose path the rules judge; a script is opaque to both, whatever the
+    host suggests. A script that only reads keeps its ask."""
+    argv = strip_wrappers(segment)
+    if not argv:
+        return False
+    head = argv[0].lower()
+    if head == "perl":
+        return any(re.fullmatch(r"-[a-zA-Z]*i\S*", word) for word in argv[1:] if not word.startswith("--"))
+    if not PYTHON_RE.fullmatch(head):
+        return False
+    words = argv[1:]
+    code = [show(words[words.index("-c") + 1], holes)] if "-c" in words[:-1] else []
+    reads_stdin = "-" in words or not [w for w in words if not w.startswith("-")]
+    if reads_stdin and not code:
+        code = [doc.body for doc in unit.heredocs]
+    return any(PYTHON_WRITES_RE.search(text) for text in code)
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -3232,6 +3524,8 @@ def judge_bash(
     for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
+        if writes_by_script(segment, unit, holes):
+            verdict = Verdict(DENY, None, WRITING_SCRIPT)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

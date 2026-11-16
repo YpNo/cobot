@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Eval Bash can write its own workspace again: the eval job and the documented local command set
+  `TMPDIR` outside `/tmp`, which the eval sandbox denies (anthropics/claude-code#104631, confirmed
+  on Claude Code 2.1.325). `foreign-onboard` and `new-project-onboard` are back in the suite; their
+  first full runs scored 1.00. `foreign-onboard`'s tree graders no longer count a write to the
+  memory under `.agent`, and `cobot-memory init --foreign` names `.git/info/exclude`. The
+  builder's proof grader stays in `evals-blocked/`, now for the run's missing Rust toolchain.
+- The session brief keeps CONTEXT.md's Environment section: when the brief is capped, Verified
+  commands, Constraints and then Environment get room first, each only when it fits, so a huge
+  Environment still never pushes out the commands. The brief's spec list no longer grows with
+  every spec: past three it gives the count and the three newest by their `date:`.
+- `cobot-memory init --trust-root` and `--add-identity` no longer crash when Bash cannot write
+  `~/.claude/cobot`. Claude Code's sandbox keeps most of the config directory read-only to Bash,
+  in sessions as in evals. init still writes the memory, then prints `trust not recorded:` with
+  the command for the owner's own terminal, and exits 1. The onboard skill carries on and hands
+  that command to the owner; a `new-project-onboard` grader checks the report names it.
+- `new-project-onboard`'s `no-second-onboard` grader no longer fails a report that says "Don't
+  re-run onboard": a re-run preceded by "don't", "do not" or "never" is the advice the skill
+  asks for, not a second onboard (run 43950232416).
+
+## [0.3.0] - 2026-11-15
+
+cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,
+self-protection and an install whose hook group gets a random name, so a repository cannot switch
+the gate off. The gate also closes a set of path gaps in both runtimes (symlinks, case-insensitive
+volumes, `$HOME` written for `~`, words after a `cd`, links reached by a glob, deletions and folder
+options that take a protected folder with them), shows a project rule by its place rather than
+its text, and denies a script that writes files in favour of Edit or Write. `expert-ui` gains A2UI
+knowledge, `expert-gha` two lines from a real CI run, and the session brief keeps its budget.
+
 ### Added
 
 - A2UI knowledge in `expert-ui` (knowledge only, no code): `references/a2ui.md` holds the
@@ -76,6 +107,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `expert-gha` learned two lines from the curriculo CI run: pin zizmor-action's `version:` to the
+  local audit's CLI, and a floating `channel = "stable"` in rust-toolchain.toml moves CI with each
+  Rust release. Curated from `learn/gha`: a release snapshot, a superseded line and a private
+  repository source were left out (F-42).
+- A script that writes files is denied with a reason pointing to Edit or Write (a Python
+  script from stdin or `-c` that writes, `perl -i`), and the protocol says so whatever the host
+  suggests; a script that only reads keeps its ask (part of F-44).
 - Version 0.3.0 in both plugin manifests and the marketplace; `release.yml` checks the
   Antigravity manifest against the tag too.
 - The plugin tree splits for a second runtime (Antigravity, T01): Claude Code's nine agents move to
@@ -100,6 +138,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Gate F-33 and F-34 (both runtimes; `.agent/specs/gate-f33-f34.md`): `find` with a deleting
+  or running action, `gio trash|remove` and deleting HOME or `/` ask when they take a protected
+  folder with them; the folder `tar -C`, `unzip -d`, `patch -d` and `git -C` name is checked and
+  resolves the command's relative words; a project rule's warning names its line, not its text.
 - Gate residuals (F-29 to F-32, both runtimes; `.agent/specs/gate-residuals.md`): a project
   row's reason shows its place, not its pattern or tool name; `never` and `ask` path rows and the
   program word compare without case (macOS volumes); `$HOME/` reads as `~/`, which the `~/.gemini`

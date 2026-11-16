@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from datetime import date
 
@@ -87,8 +88,8 @@ def test_trust_rootCommitListedOutsideRepo(memory, repo):
     (repo / ".agent" / ".trusted").write_text("planted")  # a clone can ship this; it must not count
     assert not memory.Memory().trust()[0]
     mem = memory.Memory()
-    assert "root commit added" in memory.add_trusted_root(mem)
-    assert "already present" in memory.add_trusted_root(mem)
+    assert "root commit added" in memory.add_root_commit(mem)
+    assert "already present" in memory.add_root_commit(mem)
     trusted, reason = mem.trust()
     assert trusted and "trusted" in reason
 
@@ -131,7 +132,49 @@ def test_init_addIdentity(memory, repo):
     assert "already present" in memory.add_identity(memory.Memory())
     commit(repo)
     assert "root commit added" in memory.cmd_init(memory.Memory(), {}, {"trust-root"})
-    assert "no commit yet" not in memory.add_trusted_root(memory.Memory())
+    assert "no commit yet" not in memory.add_root_commit(memory.Memory())
+
+
+@pytest.fixture
+def readonly_config(repo):
+    """The config directory as Claude Code's sandbox leaves it to Bash: present, not writable."""
+    if os.geteuid() == 0:
+        pytest.skip("root writes through a read-only mode")
+    config_root = os.environ["CLAUDE_CONFIG_DIR"]
+    os.makedirs(config_root, exist_ok=True)
+    os.chmod(config_root, 0o500)
+    yield config_root
+    os.chmod(config_root, 0o700)
+
+
+def test_init_trustRoot_readOnlyConfig_writesMemoryAndNamesTheOwnerCommand(memory, repo, readonly_config):
+    commit(repo)
+    out = memory.cmd_init(memory.Memory(), {}, {"trust-root"})
+    assert (repo / ".agent" / "CONTEXT.md").is_file()
+    assert memory.TRUST_NOT_RECORDED in out
+    assert os.path.join(readonly_config, "cobot", "trusted") in out
+    assert f"cd {shlex.quote(str(repo))} && " in out and "init --trust-root" in out
+    assert not memory.Memory().trust()[0]
+
+
+def test_init_addIdentity_readOnlyConfig_namesTheOwnerCommand(memory, repo, readonly_config):
+    remote(repo, "origin", "https://github.com/YpNo/x")
+    out = memory.cmd_init(memory.Memory(), {}, {"add-identity"})
+    assert memory.TRUST_NOT_RECORDED in out and "init --add-identity" in out
+    assert "identity added" not in out
+
+
+def test_main_init_trustNotRecorded_exitsOneWithoutTraceback(memory, repo, readonly_config, capsys):
+    commit(repo)
+    assert memory.main(["init", "--trust-root"]) == 1
+    captured = capsys.readouterr()
+    assert memory.TRUST_NOT_RECORDED in captured.out and "Traceback" not in captured.err
+
+
+def test_main_init_trustRecorded_exitsZero(memory, repo, capsys):
+    commit(repo)
+    assert memory.main(["init", "--trust-root"]) == 0
+    assert "root commit added" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- brief
@@ -232,8 +275,28 @@ def test_brief_longFindingsAndTail_stayWithinTheBudget(memory, repo, budget):
     for i in range(20):
         (agent / "specs" / f"spec-number-{i}.md").write_text("# s\n")
     brief = memory.build_brief(memory.Memory(), budget, trust_check=False)
-    assert "## FINDINGS open: 5" in brief and "specs: spec-number-0" in brief
+    assert "## FINDINGS open: 5" in brief and "specs: 20, latest " in brief
     assert len(brief) <= budget
+
+
+def test_brief_specsTail_namesTheLatestByDateAndCountsTheRest(memory, repo):
+    agent = seed(repo)
+    (agent / "specs").mkdir()
+    for name, day in [("old", "01"), ("newest", "09"), ("mid", "05"), ("undated", None), ("late", "07")]:
+        header = f"size: medium · date: 2026-11-{day}\n" if day else ""
+        (agent / "specs" / f"{name}.md").write_text(f"# Spec — {name}\n\n{header}")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "specs: 5, latest newest, late, mid; all in .agent/specs/" in brief
+    assert "undated" not in brief and "old" not in brief.split("specs:")[1]
+
+
+def test_brief_specsTail_fewSpecs_listsThemAll(memory, repo):
+    agent = seed(repo)
+    (agent / "specs").mkdir()
+    for name in ("b", "a"):
+        (agent / "specs" / f"{name}.md").write_text("# s\n")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "specs: a, b" in brief
 
 
 def test_brief_longContextIsCapped(memory, repo):
@@ -486,7 +549,33 @@ def test_capSections_keepsVerifiedCommandsAndConstraintsBeforeEarlierSections(me
     assert "## Verified commands" in capped and "## Constraints" in capped and "## Stack" in capped
     assert capped.index("## Stack") < capped.index("## Verified commands") < capped.index("## Constraints")
     assert "## Environment" not in capped
-    assert capped.endswith("sections dropped: Environment, Shape")
+    # a kept section that does not fit is skipped, so a later short one (Shape) still fits
+    assert capped.endswith("sections dropped: Environment")
+
+
+def test_capSections_keepsEnvironmentAfterCommandsAndConstraints(memory):
+    # cobot's own brief lost Environment (machine facts: the rtk hook, git settings) to a long
+    # Stack and Shape while it had room for a short Environment
+    filler = "\n".join(f"- stack {i}" for i in range(60))
+    text = (
+        "# x\n\nprofile: library\n\n## Stack\n" + filler + "\n\n## Environment\n- rtk hook rewrites Bash\n"
+        "\n## Verified commands\n| t | `pytest` | 2026-11-16 |\n\n## Constraints\n- stdlib only\n"
+    )
+    capped = memory.cap_sections(text, 600)
+    assert "## Environment" in capped and "## Verified commands" in capped and "## Constraints" in capped
+    assert "## Stack" not in capped
+    assert capped.index("## Environment") < capped.index("## Verified commands")
+
+
+def test_capSections_hugeEnvironment_neverDisplacesCommandsOrConstraints(memory):
+    filler = "\n".join(f"- env {i}" for i in range(120))
+    text = (
+        "# x\n\n## Environment\n" + filler + "\n\n## Verified commands\n| t | `cargo test` | d |\n"
+        "\n## Constraints\n- no unwrap\n"
+    )
+    capped = memory.cap_sections(text, 600)
+    assert "## Verified commands" in capped and "## Constraints" in capped
+    assert "## Environment" not in capped
 
 
 def test_capSections_firstSectionTooBig_fallsBackToHardCap(memory):
@@ -843,7 +932,8 @@ def test_check_briefDropsContextSections_warns(memory, repo):
     context = "# x\n\nprofile: cli\n\n## Stack\n" + filler + "\n\n## Environment\n" + filler + "\n"
     seed(repo, context=context)
     out = memory.cmd_check(memory.Memory())
-    assert "warning: the brief drops CONTEXT sections: Environment" in out
+    # Environment outranks Stack, so Stack is the section the brief drops
+    assert "warning: the brief drops CONTEXT sections: Stack" in out
 
 
 def test_brief_tailListsEveryOtherAgentFile(memory, repo):

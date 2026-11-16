@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 EVALS = Path(__file__).resolve().parents[1] / "plugins" / "cobot" / "evals"
-# cases set aside until eval Bash can write to its workspace (evals-blocked/README.md)
+# graders set aside for a reason outside cobot (evals-blocked/README.md)
 BLOCKED = EVALS.parent / "evals-blocked"
 GRADER_TYPES = {"regex", "tool_used", "llm", "file_exists", "tool_order"}
 
@@ -230,7 +230,7 @@ def test_consultFanOut_readListOnly_failsTheCatchAllAskNotAReadListCommand():
 
 
 def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
-    found = graders("new-project-onboard", BLOCKED)
+    found = graders("new-project-onboard", EVALS)
     good = "Wrote .agent/ for a cli project; the language is left to the spec. Next: /cobot:spec <goal>."
     bad = "Once you confirm the language and the first commit lands, re-run `/cobot:onboard`."
     assert matches(found["next-is-spec"], good) and matches(found["no-second-onboard"], good)
@@ -240,6 +240,36 @@ def test_newProjectOnboard_gradesTheLatexCaseAsAFailure(tmp_path):
     assert not re.search(profile, '{"command": "cobot-memory init --help"}')
 
 
+@pytest.mark.parametrize(
+    "report",
+    [
+        "Then run /cobot:spec <goal>. Don't re-run onboard.",  # run 43950232416, scored as a failure
+        "Then run /cobot:spec <goal>. Don’t re-run onboard.",
+        "Do not re-run `/cobot:onboard`: the spec's scaffold task records the commands.",
+        "You should never rerun /cobot:onboard for this.",
+    ],
+)
+def test_newProjectOnboard_noSecondOnboard_negatedAdviceIsNotASecondOnboard(report):
+    grader = graders("new-project-onboard", EVALS)["no-second-onboard"]
+    assert matches(grader, report)
+
+
+@pytest.mark.parametrize(
+    "report",
+    ["Then re-run `/cobot:onboard`.", "Once the trust is recorded, rerun onboard.", "Re-run /cobot:onboard."],
+)
+def test_newProjectOnboard_noSecondOnboard_stillFailsTheAdvice(report):
+    grader = graders("new-project-onboard", EVALS)["no-second-onboard"]
+    assert not matches(grader, report)
+
+
+def test_newProjectOnboard_trustHandedToOwner_needsTheCommandInTheReport():
+    # run 43927352477: the sandbox keeps ~/.claude read-only, so init cannot record the trust
+    grader = graders("new-project-onboard", EVALS)["trust-handed-to-owner"]
+    assert matches(grader, "Run in your own terminal: cd /x && cobot-memory init --trust-root")
+    assert not matches(grader, "The root commit is trusted. Next: /cobot:spec <goal>.")
+
+
 def test_newProjectOnboard_fixtureRootCommitIsUniquePerRun(tmp_path):
     # a fixed root is public; once trusted, any repository merging it in would be trusted too
     roots = []
@@ -247,10 +277,19 @@ def test_newProjectOnboard_fixtureRootCommitIsUniquePerRun(tmp_path):
         workspace = tmp_path / run
         workspace.mkdir()
         env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
-        fixture = str(BLOCKED / "new-project-onboard" / "fixture.sh")
+        fixture = str(EVALS / "new-project-onboard" / "fixture.sh")
         subprocess.run(["bash", fixture], cwd=workspace, env=env, check=True)
         out = subprocess.run(
             ["git", "rev-list", "--max-parents=0", "HEAD"], cwd=workspace, capture_output=True, text=True
         )
         roots.append(out.stdout.strip())
     assert all(roots) and roots[0] != roots[1]
+
+
+@pytest.mark.parametrize("name", ["no-tree-write", "no-tree-edit"])
+def test_foreignOnboard_treeGraders_countRepositoryFilesNotTheMemory(name):
+    # the memory is .agent, a symlink out of the tree: writing it is the onboarding's job
+    pattern = re.compile(graders("foreign-onboard")[name]["input_match"])
+    assert pattern.search('{"file_path":"/run/home/cwd/demo.go","content":"x"}')
+    assert pattern.search('{"file_path":"/run/home/cwd/docs/agent.md"}')
+    assert not pattern.search('{"file_path":"/run/home/cwd/.agent/CONTEXT.md","content":"x"}')

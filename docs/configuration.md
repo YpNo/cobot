@@ -26,7 +26,7 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
 | `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
 | `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live |
+| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live; Claude Code's sandbox keeps it read-only to Bash, so with the sandbox on the owner runs `cobot-memory init --add-identity` or `--trust-root` in their own terminal |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
@@ -40,8 +40,10 @@ MCP tool. Examples: `ask Bash(git push*)`, `never Edit(~/.claude/settings*.json)
 `allow Bash(cargo test*)`, `allow mcp__claude-in-chrome__*`, `ask mcp__supabase__get_publishable_keys`.
 A trailing `# comment` on a default or owner row joins the reason the gate gives, as in
 `ask Bash(agy *) # may replace or bypass the cobot gate`; a project-layer comment is dropped and a
-project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), so repository
-text never speaks in a permission prompt.
+project row is shown by its place only (`ask Bash rule at .agent/cobot.rules:4`), and a warning
+about one names its line only (`project:4: unreadable rule ignored`), so repository text never
+speaks in a permission prompt or on the hook's stderr. `/cobot:rules explain`, `show` and `sync`
+print the project rules on your own terminal, by design.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
@@ -65,14 +67,28 @@ The protected-file check reads a path the way the shell and the disk will
   through a glob) asks, like moving it; a `cd` target, a move, a link or a deletion written as a
   glob is judged by the names the glob expands to;
 - `~+` as the folder the command runs in; `~-` and `~1` (OLDPWD, the directory stack) ask;
+- a deletion that takes a protected folder with it asks: `find` with `-delete`, `-exec`,
+  `-execdir`, `-ok` or `-okdir` (its start paths), `gio trash|remove`, and deleting HOME or `/`;
+- a folder an option names as the place a command writes (`tar -C`, `unzip -d`, `patch -d`,
+  `git -C`, `--work-tree`, `--git-dir`) is checked the same way, and the command's relative words
+  resolve in it (.agent/specs/gate-f33-f34.md);
 - a command whose working folder is inside a `never` folder row asks once, naming the folder.
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
+`git -C ~ …`, `git -C .. …` from a project directly in HOME, and `tar -C ~ …` (HOME holds
+`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` body meets the rows its
+command meets (`find … -exec rm -rf {} +` asks like `rm -rf`);
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
-the check and the run, and the open findings F-33 (`find -delete`, `tar -C` and other folder
-options) and F-34.
+the check and the run, archive members not written on the command line, folder options of
+other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
+`busybox find` or `fd -x`.
+
+A script that writes files is denied, whatever the host suggests: a Python script read from stdin
+or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,
+`shutil.move`, `os.replace` or `os.rename`, and `perl -i`. Edit and Write show you the diff and
+meet the path rules; a script is opaque to both. A script that only reads keeps its ask.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

@@ -6,5 +6,5 @@
     "MD060": false,
     "MD024": { "siblings_only": true }
   },
-  "ignores": ["node_modules", "docs/reference/**", "docs/design-inputs/**", "docs/history/**", ".agent/**", "plugins/cobot/evals/**", "plugins/cobot/evals-blocked/*/**"]
+  "ignores": ["node_modules", "docs/reference/**", "docs/design-inputs/**", "docs/history/**", ".agent/**", "plugins/cobot/evals/**", "plugins/cobot/evals-blocked/*/**", ".claude/worktrees/**"]
 }

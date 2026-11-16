@@ -97,6 +97,14 @@ Open: the onboarding environment build (spec on feat/onboard-environment) is not
 Next: owner pushes chore/release-0.3.0, merges, then pushes the annotated tag v0.3.0; release.yml publishes the GitHub release.
 verified: f787e05 · release version check, notes extraction, markdownlint, check-plugin
 
+## 2026-11-16 — eval runs outside /tmp; two blocked cases restored
+Changed: 2a5546c ci.yml's eval step sets TMPDIR under RUNNER_TEMP (the traces upload follows it), docs/development.md's local command uses ~/.cache/cobot-evals, the mechanics note corrected with anthropics/claude-code#104631; cc88212 foreign-onboard and new-project-onboard back under evals/, foreign-onboard's tree graders skip writes under .agent, cobot-memory init --foreign names .git/info/exclude, a grader test; proof-quoted stays blocked, now on the run's missing Rust toolchain; d0beb0f CHANGELOG.
+Why: the owner asked to check for an existing upstream issue (#104631 and #104797 were open, with a TMPDIR workaround), posted a 2.1.325 confirmation, and asked to apply the workaround.
+Proof: eval-ro-repro on 2.1.325 scored 0.50 with the default TMPDIR and 1.00 outside /tmp (the owner's runs); new-project-onboard 1.00, foreign-onboard 1.00 after the grader fix (0.67 before: a Write to .agent/CONTEXT.md and no info/exclude named), builder-routing 0.75 (cargo: no installed toolchains), one run each on 2.1.325; full suite 2794 passed, 98.68 %; ruff, markdownlint, check-plugin, sync-agents --check, zizmor (same three low as main), claude plugin validate.
+Open: the rust-builder appended to src/lib.rs with cat >> and a heredoc in the builder-routing run (F-44, seen again); CI pins Claude Code 2.1.322, the workaround was proven on 2.1.325 and the eval job has not run with it yet.
+Next: owner pushes fix/eval-tmpdir and opens its PR; one dispatched eval run (inputs.cases: *-onboard) proves the CI side.
+verified: d0beb0f · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, zizmor, claude plugin validate, three eval cases
+
 ## 2026-11-16 — the brief keeps Environment; the spec list stops growing
 Changed: ffed454 cobot-memory cap_sections gives room to the preamble, then Verified commands, Constraints and Environment in that priority, each only when it fits, then the rest in order; the brief's spec tail past three names the count and the three newest by date: (specs_by_date); onboard step 6 names the order; CHANGELOG Fixed; tests first.
 Why: cobot-memory check warned that cobot's brief dropped Environment (the rtk hook, git settings, versions); the owner asked to fix the brief rather than trim CONTEXT.md, once a journal compaction was shown not to help (the brief reads only the two newest entries, and the journal is 98 of 400 lines).

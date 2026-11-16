@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Eval Bash can write its own workspace again: the eval job and the documented local command set
+  `TMPDIR` outside `/tmp`, which the eval sandbox denies (anthropics/claude-code#104631, confirmed
+  on Claude Code 2.1.325). `foreign-onboard` and `new-project-onboard` are back in the suite; their
+  first full runs scored 1.00. `foreign-onboard`'s tree graders no longer count a write to the
+  memory under `.agent`, and `cobot-memory init --foreign` names `.git/info/exclude`. The
+  builder's proof grader stays in `evals-blocked/`, now for the run's missing Rust toolchain.
 - The session brief keeps CONTEXT.md's Environment section: when the brief is capped, Verified
   commands, Constraints and then Environment get room first, each only when it fits, so a huge
   Environment still never pushes out the commands. The brief's spec list no longer grows with

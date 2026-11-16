@@ -68,12 +68,15 @@ Silent and unchanged:
 ## Stories and acceptance
 
 0. **Existing rows reach their commands.**
-   - For `gh`, `glab`, `gt` and `tea`, a reading drops `-R`, `--repo[=]` and `--hostname`
-     wherever they stand after the group word.
+   - For `gh` and `glab`, the canonical form drops `-R`, `--repo[=]`, `-R<value>` (and gh's
+     `--hostname`) between the group word and the verb. `gt` and `tea` are not installed here, so
+     their option placement could not be checked: left as they are, noted in the PR.
    - `CLI_ALIASES` gains a `gh` entry, taken from the ALIASES sections of `gh <group> --help`
      (gh 2.103): `new` for `create` and `remove` for `delete` per group, `ext`/`extensions` for
-     `extension`, `cs` for `codespace`, and the rest the help names.
-   - `fd -x/-X/--exec/--exec-batch`, `parallel` and `watch` are unwrapped like `find -exec`.
+     `extension`, `cs` for `codespace`, and the rest the help names. `gh release new` was a live
+     bypass of a never row.
+   - `fd -x/-X/--exec[=]/--exec-batch` bodies are judged like `find -exec`. `parallel` and
+     `watch` run a shell command line, so they ask as opaque runners, as `xargs` does.
    - Accept: the story-0 rows match the same row as their plain forms; one test per CLI and runner.
 1. **Outward and account commands ask.** A command that changes the forge account, a
    repository's settings, CI state or the machine's global tool configuration asks.

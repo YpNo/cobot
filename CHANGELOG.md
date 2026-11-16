@@ -65,6 +65,18 @@ All notable changes to this project are documented here. The format follows
   re-run onboard": a re-run preceded by "don't", "do not" or "never" is the advice the skill
   asks for, not a second onboard (run 43950232416).
 
+### Security
+
+- Gate rows now reach commands that skipped them in 0.3.0:
+  - `-R`/`--repo` between a `gh` or `glab` group and its verb is skipped. `gh release -R o/r
+    create v1` was silent, past a never row.
+  - `gh`'s built-in aliases are read as their commands. `gh release new` passed the never row,
+    and `gh pr new` and `gh issue new` passed the ask rows.
+  - The command after `fd -x`/`-X` is judged, as after `find -exec`.
+  - `parallel` and `watch` ask like `xargs`.
+
+  Spec gate-f36-f40-f44, task T01.
+
 ## [0.3.0] - 2026-11-15
 
 cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,

@@ -79,14 +79,15 @@ The protected-file check reads a path the way the shell and the disk will
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
 `git -C ~ …`, `git -C .. …` from a project directly in HOME, and `tar -C ~ …` (HOME holds
-`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` body meets the rows its
-command meets (`find … -exec rm -rf {} +` asks like `rm -rf`);
+`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` or `fd -x`/`-X` body meets the
+rows its command meets (`find … -exec rm -rf {} +` asks like `rm -rf`); `parallel` and `watch`
+run a shell command line, so they ask like `xargs`;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
 the check and the run, archive members not written on the command line, folder options of
 other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
-`busybox find` or `fd -x`.
+`busybox find`.
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,
@@ -124,7 +125,10 @@ whose value is a ruled verb reads as that verb (`npm --zz publish test` is denie
 `npm --prefix web test`) asks, a prompt on common monorepo commands that the form without the
 option avoids. `npm` verbs are read as npm reads them (an alias or a unique prefix: `npm publ`
 is `npm publish`), `pnpm recursive <verb>` as `pnpm <verb>`, and `git -c alias.…` asks (the
-verb is an alias the line defines).
+verb is an alias the line defines). The forge CLIs' built-in aliases are read as their commands
+(`gh pr new` is `gh pr create`, `gh secret remove` is `gh secret delete`, `glab mr new`, `tea r
+c`), and `-R`/`--repo` between a `gh` or `glab` group and its verb is skipped (`gh release -R o/r
+create` is `gh release create`). A user alias defined with `gh alias set` is not known.
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's

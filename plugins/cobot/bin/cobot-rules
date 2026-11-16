@@ -105,7 +105,8 @@ MCP_WRITE_WORDS = frozenset(
 )
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
-    "xargs sudo doas su make gmake just task npx ssh mosh".split()
+    "xargs sudo doas su make gmake just task npx ssh mosh "
+    "parallel watch".split()  # each runs a command line through a shell, like xargs
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -1284,7 +1285,26 @@ _GT_VERBS = {"new": "create", "rm": "delete", "add": "create"}
 _TEA_VERBS = {"c": "create", "e": "edit", "rm": "delete", "ls": "list", "open": "reopen"}
 # CLI aliases rewritten to their canonical command before matching (read 2026-11-10 from each
 # CLI's source or docs), so one rule row covers every alias form: group alias → (group, verbs).
+_LS = {"ls": "list"}
+# gh 2.103.3, the ALIASES sections of `gh <group> [<verb>] --help`, read 2026-11-17
+_GH_GROUPS: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
+    "pr": ((), {**_LS, "new": "create", "co": "checkout"}),
+    "issue": ((), {**_LS, "new": "create"}),
+    "release": ((), {**_LS, "new": "create"}),
+    "repo": ((), {**_LS, "new": "create"}),
+    "gist": ((), {**_LS, "new": "create"}),
+    "secret": ((), {**_LS, "remove": "delete"}),
+    "variable": ((), {**_LS, "remove": "delete"}),
+    "extension": (("extensions", "ext"), {**_LS, "uninstall": "remove"}),
+    "codespace": (("cs",), _LS),
+    "ruleset": (("rs",), _LS),
+    "attestation": (("at",), {}),
+    "agent-task": (("agent-tasks", "agent", "agents"), {}),
+    **{group: ((), _LS) for group in ("alias", "cache", "config", "gpg-key", "label", "org", "project")},
+    **{group: ((), _LS) for group in ("run", "ssh-key", "workflow")},
+}
 CLI_ALIASES: dict[str, dict[str, tuple[str, dict[str, str]]]] = {
+    "gh": {name: (group, verbs) for group, (names, verbs) in _GH_GROUPS.items() for name in (group, *names)},
     "glab": {
         "mr": ("mr", {"new": "create", "accept": "merge", "comment": "note"}),
         "issue": ("issue", {"new": "create", "comment": "note"}),
@@ -1363,6 +1383,30 @@ def canonical_alias(tokens: list[str]) -> list[str]:
     if rest and rest[0] in verbs:
         rest = [verbs[rest[0]], *rest[1:]]
     return [tokens[0], group, *rest]
+
+
+# options gh and glab take between the group word and the verb (gh 2.103 lists -R/--repo as an
+# inherited flag of every repository command): `gh release -R o/r create` is `gh release create`
+GROUP_OPTIONS = {"gh": ("-R", "--repo", "--hostname"), "glab": ("-R", "--repo")}
+
+
+def drop_group_options(tokens: list[str]) -> list[str]:
+    """``gh release -R o/r create v1``, ``--repo=o/r`` and ``-Ro/r`` become ``gh release create
+    v1``, so the rows naming ``<cli> <group> <verb>`` see the verb. Only the options before the
+    verb move: later ones already sit under the row's trailing ``*``."""
+    names = GROUP_OPTIONS.get(tokens[0]) if tokens else None
+    if not names or len(tokens) < 3 or option_word(tokens[1]):
+        return tokens
+    rest, i = tokens[2:], 0
+    while i < len(rest) and option_word(rest[i]):
+        word, name = rest[i], rest[i].split("=", 1)[0]
+        if name in names:
+            i += 1 if "=" in word else 2
+        elif any(word.startswith(short) and len(word) > 2 for short in names if len(short) == 2):
+            i += 1  # pflag's attached shorthand value: -Ro/r
+        else:
+            break
+    return tokens if i == 0 else [*tokens[:2], *rest[i:]]
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:
@@ -2222,6 +2266,14 @@ def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -
             )
         ]
         return [*expand_plain(segment, here, depth, reached), *tail]
+    if argv[:1] and argv[0].lower() in FD_PROGRAMS and depth < MAX_EXPANSION:
+        origin = show(" ".join(argv), shell.REGISTRY)[:MAX_ORIGIN]
+        tail = [
+            (t, o or origin, d)
+            for body in fd_bodies(argv)
+            for t, o, d in expand_segment(body, here, depth + 1, reached)
+        ]
+        return [*expand_plain(segment, here, depth, reached), *tail]
     return expand_plain(segment, here, depth, reached)
 
 
@@ -2297,7 +2349,9 @@ def expand_units(
 
 def canonical(tokens: list[str]) -> list[str]:
     return canonical_gcloud(
-        canonical_gh_api(canonical_alias(canonical_package_manager(expand_push_flags(tokens))))
+        canonical_gh_api(
+            canonical_alias(drop_group_options(canonical_package_manager(expand_push_flags(tokens))))
+        )
     )
 
 
@@ -2588,6 +2642,30 @@ def find_bodies(argv: list[str]) -> list[tuple[str, list[str]]]:
     if current:
         bodies.append((action, current))
     return [(action, body) for action, body in bodies if body]
+
+
+FD_PROGRAMS = frozenset({"fd", "fdfind"})  # fdfind is Debian's name for fd
+FD_ACTIONS = frozenset({"-x", "--exec", "-X", "--exec-batch"})  # each takes the words after it, up to ;
+
+
+def fd_bodies(argv: list[str]) -> list[list[str]]:
+    """The commands ``fd -x``/``-X`` runs on what it finds, judged like a command of its own (as
+    ``find -exec``); fd reads every word after the action as the command, up to a ``;``."""
+    bodies, current = [], None
+    for word in argv[1:]:
+        if current is not None:
+            if word == ";":
+                bodies.append(current)
+                current = None
+            else:
+                current.append(word)
+        elif word in FD_ACTIONS:
+            current = []
+        elif word.split("=", 1)[0] in FD_ACTIONS and "=" in word:
+            current = [word.split("=", 1)[1]]  # --exec=git push: the value is the program
+    if current:
+        bodies.append(current)
+    return [body for body in bodies if body]
 
 
 def execdir_folders(argv: list[str], here: Dirs) -> Dirs:

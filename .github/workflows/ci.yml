@@ -129,6 +129,11 @@ jobs:
           # an installed plugin has bin/ on PATH; eval sessions do not get it (run 43494320182:
           # cobot-rules: command not found), and they inherit this PATH
           PATH="$PWD/bin:$PATH"
+          # eval runs live under TMPDIR, and the sandbox denies writes under /tmp, so with the
+          # default TMPDIR Bash cannot write its own workspace (anthropics/claude-code#104631)
+          TMPDIR="$RUNNER_TEMP/eval"
+          export TMPDIR
+          mkdir -p "$TMPDIR"
           # --keep-temp keeps each run's trace, the only record of what the session did; a grant
           # applies to every case, and eval Bash reaches only the domains granted as WebFetch(domain:…)
           set -- --trust-plugin --scaffold --no-publish --keep-temp --runs 3 --threshold 1.0 \
@@ -152,6 +157,6 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: eval-traces
-          path: /tmp/claude-eval-*/out/trace.jsonl
+          path: ${{ runner.temp }}/eval/claude-eval-*/out/trace.jsonl
           if-no-files-found: warn
           retention-days: 14

@@ -177,3 +177,11 @@ Proof: the new env tests and the grader rule failed first (KeyError shims; both 
 Open: neither case has run in CI on 2.1.322; F-47 (init --trust-root writes ~/.claude/cobot while check reads the run's CLAUDE_CONFIG_DIR); F-36, F-46 as before.
 Next: owner pushes feat/onboard-environment and opens the PR with the body in PR-onboard-environment.md at the worktree root (untracked); a dispatched eval run for both cases.
 verified: 15205dc · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check, eval onboard-runs-question (local, 1 run)
+
+## 2026-11-16 — onboard-environment: shims not trusted in foreign mode
+Changed: f20b2b6 cobot-env reads foreign mode from a .agent symlink at the repository root (no git call) and then puts every mise or asdf shim under not trusted, never under shims; runnable() decides what onboarding may run; the report says 'not trusted (foreign repository: shims too)'; the onboard skill, cobot-env's usage, _cobot_env's docstring, decision 29, architecture and CHANGELOG say both cases.
+Why: the owner's decision on f3a16e3, relayed by the parent session ('I follow your recommandation'): shims run in the owner's own repositories and are untrusted in foreign mode, as the spec had it.
+Proof: three tests failed first (KeyError foreign twice; the foreign run listed three shims under shims), then passed: foreign repository reports a mise shim as not trusted, the owner's repository as a shim, and the foreign path never lists a shim under shims (mise and asdf, helpers and programs, report and data); full suite 2949 passed, 98.52 %; ruff check and format, markdownlint, check-plugin, sync-agents --check, claude plugin validate --strict (plugin, marketplace), memory check.
+Open: any .agent symlink counts as foreign, so a planted one only makes shims stricter; the eval cases still have not run in CI on 2.1.322; F-36, F-46, F-47 as before.
+Next: owner pushes feat/onboard-environment and opens the PR with the body in PR-onboard-environment.md at the worktree root (untracked).
+verified: f20b2b6 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check

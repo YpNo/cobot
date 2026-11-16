@@ -77,6 +77,12 @@ Silent and unchanged:
      bypass of a never row.
    - `fd -x/-X/--exec[=]/--exec-batch` bodies are judged like `find -exec`. `parallel` and
      `watch` run a shell command line, so they ask as opaque runners, as `xargs` does.
+   - **Folded from the bypass review of T01's first commit (2026-11-17), which found the class
+     open:** every cobra reading of options before a gh/glab group or verb; an escaped or quoted
+     `;` is a word; fd clusters (`-Hx`) start a body; more runners ask (`pkexec`, `run0`,
+     `setsid`, `tmux`, GNU parallel's family, job queues); `busybox` unwrapped; a gh user alias
+     or extension asks, as do `gh alias set|import`; `gh api` kept out of the group-option drop.
+     Accepted: `watch git status` asks, like any `xargs`.
    - Accept: the story-0 rows match the same row as their plain forms; one test per CLI and runner.
 1. **Outward and account commands ask.** A command that changes the forge account, a
    repository's settings, CI state or the machine's global tool configuration asks.

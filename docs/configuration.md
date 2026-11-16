@@ -80,8 +80,11 @@ The protected-file check reads a path the way the shell and the disk will
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
 `git -C ~ …`, `git -C .. …` from a project directly in HOME, and `tar -C ~ …` (HOME holds
 `~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` or `fd -x`/`-X` body meets the
-rows its command meets (`find … -exec rm -rf {} +` asks like `rm -rf`); `parallel` and `watch`
-run a shell command line, so they ask like `xargs`;
+rows its command meets (`find … -exec rm -rf {} +` asks like `rm -rf`, `fd -Hx` included);
+`busybox <applet>` is judged as the applet; runners whose command the gate does not read ask
+like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hyperfine`, `setsid`,
+`taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
+`script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
@@ -127,8 +130,11 @@ option avoids. `npm` verbs are read as npm reads them (an alias or a unique pref
 is `npm publish`), `pnpm recursive <verb>` as `pnpm <verb>`, and `git -c alias.…` asks (the
 verb is an alias the line defines). The forge CLIs' built-in aliases are read as their commands
 (`gh pr new` is `gh pr create`, `gh secret remove` is `gh secret delete`, `glab mr new`, `tea r
-c`), and `-R`/`--repo` between a `gh` or `glab` group and its verb is skipped (`gh release -R o/r
-create` is `gh release create`). A user alias defined with `gh alias set` is not known.
+c`). Options before a `gh` or `glab` group or verb are read as cobra reads them, every way a
+value option could take the next word (`gh release --title x create v1` is `gh release create`;
+`-R`/`--repo` are known to take one). A top-level `gh` word gh does not know is a user alias or
+an extension, so it asks, and so do `gh alias set` and `gh alias import`. An escaped or quoted
+`;` (`find … -exec x \;`) is a word, not a separator.
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's

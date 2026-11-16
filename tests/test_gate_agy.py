@@ -77,6 +77,11 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
         ("fd -x git push --force", "deny"),
         ("watch git push", "force_ask"),
         ("gh pr -R o/r list", "allow"),
+        ("gh release --title x create v1", "deny"),
+        ("find . -exec true \\; -exec git push --force \\;", "deny"),
+        ("fd -Hx git push --force", "deny"),
+        ("pkexec git push", "force_ask"),
+        ("gh my-extension", "force_ask"),
     ],
 )
 def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):

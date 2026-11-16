@@ -109,6 +109,8 @@ ask Bash(install.sh*) # installs or refreshes cobot itself
 ask Bash(git push*)
 ask Bash(gh pr create*)
 ask Bash(gh repo fork*)
+ask Bash(gh alias set*) # a gh alias can run any command, and the gate cannot read it later
+ask Bash(gh alias import*) # a gh alias can run any command, and the gate cannot read it later
 ask Bash(git remote add*)
 ask Bash(git remote set-url*)
 ask Bash(gh pr merge*)

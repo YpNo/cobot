@@ -193,3 +193,11 @@ Proof: every command, flag and path checked against install.sh --help, the bin t
 Open: left alone: cobot-rules --help says any internal error ends in ask while CONTEXT says any failure blocks (both partly true); CONTEXT says CI pins 2.1.322 but ci.yml's quality job installs 2.1.318 (evals 2.1.322; npm latest 2.1.325 on 2026-11-14); CONTEXT's local eval row lacks TMPDIR; wrap's description names Claude Code's /code-review and /security-review, absent under agy; ADR-0007's context still says a failing agy hook lets the call run (true on 1.5.3, recorded as context); decision 24 names ts-builder, built as typescript-builder.
 Next: owner pushes docs/tidy and opens the PR with the body in PR-docs-tidy.md at the worktree root (untracked); then the security-auditor build.
 verified: 118b031 · pytest+cov, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-17 — spec gate-f36-f40-f44, challenged
+Changed: baad3b3, 00f33b3 .agent/specs/gate-f36-f40-f44.md (revision 2, stories 0–7, T01–T06): outward and account commands ask, forge deletions never, git config writes that outlive the session ask, credential printers ask, every ask named in the reason, literal shell writes and in-place editors denied; story 0 makes existing rows reach -R/--repo forms, gh aliases and fd/parallel/watch runners.
+Why: the owner asked to spec F-36, F-40 and F-44 after the 2026-11-16 recap; four answers 2026-11-16, all recommended: deny literal writes on any file, forge deletions never, global writes plus exec keys for git config, credential printers ask.
+Proof: every Goal row measured with cobot-rules check on 4288978; the challenger's UNSOUND verdict (2 BLOCKER, 8 MAJOR, 7 MINOR) checked by hand before folding (gh release -R o/r create v1, gh pr new, watch git push, fd -x sh -c 'git push' silent today; Scan.writes is whole-command data).
+Open: two live bypasses of existing rows (-R/--repo, gh aliases, unwrapped runners) until T01 lands; story 6's reworked design has not had a second challenger pass; F-36, F-40, F-44 stay open until the build.
+Next: owner decides whether T01 ships alone and whether to run a second challenger pass, then /cobot:build gate-f36-f40-f44.
+verified: 00f33b3 · gate dry runs, challenger pass

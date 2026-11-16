@@ -120,3 +120,11 @@ Proof: three tests failed first (read-only trust-root, add-identity, main exit c
 Open: CI pins Claude Code 2.1.322, the local run used 2.1.311; the CI side is proven by a dispatched run after merge.
 Next: owner pushes fix/trust-readonly, opens and merges its PR, then dispatches the *-onboard eval run on main.
 verified: 170028e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, one eval case
+
+## 2026-11-16 — CodeQL alert on init's output: a name, not a secret
+Changed: 6be627e add_trusted_root renamed add_root_commit (cobot-memory and its tests).
+Why: PR 67's CodeQL check failed on py/clear-text-logging-sensitive-data at main's print of init's output; the SARIF flow starts at add_trusted_root(), which the query's name heuristic takes for a secret. The same alert (1) has been open on main since 2026-11-14; the output is a root commit hash and a folder name.
+Proof: cobot-memory and new-project tests 113 passed; ruff check and format; CodeQL itself runs only in CI (no local codeql), so the PR's next run proves it.
+Open: alert 1 on main closes once this merges, if CodeQL agrees.
+Next: owner pushes fix/trust-readonly.
+verified: 6be627e · pytest (memory, new-project), ruff

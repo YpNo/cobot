@@ -292,9 +292,8 @@ story 6 (scanner ownership) has not been challenged again: second pass not run.
 | 17 | MINOR | the greedy rule regex takes a `)` in a note into the pattern | story 1, note lint |
 
 Checked clear by the challenger: `sync` renders the never rows; precedence holds; the read-only
-agents' allows cover none of the new rows; `bash -c`, `distrobox`, `find -exec`, `timeout` and
-`nice` unwrap; the commit-message substitution stays silent; agy reaches `judge_bash`.
-
+agents' allows cover none of the new rows; `bash -c`, `distrobox`, `find -exec`, `timeout`, `nice`
+unwrap; the commit-message substitution stays silent; agy reaches `judge_bash`.
 ## Converge
 
-pending
+T01 built 2026-11-17 (ab9bb3a, then 97b18ef after its bypass review); T02–T06 pending.

@@ -113,6 +113,14 @@ Open: cobot-memory check still prints every spec name on its own line (a check, 
 Next: owner pushes fix/brief-environment and opens its PR.
 verified: ffed454 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, memory check
 
+## 2026-11-16 — F-45 recorded: the security sweep on curriculo
+Changed: 12ec912 .agent/FINDINGS.md gains F-45.
+Why: the owner asked to check the curriculo /cobot:security-sweep and to record what it missed.
+Proof: the sweep's consultant transcript read; cobot-rules check --agent cobot:consultant gives none for git log --all --diff-filter=A, zizmor, cargo-deny and gitleaks, and ask for cd into the packs folder; the install-action README and cargo-deny-action's Dockerfile at the pinned SHA read; the skipped history scan run by hand on curriculo found no secret file in 106 commits.
+Open: F-45 is not fixed; the curriculo follow-ups (cargo deny check advisories, cargo audit, a LaTeX escaping pass, the cargo-deny-action download) are the owner's.
+Next: owner pushes docs/sweep-findings and opens its PR.
+verified: 12ec912 · findings list, markdownlint
+
 ## 2026-11-16 — init reports a read-only config dir; the eval case hands trust to the owner
 Changed: 170028e cobot-memory init --trust-root and --add-identity catch the OSError writing ~/.claude/cobot, print 'trust not recorded:' with a quoted cd-and-init command for the owner's terminal and exit 1 (TRUST_NOT_RECORDED); onboard step 2 and N3 carry on and hand the command over; new-project-onboard gains the trust-handed-to-owner grader and its description; configuration.md and the mechanics note name the sandbox's protected config dir; CHANGELOG Fixed; tests first.
 Why: the dispatched eval run 43927352477 on main (TMPDIR fix proven: every arm wrote, foreign-onboard 3 of 3) failed on new-project-onboard 0.89: init crashed with EROFS on ~/.claude/cobot in all three runs and one run stopped; the sandboxing docs say most of the config dir is read-only to Bash in sessions too, and allowWrite does not lift it. The owner asked for the fix.

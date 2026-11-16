@@ -232,8 +232,28 @@ def test_brief_longFindingsAndTail_stayWithinTheBudget(memory, repo, budget):
     for i in range(20):
         (agent / "specs" / f"spec-number-{i}.md").write_text("# s\n")
     brief = memory.build_brief(memory.Memory(), budget, trust_check=False)
-    assert "## FINDINGS open: 5" in brief and "specs: spec-number-0" in brief
+    assert "## FINDINGS open: 5" in brief and "specs: 20, latest " in brief
     assert len(brief) <= budget
+
+
+def test_brief_specsTail_namesTheLatestByDateAndCountsTheRest(memory, repo):
+    agent = seed(repo)
+    (agent / "specs").mkdir()
+    for name, day in [("old", "01"), ("newest", "09"), ("mid", "05"), ("undated", None), ("late", "07")]:
+        header = f"size: medium · date: 2026-11-{day}\n" if day else ""
+        (agent / "specs" / f"{name}.md").write_text(f"# Spec — {name}\n\n{header}")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "specs: 5, latest newest, late, mid; all in .agent/specs/" in brief
+    assert "undated" not in brief and "old" not in brief.split("specs:")[1]
+
+
+def test_brief_specsTail_fewSpecs_listsThemAll(memory, repo):
+    agent = seed(repo)
+    (agent / "specs").mkdir()
+    for name in ("b", "a"):
+        (agent / "specs" / f"{name}.md").write_text("# s\n")
+    brief = memory.build_brief(memory.Memory(), 6000, trust_check=False)
+    assert "specs: a, b" in brief
 
 
 def test_brief_longContextIsCapped(memory, repo):
@@ -486,7 +506,33 @@ def test_capSections_keepsVerifiedCommandsAndConstraintsBeforeEarlierSections(me
     assert "## Verified commands" in capped and "## Constraints" in capped and "## Stack" in capped
     assert capped.index("## Stack") < capped.index("## Verified commands") < capped.index("## Constraints")
     assert "## Environment" not in capped
-    assert capped.endswith("sections dropped: Environment, Shape")
+    # a kept section that does not fit is skipped, so a later short one (Shape) still fits
+    assert capped.endswith("sections dropped: Environment")
+
+
+def test_capSections_keepsEnvironmentAfterCommandsAndConstraints(memory):
+    # cobot's own brief lost Environment (machine facts: the rtk hook, git settings) to a long
+    # Stack and Shape while it had room for a short Environment
+    filler = "\n".join(f"- stack {i}" for i in range(60))
+    text = (
+        "# x\n\nprofile: library\n\n## Stack\n" + filler + "\n\n## Environment\n- rtk hook rewrites Bash\n"
+        "\n## Verified commands\n| t | `pytest` | 2026-11-16 |\n\n## Constraints\n- stdlib only\n"
+    )
+    capped = memory.cap_sections(text, 600)
+    assert "## Environment" in capped and "## Verified commands" in capped and "## Constraints" in capped
+    assert "## Stack" not in capped
+    assert capped.index("## Environment") < capped.index("## Verified commands")
+
+
+def test_capSections_hugeEnvironment_neverDisplacesCommandsOrConstraints(memory):
+    filler = "\n".join(f"- env {i}" for i in range(120))
+    text = (
+        "# x\n\n## Environment\n" + filler + "\n\n## Verified commands\n| t | `cargo test` | d |\n"
+        "\n## Constraints\n- no unwrap\n"
+    )
+    capped = memory.cap_sections(text, 600)
+    assert "## Verified commands" in capped and "## Constraints" in capped
+    assert "## Environment" not in capped
 
 
 def test_capSections_firstSectionTooBig_fallsBackToHardCap(memory):
@@ -843,7 +889,8 @@ def test_check_briefDropsContextSections_warns(memory, repo):
     context = "# x\n\nprofile: cli\n\n## Stack\n" + filler + "\n\n## Environment\n" + filler + "\n"
     seed(repo, context=context)
     out = memory.cmd_check(memory.Memory())
-    assert "warning: the brief drops CONTEXT sections: Environment" in out
+    # Environment outranks Stack, so Stack is the section the brief drops
+    assert "warning: the brief drops CONTEXT sections: Stack" in out
 
 
 def test_brief_tailListsEveryOtherAgentFile(memory, repo):

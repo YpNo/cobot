@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The session brief keeps CONTEXT.md's Environment section: when the brief is capped, Verified
+  commands, Constraints and then Environment get room first, each only when it fits, so a huge
+  Environment still never pushes out the commands. The brief's spec list no longer grows with
+  every spec: past three it gives the count and the three newest by their `date:`.
+
 ## [0.3.0] - 2026-11-15
 
 cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,

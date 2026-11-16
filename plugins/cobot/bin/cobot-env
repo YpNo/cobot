@@ -12,8 +12,9 @@ Commands
   decline <helper>                 stop advising a curated helper: rtk, ripgrep, fd, jq, gh
   -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
-Detection runs no program (decision 29): a hit on a PATH entry under the repository, a relative
-entry or a shims folder is reported as not trusted, never followed. The profile is
+Detection runs no program (decision 29): a hit on a PATH entry under the repository or a relative
+entry is reported as not trusted, a hit in a mise or asdf shims folder as a shim; neither is
+followed. The profile is
 ~/.claude/cobot/machine.md, one section per host or host/container; it holds answers only. When
 the config directory is read-only (Claude Code's sandbox), prefer and decline print
 `answer not recorded:` with the command for the owner's terminal and exit 1.
@@ -42,8 +43,9 @@ def profile_path() -> Path:
 def report(found: dict, path: Path) -> str:
     """The detect report, one topic per line."""
     given = env.answers(found["key"], path)
-    present = [k for k, v in found["helpers"].items() if v and not v.startswith("via ")]
-    absent = [k for k, v in found["helpers"].items() if not v or v.startswith("via ")]
+    repository = f"via {env.VIA_REPOSITORY}"
+    present = [k for k, v in found["helpers"].items() if v and not v.startswith(repository)]
+    absent = [k for k, v in found["helpers"].items() if not v or v.startswith(repository)]
     picks = env.choices(found)
     lines = [
         f"key: {found['key']}",
@@ -56,6 +58,11 @@ def report(found: dict, path: Path) -> str:
     ]
     if found["untrusted"]:
         lines.append(f"not trusted: {'; '.join(found['untrusted'])}; cobot never runs these")
+    if found["shims"]:
+        lines.append(
+            f"shims: {'; '.join(found['shims'])}; tools the owner installed, at the version the"
+            " repository pins: commands may run them"
+        )
     if found["programs"]:
         lines.append("programs: " + "; ".join(f"{k} {v or 'absent'}" for k, v in found["programs"].items()))
     lines.append(f"repository: {', '.join(found['repository']) or 'no runtime files'}")

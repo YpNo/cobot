@@ -2,9 +2,10 @@
 
 Detection reads files and environment variables only. It never runs a program, so nothing a
 repository chooses runs: not a binary on a PATH entry it controls, not a mise or asdf shim, not a
-direnv hook. A PATH entry under the repository root, a relative entry and a shims folder are not
-trusted: a hit there is reported with where it came from and never followed (no link resolved, no
-file read). Nothing detected is stored; the profile holds only what the owner answered.
+direnv hook. A hit on a PATH entry under the repository root or a relative entry is not trusted;
+a hit in a shims folder is reported as a shim (a tool the owner installed, at the version the
+repository pins). Neither is followed: no link resolved, no file read. Nothing detected is
+stored; the profile holds only what the owner answered.
 """
 
 from __future__ import annotations
@@ -132,15 +133,17 @@ class Scanner:
         root = Path(os.path.realpath(find_root(cwd)))
         shims = shim_folders(env)
         self.entries = [classify(e, cwd, root, shims) for e in env.get("PATH", "").split(os.pathsep)]
-        self.untrusted: list[Hit] = []
+        self.untrusted: list[Hit] = []  # repository and relative entries: never run
+        self.shims: list[Hit] = []  # shims folders: never followed by detection, runnable
 
     def find(self, name: str) -> Hit | None:
         for folder, via in self.entries:
             candidate = folder / name
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 hit = Hit(name, str(candidate), via)
-                if via and hit not in self.untrusted:
-                    self.untrusted.append(hit)
+                seen = self.untrusted if via == VIA_REPOSITORY else self.shims
+                if via and hit not in seen:
+                    seen.append(hit)
                 return hit
         return None
 
@@ -303,6 +306,7 @@ def detect(
         "repository": repository_files(find_root(cwd)),
     }
     found["untrusted"] = [f"{described(hit)} ({hit.path})" for hit in scanner.untrusted]
+    found["shims"] = [f"{described(hit)} ({hit.path})" for hit in scanner.shims]
     return found
 
 

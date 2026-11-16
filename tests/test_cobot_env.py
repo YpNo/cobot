@@ -161,7 +161,30 @@ def test_detect_miseShims_reportedAsShim(machine):
     machine["env"]["PATH"] = f"{shims}{os.pathsep}{machine['bin']}"
     found = detect(machine)
     assert found["helpers"]["jq"].startswith("via mise shim")
-    assert found["untrusted"] == [f"jq via mise shim ({shims / 'jq'})"]
+    # a shim runs a tool the owner installed, at the version the repository pins: reported apart,
+    # never followed by detection, but not a repository program (eval run 2026-11-16 ran nothing)
+    assert found["shims"] == [f"jq via mise shim ({shims / 'jq'})"]
+    assert found["untrusted"] == []
+
+
+def test_report_shimHit_isPresentAndRunnable_repositoryHitIsNot(cli, machine, monkeypatch, capsys, tmp_path):
+    shims = machine["home"] / ".local" / "share" / "mise" / "shims"
+    executable(shims, "python3")
+    executable(shims, "rg")
+    executable(machine["repo"] / "bin", "jq")
+    monkeypatch.chdir(machine["repo"])
+    monkeypatch.setenv("HOME", str(machine["home"]))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("PATH", f"{machine['repo'] / 'bin'}{os.pathsep}{shims}")
+    assert cli.main(["detect", "python3"]) == 0
+    out = capsys.readouterr().out
+    assert "helpers: present ripgrep; absent rtk, fd, jq, gh" in out
+    assert "\nnot trusted: jq via repository" in out
+    assert "\nshims: rg via mise shim" in out and "python3 via mise shim" in out
+    assert "not trusted: python3" not in out
+    found = env_mod.detect(machine["repo"], os.environ, fs_root=machine["fs"])
+    line = env_mod.brief(found, Path("/nonexistent"))
+    assert "not trusted: jq via repository" in line and "python3" not in line
 
 
 def test_detect_miseDataDir_shimsReportedAsShim(machine, tmp_path):

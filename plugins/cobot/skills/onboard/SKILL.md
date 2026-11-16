@@ -24,6 +24,9 @@ disable-model-invocation: true
      the checkout's worktrees; plugin enabled with `--scope local`);
    - a repository without a remote → `cobot-memory init --trust-root` (without a commit yet, see
      New project step N1 first: `--trust-root` refuses before any commit).
+   When init prints `trust not recorded:` (Claude Code's sandbox keeps the config directory
+   read-only to Bash), the memory files are written: carry on, put the command it prints in the
+   report for the owner to run in their own terminal, and never record trust another way.
    Do not read `.agent/*` of an untrusted repository before this step.
 3. **Init.** `cobot-memory init --profile <p>` with the profile you propose (`spike`, `script`,
    `cli`, `library`, `service`, `infra`) and one line of reasoning. Legacy memory (an
@@ -96,7 +99,8 @@ N2. **Ask.** The goal is the owner's words: this skill's argument, else one pros
     the folder or remote name. Then one `AskUserQuestion`: profile (recommend one from the goal),
     licence, and forge unless the remote names it. Not the language: the first spec decides it.
 
-N3. **Write.** `cobot-memory init --profile <p>`, with `--trust-root` when there is no remote.
+N3. **Write.** `cobot-memory init --profile <p>`, with `--trust-root` when there is no remote
+    (`trust not recorded:` as in step 2).
     CONTEXT.md: the header from the answers; Stack `- decided by the first spec`; Environment: the
     runtimes present and `df -h .` against the 10 GB guard; Verified commands: one row
     `| — | none yet: the first spec's scaffold task records them | — | <date> |`; Constraints and

@@ -26,7 +26,7 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
 | `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
 | `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live |
+| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live; Claude Code's sandbox keeps it read-only to Bash, so with the sandbox on the owner runs `cobot-memory init --add-identity` or `--trust-root` in their own terminal |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |

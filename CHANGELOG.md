@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   commands, Constraints and then Environment get room first, each only when it fits, so a huge
   Environment still never pushes out the commands. The brief's spec list no longer grows with
   every spec: past three it gives the count and the three newest by their `date:`.
+- `cobot-memory init --trust-root` and `--add-identity` no longer crash when Bash cannot write
+  `~/.claude/cobot`. Claude Code's sandbox keeps most of the config directory read-only to Bash,
+  in sessions as in evals. init still writes the memory, then prints `trust not recorded:` with
+  the command for the owner's own terminal, and exits 1. The onboard skill carries on and hands
+  that command to the owner; a `new-project-onboard` grader checks the report names it.
 
 ## [0.3.0] - 2026-11-15
 

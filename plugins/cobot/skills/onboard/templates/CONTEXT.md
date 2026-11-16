@@ -5,6 +5,7 @@ forge: github                  # github | gitlab | gitea | other — where CI ru
 goal: <one line: what this repository is for>
 owner: <who decides> · <visibility> · <license>
 governance: none               # path to the project's principles, #heading-slug for one section; every spec checks against it
+runs: host                     # where commands run, as the owner answered (podman · builds: distrobox enter dev --); verified commands stay bare
 
 ## Stack
 
@@ -20,9 +21,9 @@ governance: none               # path to the project's principles, #heading-slug
 
 | purpose | command | result | verified |
 |---|---|---|---|
-| unit tests | `<command>` | exit 0 | {{DATE}} |
-| lint | `<command>` | exit 0 | {{DATE}} |
-| build | `<command>` | exit 0 | {{DATE}} |
+| unit tests | `<command>` | <not run yet> | — |
+| lint | `<command>` | <not run yet> | — |
+| build | `<command>` | <not run yet> | — |
 
 ## Constraints
 

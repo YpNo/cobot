@@ -5,6 +5,7 @@ goal: a Claude Code plugin marketplace that makes the main thread a governed orc
 forge: github                  # YpNo/cobot; ci.yml, release.yml, knowledge-refresh.yml
 owner: YpNo (Michael Lopez) · public since 0.2.0 (2026-11-14) · MIT
 governance: docs/01-decisions.md   # the owner's decisions are this repository's principles
+runs: host                     # podman and distrobox present, nothing here needs them
 
 ## Stack
 - Python 3.12+ standard library only for `plugins/cobot/bin/*`

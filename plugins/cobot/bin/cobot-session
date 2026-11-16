@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cobot-session: the SessionStart payload (protocol + rule counts + memory brief + knowledge and deps lines).
+"""cobot-session: the SessionStart payload (protocol + rule counts + memory brief + machine, knowledge and deps lines).
 
 Usage: cobot-session start [--runtime claude|agy] < hook.json
 Claude Code: prints hookSpecificOutput.additionalContext, at most 10 000 characters.
@@ -24,7 +24,8 @@ from _cobot_common import plugin_root  # noqa: E402
 
 TOTAL_CAP = 10_000
 BRIEF_CAP = 6_000
-LINES_RESERVE = 500  # room kept for the knowledge and dependency lines
+MACHINE_LINE_CAP = 160  # cobot-env brief (_cobot_env.BRIEF_CAP)
+LINES_RESERVE = 500 + MACHINE_LINE_CAP  # room kept for the machine, knowledge and dependency lines
 DEADLINE = 25  # seconds shared by every tool call; the hook has 30
 RUNTIMES = ("claude", "agy")
 AGY_SECTION_CAP = 1_200
@@ -85,13 +86,21 @@ def status_lines(cwd: str | None, clock: Clock) -> str:
     return "\n".join(line.splitlines()[0] if line else "" for line in (knowledge, dependencies))
 
 
+def machine_line(cwd: str | None, clock: Clock) -> str:
+    """The machine by presence and the owner's answers (decision 29); cobot-env runs no program."""
+    line = run_tool("cobot-env", ["brief"], cwd, clock)
+    return (line.splitlines()[0] if line else "machine: unavailable")[:MACHINE_LINE_CAP]
+
+
 def brief_parts(cwd: str | None, room: int) -> list[str]:
-    """Rule counts, the memory brief within ``room`` (capped at BRIEF_CAP) and the status lines."""
+    """Rule counts, the memory brief within ``room`` (capped at BRIEF_CAP), the machine line and
+    the status lines."""
     clock = Clock()
     budget = min(BRIEF_CAP, room - LINES_RESERVE)
     return [
         rule_counts(cwd, clock),
         run_tool("cobot-memory", ["brief", "--budget", str(budget)], cwd, clock),
+        machine_line(cwd, clock),
         status_lines(cwd, clock),
     ]
 
@@ -120,7 +129,7 @@ def agy_section() -> str:
     costs brief budget, not a gap line."""
     return f"""{AGY_HEADING}
 - The plugin folder is `{plugin_root()}`. Its bin/ is not on PATH: run `python3 -I <plugin \
-folder>/bin/<tool> ...` for cobot-memory, cobot-rules and cobot-deps. A skill is `<plugin \
+folder>/bin/<tool> ...` for cobot-memory, cobot-rules, cobot-deps and cobot-env. A skill is `<plugin \
 folder>/skills/<name>/SKILL.md`: read it with view_file, or type /<name>.
 - Tool names: Agent is invoke_subagent, AskUserQuestion is ask_question, Skill is reading the \
 skill file.

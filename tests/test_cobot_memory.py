@@ -64,6 +64,40 @@ def test_init_writesTemplatesOnce(memory, repo):
     assert memory.cmd_init(mem, {}, set()).count("kept") == 3
 
 
+def test_templates_claimNoProof(memory):
+    # F-38: placeholders written before anything ran must not read as proof
+    context = memory.template("CONTEXT.md", "cli", "x")
+    journal = memory.template("JOURNAL.md", "cli", "x")
+    for text in (context, journal):
+        assert "exit 0" not in text and "were run" not in text
+    assert memory.PLACEHOLDER_ROWS in context
+    assert "\n## " not in journal  # no entry to delete by hand: journal add writes the first one
+
+
+def test_init_newTree_writesTheNoneYetRowItself(memory, repo):
+    memory.cmd_init(memory.Memory(), {"profile": "cli"}, set())
+    context = (repo / ".agent" / "CONTEXT.md").read_text()
+    assert memory.PLACEHOLDER_ROWS not in context and "<command>" not in context
+    row = memory.NONE_YET_ROW.replace("{{DATE}}", memory.date.today().isoformat())
+    assert row in context
+
+
+def test_init_existingTree_keepsPlaceholderRows(memory, repo):
+    commit(repo)
+    memory.cmd_init(memory.Memory(), {"profile": "cli"}, set())
+    context = (repo / ".agent" / "CONTEXT.md").read_text()
+    assert memory.PLACEHOLDER_ROWS in context and "none yet" not in context
+
+
+def test_template_runsHeader_keptWhenTheBriefIsCapped(memory, repo):
+    assert "\nruns: " in memory.template("CONTEXT.md", "cli", "x").split("\n## ", 1)[0]
+    filler = "\n".join(f"- line {i}" for i in range(400))
+    runs = "runs: podman · builds: distrobox enter dev --"
+    seed(repo, context=f"# x\n\nprofile: cli\n{runs}\n\n## Shape\n{filler}\n")
+    brief = memory.build_brief(memory.Memory(), 3000, trust_check=False)
+    assert runs in brief and "- line 399" not in brief
+
+
 def test_trust_noRemoteNoCommit_untrusted(memory, repo):
     trusted, reason = memory.Memory().trust()
     assert not trusted and "no remote and no commit" in reason
@@ -918,11 +952,11 @@ def test_help_initDescriptionFollowsInit(memory):
 def test_check_listsTemplateHeaderFieldsMissingFromContext(memory, repo):
     seed(repo, context="# x\n\nProfile: `service`\ngoal: g\n\n## Stack\n- rust\n")
     out = memory.cmd_check(memory.Memory())
-    assert "context: header fields missing (template): profile, forge, owner, governance" in out
+    assert "context: header fields missing (template): profile, forge, owner, governance, runs" in out
 
 
 def test_check_contextWithEveryHeaderField_reportsNothingMissing(memory, repo):
-    header = "profile: cli\nforge: github\ngoal: g\nowner: me\ngovernance: none\n"
+    header = "profile: cli\nforge: github\ngoal: g\nowner: me\ngovernance: none\nruns: host\n"
     seed(repo, context="# x\n\n" + header)
     assert "header fields missing" not in memory.cmd_check(memory.Memory())
 

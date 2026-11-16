@@ -11,8 +11,8 @@ import _cobot_common as common
 import pytest
 from conftest import BIN, PLUGIN, REPO, load_script
 
-BINS = ("cobot-memory", "cobot-rules", "cobot-deps")
-FLAG_MENTION = re.compile(r"cobot-(memory|rules|deps)[ \t]+([a-z]+)([^\"'`|;&)\n]*)")
+BINS = ("cobot-memory", "cobot-rules", "cobot-deps", "cobot-env")
+FLAG_MENTION = re.compile(r"cobot-(memory|rules|deps|env)[ \t]+([a-z]+)([^\"'`|;&)\n]*)")
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +36,8 @@ def test_help_afterInit_printsUsageWritesNothing(tmp_path):
 @pytest.mark.parametrize("name", BINS)
 def test_help_bareAndAfterACommand_exitZeroOnStdout(scripts, name, capsys):
     module = scripts[name]
-    command = {"cobot-memory": "check", "cobot-rules": "show", "cobot-deps": "check"}[name]
+    commands = {"cobot-memory": "check", "cobot-rules": "show", "cobot-deps": "check", "cobot-env": "detect"}
+    command = commands[name]
     for argv in (["--help"], [command, "--help"], [command, "-h"]):
         assert module.main(argv) == 0
         assert "Commands" in capsys.readouterr().out
@@ -51,6 +52,7 @@ def test_help_bareAndAfterACommand_exitZeroOnStdout(scripts, name, capsys):
         ("cobot-rules", ["check", "ls", "--bogus", "x"]),
         ("cobot-rules", ["sync", "--tool", "Bash"]),
         ("cobot-deps", ["check", "--bogus"]),
+        ("cobot-env", ["detect", "--bogus"]),
     ],
 )
 def test_unknownFlag_isRefusedWithUsage(scripts, name, argv, capsys):

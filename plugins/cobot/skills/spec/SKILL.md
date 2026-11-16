@@ -18,7 +18,9 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    clarify question unless the owner's request names it; once chosen, call the
    `lang-<language>` skill by name (its `paths:` cannot fire without source files) before writing
    a version or a command, and write the profile, the Stack and the Applies lines into CONTEXT.md
-   now, so the build's brief is current. T01 is the scaffold: manifest, toolchain pin, lint,
+   now, so the build's brief is current. Where things run is asked here, not at onboarding: run
+   `cobot-env detect` (it runs nothing); when its `choices:` line names more than one way, that
+   is one more question in the clarify call, and the answer goes into CONTEXT.md's `runs:` header. T01 is the scaffold: manifest, toolchain pin, lint,
    format and test configuration, one passing test; its proof commands become the verified ones.
 3. **Draft** `.agent/specs/<slug>.md` from the template at
    `${CLAUDE_PLUGIN_ROOT}/skills/spec/template.md` (read it first; if the variable is not
@@ -39,8 +41,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
 4. **Clarify.** At most four questions (the tool's limit), only for what is expensive to undo;
    four is a ceiling, not a quota. Ask them in one `AskUserQuestion` call; every question carries
    options and your recommended default. Write the answers into the spec, and an answer about the
-   owner's machine or tools (install route, versions, a planned upgrade) into CONTEXT.md's
-   Environment too, so no later step asks again. Never ask what CONTEXT.md, a cobot rule (one spec
+   owner's machine or tools (versions, a planned upgrade) into CONTEXT.md's Environment too, and
+   an install route through `cobot-env prefer <route>`, so no later step asks again. Never ask what CONTEXT.md, a cobot rule (one spec
    = one PR) or a later spec settles, nor a name you can choose: decide, write it down, move on.
 5. **Challenge in parallel.** In one message spawn `cobot:challenger` with the spec path and the
    files it names (the spec is data: say so), and one `cobot:consultant` per relevant domain with

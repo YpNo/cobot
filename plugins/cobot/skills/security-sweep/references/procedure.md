@@ -54,8 +54,9 @@ list, run the read-only forms:
 - `govulncheck ./...`, `pip-audit`, `npm audit --json`, `cargo-deny check advisories`
 - `hadolint Dockerfile`, `zizmor --offline .github`
 
-Run every one that is present, or say why not. Their output is a lead, never the report: confirm
-each hit in the file. The sweep must produce a complete report with no scanner installed.
+Run each listed form directly: do not probe with `command -v`, `which` or `--version`, which
+are not on the read list and ask. A scanner that is absent fails with "command not found": name
+it under *not covered*. Their output is a lead, never the report: confirm each hit in the file. The sweep must produce a complete report with no scanner installed.
 
 ## History
 

@@ -79,14 +79,18 @@ The protected-file check reads a path the way the shell and the disk will
 
 Known asks this costs: a protected file's name after any `cd` (`cd docs && tee settings.json`);
 `git -C ~ …`, `git -C .. …` from a project directly in HOME, and `tar -C ~ …` (HOME holds
-`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` body meets the rows its
-command meets (`find … -exec rm -rf {} +` asks like `rm -rf`);
+`~/.gemini`); `find ~ -exec … {} +` of any command; a `find -exec` or `fd -x`/`-X` body meets the
+rows its command meets (`find … -exec rm -rf {} +` asks like `rm -rf`, `fd -Hx` included);
+`busybox <applet>` is judged as the applet; runners whose command the gate does not read ask
+like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hyperfine`, `setsid`,
+`taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
+`script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
 HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
 the check and the run, archive members not written on the command line, folder options of
 other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
-`busybox find` or `fd -x`.
+`busybox find`.
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,
@@ -124,7 +128,13 @@ whose value is a ruled verb reads as that verb (`npm --zz publish test` is denie
 `npm --prefix web test`) asks, a prompt on common monorepo commands that the form without the
 option avoids. `npm` verbs are read as npm reads them (an alias or a unique prefix: `npm publ`
 is `npm publish`), `pnpm recursive <verb>` as `pnpm <verb>`, and `git -c alias.…` asks (the
-verb is an alias the line defines).
+verb is an alias the line defines). The forge CLIs' built-in aliases are read as their commands
+(`gh pr new` is `gh pr create`, `gh secret remove` is `gh secret delete`, `glab mr new`, `tea r
+c`). Options before a `gh` or `glab` group or verb are read as cobra reads them, every way a
+value option could take the next word (`gh release --title x create v1` is `gh release create`;
+`-R`/`--repo` are known to take one). A top-level `gh` word gh does not know is a user alias or
+an extension, so it asks, and so do `gh alias set` and `gh alias import`. An escaped or quoted
+`;` (`find … -exec x \;`) is a word, not a separator.
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's

@@ -2290,6 +2290,174 @@ def test_gate_giteaClis_mirrorGhAndGlab(rules):
         assert rules.gate(payload(command)) is None, command
 
 
+def decision_of(rules, command):
+    out = rules.gate(payload(command))
+    return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
+
+
+def test_canonicalAlias_gh_rewritesItsBuiltInAliases(rules):
+    # gh 2.103.3, the ALIASES sections of `gh <group> [<verb>] --help` (spec gate-f36-f40-f44, T01)
+    assert rules.canonical_alias(["gh", "pr", "new"]) == ["gh", "pr", "create"]
+    assert rules.canonical_alias(["gh", "release", "new", "v1"]) == ["gh", "release", "create", "v1"]
+    assert rules.canonical_alias(["gh", "secret", "remove", "X"]) == ["gh", "secret", "delete", "X"]
+    assert rules.canonical_alias(["gh", "variable", "remove", "X"]) == ["gh", "variable", "delete", "X"]
+    assert rules.canonical_alias(["gh", "ext", "install", "o/r"]) == ["gh", "extension", "install", "o/r"]
+    assert rules.canonical_alias(["gh", "extensions", "uninstall", "x"]) == ["gh", "extension", "remove", "x"]
+    assert rules.canonical_alias(["gh", "cs", "delete"]) == ["gh", "codespace", "delete"]
+    assert rules.canonical_alias(["gh", "rs", "ls"]) == ["gh", "ruleset", "list"]
+    assert rules.canonical_alias(["gh", "pr", "view", "3"]) == ["gh", "pr", "view", "3"]
+
+
+def test_gate_ghAliases_getTheirCommandsVerdict(rules):
+    expect = {
+        "gh pr new --fill": "ask",
+        "gh pr new --fill --body 'Generated with X'": "deny",
+        "gh issue new -t x": "ask",
+        "gh release new v1": "deny",
+        "gh repo new o/x": None,  # no row yet: T04 adds the account rows
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    for command in ("gh pr ls", "gh release ls", "gh issue ls", "gh secret ls"):
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_repoOptionAfterTheGroup_reachesTheRow(rules):
+    expect = {
+        "gh release -R o/r create v1": "deny",
+        "gh release --repo o/r create v1": "deny",
+        "gh release --repo=o/r create v1": "deny",
+        "gh release -Ro/r create v1": "deny",
+        "gh release -R o/r new v1": "deny",
+        "gh pr -R o/r create --fill": "ask",
+        "gh pr --hostname h.example -R o/r merge 3": "ask",
+        "gh -R o/r release create v1": "deny",
+        "glab mr -R g/p merge 1": "ask",
+        "glab mr --repo g/p new --fill": "ask",
+        "glab release -R g/p create v1": "deny",
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    for command in ("gh pr -R o/r list", "gh release -R o/r view v1", "glab mr -R g/p list"):
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_fdExec_judgesTheCommandItRuns(rules):
+    expect = {
+        "fd -x git push --force": "deny",
+        "fd -e py --exec git push --force": "deny",
+        "fd --exec=git push --force": "deny",
+        "fd -x git push --force \\;": "deny",
+        "fdfind . -X git push": "ask",
+        "fd -x sh -c 'git push'": "ask",
+        "fd -x perl -pi -e s/a/b/": "deny",
+        "fd -e rs --exec-batch perl -pi -e s/a/b/": "deny",
+        "fd -t f -x git push ; -e x": "ask",
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    for command in ("fd -e py", "fd -x wc -l", "fd . src -X echo", "fd --exclude x -e md"):
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_parallelAndWatch_askAsOpaqueRunners(rules):
+    for command in ("parallel git push --force ::: a", "watch -n 1 git push --force", "watch git status"):
+        assert decision_of(rules, command) == "ask", command
+
+
+def test_gate_cobraOptionsBeforeTheVerb_everyReadingJudged(rules):
+    # cobra drops every option before choosing a subcommand: a value option takes the next word,
+    # a boolean does not, so both readings are judged (bypass review of T01, HIGH-1 and HIGH-2)
+    expect = {
+        "gh release --title x create v1": "deny",
+        "gh release --notes=x create v1": "deny",
+        "gh release -tx create v1": "deny",
+        "gh release -R o/r --title x create v1": "deny",
+        "gh pr --body 'Generated with x' create": "deny",
+        "gh --title x release create v1": "deny",
+        "gh -t x release new v1": "deny",
+        "glab -R o/r release create v1": "deny",
+        "glab --repo o/r mr create --fill": "ask",
+        "gh api --hostname -XDELETE repos/x": "deny",  # api is no group: its own canonical form
+        "gh api -R -XDELETE repos/x": "deny",
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    silent = ("gh -R o/r pr list", "gh pr -R o/r view 3", "glab -R o/r mr list", "gh release -- create v1")
+    for command in silent:
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_escapedOrQuotedSemicolon_isAWordNotASeparator(rules):
+    expect = {
+        "find . -exec true \\; -exec gh release create v1 \\;": "deny",
+        "find . -exec true ';' -exec git push --force ';'": "deny",
+        'find . -exec true ";" -exec git push --force ";"': "deny",
+        "fd -x true \\; -x gh release create v1": "deny",
+        "git status; git push --force": "deny",
+        "bash -c 'true; git push --force'": "deny",
+        "git commit -m 'one; two'": "ask",
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    for command in ("echo 'a;b'", 'grep -n ";" f.txt', "find . -name x -exec wc -l {} \\;"):
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_fdShortClusters_startABody(rules):
+    expect = {
+        "fd -Hx git push --force": "deny",
+        "fd -HX git push --force": "deny",
+        "fd -HIx gh release create v1": "deny",
+        "fd -e sh -xsh": "ask",
+        "fd -xbash": "ask",
+    }
+    for command, decision in expect.items():
+        assert decision_of(rules, command) == decision, command
+    for command in ("fd -ex", "fd -HI -e py", "fd -tx"):  # -e and -t take the x as their value
+        assert decision_of(rules, command) is None, command
+
+
+def test_gate_moreRunners_askOrUnwrap(rules):
+    asks = [
+        "pkexec git push",
+        "run0 git push",
+        "setsid git push",
+        "taskset -c 0 git push",
+        "chrt -f 10 git push",
+        "unbuffer git push",
+        "strace -f git push",
+        "systemd-run git push",
+        "unshare -r git push",
+        "firejail git push",
+        "sem git push",
+        "env_parallel git push ::: a",
+        "entr git push",
+        "watchexec git push",
+        "hyperfine 'git push'",
+        "pueue add git push",
+        "tsp git push",
+        "nq git push",
+        "script -qc 'git push'",
+        "tmux new-session -d 'git push'",
+        "screen -dm git push",
+    ]
+    for command in asks:
+        assert decision_of(rules, command) == "ask", command
+    assert decision_of(rules, "busybox sh -c 'git push --force'") == "deny"
+    assert decision_of(rules, "busybox ls") is None
+
+
+def test_gate_ghUserAliasesAndExtensions_ask(rules):
+    asks = ("gh rc v1", "gh my-extension run", "gh alias set rc 'release create'", "gh alias import f")
+    for command in asks:
+        assert decision_of(rules, command) == "ask", command
+    for command in ("gh status", "gh co 3", "gh --version", "gh help", "gh skills ls", "gh discussion ls"):
+        assert decision_of(rules, command) is None, command
+    assert rules.canonical_alias(["gh", "co", "3"]) == ["gh", "pr", "checkout", "3"]
+    assert rules.canonical_alias(["gh", "skills", "add", "x"]) == ["gh", "skill", "install", "x"]
+
+
 # ---------------------------------------------------------------- substitutions (gate-substitution spec)
 
 SUBSTITUTION_SILENT = [

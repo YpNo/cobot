@@ -68,6 +68,27 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
     assert decide(rules, "run_command", {"CommandLine": command}, [workspace]) == expected
 
 
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ("gh release -R o/r create v1", "deny"),
+        ("gh release new v1", "deny"),
+        ("gh pr new --fill", "force_ask"),
+        ("fd -x git push --force", "deny"),
+        ("watch git push", "force_ask"),
+        ("gh pr -R o/r list", "allow"),
+        ("gh release --title x create v1", "deny"),
+        ("find . -exec true \\; -exec git push --force \\;", "deny"),
+        ("fd -Hx git push --force", "deny"),
+        ("pkexec git push", "force_ask"),
+        ("gh my-extension", "force_ask"),
+    ],
+)
+def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):
+    # spec gate-f36-f40-f44, story 0: -R after the group, gh aliases, fd and watch runners
+    assert decide(rules, "run_command", {"CommandLine": command}, [workspace]) == expected
+
+
 def test_runCommand_denyNamesTheRule(rules, workspace):
     data = answer(rules, payload("run_command", {"CommandLine": "git push -f"}, [workspace]))
     assert data["reason"].startswith("cobot rule: never Bash(")

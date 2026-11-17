@@ -65,6 +65,25 @@ All notable changes to this project are documented here. The format follows
   re-run onboard": a re-run preceded by "don't", "do not" or "never" is the advice the skill
   asks for, not a second onboard (run 43950232416).
 
+### Security
+
+- Gate rows now reach commands that skipped them in 0.3.0:
+  - **Options before a `gh` or `glab` group or verb are read as cobra reads them.** `gh release
+    -R o/r create v1`, `gh release --title x create v1` and `glab -R o/r release create v1` were
+    silent, past a never row.
+  - **`gh`'s built-in aliases are read as their commands.** `gh release new` passed the never row,
+    and `gh pr new` and `gh issue new` passed the ask rows.
+  - **New asks:** a `gh` user alias or extension, and `gh alias set` and `gh alias import`.
+  - **An escaped or quoted `;` is a word.** `find . -exec true \; -exec <cmd> \;` hid the second
+    command.
+  - **`fd`:** the command after `fd -x`/`-X` (`-Hx` clusters included) is judged, as after
+    `find -exec`.
+  - **Runners:** `busybox <applet>` is judged as the applet. Command runners the gate does not
+    read (GNU `parallel`, `watch`, `entr`, `pkexec`, `run0`, `setsid`, `tmux`, job queues and
+    more) ask like `xargs`.
+
+  Spec gate-f36-f40-f44, task T01; the forms past the first fix came from a bypass review.
+
 ## [0.3.0] - 2026-11-15
 
 cobot runs under the Antigravity CLI from the same tree: the gate, the session brief, the agents,

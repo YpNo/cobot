@@ -69,7 +69,7 @@ REASON_LIMIT = 200
 SEPARATORS = frozenset({"&&", "||", ";", ";;", "|", "|&", "&", "(", ")", ">", ">>", "<", "<<", "2>", "&>"})
 CONTROL_CHARS = frozenset("();&|")  # a token of these alone ends a segment
 ARRAY_OPEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=$")  # ``a=`` before ``(``
-WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic"})
+WRAPPERS = frozenset({"rtk", "env", "command", "exec", "nohup", "time", "builtin", "chronic", "busybox"})
 # wrappers and their options: flags without a value, options that take one. ``--`` ends them;
 # short flags combine (``-la x``); an option not listed leaves the wrapper opaque.
 WRAPPER_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -105,7 +105,13 @@ MCP_WRITE_WORDS = frozenset(
 )
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
-    "xargs sudo doas su make gmake just task npx ssh mosh".split()
+    "xargs sudo doas su make gmake just task npx ssh mosh "
+    # each runs a command it is given, through a shell or after options the gate does not read
+    # (bypass review of T01): GNU parallel's family, watchers, prefix tools, privilege and sandbox
+    # launchers, terminal multiplexers and job queues
+    "parallel sem niceload parset env_parallel rush xe watch entr watchexec hyperfine "
+    "setsid taskset chrt unbuffer strace dbus-run-session pkexec run0 systemd-run unshare firejail "
+    "script tmux screen pueue tsp nq".split()
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -267,6 +273,7 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "terraform": (frozenset({"-chdir"}), frozenset()),
     "tofu": (frozenset({"-chdir"}), frozenset()),
     "gh": (frozenset({"-R", "--repo", "--hostname"}), frozenset()),
+    "glab": (frozenset({"-R", "--repo"}), frozenset()),
     "kubectl": (
         frozenset({"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user"}),
         frozenset(),
@@ -466,15 +473,44 @@ def load_rules_agy(workspaces: list[str]) -> tuple[list[Rule], list[str]]:
 # ---------------------------------------------------------------- command analysis
 
 
+LITERAL_SEMICOLON = "\x1fsemicolon\x1f"  # a ; that is text, not an operator, while shlex splits
+
+
+def mark_literal_semicolons(text: str) -> str:
+    """``\\;``, ``';'`` and ``";"`` are text to the shell (``find … -exec x \\;``), but shlex's
+    punctuation mode splits on them like the operator, so a second ``-exec`` body became a segment
+    of its own that no row read (bypass review of T01, HIGH-3). Mark them before splitting."""
+    out, quote, i = [], "", 0
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            out.append(LITERAL_SEMICOLON if c == ";" else c)
+            quote = "" if c == "'" else quote
+        elif c == "\\" and i + 1 < len(text):
+            out.append(LITERAL_SEMICOLON if text[i + 1] == ";" else text[i : i + 2])
+            i += 1
+        elif quote == '"':
+            out.append(LITERAL_SEMICOLON if c == ";" else c)
+            quote = "" if c == '"' else quote
+        else:
+            out.append(c)
+            quote = c if c in "'\"" else ""
+        i += 1
+    return "".join(out)
+
+
 def shell_items(command: str) -> list[str | list[str]]:
     """The argv-like segments of a shell command and the operator tokens between them, in order."""
-    joined = command.replace("\\\n", " ").replace("\n", " ; ")
+    joined = mark_literal_semicolons(command.replace("\\\n", " ").replace("\n", " ; "))
     lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
     items: list[str | list[str]] = []
     segment: list[str] = []
     for token in lexer:
+        if LITERAL_SEMICOLON in token:  # always a word, never an operator
+            segment.append(token.replace(LITERAL_SEMICOLON, ";"))
+            continue
         if token in SEPARATORS or (token and set(token) <= CONTROL_CHARS):  # ``()``, ``))``
             if segment:
                 items.append(shell.expand_braces(segment))
@@ -1284,7 +1320,37 @@ _GT_VERBS = {"new": "create", "rm": "delete", "add": "create"}
 _TEA_VERBS = {"c": "create", "e": "edit", "rm": "delete", "ls": "list", "open": "reopen"}
 # CLI aliases rewritten to their canonical command before matching (read 2026-11-10 from each
 # CLI's source or docs), so one rule row covers every alias form: group alias → (group, verbs).
+_LS = {"ls": "list"}
+# gh 2.103.3, the ALIASES sections of `gh <group> [<verb>] --help`, read 2026-11-17
+_GH_GROUPS: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
+    "pr": ((), {**_LS, "new": "create", "co": "checkout"}),
+    "issue": ((), {**_LS, "new": "create"}),
+    "release": ((), {**_LS, "new": "create"}),
+    "repo": ((), {**_LS, "new": "create"}),
+    "gist": ((), {**_LS, "new": "create"}),
+    "secret": ((), {**_LS, "remove": "delete"}),
+    "variable": ((), {**_LS, "remove": "delete"}),
+    "extension": (("extensions", "ext"), {**_LS, "uninstall": "remove"}),
+    "codespace": (("cs",), _LS),
+    "ruleset": (("rs",), _LS),
+    "attestation": (("at",), {}),
+    "agent-task": (("agent-tasks", "agent", "agents"), {}),
+    "discussion": ((), _LS),
+    "skill": (("skills",), {**_LS, "add": "install", "show": "preview"}),
+    **{group: ((), _LS) for group in ("alias", "cache", "config", "gpg-key", "label", "org", "project")},
+    **{group: ((), _LS) for group in ("run", "ssh-key", "workflow")},
+}
+_GH_COMMAND_ALIASES = {"co": ["pr", "checkout"]}  # gh's preset alias, not a group
+# every top-level word gh 2.103.3 knows (`gh --help`, its help topics, the group aliases): another
+# word is a user alias (`gh alias set`, which may run a shell) or an installed extension
+GH_COMMANDS = frozenset(
+    "auth browse codespace discussion gist issue org pr project release repo skill cache run workflow "
+    "co agent-task alias api attestation completion config copilot extension gpg-key label licenses "
+    "preview ruleset search secret ssh-key status variable accessibility actions environment "
+    "exit-codes formatting mintty reference telemetry help version a11y".split()
+) | {name for group, (names, _) in _GH_GROUPS.items() for name in names}
 CLI_ALIASES: dict[str, dict[str, tuple[str, dict[str, str]]]] = {
+    "gh": {name: (group, verbs) for group, (names, verbs) in _GH_GROUPS.items() for name in (group, *names)},
     "glab": {
         "mr": ("mr", {"new": "create", "accept": "merge", "comment": "note"}),
         "issue": ("issue", {"new": "create", "comment": "note"}),
@@ -1355,6 +1421,8 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
 def canonical_alias(tokens: list[str]) -> list[str]:
     """``glab mr new``, ``gt release new``, ``tea r c`` become ``glab mr create``,
     ``gt release create``, ``tea releases create``: the form the rule rows name."""
+    if tokens[:1] == ["gh"] and len(tokens) > 1 and tokens[1] in _GH_COMMAND_ALIASES:
+        tokens = ["gh", *_GH_COMMAND_ALIASES[tokens[1]], *tokens[2:]]
     groups = CLI_ALIASES.get(tokens[0]) if tokens else None
     if not groups or len(tokens) < 2 or tokens[1] not in groups:
         return tokens
@@ -1363,6 +1431,30 @@ def canonical_alias(tokens: list[str]) -> list[str]:
     if rest and rest[0] in verbs:
         rest = [verbs[rest[0]], *rest[1:]]
     return [tokens[0], group, *rest]
+
+
+# options gh and glab take between the group word and the verb (gh 2.103 lists -R/--repo as an
+# inherited flag of every repository command): `gh release -R o/r create` is `gh release create`
+GROUP_OPTIONS = {"gh": ("-R", "--repo", "--hostname"), "glab": ("-R", "--repo")}
+
+
+def drop_group_options(tokens: list[str]) -> list[str]:
+    """``gh release -R o/r create v1``, ``--repo=o/r`` and ``-Ro/r`` become ``gh release create
+    v1``, so the rows naming ``<cli> <group> <verb>`` see the verb. Only the options before the
+    verb move: later ones already sit under the row's trailing ``*``."""
+    names = GROUP_OPTIONS.get(tokens[0]) if tokens else None
+    if not names or len(tokens) < 3 or option_word(tokens[1]) or tokens[1] == "api":
+        return tokens  # api is no group: canonical_gh_api reads its options
+    rest, i = tokens[2:], 0
+    while i < len(rest) and option_word(rest[i]):
+        word, name = rest[i], rest[i].split("=", 1)[0]
+        if name in names:
+            i += 1 if "=" in word else 2
+        elif any(word.startswith(short) and len(word) > 2 for short in names if len(short) == 2):
+            i += 1  # pflag's attached shorthand value: -Ro/r
+        else:
+            break
+    return tokens if i == 0 else [*tokens[:2], *rest[i:]]
 
 
 def strip_global_options(tokens: list[str]) -> list[str]:
@@ -1424,13 +1516,89 @@ def readings(tokens: list[str]) -> list[list[str]]:
                 break
         else:
             i += 1
-    return [[tokens[0], *tokens[k:]] for k in starts if k < len(tokens)]
+    plain_readings = [[tokens[0], *tokens[k:]] for k in starts if k < len(tokens)]
+    return plain_readings + [r for r in cobra_readings(tokens) if r not in plain_readings]
+
+
+COBRA_CLIS = frozenset({"gh", "glab"})
+MAX_COBRA_READINGS = 32
+
+
+def word_starts(tokens: list[str], start: int, takes_value: tuple[str, ...] = ()) -> list[int]:
+    """Where cobra may find the next command word past the options from ``start``: ``--o=v`` and an
+    attached short value (``-tx``) skip themselves; a known value option (``-R``) skips its value;
+    any other option may be a boolean or take the next word, so both are followed; ``--`` ends the
+    command words."""
+    found: list[int] = []
+    pending, seen = [start], set()
+    while pending and len(seen) < MAX_COBRA_READINGS:
+        i = pending.pop()
+        if i in seen or i >= len(tokens) or tokens[i] == "--":
+            continue
+        seen.add(i)
+        if not option_word(tokens[i]):
+            found.append(i)
+        elif "=" in tokens[i] or (not tokens[i].startswith("--") and len(tokens[i]) > 2):
+            pending.append(i + 1)
+        elif tokens[i] in takes_value:
+            pending.append(i + 2)
+        else:
+            pending.extend((i + 2, i + 1))
+    return sorted(found)
+
+
+def without_repo_options(cli: str, words: list[str]) -> list[str]:
+    """The words with the CLI's repository options and their values taken out (``-R o/r``,
+    ``--repo=o/r``, ``-Ro/r``): they name where, not what, so no row reads their text."""
+    names = GROUP_OPTIONS.get(cli, ())
+    out, i = [], 0
+    while i < len(words):
+        word, name = words[i], words[i].split("=", 1)[0]
+        if name in names:
+            i += 1 if "=" in word else 2
+        elif any(word.startswith(short) and len(word) > 2 for short in names if len(short) == 2):
+            i += 1
+        else:
+            out.append(word)
+            i += 1
+    return out
+
+
+def cobra_readings(tokens: list[str]) -> list[list[str]]:
+    """Every ``<cli> <group> <verb> …`` a cobra CLI (gh, glab) may run, whatever options sit before
+    the group or the verb (bypass review of T01): ``gh release --title x create v1`` is read as
+    ``gh release create --title x v1``, the options moved after the verb so a row about their text
+    (``*Generated with*``) still sees it. ``api`` is no group: ``canonical_gh_api`` reads it."""
+    if not tokens or tokens[0] not in COBRA_CLIS:
+        return []
+    out: list[list[str]] = []
+    known = GROUP_OPTIONS.get(tokens[0], ())
+    for g in word_starts(tokens, 1, known):
+        if tokens[g] == "api":
+            continue
+        for v in word_starts(tokens, g + 1, known):
+            moved = without_repo_options(tokens[0], [*tokens[1:g], *tokens[g + 1 : v]])
+            form = [tokens[0], tokens[g], tokens[v], *moved, *tokens[v + 1 :]]
+            if form != tokens and form not in out:
+                out.append(form)
+    return out[:MAX_COBRA_READINGS]
 
 
 def is_opaque(plain: list[str]) -> bool:
     """A runner or interpreter whose real command is hidden from argv matching, as written or in
     any reading past the options before its verb (``uv -q run …``)."""
+    if gh_unknown_command(plain):
+        return True
     return opaque_as_read(plain) or any(opaque_as_read(r) for r in readings(plain) if r != plain)
+
+
+def gh_unknown_command(plain: list[str]) -> bool:
+    """``gh rc v1`` after ``gh alias set rc 'release create'``, or ``gh my-ext``: a user alias or an
+    extension, which may run any command. Read on the written form only (gh's own -R/--repo
+    skipped), so a value read as a word by ``cobra_readings`` never makes a command opaque."""
+    verb = strip_global_options(plain) if plain[:1] == ["gh"] else []
+    word = verb[1] if len(verb) > 1 else ""
+    return bool(word) and not option_word(word) and word not in GH_COMMANDS
 
 
 def opaque_as_read(plain: list[str]) -> bool:
@@ -2222,6 +2390,14 @@ def expand_cased(segment: list[str], here: Dirs, depth: int, reached: Reached) -
             )
         ]
         return [*expand_plain(segment, here, depth, reached), *tail]
+    if argv[:1] and argv[0].lower() in FD_PROGRAMS and depth < MAX_EXPANSION:
+        origin = show(" ".join(argv), shell.REGISTRY)[:MAX_ORIGIN]
+        tail = [
+            (t, o or origin, d)
+            for body in fd_bodies(argv)
+            for t, o, d in expand_segment(body, here, depth + 1, reached)
+        ]
+        return [*expand_plain(segment, here, depth, reached), *tail]
     return expand_plain(segment, here, depth, reached)
 
 
@@ -2297,7 +2473,9 @@ def expand_units(
 
 def canonical(tokens: list[str]) -> list[str]:
     return canonical_gcloud(
-        canonical_gh_api(canonical_alias(canonical_package_manager(expand_push_flags(tokens))))
+        canonical_gh_api(
+            canonical_alias(drop_group_options(canonical_package_manager(expand_push_flags(tokens))))
+        )
     )
 
 
@@ -2588,6 +2766,47 @@ def find_bodies(argv: list[str]) -> list[tuple[str, list[str]]]:
     if current:
         bodies.append((action, current))
     return [(action, body) for action, body in bodies if body]
+
+
+FD_PROGRAMS = frozenset({"fd", "fdfind"})  # fdfind is Debian's name for fd
+FD_ACTIONS = frozenset({"-x", "--exec", "-X", "--exec-batch"})  # each takes the words after it, up to ;
+
+
+FD_VALUE_SHORTS = frozenset("etdESjcoC")  # short options that take a value (fd 10): the rest is it
+
+
+def fd_cluster_body(letters: str) -> list[str] | None:
+    """A short-option cluster as clap reads it: ``-Hx`` starts a body with the words after it,
+    ``-xbash`` with ``bash`` as its first word; ``-ex`` is the extension ``x``, not an action."""
+    for i, letter in enumerate(letters):
+        if letter in "xX":
+            rest = letters[i + 1 :].removeprefix("=")
+            return [rest] if rest else []
+        if letter in FD_VALUE_SHORTS:
+            return None
+    return None
+
+
+def fd_bodies(argv: list[str]) -> list[list[str]]:
+    """The commands ``fd -x``/``-X`` runs on what it finds, judged like a command of its own (as
+    ``find -exec``); fd reads every word after the action as the command, up to a ``;``."""
+    bodies, current = [], None
+    for word in argv[1:]:
+        if current is not None:
+            if word == ";":
+                bodies.append(current)
+                current = None
+            else:
+                current.append(word)
+        elif word in FD_ACTIONS:
+            current = []
+        elif word.split("=", 1)[0] in FD_ACTIONS and "=" in word:
+            current = [word.split("=", 1)[1]]  # --exec=git push: the value is the program
+        elif word.startswith("-") and not word.startswith("--"):
+            current = fd_cluster_body(word[1:])
+    if current:
+        bodies.append(current)
+    return [body for body in bodies if body]
 
 
 def execdir_folders(argv: list[str], here: Dirs) -> Dirs:

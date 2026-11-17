@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -1762,6 +1763,118 @@ def test_gate_gitConfigOwnerAllow_namesTheCanonicalForm(rules, layers):
     assert decision_of(rules, "git config --global user.name x") == "ask"
 
 
+# ---------------------------------------------------------------- outward rows (stories 1, 2, 4)
+
+
+OUTWARD_ASKS = [
+    "gh auth login", "gh auth setup-git", "gh auth switch -u x", "gh config set editor vim",
+    "gh extension install x/y", "gh ext upgrade --all", "gh repo create x --public",
+    "gh repo edit --visibility public", "gh repo -R o/r archive", "gh repo sync",
+    "gh secret set X", "gh variable set X", "gh label create x", "gh label clone o/r",
+    "gh workflow run ci.yml", "gh workflow disable ci", "gh run rerun 1", "gh run cancel 1",
+    "gh issue edit 1", "gh issue close 1", "gh issue transfer 1 o/r", "gh pr edit 1",
+    "gh pr close 1", "gh pr ready 1", "gh release edit v1", "gh release upload v1 a.tgz",
+    "gh gist create a.txt", "gh codespace create", "gh ssh-key add k.pub", "gh gpg-key add k",
+    "glab auth login",
+    "rustup update", "rustup default stable", "rustup toolchain install 1.99",
+    "rustup toolchain uninstall 1.98", "rustup target add wasm32-unknown-unknown",
+    "rustup component add clippy", "rustup override set nightly", "rustup self update",
+    "rustup set profile minimal", "rustup install stable",
+    "gcloud config set project x", "gcloud config unset project",
+    "gcloud config configurations activate other",
+    "npm login", "npm logout", "npm adduser", "npm set registry x", "npm config set x y",
+    "npm c set x y", "npm config delete x", "npm token create",
+    "pnpm config set x y", "yarn config set x y", "pip config set global.index-url x",
+    "pip3 config unset global.index-url", "python3 -m pip config set global.x y",
+    "docker logout",
+    # the T04 review: more verbs, aliases and option placement
+    "gh discussion create", "gh gist rename a b", "gh issue unlock 1", "gh pr revert 1",
+    "gh pr update-branch 1", "gh project create", "gh project item-add 1", "gh repo deploy-key add k",
+    "gh codespace stop", "glab auth logout", "glab config set token x", "glab repo create x",
+    "glab token create x", "glab ssh-key add k", "rustup upgrade", "rustup add stable",
+    "rustup toolchain rm 1.98", "rustup component uninstall clippy", "rustup override add x",
+    "npm config rm x", "npm config --location=global set k v", "npm token rm 1",
+    "pip3.13 config set a b", "python3 -mpip config set a b", "python -I -m pip config set a b",
+    "pip config --global set a b", "pnpm config delete x", "yarn config unset x", "yarn npm login",
+    "gcloud beta config set project x", "gcloud config --quiet set project x",
+]  # fmt: skip
+CREDENTIAL_PRINTERS = [
+    "gh auth token", "gh auth status --show-token", "gh auth status -t", "gh auth status -at",
+    "gh auth status --json hosts --show-token", "glab auth status -t", "glab config get token",
+    "gcloud auth print-access-token --account a", "gcloud auth print-identity-token",
+    "gcloud auth application-default print-access-token", "gcloud config config-helper",
+    "gcloud secrets versions access latest --secret s", "git credential fill",
+    "git credential-store get", "docker-credential-desktop get",
+    "kubectl config view --raw", "kubectl get secret x -o yaml", "kubectl get secrets -ojson",
+    "kubectl -n x get secret/y --output=jsonpath={.data}", "npm token list",
+    "kubectl get secret x --template={{.data}}", "kubectl get secret x -o JSON",
+    "kubectl get secret x -o kyaml", "kubectl config view --flatten",
+    "kubectl get --raw /api/v1/namespaces/default/secrets/x",
+    "gcloud beta secrets versions access latest --secret=x",
+    "gcloud secrets --project p versions access latest", "glab config get -g token",
+    "glab config -g get token", "git-credential-store get",
+]  # fmt: skip
+FORGE_DELETIONS = [
+    "gh release delete v1", "gh release -R o/r delete v1", "gh secret delete X",
+    "gh secret remove X", "gh variable delete X", "gh label delete x", "gh cache delete x",
+    "gh run delete 1", "gh gist delete x", "gh ssh-key delete 1", "gh gpg-key delete 1",
+    "gh issue delete 1", "gh repo deploy-key delete 1", "glab ci delete 1",
+    "glab variable delete X", "glab release delete v1", "glab -R o/r issue delete 1",
+    "glab mr delete 1", "gt release delete v1", "gt pr delete 1", "gt issue delete 1",
+    "tea releases delete v1", "tea comments delete 1", "tea assets delete v1 a",
+    "gh repo autolink delete 1", "gh project delete 1", "gh project item-delete 1",
+    "gh project field-delete 1", "glab snippet delete 1", "glab token revoke x",
+    "glab securefile remove x", "glab mr del 1", "tea labels delete x", "tea milestones delete x",
+    "tea webhooks delete 1", "gt label delete x", "gt milestone delete x",
+]  # fmt: skip
+OUTWARD_SILENT = [
+    "gh auth status", "gh secret list", "gh repo view", "gh run list", "gh release list",
+    "rustup toolchain list", "rustup show", "rustup target list", "gcloud config list",
+    "gcloud config get-value project", "npm config get x", "npm config list",
+    "kubectl get secrets", "kubectl get secret x -o name", "kubectl config view",
+    "pip config list", "gh label list",
+    "gh auth status --show-token=false", "kubectl get configmap secret -o yaml",
+    "kubectl get -n secret pods -o yaml", "gcloud beta compute instances list",
+    "pip config get settings.x", "rustup toolchain list --installed",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("command", OUTWARD_ASKS + CREDENTIAL_PRINTERS)
+def test_gate_outwardAccountAndCredentialCommands_ask(rules, command):
+    assert decision_of(rules, command) == "ask", command
+
+
+@pytest.mark.parametrize("command", FORGE_DELETIONS)
+def test_gate_forgeDeletions_areDenied(rules, command):
+    assert decision_of(rules, command) == "deny", command
+
+
+@pytest.mark.parametrize("command", OUTWARD_SILENT)
+def test_gate_forgeAndToolReads_staySilent(rules, command):
+    assert decision_of(rules, command) is None, command
+
+
+def test_credentialPrinterAsk_ownerAllowLiftsOneForm(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(gh auth token*)\n")
+    assert decision_of(rules, "gh auth token") is None
+    assert decision_of(rules, "gh auth status -t") == "ask"
+
+
+def test_defaultRows_noteHoldsNoParenthesis(rules):
+    text = (PLUGIN / "rules" / "default.rules").read_text(encoding="utf-8")
+    rows = [line for line in text.splitlines() if re.match(r"^(never|ask|allow) ", line)]
+    notes = [line.split(" # ", 1)[1] for line in rows if " # " in line]
+    assert notes and not [note for note in notes if ")" in note or "(" in note]
+
+
+def test_sync_forgeDeletions_renderedInPermissionsDeny(rules, capsys, tmp_path, layers):
+    settings = tmp_path / "settings.json"
+    out = cli(rules, ["sync", "--settings", str(settings)], capsys)[1].out
+    deny = json.loads(out.split("# diff")[0].replace("# fragment", ""))["permissions"]["deny"]
+    assert {"Bash(gh release delete:*)", "Bash(glab ci delete:*)", "Bash(tea releases delete:*)"} <= set(deny)
+
+
 def test_gate_gitConfigFileAllow_namesItsPath(rules, layers):
     owner, _ = layers
     owner.write_text("allow Bash(git config --file .gitmodules write submodule.*)\n")
@@ -1897,7 +2010,16 @@ def test_canonical_gcloud_cutsAtTheFirstVerb(rules):
         "gcloud", "projects", "add-iam-policy-binding",
     ]  # fmt: skip
     assert cut(["gcloud", "sql", "backups", "restore", "1"]) == ["gcloud", "sql", "backups", "restore"]
-    assert cut(["gcloud", "config", "set", "project", "p"]) == ["gcloud", "config", "set", "project", "p"]
+    assert cut(["gcloud", "config", "set", "project", "p", "--quiet"]) == ["gcloud", "config", "set"]
+    assert cut(["gcloud", "auth", "print-identity-token", "--audiences=x"]) == [
+        "gcloud", "auth", "print-identity-token",
+    ]  # fmt: skip
+    assert cut(["gcloud", "config", "config-helper", "--format=json"]) == [
+        "gcloud", "config", "config-helper",
+    ]  # fmt: skip
+    assert cut(["gcloud", "config", "configurations", "activate", "x"]) == [
+        "gcloud", "config", "configurations", "activate",
+    ]  # fmt: skip
     assert cut(["gcloud", "auth", "print-access-token"]) == ["gcloud", "auth", "print-access-token"]
     assert cut(["gcloud", "container", "fleet", "mesh", "update", "--management", "automatic"]) == [
         "gcloud", "container", "fleet", "mesh", "update",
@@ -2109,7 +2231,7 @@ def test_gate_cloudReadListForReadOnlyAgents(rules, command, silent):
         ("gcloud run services list", None),
         ("gcloud storage ls gs://b", None),
         ("gcloud logging read x", None),
-        ("gcloud config set project p", None),
+        ("gcloud config set project p", "ask"),  # F-36: a verb since T04
         ("kubectl run debug --image=busybox", "ask"),
         ("kubectl debug pod/x -it --image=busybox", "ask"),
         ("kubectl cp pod:/a ./a", "ask"),
@@ -2539,7 +2661,7 @@ def test_gate_ghAliases_getTheirCommandsVerdict(rules):
         "gh pr new --fill --body 'Generated with X'": "deny",
         "gh issue new -t x": "ask",
         "gh release new v1": "deny",
-        "gh repo new o/x": None,  # no row yet: T04 adds the account rows
+        "gh repo new o/x": "ask",  # gh repo create, an account row (T04)
     }
     for command, decision in expect.items():
         assert decision_of(rules, command) == decision, command

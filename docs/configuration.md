@@ -169,6 +169,40 @@ shell command in each submodule. To allow a form, name the canonical one:
 `allow Bash(git config --global write user.email *)`, or
 `allow Bash(git config --file .gitmodules write submodule.*)`.
 
+Outward and account commands ask: changes to the forge account (`gh auth login`, `setup-git`,
+`switch`), repository settings (`gh repo create|edit|archive`, secrets, variables, labels), CI
+(`gh workflow run`, `gh run rerun|cancel`), issues and PRs (`edit`, `close`, `transfer`),
+releases and gists, keys, and the machine's tool configuration (`rustup update|default`, its
+`toolchain`, `target`, `component`, `override` and `self` verbs, `gcloud config set|unset`,
+npm, pnpm, yarn and pip registry and account config, `docker logout`). Reads such as
+`rustup toolchain list` or `gh secret list` stay silent.
+
+Forge deletions are refused in every layer, for `gh`, `glab`, `gt` and `tea` alike: releases,
+secrets, variables, labels, caches, runs, gists, keys, issues, merge requests, pipelines and
+deploy keys, with or without `-R`. `cobot-rules sync` renders them in `permissions.deny`.
+
+Commands that print a credential into the transcript ask. The claim covers these named printers,
+not every way a secret can be printed:
+
+- `gh auth token`, and `gh auth status` or `glab auth status` showing the token (`-t`,
+  `--show-token`, in a cluster too);
+- `glab config get token`;
+- `gcloud auth print-access-token` and `print-identity-token` (also under `application-default`),
+  `gcloud config config-helper` and `gcloud secrets versions access`;
+- `git credential fill`, `git credential-<helper> get` and `docker-credential-* get`;
+- `kubectl config view --raw` or `--flatten`, `kubectl get secret` with an output that prints its
+  data (`yaml`, `kyaml`, `json`, `jsonpath`, `go-template`, `custom-columns`, in any case, or
+  `--template`), and `kubectl get --raw` of a secrets path;
+- `npm token list`.
+
+An owner `allow` line lifts one form (`allow Bash(gh auth token*)`). A gcloud command is read
+without its release track and the flags between its words (`gcloud beta secrets --project p
+versions access`), so these rows and the read lists see its command words.
+
+Known costs: a `never` row also reads an option's value placed before the verb as the verb, so
+`gh issue --label delete list` is denied (run it yourself, or put the option after the verb).
+`gh pr merge --delete-branch` asks like any merge; the branch deletion is not refused.
+
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's
 value. A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo

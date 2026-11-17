@@ -85,6 +85,9 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
         ("git config --global user.name x", "force_ask"),
         ("git config core.hooksPath .h", "force_ask"),
         ("git config --global --get user.name", "allow"),
+        ("gh secret set X", "force_ask"),
+        ("gh auth token", "force_ask"),
+        ("gh release delete v1", "deny"),
     ],
 )
 def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):

@@ -53,6 +53,14 @@ All notable changes to this project are documented here. The format follows
   read into one canonical form, `git config --global write user.email x` (a file scope keeps its
   path), which an owner `allow` line names. Exporting a git config variable (`export`, `local -x`,
   `set -a`) and `git submodule foreach` ask too. These used to pass silently.
+- **Outward and account commands ask (F-36).** That covers the forge account, repository settings,
+  secrets and variables, CI runs, issue and PR state, releases, gists and keys, and the machine's
+  tool configuration (rustup per verb, `gcloud config set`, npm, pnpm, yarn and pip config,
+  `docker logout`). The named credential printers ask too, such as `gh auth token`,
+  `gcloud auth print-access-token` and `kubectl get secret -o yaml`.
+- **Forge deletions are refused (F-36).** Deleting a release, secret, variable, label, cache,
+  run, gist, key, issue or merge request through `gh`, `glab`, `gt` or `tea` is a `never` row,
+  rendered in `permissions.deny`. `glab ci delete` and the `gt` and `tea` deletions used to ask.
 
 ### Fixed
 

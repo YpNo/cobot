@@ -263,7 +263,10 @@ judges its tools.
 
 ## Cloud read lists
 
-For the read-only agents (consultant, learner), `gcloud … list|describe`,
+The security sweep's `cobot:auditor` reads with the consultant's list: every `@consultant` row
+applies to it, and to no other agent name (an agent of your own called `auditor` keeps no scope).
+
+For the read-only agents (consultant, learner, auditor), `gcloud … list|describe`,
 `kubectl get|describe|logs|diff`, `helm template|lint`, `kustomize build`, `kubeconform` and
 `istioctl analyze|proxy-status` are silent like `gh api repos/*`. A command that could run
 repository content (an environment assignment, `git -c`, `--kubeconfig`, `--post-renderer`,

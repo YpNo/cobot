@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A security auditor agent, and a sweep that fans out (decision 30).** `/cobot:security-sweep`
+  now runs in the main thread as a router. It counts the files each rule pack covers, runs one
+  `auditor` on a tree of 200 such files or fewer, and otherwise one per pack plus a repo-wide
+  unit for scanners, history and accepted risks, at most five. Findings are merged and capped at
+  ten, then a fresh auditor checks every MEDIUM or worse one. The auditor runs at the session's
+  model and high effort, with the consultant's read list. The report uses one confidence scale
+  (`CONFIRMED`, `PLAUSIBLE`), says `read N of M files` per pack, and lists a unit that never
+  reported as `not run`. `CORE-INJECT-05` now names LaTeX and other typesetting input. Eval cases
+  `sweep-fan-out` and `sweep-history-secret`.
+
 - `cobot-env` learns the machine's development environment by presence: container engines
   (docker that is podman, or talks to a podman, Colima or OrbStack socket, counts once), runtime
   managers, isolation (distrobox, toolbox, nix, devcontainer), the container the session runs in,

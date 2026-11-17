@@ -295,5 +295,5 @@ ask; a target with a hole fails closed; no cobot skill runs a pattern story 6 re
 
 ## Converge
 
-T01 built 2026-11-17 (ab9bb3a, then 97b18ef after its bypass review), merged as PR 71. Revision 3
-folds the second pass on story 6; T02–T06 pending on `security/gate-asks-and-writes`.
+T01 built 2026-11-17 (ab9bb3a, 97b18ef), merged as PR 71. Revision 3 folds pass 2 on story 6. T02
+built 2026-11-17 (9465eb9, review folded); T03–T06 pending on `security/gate-asks-and-writes`.

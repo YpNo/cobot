@@ -62,8 +62,8 @@ flowchart LR
 - **The gate.** A hook judges every tool call before it runs, from three rule layers: cobot's
   defaults, yours, and the repository's (which can only tighten).
 - **Skills and agents.** Workflow skills (onboard, spec, build, wrap, ship, …), knowledge skills
-  per language and domain, and nine agents: a challenger, a read-only consultant and learner,
-  and six builders.
+  per language and domain, and ten agents: a challenger, a read-only consultant, learner and
+  security auditor, and six builders.
 - **The tools behind them.** `cobot-memory`, `cobot-rules`, `cobot-env`, `cobot-deps` and
   `cobot-session` in `plugins/cobot/bin/`: Python standard library only, tested, called by the
   hooks and skills.
@@ -168,7 +168,7 @@ Language skills, experts and builders load on their own when your files need the
 
 ### Differences under Antigravity
 
-The gate, the session brief, the skills and the nine agents come along. What agy cannot carry:
+The gate, the session brief, the skills and the ten agents come along. What agy cannot carry:
 
 - **Builder proof is asked for, not enforced.** No agy hook sees a subagent's report: read the
   commands and exit codes yourself before you trust one.

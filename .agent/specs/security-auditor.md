@@ -253,4 +253,9 @@ Pass 1, 2026-11-16: **SOUND WITH CHANGES**. Eleven points, all folded.
 
 ## Converge
 
-pending
+Built 2026-11-18 on `feat/security-auditor`: T01 4ab0101, T02 f50d603, T04 80648ce, T03 aaa127a,
+T05 6b88b53, T06 65e4c58. Decision 30. Every story's acceptance holds; local evals 1.00
+(`sweep-every-pack`, `sweep-fan-out`, `sweep-history-secret` twice after its fixture fix).
+Deviations: the history fixture draws a password-shaped value at scaffold time (a placeholder was
+rightly rescaled to LOW; a literal one tripped GitGuardian), and the procedure forbids scanner
+probes (`command -v` asks). F-45 closed, F-49 filed.

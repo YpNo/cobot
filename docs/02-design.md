@@ -52,6 +52,7 @@ cobot/
     claude-agents/                         Claude Code's agents; agents/ holds the Antigravity ones
       challenger.md                        read-only · inherit/high · omitClaudeMd
       consultant.md                        read-only + Bash(read cmds) + WebFetch · sonnet/medium
+      auditor.md                           the consultant's read list, one sweep unit · inherit/high
       builder.md                           generic fallback (Terraform, Shell, Lua, other) · sonnet/medium
       rust-builder.md go-builder.md        thin: frontmatter `skills: [lang-<x>]`, model, ~15 lines
       python-builder.md typescript-builder.md terraform-builder.md   same shape (R1.1 slice 2)
@@ -69,7 +70,7 @@ cobot/
       consult/  SKILL.md (router: one cobot:consultant per domain, in one message)
                 domains/gha.md containers.md gitlab-ci.md ui.md gcp.md kubernetes.md service-mesh.md
       ship/ contribute/ (+ templates/UPSTREAM.md)                       main-thread delivery skills (R1.1 slice 2)
-      security-sweep/ SKILL.md + references/<pack>.md + templates/accepted-risks.md   context: fork, read-only
+      security-sweep/ SKILL.md (router) + references/procedure.md + <pack>.md + templates/   one cobot:auditor per unit
       learn/        SKILL.md + templates/expert-SKILL.md                  context: fork, agent: cobot:learner; skeleton expert template
       <any lang-*/expert-*>/references/<topic>.md                      dated lines: status · source · claim (§8)
     hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
@@ -108,7 +109,7 @@ skills stay in `cobot` whatever the domain, path-gated and capped by `check-plug
 | Experts | per domain an `expert-<x>` skill (inline idiom; always listed, its description is the trigger, since `paths:` does not gate plugin skills) and a procedure `consult/domains/<x>.md` that `/cobot:consult <x>` hands to a consultant (2026-11-10, r2-surface); today `gha`, `containers`, `ui` (web and the Miyoo Mini Plus handheld, Stitch over the owner's MCP), `cicd` (principles, no consult), `gitlab-ci`, `gcp` (with the universe reference), `kubernetes` and `service-mesh` (decision 28) | via consultant | sonnet / medium (sweep: high) | findings: severity, file:line, fix, confidence | spec, wrap, ship, owner |
 | Consultant | agent, generic read-only container for every expert and for onboarding fingerprints | Read Grep Glob Bash WebFetch; **read-only by rule** (`ask Bash(*) @consultant` except listed read commands) | sonnet / medium; haiku for fingerprints | structured findings, each with a confidence, or a fingerprint; plus an optional `knowledge_delta` (§8) | expert skills via `context: fork`, onboard |
 | Learner | agent `learner` (R1.1) behind skill `/cobot:learn <topic>` (`context: fork`) | Read Grep Glob Bash WebFetch WebSearch; **read-only by rule** (`@learner`); experiments run under the gate like any command | sonnet / high | a knowledge delta: claims with status, source, date and scope; what stayed unverified; a skeleton `expert-<x>` when no expert exists | orchestrator when intake finds no expert for the domain, a consult returns low confidence, or a spike contradicts a skill; owner |
-| Security reviewer | built-in `/security-review` on diffs; `security-sweep` skill (forked into the consultant, so at its `medium` effort until a per-skill override exists) on whole repos, against `.agent/accepted-risks.md` | — | — | findings with rule, file, symbol; `cobot-memory risks add` lines for the owner's yes | wrap before a release or handover; owner |
+| Security reviewer | built-in `/security-review` on diffs; on whole repos the `security-sweep` skill, a main-thread router that fans out one `auditor` agent per unit (one unit for a tree of 200 files or fewer, else one per pack plus a repo-wide unit for scanners and history, at most five) and has a fresh auditor check every MEDIUM or worse finding, against `.agent/accepted-risks.md` (decision 30) | auditor: the consultant's read list (`@consultant` rows match `cobot:auditor`) | inherit / high | findings with rule, file, symbol, `CONFIRMED` or `PLAUSIBLE`, and `read N of M files` per pack; `cobot-memory risks add` lines for the owner's yes | wrap before a release or handover; owner |
 | Code reviewer | built-in `/code-review`, `/simplify` | — | — | findings / fixes | wrap |
 | Scribe | wrap skill (journal, findings triage), `bin/cobot-memory learn` (applies deltas), `compact` | — | haiku / low for compaction | journal entry, compacted history | wrap |
 
@@ -397,7 +398,8 @@ the learner is read-only by rule and returns text; `cobot-memory learn` is the o
 | challenger | inherit | high | an objection missed is a day lost |
 | build, standard task | sonnet | medium | mechanical given a spec, a language skill and a test gate |
 | build, `risk:` task (unsafe / no_std Rust, concurrency, crypto, auth, Terraform state moves, migrations) | orchestrator, inline | high | relevance first; a per-call model override takes an alias only, so the strongest context does it itself |
-| consult (GitHub Actions, GCP, security sweep) | sonnet | medium (sweep: high) | breadth of reading, structured output |
+| consult (GitHub Actions, GCP) | sonnet | medium | breadth of reading, structured output |
+| security sweep unit and check (auditor) | inherit | high | depth: every file of the unit, each finding checked at its source |
 | learn (fetch, digest, run an experiment) | sonnet | high | reading and reproduction; the orchestrator judges the delta |
 | knowledge consolidation, findings triage draft | haiku | low | extraction |
 | fingerprint, compaction, converge checklist | haiku | low | extraction and summarisation |

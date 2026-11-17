@@ -23,8 +23,9 @@ every finding.
 - **CORE-INJECT-03** Path traversal: path built from input without canonicalization plus a containment check
   against a base directory. Filtering `..` alone is insufficient: check symlinks and encoding.
 - **CORE-INJECT-04** Template injection: user input into a template string rather than a template variable.
-- **CORE-INJECT-05** Unescaped user content in HTML, JS, LDAP, XPath, log lines (newline forging), CSV formulas
-  or shell scripts generated at runtime.
+- **CORE-INJECT-05** Unescaped user content in HTML, JS, LDAP, XPath, log lines (newline forging), CSV formulas,
+  shell scripts generated at runtime, or typesetting input (LaTeX `\input`, `\write18`, a TeX engine run with
+  its shell-escape switch).
 - **CORE-INJECT-06** Header/CRLF injection: input into HTTP headers, redirect targets or email fields, unstripped.
 
 ## AUTHZ — access control

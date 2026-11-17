@@ -5305,3 +5305,42 @@ def test_shellWriteAsk_ownerAllowLiftsIt(rules, layers):
     owner.write_text("allow Bash(ssh h*)\n")
     assert decide(rules, "ssh h <<'EOF' > out\nls\nEOF")[0].decision is None
     assert decide(rules, "cat > a.md <<'EOF'\nx\nEOF")[0].decision == "deny"
+
+
+# ---------------------------------------------------------------- the auditor's scope (spec security-auditor)
+
+
+def corpus_commands() -> list[str]:
+    lists = (
+        DEFAULT_DECISIONS, AGENT_GLOBS, AGENT_GUARDED, AGENT_READS, FINDINGS_REVIEW_AGENT,
+        FINDINGS_REVIEW_AGENT_SILENT, OUTWARD_ASKS, CREDENTIAL_PRINTERS, SHELL_WRITES_DENIED,
+        SHELL_WRITES_ASK, SHELL_WRITES_SILENT, GIT_CONFIG_ASKS, GIT_CONFIG_SILENT,
+    )  # fmt: skip
+    commands = (item if isinstance(item, str) else item[0] for items in lists for item in items)
+    return list(dict.fromkeys(commands))
+
+
+def test_gate_auditor_sameDecisionsAsTheConsultant_overTheCorpus(rules):
+    loaded, _, _ = rules.load_rules(None)
+    differ = [
+        command
+        for command in corpus_commands()
+        if rules.judge_bash(command, loaded, "cobot:auditor")[0].decision
+        != rules.judge_bash(command, loaded, "cobot:consultant")[0].decision
+    ]
+    assert not differ, differ
+
+
+@pytest.mark.parametrize("command", ["cat x > y", "find . -delete", "sed -i s/a/b/ x", "curl -o x u"])
+def test_gate_auditor_writesAndRunsAsk(rules, command):
+    assert decide(rules, command, agent="cobot:auditor")[0].decision in ("ask", "deny"), command
+
+
+@pytest.mark.parametrize("agent", ["auditor", "x:auditor", "cobot:builder", "auditor:cobot"])
+def test_gate_otherAgents_getNoConsultantRow(rules, agent):
+    loaded, _, _ = rules.load_rules(None)
+    for command in ("git status", "cat README.md", "sed -i s/a/b/ x", "curl -s u", "ls"):
+        scoped, _ = rules.judge_bash(command, loaded, agent)
+        plain, _ = rules.judge_bash(command, loaded, None)
+        assert scoped.decision == plain.decision, (agent, command)
+        assert "@consultant" not in scoped.reason(), (agent, command)

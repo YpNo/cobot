@@ -241,3 +241,11 @@ Proof: tests first (107 failing, then 57 more after the review); a bypass review
 Open: owner calls: a never row reads an option value before the verb as the verb (gh issue --label delete list is denied, from T01's cobra readings), and gh pr merge --delete-branch only asks; oc, kubecolor, microk8s and kubectl -f/-k with secrets are outside the claim; rustup options between group and verb not read.
 Next: T05, shell writes (scanner list indexes, openers, exec scope, inner scans).
 verified: 13283f0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, bypass review
+
+## 2026-11-17 — gate: a never row reached only through an unknown option's reading asks
+Changed: a4b33b1 cobra_forms (readings with their group and verb positions), uncertain_readings, branching_option, never_through_option_value in judge_words; tests: the T01 cobra cases with an unknown option before the verb now expect ask (gh release --title x create v1, the attribution form gh pr --body 'Generated with x' create), known options and attached values keep deny; docs/configuration.md, CHANGELOG.
+Why: the T04 review found never rows denying reads such as gh issue --label delete list (the label value read as the verb), a deny nothing lifts; the owner chose to downgrade those to ask on 2026-11-17.
+Proof: a failing test first (ask, and an owner allow on gh issue* does not lift it; gh release delete v1, -R o/r delete and delete --yes still deny); full suite 3262 passed, 98.53 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate. One test expectation in tests/test_gate_agy.py was edited with sed instead of the Edit tool (owner rule broken, reported).
+Open: a deny through an unknown option before the verb is now an ask, including T01's bypass forms (closed, no longer silent); the holed path (never_anyway) is unchanged; gh pr merge --delete-branch stays an ask (owner).
+Next: T05, shell writes.
+verified: a4b33b1 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs

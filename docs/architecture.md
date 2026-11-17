@@ -97,6 +97,13 @@ whose program the repository's files choose counts only in a repository trusted 
 whose deciding files match origin's default branch. Every git call cobot makes turns
 `core.fsmonitor` off.
 
+The scanner also records each pipeline stage and the stage every redirection, here-document and
+here-string belongs to. From that, text written into a file through the shell is refused, and a
+write it cannot trace for certain asks (spec gate-f36-f40-f44, story 6). Some commands are
+judged on a canonical form rather than as written: `git config` (scope, read or write, keys that
+run code), credential printers, and gcloud without its release track. The claims are bounded to
+the forms named in configuration.md.
+
 Each rule, with the asks it costs and what it does not cover, has one home in
 [configuration.md](configuration.md): [Rules](configuration.md#rules) for protected paths,
 braces, globs, `${…}`, `$"…"` and options before the verb;

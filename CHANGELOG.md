@@ -40,6 +40,35 @@ All notable changes to this project are documented here. The format follows
   `trust not recorded:`, the gate's failure behaviour per runtime, mise and asdf shims (not
   trusted in foreign mode), and branch work in `.claude/worktrees/` (docs/development.md, which
   also gains the agy checks and smoke).
+- **The gate names every ask (F-40).** When several parts of a command ask, the reason names up to
+  three in all, then `+N more`: `cobot rule: ask Bash(git rebase*) (default layer); also asks:
+  ask Bash(git push*), ask Bash(git commit*)`. A single ask keeps its reason. A deny still shows
+  only the deny. For an agent's call its own scoped ask comes first. The git push stamp keeps its
+  room in both hosts.
+- **`git config` writes that outlive the repository ask (F-36).** That covers a `--global`,
+  `--system` or `--file` write (also through `GIT_CONFIG*`, `GIT_DIR` or `--git-dir`), a key
+  that runs code later (`core.hooksPath`, `*.command`, `filter.*`, `remote.*.url` and more), any
+  alias other than one read-only verb, an `--edit` and a `--rename-section`. Reads and local
+  writes of plain keys stay silent. Both syntaxes, abbreviated options and short clusters are
+  read into one canonical form, `git config --global write user.email x` (a file scope keeps its
+  path), which an owner `allow` line names. Exporting a git config variable (`export`, `local -x`,
+  `set -a`) and `git submodule foreach` ask too. These used to pass silently.
+- **Outward and account commands ask (F-36).** That covers the forge account, repository settings,
+  secrets and variables, CI runs, issue and PR state, releases, gists and keys, and the machine's
+  tool configuration (rustup per verb, `gcloud config set`, npm, pnpm, yarn and pip config,
+  `docker logout`). The named credential printers ask too, such as `gh auth token`,
+  `gcloud auth print-access-token` and `kubectl get secret -o yaml`.
+- **Forge deletions are refused (F-36).** Deleting a release, secret, variable, label, cache,
+  run, gist, key, issue or merge request through `gh`, `glab`, `gt` or `tea` is a `never` row,
+  rendered in `permissions.deny`. `glab ci delete` and the `gt` and `tea` deletions used to ask.
+  A `never` row reached only through an unknown option before a `gh` or `glab` verb asks instead
+  (`gh issue --label delete list`), and no `allow` lifts that ask.
+- **Shell writes are refused (F-44).** Text written into a file through the shell, such as
+  `cat > f <<EOF`, `printf x > f`, `tee f <<< x` or `echo x | dd of=f`, is denied with the reason
+  to use Edit or Write, wherever the file is, and so are `sed -i`, `awk -i inplace`, `ruby -i`,
+  `yq -i`, and `patch` or `git apply` fed such text. A write the gate cannot trace for certain
+  asks (`{ echo a; } > f`, `ssh h <<EOF > out`). Command output to a file stays silent. The
+  scanner now records each pipeline stage and the stage each redirection belongs to.
 
 ### Fixed
 

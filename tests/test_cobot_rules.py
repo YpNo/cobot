@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -51,13 +52,13 @@ DEFAULT_DECISIONS = [
     ("gh api repos/o/r", None),
     ("terragrunt run-all apply", "deny"),
     ("terragrunt plan", None),
-    ("echo x > ~/.claude/settings.json", "ask"),
-    ("sed -i s/a/b/ ~/.claude/settings.json", "ask"),
+    ("date > ~/.claude/settings.json", "ask"),
+    ("sed -i s/a/b/ ~/.claude/settings.json", "deny"),  # an in-place editor (story 6)
     ("cat ~/.claude/settings.json", "ask"),
     ("cat .claude/settings.local.json", "ask"),
-    ("echo x | tee ~/.claude/settings.json", "ask"),
-    ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", None),
-    ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", None),
+    ("date | tee ~/.claude/settings.json", "ask"),
+    ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", "deny"),  # a shell write (story 6)
+    ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", "deny"),
     ("terraform apply -auto-approve", "deny"),
     ("terraform -chdir=envs/prod apply", "deny"),
     ("tofu destroy", "deny"),
@@ -998,7 +999,9 @@ def test_judgeBash_protectedFileWithSubstitution_keepsProtectedReason(rules, tmp
 
 def test_judgeBash_ruleBackedAskAfterOpaque_reportsTheRule(rules, tmp_path):
     verdict, _ = judge_in(rules, "python3 - <<'PY'\nx\nPY\nrm -rf build", tmp_path)
-    assert verdict.reason() == "cobot rule: ask Bash(rm -rf*) (default layer)"
+    assert verdict.reason() == (
+        "cobot rule: ask Bash(rm -rf*) (default layer); also asks: opaque command 'python3 -'"
+    )
 
 
 def test_makeTarget_noMakefileOrUnreadable_staysOpaque(rules, tmp_path):
@@ -1544,6 +1547,341 @@ def test_stamp_suffix_unreadable_isEmpty(rules, monkeypatch):
     assert rules.stamp_suffix("/") == ""
 
 
+# ---------------------------------------------------------------- every ask named (F-40, story 5)
+
+
+def reason_of(rules, command, **extra):
+    out = json.loads(rules.gate(payload(command, **extra)))["hookSpecificOutput"]
+    return out["permissionDecision"], out["permissionDecisionReason"]
+
+
+def test_gate_severalAsks_reasonNamesEach(rules, tmp_path):
+    command = "git rebase main && git commit -m y && rm -rf build"
+    decision, reason = reason_of(rules, command, cwd=str(tmp_path))
+    assert decision == "ask"
+    assert reason == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(git commit*), "
+        "ask Bash(rm -rf*)"
+    )
+
+
+def test_gate_oneAsk_keepsTodaysReason(rules, tmp_path):
+    assert reason_of(rules, "git rebase main && ls", cwd=str(tmp_path))[1] == (
+        "cobot rule: ask Bash(git rebase*) (default layer)"
+    )
+
+
+def test_gate_sameAskTwice_namedOnce(rules, tmp_path):
+    reason = reason_of(rules, "git commit -m a && git commit -m b", cwd=str(tmp_path))[1]
+    assert reason == "cobot rule: ask Bash(git commit*) (default layer)"
+
+
+def test_gate_denyAmongAsks_showsOnlyTheDeny(rules, tmp_path):
+    decision, reason = reason_of(rules, "git rebase main; git push --force", cwd=str(tmp_path))
+    assert decision == "deny" and "also" not in reason and "rebase" not in reason
+
+
+def test_gate_protectedFileAsk_isInTheList(rules, tmp_path):
+    reason = reason_of(rules, "cat ~/.claude/settings.json; git rebase main", cwd=str(tmp_path))[1]
+    assert "ask Bash(git rebase*)" in reason and "protected file" in reason
+
+
+def test_gate_fourAsksWithPush_endsMoreAndKeepsTheStamp(rules, tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    command = "git rebase main && git commit -m y && rm -rf build && git push origin x"
+    reason = reason_of(rules, command, cwd=str(tmp_path))[1]
+    assert reason.startswith("cobot rule: ask Bash(git rebase*) (default layer); also asks: ")
+    assert " +1 more" in reason and reason.endswith(rules.stamp_suffix(str(tmp_path)))
+    assert " · stamp: missing" in reason and len(reason) <= rules.REASON_LIMIT
+
+
+def test_gate_agentScopedAsk_comesFirst(rules, tmp_path):
+    reason = reason_of(rules, "git push; curl x", cwd=str(tmp_path), agent_type="cobot:consultant")[1]
+    assert reason.startswith("cobot rule: ask Bash(*) @consultant (default layer)")
+    assert "also asks: ask Bash(git push*)" in reason
+
+
+def test_verdictReason_longNotesCut_andTheBudgetHolds(rules):
+    rule = rules.Rule("ask", "Bash", "x*", None, "default", 1)
+    others = tuple(f"note {n} " + "y" * 33 for n in range(5))  # ask_label's 40 characters
+    verdict = rules.Verdict(rules.ASK, rule, also=others)
+    for budget in (200, 120, 60):
+        assert len(verdict.reason(budget)) <= budget
+    assert verdict.reason(200).endswith(f"{others[1]} +3 more")
+    assert verdict.reason(120).endswith(f"also asks: {others[0]} +4 more")
+    assert verdict.reason(60).endswith("; +5 more asks")
+    assert verdict.reason(50) == verdict.own_reason()  # the first reason is never cut for the tail
+
+
+def test_gate_runnerAsks_namedWithTheirRunner(rules, tmp_path):
+    (tmp_path / "Makefile").write_text('deploy:\n\tgit push\n\tpython3 -c "print(1)"\n')
+    reason = judge_in(rules, "make deploy", tmp_path)[0].reason()
+    assert reason == (
+        "cobot rule: ask Bash(git push*) (default layer) via make deploy; also asks: "
+        "opaque command 'python3 -c print(1)' via make deploy"
+    )
+
+
+def test_gate_asksAlikeAfterTheCut_stillCounted(rules, tmp_path):
+    command = "npm run build-the-frontend-a; npm run build-the-frontend-b; npm run build-the-frontend-c"
+    reason = judge_in(rules, command, tmp_path)[0].reason()
+    assert reason.startswith("cobot gate: opaque command 'npm run build-the-frontend-a'; also asks: ")
+    assert reason.count("opaque command 'npm run build-the-fro") == 3
+
+
+def test_askLabel_ruleWithVia_orNoteCut(rules):
+    rule = rules.Rule("ask", "Bash", "git push*", None, "default", 1)
+    assert rules.ask_label(rules.Verdict(rules.ASK, rule, via="mise run ship")) == (
+        "ask Bash(git push*) via mise run ship"
+    )
+    assert rules.ask_label(rules.Verdict(rules.ASK, None, "n" * 90)) == "n" * 40
+    assert rules.ask_label(rules.Verdict(rules.ASK, None, "n" * 90, via="make x")) == "n" * 40 + " via make x"
+
+
+# ---------------------------------------------------------------- git config (story 3)
+
+
+@pytest.mark.parametrize(
+    ("tokens", "form"),
+    [
+        ("git config user.name", "git config --local read user.name"),
+        ("git config --global user.name x", "git config --global write user.name x"),
+        ("git config user.email x --global", "git config --global write user.email x"),
+        ("git config -f ~/.gitconfig user.email x", "git config --file ~/.gitconfig write user.email x"),
+        ("git config --file=a user.email x", "git config --file a write user.email x"),
+        ("git config -zfa user.email x", "git config --file a write user.email x"),
+        ("git config --glob --unset-a a.b", "git config --global write a.b"),
+        ("git config --global --get-all x", "git config --global read x"),
+        ("git config get --global x", "git config --global read x"),
+        ("git config set --worktree k.x v", "git config --worktree write k.x v"),
+        ("git config --comment c core.hooksPath .h", "git config --local write exec core.hookspath .h"),
+        ("git config --type bool --global a.b true", "git config --global write a.b true"),
+        ("git config --global --unset a.b", "git config --global write a.b"),
+        ("git config --rename-section foo core", "git config --local write exec foo core"),
+        ("git config --edit", "git config --local write exec"),
+        ("git config alias.x !sh", "git config --local write exec alias.x !sh"),
+        ("git config alias.x status", "git config --local write alias.x status"),
+        ("git config --list", "git config --local read"),
+    ],
+)
+def test_canonicalGitConfig_scopeActionKeyValue(rules, tokens, form):
+    assert " ".join(rules.canonical_git_config(tokens.split())) == form
+
+
+GIT_CONFIG_ASKS = [
+    "git config --global user.name x",
+    "git config -f ~/.gitconfig user.email x",
+    "git config --file=~/.gitconfig user.email x",
+    "git config --system core.editor vim",
+    "git config set --global user.name x",
+    "git config --global --unset user.name",
+    "git config --unset-all --global user.name",
+    "git -C x config --global user.email y",
+    "git config core.hooksPath .h",
+    "git config core.hooksPath .h --local",
+    "git config Core.HooksPath .h",
+    "git config --comment c core.hooksPath .h",
+    "git config --worktree core.fsmonitor x",
+    "git config alias.x '!sh'",
+    "git config alias.x '-c core.fsmonitor=y status'",
+    "git config --add filter.lfs.clean x",
+    "git config diff.x.textconv cat",
+    "git config credential.helper store",
+    "git config includeIf.gitdir:~/w/.path ~/x",
+    "git config url.x.insteadOf https://github.com/",
+    "git config remote.origin.uploadpack x",
+    "git config hook.pre-commit.command x",
+    "git config diff.external x",
+    "git config --rename-section foo core",
+    "git config --edit",
+    "git config edit --global",
+    'git config "$K" v',
+    'git config alias.x "$V"',
+    "GIT_CONFIG=~/.gitconfig git config user.email x",
+    "GIT_CONFIG_GLOBAL=/tmp/g git config user.email x",
+    "env GIT_CONFIG_SYSTEM=/tmp/s git config user.name x",
+    "GIT_DIR=/tmp/r git config user.email x",
+    "git --git-dir=/tmp/r config user.email x",
+    "export GIT_CONFIG_GLOBAL=/tmp/g; git config user.name x",
+    # the T03 bypass review: abbreviations, clusters, aliases running git, missing keys, set -a
+    "git config --glob user.name x",
+    "git config --ed",
+    "git config --ren foo core",
+    "git config --unknown-option alias.x v",
+    "git config -zf ~/.gitconfig user.c x",
+    "git config -ef ~/.gitconfig",
+    "git config alias.cg 'config --global'",
+    "git config alias.c config",
+    "git config gpg.ssh.defaultKeyCommand x",
+    "git config protocol.allow always",
+    "git config remote.origin.url x",
+    "git config init.templateDir /t",
+    "git config lfs.extension.x.clean y",
+    "set -a; GIT_CONFIG=~/.gitconfig; git config user.name x",
+    "local -x GIT_DIR=/r",
+    "GIT_COMMON_DIR=/r git config user.name x",
+    "git submodule foreach true",
+]
+GIT_CONFIG_SILENT = [
+    "git config --global --get user.name",
+    "git config --global --get-all x",
+    "git config get --global x",
+    "git config --list",
+    "git config --global -l",
+    "git config list --show-origin",
+    "git config --get-regexp alias",
+    "git config user.name",
+    "git config user.email x",
+    "git config alias.x status",
+    "git config --blob HEAD:.gitmodules --list",
+    "git -c core.pager=cat log",
+    "git config --glob --get user.name",
+    "git config --get-reg alias",
+    "git config -lz",
+    "git config --add remote.origin.fetch +refs/heads/x:refs/remotes/origin/x",
+    "export GIT_DIRTY=1",
+    "set -euo pipefail",
+]
+
+
+@pytest.mark.parametrize("command", GIT_CONFIG_ASKS)
+def test_gate_gitConfigWritesThatOutliveTheSession_ask(rules, command):
+    assert decision_of(rules, command) == "ask", command
+
+
+@pytest.mark.parametrize("command", GIT_CONFIG_SILENT)
+def test_gate_gitConfigReadsAndLocalPlainWrites_staySilent(rules, command):
+    assert decision_of(rules, command) is None, command
+
+
+def test_gate_gitConfigOwnerAllow_namesTheCanonicalForm(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git config --global write user.email *)\n")
+    assert decision_of(rules, "git config --global user.email me@example.org") is None
+    assert decision_of(rules, "git config --global user.name x") == "ask"
+
+
+# ---------------------------------------------------------------- outward rows (stories 1, 2, 4)
+
+
+OUTWARD_ASKS = [
+    "gh auth login", "gh auth setup-git", "gh auth switch -u x", "gh config set editor vim",
+    "gh extension install x/y", "gh ext upgrade --all", "gh repo create x --public",
+    "gh repo edit --visibility public", "gh repo -R o/r archive", "gh repo sync",
+    "gh secret set X", "gh variable set X", "gh label create x", "gh label clone o/r",
+    "gh workflow run ci.yml", "gh workflow disable ci", "gh run rerun 1", "gh run cancel 1",
+    "gh issue edit 1", "gh issue close 1", "gh issue transfer 1 o/r", "gh pr edit 1",
+    "gh pr close 1", "gh pr ready 1", "gh release edit v1", "gh release upload v1 a.tgz",
+    "gh gist create a.txt", "gh codespace create", "gh ssh-key add k.pub", "gh gpg-key add k",
+    "glab auth login",
+    "rustup update", "rustup default stable", "rustup toolchain install 1.99",
+    "rustup toolchain uninstall 1.98", "rustup target add wasm32-unknown-unknown",
+    "rustup component add clippy", "rustup override set nightly", "rustup self update",
+    "rustup set profile minimal", "rustup install stable",
+    "gcloud config set project x", "gcloud config unset project",
+    "gcloud config configurations activate other",
+    "npm login", "npm logout", "npm adduser", "npm set registry x", "npm config set x y",
+    "npm c set x y", "npm config delete x", "npm token create",
+    "pnpm config set x y", "yarn config set x y", "pip config set global.index-url x",
+    "pip3 config unset global.index-url", "python3 -m pip config set global.x y",
+    "docker logout",
+    # the T04 review: more verbs, aliases and option placement
+    "gh discussion create", "gh gist rename a b", "gh issue unlock 1", "gh pr revert 1",
+    "gh pr update-branch 1", "gh project create", "gh project item-add 1", "gh repo deploy-key add k",
+    "gh codespace stop", "glab auth logout", "glab config set token x", "glab repo create x",
+    "glab token create x", "glab ssh-key add k", "rustup upgrade", "rustup add stable",
+    "rustup toolchain rm 1.98", "rustup component uninstall clippy", "rustup override add x",
+    "npm config rm x", "npm config --location=global set k v", "npm token rm 1",
+    "pip3.13 config set a b", "python3 -mpip config set a b", "python -I -m pip config set a b",
+    "pip config --global set a b", "pnpm config delete x", "yarn config unset x", "yarn npm login",
+    "gcloud beta config set project x", "gcloud config --quiet set project x",
+]  # fmt: skip
+CREDENTIAL_PRINTERS = [
+    "gh auth token", "gh auth status --show-token", "gh auth status -t", "gh auth status -at",
+    "gh auth status --json hosts --show-token", "glab auth status -t", "glab config get token",
+    "gcloud auth print-access-token --account a", "gcloud auth print-identity-token",
+    "gcloud auth application-default print-access-token", "gcloud config config-helper",
+    "gcloud secrets versions access latest --secret s", "git credential fill",
+    "git credential-store get", "docker-credential-desktop get",
+    "kubectl config view --raw", "kubectl get secret x -o yaml", "kubectl get secrets -ojson",
+    "kubectl -n x get secret/y --output=jsonpath={.data}", "npm token list",
+    "kubectl get secret x --template={{.data}}", "kubectl get secret x -o JSON",
+    "kubectl get secret x -o kyaml", "kubectl config view --flatten",
+    "kubectl get --raw /api/v1/namespaces/default/secrets/x",
+    "gcloud beta secrets versions access latest --secret=x",
+    "gcloud secrets --project p versions access latest", "glab config get -g token",
+    "glab config -g get token", "git-credential-store get",
+]  # fmt: skip
+FORGE_DELETIONS = [
+    "gh release delete v1", "gh release -R o/r delete v1", "gh secret delete X",
+    "gh secret remove X", "gh variable delete X", "gh label delete x", "gh cache delete x",
+    "gh run delete 1", "gh gist delete x", "gh ssh-key delete 1", "gh gpg-key delete 1",
+    "gh issue delete 1", "gh repo deploy-key delete 1", "glab ci delete 1",
+    "glab variable delete X", "glab release delete v1", "glab -R o/r issue delete 1",
+    "glab mr delete 1", "gt release delete v1", "gt pr delete 1", "gt issue delete 1",
+    "tea releases delete v1", "tea comments delete 1", "tea assets delete v1 a",
+    "gh repo autolink delete 1", "gh project delete 1", "gh project item-delete 1",
+    "gh project field-delete 1", "glab snippet delete 1", "glab token revoke x",
+    "glab securefile remove x", "glab mr del 1", "tea labels delete x", "tea milestones delete x",
+    "tea webhooks delete 1", "gt label delete x", "gt milestone delete x",
+]  # fmt: skip
+OUTWARD_SILENT = [
+    "gh auth status", "gh secret list", "gh repo view", "gh run list", "gh release list",
+    "rustup toolchain list", "rustup show", "rustup target list", "gcloud config list",
+    "gcloud config get-value project", "npm config get x", "npm config list",
+    "kubectl get secrets", "kubectl get secret x -o name", "kubectl config view",
+    "pip config list", "gh label list",
+    "gh auth status --show-token=false", "kubectl get configmap secret -o yaml",
+    "kubectl get -n secret pods -o yaml", "gcloud beta compute instances list",
+    "pip config get settings.x", "rustup toolchain list --installed",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("command", OUTWARD_ASKS + CREDENTIAL_PRINTERS)
+def test_gate_outwardAccountAndCredentialCommands_ask(rules, command):
+    assert decision_of(rules, command) == "ask", command
+
+
+@pytest.mark.parametrize("command", FORGE_DELETIONS)
+def test_gate_forgeDeletions_areDenied(rules, command):
+    assert decision_of(rules, command) == "deny", command
+
+
+@pytest.mark.parametrize("command", OUTWARD_SILENT)
+def test_gate_forgeAndToolReads_staySilent(rules, command):
+    assert decision_of(rules, command) is None, command
+
+
+def test_credentialPrinterAsk_ownerAllowLiftsOneForm(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(gh auth token*)\n")
+    assert decision_of(rules, "gh auth token") is None
+    assert decision_of(rules, "gh auth status -t") == "ask"
+
+
+def test_defaultRows_noteHoldsNoParenthesis(rules):
+    text = (PLUGIN / "rules" / "default.rules").read_text(encoding="utf-8")
+    rows = [line for line in text.splitlines() if re.match(r"^(never|ask|allow) ", line)]
+    notes = [line.split(" # ", 1)[1] for line in rows if " # " in line]
+    assert notes and not [note for note in notes if ")" in note or "(" in note]
+
+
+def test_sync_forgeDeletions_renderedInPermissionsDeny(rules, capsys, tmp_path, layers):
+    settings = tmp_path / "settings.json"
+    out = cli(rules, ["sync", "--settings", str(settings)], capsys)[1].out
+    deny = json.loads(out.split("# diff")[0].replace("# fragment", ""))["permissions"]["deny"]
+    assert {"Bash(gh release delete:*)", "Bash(glab ci delete:*)", "Bash(tea releases delete:*)"} <= set(deny)
+
+
+def test_gate_gitConfigFileAllow_namesItsPath(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git config --file .gitmodules write submodule.*)\n")
+    assert decision_of(rules, "git config -f .gitmodules submodule.x.url u") is None
+    assert decision_of(rules, "git config -f ~/.gitconfig submodule.x.url u") == "ask"
+
+
 # ---------------------------------------------------------------- push option hoisting (R2)
 
 
@@ -1672,7 +2010,16 @@ def test_canonical_gcloud_cutsAtTheFirstVerb(rules):
         "gcloud", "projects", "add-iam-policy-binding",
     ]  # fmt: skip
     assert cut(["gcloud", "sql", "backups", "restore", "1"]) == ["gcloud", "sql", "backups", "restore"]
-    assert cut(["gcloud", "config", "set", "project", "p"]) == ["gcloud", "config", "set", "project", "p"]
+    assert cut(["gcloud", "config", "set", "project", "p", "--quiet"]) == ["gcloud", "config", "set"]
+    assert cut(["gcloud", "auth", "print-identity-token", "--audiences=x"]) == [
+        "gcloud", "auth", "print-identity-token",
+    ]  # fmt: skip
+    assert cut(["gcloud", "config", "config-helper", "--format=json"]) == [
+        "gcloud", "config", "config-helper",
+    ]  # fmt: skip
+    assert cut(["gcloud", "config", "configurations", "activate", "x"]) == [
+        "gcloud", "config", "configurations", "activate",
+    ]  # fmt: skip
     assert cut(["gcloud", "auth", "print-access-token"]) == ["gcloud", "auth", "print-access-token"]
     assert cut(["gcloud", "container", "fleet", "mesh", "update", "--management", "automatic"]) == [
         "gcloud", "container", "fleet", "mesh", "update",
@@ -1884,7 +2231,7 @@ def test_gate_cloudReadListForReadOnlyAgents(rules, command, silent):
         ("gcloud run services list", None),
         ("gcloud storage ls gs://b", None),
         ("gcloud logging read x", None),
-        ("gcloud config set project p", None),
+        ("gcloud config set project p", "ask"),  # F-36: a verb since T04
         ("kubectl run debug --image=busybox", "ask"),
         ("kubectl debug pod/x -it --image=busybox", "ask"),
         ("kubectl cp pod:/a ./a", "ask"),
@@ -2314,7 +2661,7 @@ def test_gate_ghAliases_getTheirCommandsVerdict(rules):
         "gh pr new --fill --body 'Generated with X'": "deny",
         "gh issue new -t x": "ask",
         "gh release new v1": "deny",
-        "gh repo new o/x": None,  # no row yet: T04 adds the account rows
+        "gh repo new o/x": "ask",  # gh repo create, an account row (T04)
     }
     for command, decision in expect.items():
         assert decision_of(rules, command) == decision, command
@@ -2367,15 +2714,16 @@ def test_gate_parallelAndWatch_askAsOpaqueRunners(rules):
 
 def test_gate_cobraOptionsBeforeTheVerb_everyReadingJudged(rules):
     # cobra drops every option before choosing a subcommand: a value option takes the next word,
-    # a boolean does not, so both readings are judged (bypass review of T01, HIGH-1 and HIGH-2)
+    # a boolean does not, so both readings are judged (bypass review of T01, HIGH-1 and HIGH-2).
+    # A never row reached only through an unknown option's reading asks (owner, 2026-11-17).
     expect = {
-        "gh release --title x create v1": "deny",
+        "gh release --title x create v1": "ask",
         "gh release --notes=x create v1": "deny",
         "gh release -tx create v1": "deny",
-        "gh release -R o/r --title x create v1": "deny",
-        "gh pr --body 'Generated with x' create": "deny",
-        "gh --title x release create v1": "deny",
-        "gh -t x release new v1": "deny",
+        "gh release -R o/r --title x create v1": "ask",
+        "gh pr --body 'Generated with x' create": "ask",
+        "gh --title x release create v1": "ask",
+        "gh -t x release new v1": "ask",
         "glab -R o/r release create v1": "deny",
         "glab --repo o/r mr create --fill": "ask",
         "gh api --hostname -XDELETE repos/x": "deny",  # api is no group: its own canonical form
@@ -2386,6 +2734,20 @@ def test_gate_cobraOptionsBeforeTheVerb_everyReadingJudged(rules):
     silent = ("gh -R o/r pr list", "gh pr -R o/r view 3", "glab -R o/r mr list", "gh release -- create v1")
     for command in silent:
         assert decision_of(rules, command) is None, command
+
+
+def test_gate_neverThroughAnOptionValue_asksAndNoAllowLiftsIt(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(gh issue*)\nallow Bash(gh secret*)\n")
+    for command in (
+        "gh issue --label delete list",
+        "gh secret --env delete list",
+        "glab mr --label delete list",
+    ):
+        decision, reason = reason_of(rules, command)
+        assert decision == "ask" and "option value before the verb" in reason, command
+    for command in ("gh release delete v1", "gh release -R o/r delete v1", "gh issue delete 1 --yes"):
+        assert decision_of(rules, command) == "deny", command
 
 
 def test_gate_escapedOrQuotedSemicolon_isAWordNotASeparator(rules):
@@ -2478,7 +2840,7 @@ SUBSTITUTION_SILENT = [
     "cat docs/$(date +%F).md",
     "grep -n 'use $(x) here' f",
     "x=$'\\n'; echo \"$x\"",
-    "cat <<'EOF' > notes.md\nrun `cargo test` and $(make)\nEOF",
+    "cat <<'EOF' > /dev/null\nrun `cargo test` and $(make)\nEOF",
     "case $(uname) in Linux) echo l;; esac",
     "echo x # $(git push --force)",
 ]
@@ -2574,7 +2936,7 @@ BYPASSES_CLOSED = [
     ("(echo $((echo $'\\'(') ; git push ; (true)))", "ask"),
     ("echo ${x:->(terraform apply)}", "deny"),
     ("echo ${x:-<(git push)}", "ask"),
-    ("(echo x >~/.claude/settings.json)", "ask"),
+    ("(date >~/.claude/settings.json)", "ask"),
     ("exec -- git push", "ask"),
     ("command -- git push --force", "deny"),
     ("nohup -- git push", "ask"),
@@ -2651,7 +3013,7 @@ def test_judgeBash_definedCat_dropsTheKnownValue(rules):
 
 def test_judgeBash_protectedPathWithAHole_asks(rules, tmp_path):
     assert judge_in(rules, "cat .claude/$(echo settings.local.json)", tmp_path)[0].decision == "ask"
-    assert judge_in(rules, 'echo x > "$(echo ~)/.claude/settings.json"', tmp_path)[0].decision == "ask"
+    assert judge_in(rules, 'date > "$(echo ~)/.claude/settings.json"', tmp_path)[0].decision == "ask"
     assert judge_in(rules, "cat docs/$(date).md", tmp_path)[0].decision is None
 
 
@@ -2792,7 +3154,7 @@ def test_judgeBash_unanchoredGlobUnderAnAgent_saysHowToAnchor(rules):
     "command",
     [
         "cat ~/.claude/settings.js?",
-        "echo x > ~/.claude/settings.js?",
+        "date > ~/.claude/settings.js?",
         "cp x ~/.claude/{settings.json,y}",
         "cat ~/.claude/settings.[]j]son",
         "cat ~/.claude/settings.j[[:alpha:]]on",
@@ -2890,8 +3252,8 @@ def test_commandParts_plantedSentinelInABody_isRefused(rules):
 
 REVIEW_ROWS = [
     # runner-body redirection targets: quotes removed, braces expanded
-    ("bash -c 'echo {} > {~/.claude/settings.json,}'", "ask"),
-    ("bash -c 'echo x > ~/.claude/\"settings.json\"'", "ask"),
+    ("bash -c 'date > {~/.claude/settings.json,}'", "ask"),
+    ("bash -c 'date > ~/.claude/\"settings.json\"'", "ask"),
     # brace quote skipping as the scanner reads it, failing closed
     ("cat ~/.claude/{settings.json,$'\\''}", "ask"),
     ('cat ~/.claude/{settings.json,"$(echo "\'")"}', "ask"),
@@ -3220,7 +3582,8 @@ AGENT_READS = [
 
 @pytest.mark.parametrize("command", AGENT_GUARDED)
 def test_decide_agentReadList_neverCoversAWriteOrARun(rules, command):
-    assert decide(rules, command, agent="cobot:consultant")[0].decision == "ask", command
+    # ask, or deny where story 6 refuses the write outright (yq -i)
+    assert decide(rules, command, agent="cobot:consultant")[0].decision in ("ask", "deny"), command
 
 
 @pytest.mark.parametrize("command", AGENT_READS)
@@ -3812,7 +4175,7 @@ AGY_SELF_COMMANDS = [
     ("install.sh --check", "ask"),
     ("/home/x/cobot/install.sh --agy", "ask"),
     ("sh install.sh", "ask"),
-    ("echo x > ~/.gemini/config/hooks.json", "ask"),
+    ("date > ~/.gemini/config/hooks.json", "ask"),
     ("cat ~/.gemini/jetski/grants.json", "ask"),
     ("cp evil.json ~/.gemini/antigravity-cli/settings.json", "ask"),
     ("cp x .agents/hooks.json", "ask"),
@@ -3954,7 +4317,7 @@ def agy_installed(rules, tmp_path, monkeypatch):
         ("python3 -I {bin}/cobot-memory check > {bin}/cobot-rules", "ask"),
         ("python3 -c 'print(1)' {bin}/cobot-rules", "ask"),
         ("python3 -I {bin}/../hooks.json", "ask"),
-        ("sed -i s/a/b/ {bin}/cobot-rules", "ask"),
+        ("date > {bin}/cobot-rules", "ask"),
         ("cat {root}/hooks.json", "ask"),
     ],
 )
@@ -3987,7 +4350,7 @@ def fake_home(rules, tmp_path, monkeypatch):
         (".gemini/config", "cp /tmp/evil.json mcp_config.json", "ask"),
         (".gemini/config", "rm *", "ask"),
         ("ws/.agents", "tee hooks.json", "ask"),
-        ("ws/.agents", "printf x > hooks.json", "ask"),
+        ("ws/.agents", "date > hooks.json", "ask"),
         ("ws", "cat README.md", None),
         ("ws", "git add hooks.json", None),
         ("ws", "ls *.log", None),
@@ -4082,7 +4445,7 @@ def test_judgeFile_symlinkedHome_folderRowProtectsTheRealFolderItself(rules, tmp
 
 @pytest.mark.parametrize(
     "command",
-    ["echo x > door/key.txt", "cat ./alias", "cat door/*", "cat door/$(echo key.txt)"],
+    ["date > door/key.txt", "cat ./alias", "cat door/*", "cat door/$(echo key.txt)"],
 )
 def test_protectedFileTouched_tokenThroughASymlink_asks(rules, vault, command):
     verdict = judge_in(rules, command, vault)[0]
@@ -4230,7 +4593,7 @@ def test_caseFold_allowRowsNeverFold(rules, layers, tmp_path):
         "tee ${HOME}/.gemini/config/x",
         'tee "$HOME/.gemini/jetski/x"',
         "rm -r $HOME/.gemini/config",
-        "echo x > $HOME/.gemini/config/x",
+        "date > $HOME/.gemini/config/x",
         "cd $HOME/.gemini/config && ls",
         "mv $HOME/.gemini /tmp/g",
         "cp x ${HOME}/.gemini/antigravity-cli/settings.json",
@@ -4272,8 +4635,8 @@ def workspace(rules, tmp_path, layers):
         "cd .agents; tee hooks.json",
         "pushd vault && cat key.txt",
         "cd docs && cd ../.claude && cp /tmp/x settings.local.json",
-        "cd .claude && echo x > settings.json",
-        "cd .agents && echo x >> hooks.json",
+        "cd .claude && date > settings.json",
+        "cd .agents && date >> hooks.json",
         "cd .agents && tee plugins/x.sh",
         "cd .claude && tee ./settings.json",
         "cd .claude || exit; tee settings.json",
@@ -4318,7 +4681,7 @@ def test_cdOperand_ordinaryVariables_staySilent(rules, fake_home, command):
 
 @pytest.mark.parametrize(
     "command",
-    ['cd "$d" && tee settings.json', 'cd "$d" && echo x > hooks.json', "cd $(x) && cp a Settings.local.json"],
+    ['cd "$d" && tee settings.json', 'cd "$d" && date > hooks.json', "cd $(x) && cp a Settings.local.json"],
 )
 def test_cdUnknown_wordNamingAProtectedFile_asks(rules, workspace, command):
     assert judge_in(rules, command, workspace)[0].decision == "ask", command
@@ -4384,7 +4747,7 @@ def linked(workspace):
         "cat ./a?ias",
         "cat [[:alpha:]]lias",
         "cat [^x]lias",
-        "echo x > al*",
+        "date > al*",
         "shopt -s dotglob; cat .?",
         "tee d*/new.txt",
         "cp x do?r/",
@@ -4436,7 +4799,7 @@ def claude_dir(fake_home):
     "command",
     [
         'for f in settings.json; do cp /tmp/evil "$f"; done',
-        'for f in settings.local.json; do echo "{}" > $f; done',
+        "for f in settings.local.json; do date > $f; done",
         "select f in settings.json; do cp /tmp/evil $f; break; done",
         "flock settings.local.json true",
         "case x in settings.json) :;; esac",
@@ -4469,7 +4832,7 @@ def test_bypassFold_globNamingTheProtectedFolder_asks(rules, claude_dir, command
     "command",
     [
         "cd && tee .gemini/config/x",
-        "cd; echo x > .gemini/config/x",
+        "cd; date > .gemini/config/x",
         "cd -- && tee .gemini/config/x",
         "bash -c 'cd && tee .gemini/config/x'",
         "cd ~/.gemini && tee ~+/config/x",
@@ -4477,7 +4840,7 @@ def test_bypassFold_globNamingTheProtectedFolder_asks(rules, claude_dir, command
         "pushd ~/.gemini; pushd /; tee ~1/config/x",
         "CDPATH=~/.gemini cd config && tee x",
         "CDPATH=~/.gemini; cd config; tee x",
-        "CDPATH=$HOME/.gemini; cd config; echo y > x",
+        "CDPATH=$HOME/.gemini; cd config; date > x",
     ],
 )
 def test_bypassFold_cdForms_reachTheProtectedFolder(rules, claude_dir, command):
@@ -4524,12 +4887,12 @@ def deep_links(claude_dir):
 @pytest.mark.parametrize(
     "command",
     [
-        "echo x > a*/l/config/x",
+        "date > a*/l/config/x",
         "cat a*/l/config/x",
         "cat s*/../.gemini/config/x",
         "shopt -s nocaseglob; cat LNK*/x",
         'cd "$d" && cp /etc/hosts hooks.js?n',
-        'cd "$d"; echo x > settings.js[o]n',
+        'cd "$d"; date > settings.js[o]n',
     ],
 )
 def test_bypassFold_globsThroughLinksDotsAndCase_ask(rules, deep_links, command):
@@ -4809,3 +5172,136 @@ def test_readingScript_keepsItsAsk(rules, command):
 
 def test_readingPerl_isNotDenied(rules):
     assert decide(rules, "perl -ne 'print if /x/' x.txt")[0].decision != "deny"
+
+
+# ---------------------------------------------------------------- shell writes (F-44, story 6)
+
+SHELL_WRITES_DENIED = [
+    "cat > a.md <<'EOF'\nx\nEOF",
+    "cat >> src/lib.rs <<'EOF'\nx\nEOF",
+    "printf x > a.txt",
+    "echo x >> .agent/JOURNAL.md",
+    "tee a.txt <<< x",
+    "echo x | dd of=f",
+    "patch -p1 <<'EOF'\nx\nEOF",
+    "jq -rn x > f",
+    "printf x | tee -a f > /dev/null",
+    "echo x | sponge f",
+    "sort -o f <<< x",
+    "cp /dev/stdin f <<< x",
+    "printf x | git apply",
+    "/bin/echo x > f",
+    "awk 'BEGIN{print 1}' > f",
+    "echo x &> f",
+    "printf x | base64 -d | tee f",
+    "cat <(echo x) > f",
+    "cat > f < <(printf x)",
+    "printf x | { cat > f; }",
+    "bash -c 'cat > f <<EOF\nx\nEOF'",
+    "echo x > /dev/fd/3",
+    "echo x > /dev/tcp/h/80",
+    "sed -i s/a/b/ f.txt",
+    "sed -i.bak s/a/b/ f.txt",
+    "gsed --in-place=.b s/a/b/ f",
+    "sed -Ei s/a/b/ f",
+    "awk -i inplace 1 f",
+    "gawk --include=inplace 1 f",
+    "ruby -pi -e 'x' f",
+    "yq -i .a=1 f.yaml",
+    "distrobox enter b -- sed -i s/a/b/ f",
+    "fd -X sed -i s/a/b/",
+    "find . -name x -exec sed -i s/a/b/ {} +",
+    # the T05 review
+    "exec 3> f; echo x >&3",  # fd 3 is a file: the fd table follows it
+    "echo x 3>f >&3",
+    "echo x 2>f 1>&2",
+    "cat <<<x 2>f >&2",
+    "echo x 2>f >/dev/stderr",
+    "echo x |\ntee f",
+    "bash -lc 'echo x > f'",
+    "bash -c -e 'cat > f <<<x'",
+    "distrobox enter b -- sh -c 'cat > f <<<x'",
+    "nix-shell --run 'echo x > f'",
+    "echo x | sort --output f",
+    "sort -uo f <<<x",
+    "cp <(echo x) f",
+    "install -D <(printf x) f",
+    'x=secret; echo "$x" > f',
+    "echo \"$(printf 'a b')\" > f",
+]
+SHELL_WRITES_ASK = [
+    "{ echo a; } > f",
+    "for i in 1; do echo a; done > f",
+    "(echo a; cat) > f",
+    "ssh h <<'EOF' > out\nls\nEOF",
+    "echo x | kubectl apply -f - > log",
+    "exec 2>build.log; echo start; make",
+    'w(){ cat > "$1"; }; echo x | w f',
+    "cat <<< x | bash -c 'cat > f'",
+    "printf x | { read l; cat > f; }",
+    "{ true; echo x; } | cat > f",
+    "for i in 1; do echo x; done | tee f",
+    "if true; then echo x; fi | tee f",
+    "case a in a) echo x;; esac > f",
+    "{ exec >f; }; echo x",
+    "echo x | bash -c 'tee f'",
+    "sh -c 'cat > f' <<<x",
+]
+SHELL_WRITES_SILENT = [
+    "cargo metadata > m.json && echo done",
+    "echo done && cargo metadata > m.json",
+    "cat a b > c",
+    "cp a b",
+    "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+    "echo x > /dev/null",
+    "echo x >&2",
+    "printf x > /dev/stderr",
+    "echo x | tee /dev/null",
+    "echo x 2> e.log",
+    "cat <<'EOF' | kubectl apply -f -\nx\nEOF",
+    "echo x | grep x",
+    "tee - <<< x",
+    "sed -n p f",
+    "echo $(date) && ls > l",
+    "printf 'b\\na\\n' | sort",
+    "sort <<<x",
+    "ls | gawk",
+    "awk",
+    'echo "$(git rev-parse HEAD)" > f',
+    "echo $? > rc",
+    'echo "$HOME" > f',
+    'cat > f <<<"$(git log)"',
+    "make | tee log",
+]
+
+
+def test_shellWriteAsk_ownerAllowMustCoverEveryAsk(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(grep *)\n")
+    assert decide(rules, "echo a | grep a > f; echo b | awk 1 > g")[0].decision == "ask"
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_DENIED)
+def test_shellWrite_isDeniedWithTheEditReason(rules, command):
+    verdict = decide(rules, command)[0]
+    assert verdict.decision == "deny", command
+    assert "Edit or Write" in verdict.reason(), command
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_ASK)
+def test_shellWrite_uncertain_asks(rules, command):
+    assert decide(rules, command)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_SILENT)
+def test_shellWrite_commandOutputAndDevices_noShellWriteVerdict(rules, command):
+    verdict = decide(rules, command)[0]  # git commit and kubectl apply keep their own ask rows
+    assert verdict.decision != "deny" and rules.SHELL_WRITE_ASK not in verdict.reason(), command
+    assert rules.shell_write(rules.shell.scan(command)) == (None, []), command
+
+
+def test_shellWriteAsk_ownerAllowLiftsIt(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(ssh h*)\n")
+    assert decide(rules, "ssh h <<'EOF' > out\nls\nEOF")[0].decision is None
+    assert decide(rules, "cat > a.md <<'EOF'\nx\nEOF")[0].decision == "deny"

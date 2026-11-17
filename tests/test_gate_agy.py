@@ -77,16 +77,73 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
         ("fd -x git push --force", "deny"),
         ("watch git push", "force_ask"),
         ("gh pr -R o/r list", "allow"),
-        ("gh release --title x create v1", "deny"),
+        ("gh release --title x create v1", "force_ask"),
         ("find . -exec true \\; -exec git push --force \\;", "deny"),
         ("fd -Hx git push --force", "deny"),
         ("pkexec git push", "force_ask"),
         ("gh my-extension", "force_ask"),
+        ("git config --global user.name x", "force_ask"),
+        ("git config core.hooksPath .h", "force_ask"),
+        ("git config --global --get user.name", "allow"),
+        ("gh secret set X", "force_ask"),
+        ("gh auth token", "force_ask"),
+        ("gh release delete v1", "deny"),
+        ("printf x > a.txt", "deny"),
+        ("sed -i s/a/b/ f", "deny"),
+        ("{ echo a; } > f", "force_ask"),
+        ("cargo metadata > m.json && echo done", "allow"),
     ],
 )
 def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):
     # spec gate-f36-f40-f44, story 0: -R after the group, gh aliases, fd and watch runners
     assert decide(rules, "run_command", {"CommandLine": command}, [workspace]) == expected
+
+
+def test_runCommand_severalAsks_reasonNamesEach(rules, workspace):
+    # spec gate-f36-f40-f44, story 5 under agy
+    data = answer(rules, payload("run_command", {"CommandLine": "git rebase main && rm -rf b"}, [workspace]))
+    assert data["decision"] == "force_ask"
+    assert data["reason"] == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(rm -rf*)"
+    )
+
+
+def test_runCommand_denyAmongAsks_showsOnlyTheDeny(rules, workspace):
+    data = answer(rules, payload("run_command", {"CommandLine": "git rebase main; git push -f"}, [workspace]))
+    assert data["decision"] == "deny" and "also" not in data["reason"]
+
+
+def test_judgePlan_asksAcrossCalls_areNamed(rules, workspace):
+    plan = rules.agy.Plan(
+        calls=(("Bash", {"command": "git rebase main"}), ("Bash", {"command": "rm -rf b"})),
+        cwd=str(workspace),
+    )
+    verdict = rules.judge_plan(plan, [str(workspace)], str(workspace))
+    assert verdict.reason() == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(rm -rf*)"
+    )
+
+
+PARITY_SWEEP = [  # spec gate-f36-f40-f44, T06: one sample per story, both runtimes agree
+    "gh release -R o/r create v1", "gh pr new", "fd -x git push --force",  # story 0
+    "gh auth setup-git", "gh secret set X", "rustup default stable", "gh secret list",  # story 1
+    "gh secret delete X", "glab ci delete 1", "gh issue --label delete list",  # story 2
+    "git config --global user.name x", "git config core.hooksPath .h", "git config user.name",  # 3
+    "gh auth status -t", "kubectl get secret x -o yaml", "kubectl get secrets",  # story 4
+    "git rebase main && git push origin x && git commit -m y",  # story 5
+    "cat > a.md <<'EOF'\nx\nEOF", "{ echo a; } > f", "cargo metadata > m.json", "yq -i .a=1 f",  # 6
+]  # fmt: skip
+CLAUDE_TO_AGY = {None: "allow", "ask": "force_ask", "deny": "deny"}
+
+
+@pytest.mark.parametrize("command", PARITY_SWEEP)
+def test_paritySweep_bothRuntimesReachTheSameDecision(rules, workspace, monkeypatch, command):
+    monkeypatch.chdir(workspace)
+    call = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(workspace)}
+    claude = rules.gate(json.dumps(call))
+    decision = json.loads(claude)["hookSpecificOutput"]["permissionDecision"] if claude else None
+    args = {"CommandLine": command, "Cwd": str(workspace)}
+    assert decide(rules, "run_command", args, [workspace]) == CLAUDE_TO_AGY[decision]
 
 
 def test_runCommand_denyNamesTheRule(rules, workspace):
@@ -616,7 +673,7 @@ def test_corpus_noAnswerEverAutoApproves():
         "tee $HOME/.gemini/config/settings.json",
         "rm -r $HOME/.gemini/config",
         "cd .agents && tee hooks.json",
-        "cd .agents && echo x > hooks.json",
+        "cd .agents && date > hooks.json",
         'cd "$d" && tee hooks.json',
         "rm -r ~/.gemini",
         "mv ~/.GEMINI ~/g",

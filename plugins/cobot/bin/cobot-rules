@@ -381,20 +381,47 @@ class Rule:
         return f"{self.decision} {tool} rule at {RULES_FILE}:{self.line}"
 
 
+MAX_NAMED_ASKS = 3  # the asks a reason names in all, its own first (F-40)
+ASK_NOTE_LIMIT = 40  # a ruleless ask's note, as another ask's name
+
+
+def other_asks(shown: list[str], rest: int) -> str:
+    """``; also asks: a, b +N more``, or ``; +N more asks`` when none fits by name."""
+    if not shown:
+        return f"; +{rest} more asks" if rest else ""
+    return f"; also asks: {', '.join(shown)}" + (f" +{rest} more" if rest else "")
+
+
 @dataclass(frozen=True)
 class Verdict:
     decision: str | None
     rule: Rule | None
     note: str = ""
     via: str = ""  # the runner invocation this verdict was resolved from, e.g. ``mise run deploy``
+    also: tuple[str, ...] = ()  # the other distinct asks of the command, as ask_label names them
 
-    def reason(self) -> str:
+    def own_reason(self) -> str:
         if self.rule:
             text = f"cobot rule: {self.rule.shown()} ({self.rule.layer} layer)"
             text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
         return f"{text} via {self.via}" if self.via else text
+
+    def reason(self, budget: int = REASON_LIMIT) -> str:
+        """The verdict's own reason, then the other asks (F-40): up to MAX_NAMED_ASKS named in
+        all, then ``+N more``, inside ``budget``. The own reason is never cut for them: with no
+        room, or no other ask, it stands alone, as before F-40."""
+        first = self.own_reason()
+        shown = list(self.also[: MAX_NAMED_ASKS - 1])
+        while self.also:
+            tail = other_asks(shown, len(self.also) - len(shown))
+            if len(first) + len(tail) <= budget:
+                return first + tail
+            if not shown:
+                break
+            shown.pop()
+        return first
 
 
 # ---------------------------------------------------------------- rule files
@@ -668,7 +695,8 @@ GCLOUD_MUTATING_VERBS = frozenset(
     "create delete update ssh scp deploy submit enable disable import export apply promote rollback "
     "resize start stop reset suspend resume restart move undelete destroy upgrade patch clone failover "
     "pause cancel replace invoke install cp mv rm rsync publish execute call run login revoke "
-    "activate-service-account".split()
+    "activate-service-account set unset activate print-access-token print-identity-token "
+    "config-helper".split()
 )
 GCLOUD_VERB_PREFIXES = ("add-", "remove-", "set-", "attach-", "detach-", "restore")
 # environment names a read-only agent may set without disabling its read list
@@ -709,6 +737,25 @@ def is_gcloud_verb(token: str) -> bool:
     return token.startswith(GCLOUD_VERB_PREFIXES)
 
 
+GCLOUD_TRACKS = frozenset({"alpha", "beta", "preview"})
+
+
+def gcloud_words(tokens: list[str]) -> list[str]:
+    """``gcloud beta secrets --project p versions access`` becomes ``gcloud secrets versions
+    access``: the release track and the flags placed between the command words drop, a known
+    global value flag with its value."""
+    with_value, _ = GLOBAL_OPTIONS["gcloud"]
+    words, skip = [tokens[0]], False
+    for at, word in enumerate(tokens[1:], start=1):
+        if skip:
+            skip = False
+        elif word.startswith("-"):
+            skip = "=" not in word and word in with_value
+        elif not (at == 1 and word in GCLOUD_TRACKS):
+            words.append(word)
+    return words
+
+
 def canonical_gcloud(tokens: list[str]) -> list[str]:
     """``gcloud <group…> <verb> …`` is cut after its first verb (from the third token: the first
     two are groups such as ``run`` or ``deploy``), so an ``allow`` written without a trailing
@@ -716,6 +763,7 @@ def canonical_gcloud(tokens: list[str]) -> list[str]:
     as ``create``. A command without a known verb keeps its form."""
     if len(tokens) < 3 or tokens[0] != "gcloud":
         return tokens
+    tokens = gcloud_words(tokens)
     for index in range(2, len(tokens)):
         if is_gcloud_verb(tokens[index]):
             return tokens[: index + 1]
@@ -1418,6 +1466,298 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
     return [tokens[0], "api", "-X", method, *rest] if method else tokens
 
 
+# git config's grammar, git 2.46+ (both syntaxes), for its canonical form (spec gate-f36-f40-f44,
+# story 3): `git config <scope> <read|write> [exec] <key> <value>`
+GIT_CONFIG_VALUE_OPTIONS = frozenset(
+    {"-f", "--file", "--blob", "--comment", "--default", "--type", "--value", "--url"}
+)
+GIT_CONFIG_SCOPES = frozenset({"--global", "--system", "--local", "--worktree"})
+GIT_CONFIG_READS = frozenset(
+    {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "--list", "-l"}
+)
+GIT_CONFIG_WRITES = frozenset(
+    {
+        "--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section",
+        "--edit", "-e",
+    }
+)  # fmt: skip
+GIT_CONFIG_SUBCOMMANDS = {
+    "get": "read", "list": "read", "set": "write", "unset": "write", "edit": "write",
+    "rename-section": "write", "remove-section": "write",
+}  # fmt: skip
+# an editor may write any key, and a renamed section may become one that runs code
+GIT_CONFIG_ANY_KEY = frozenset({"--edit", "-e", "edit", "--rename-section", "rename-section"})
+# keys whose value git runs, or that make git run or fetch other code later
+GIT_EXEC_NAMES = frozenset(
+    {
+        "cmd", "command", "program", "helper", "driver", "textconv", "path", "editor", "pager",
+        "defaultkeycommand", "tunnel", "clean", "smudge", "authorsprog", "httpd",
+    }
+)  # fmt: skip
+GIT_EXEC_KEYS = frozenset(
+    {
+        "core.hookspath", "core.fsmonitor", "core.sshcommand", "core.gitproxy",
+        "core.alternaterefscommand", "core.worktree", "core.askpass", "interactive.difffilter",
+        "diff.external", "uploadpack.packobjectshook", "protocol.allow", "init.templatedir",
+    }
+)  # fmt: skip
+GIT_EXEC_SECTIONS = frozenset({"pager", "filter", "sendemail"})
+GIT_EXEC_SUBSECTION_NAMES = {
+    "remote": {"uploadpack", "receivepack", "url", "pushurl", "vcs"}, "protocol": {"allow"},
+    "url": {"insteadof", "pushinsteadof"}, "submodule": {"update"},
+}  # fmt: skip
+# an alias of one of these words alone stays a plain key; any other alias runs a command
+GIT_ALIAS_READS = frozenset({"status", "log", "diff", "show", "blame", "shortlog", "describe"})
+# a variable that moves `git config` to another file; GIT_CONFIG_COUNT and its pairs last one run
+GIT_CONFIG_ENV = {
+    "GIT_CONFIG": "--file", "GIT_DIR": "--file", "GIT_COMMON_DIR": "--file",
+    "GIT_CONFIG_GLOBAL": "--global", "GIT_CONFIG_SYSTEM": "--system",
+}  # fmt: skip
+GIT_CONFIG_FLAGS = frozenset(
+    {
+        "--show-origin", "--show-scope", "--name-only", "--null", "--includes", "--bool", "--int",
+        "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--all", "--append", "--regexp",
+    }
+)  # fmt: skip
+GIT_CONFIG_KNOWN = GIT_CONFIG_SCOPES | GIT_CONFIG_VALUE_OPTIONS | GIT_CONFIG_READS | GIT_CONFIG_WRITES
+GIT_CONFIG_LONG = frozenset(name for name in GIT_CONFIG_KNOWN | GIT_CONFIG_FLAGS if name.startswith("--"))
+GIT_CONFIG_SHORT = {"f": "--file", "l": "--list", "e": "--edit", "z": "--null"}
+
+
+def git_exec_key(key: str) -> bool:
+    """A key whose value git runs later, matched without case: by its last name, its section, or
+    by name (spec gate-f36-f40-f44, Plan 5)."""
+    parts = key.lower().split(".")
+    if len(parts) < 2:
+        return False
+    section, last = parts[0], parts[-1]
+    return (
+        last in GIT_EXEC_NAMES
+        or f"{section}.{last}" in GIT_EXEC_KEYS
+        or section in GIT_EXEC_SECTIONS
+        or (len(parts) > 2 and last in GIT_EXEC_SUBSECTION_NAMES.get(section, ()))
+    )
+
+
+def git_config_long(raw: str) -> str | None:
+    """The long option a word names, as git's parse-options reads it: exact, or a unique prefix
+    (``--glob`` is ``--global``); a ``--no-`` form changes nothing here. None when unknown."""
+    negated = raw.startswith("--no-")
+    base = "--" + raw[5:] if negated else raw
+    found = [base] if base in GIT_CONFIG_LONG else [name for name in GIT_CONFIG_LONG if name.startswith(base)]
+    if len(found) != 1:
+        return None
+    return "--no-" + found[0][2:] if negated else found[0]
+
+
+def git_config_option(word: str) -> tuple[list[str] | None, str | None, bool]:
+    """The options a word names, its attached value, and whether it takes the next word. A short
+    cluster is read letter by letter (``-zf <file>``). None when any part is unknown."""
+    if word.startswith("--"):
+        raw, eq, value = word.partition("=")
+        name = git_config_long(raw)
+        if name is None:
+            return None, None, False
+        return [name], value if eq else None, not eq and name in GIT_CONFIG_VALUE_OPTIONS
+    names: list[str] = []
+    for at, letter in enumerate(word[1:], start=2):
+        if letter not in GIT_CONFIG_SHORT:
+            return None, None, False
+        names.append(GIT_CONFIG_SHORT[letter])
+        if letter == "f":
+            return names, word[at:] or None, not word[at:]
+    return names, None, False
+
+
+def git_config_parts(tokens: list[str]) -> tuple[str, str, str | None, bool, list[str]]:
+    """The scope, its file, the action an option names, whether it may write any key, and the
+    words. An unknown option counts as a word that may write any key: fail closed."""
+    scope, path, action, any_key, words, i = "--local", "", None, False, [], 2
+    while i < len(tokens):
+        word = tokens[i]
+        if word == "--":
+            words += tokens[i + 1 :]
+            break
+        optional = word.startswith("-") and word != "-"
+        names, value, takes_next = git_config_option(word) if optional else ([], None, False)
+        if not names:
+            words.append(word)
+            any_key = any_key or names is None
+            i += 1
+            continue
+        if takes_next:
+            value = tokens[i + 1] if i + 1 < len(tokens) else ""
+        for name in names:
+            if name in ("--file", "--blob"):
+                scope, path = "--file", value or ""
+            elif name in GIT_CONFIG_SCOPES and scope in ("--local", "--worktree"):
+                scope = name
+            if name in GIT_CONFIG_WRITES | GIT_CONFIG_READS:
+                action = "write" if name in GIT_CONFIG_WRITES else action or "read"
+                any_key = any_key or name in GIT_CONFIG_ANY_KEY
+        i += 2 if takes_next else 1
+    return scope, path, action, any_key, words
+
+
+def canonical_git_config(tokens: list[str]) -> list[str]:
+    """``git config --global user.name x``, ``git config set --global user.name x`` and
+    ``git config user.name x --global`` become ``git config --global write user.name x``; a key
+    that runs code later (or one the command cannot show) adds ``exec`` after the action."""
+    if tokens[:2] != ["git", "config"]:
+        return tokens
+    scope, path, action, any_key, words = git_config_parts(tokens)
+    if words and words[0] in GIT_CONFIG_SUBCOMMANDS:
+        action = "write" if action == "write" else GIT_CONFIG_SUBCOMMANDS[words[0]]
+        any_key = any_key or words[0] in GIT_CONFIG_ANY_KEY
+        words = words[1:]
+    action = action or ("write" if len(words) > 1 else "read")
+    key = words[0].lower() if words else ""
+    runs = action == "write" and (
+        any_key
+        or (bool(words) and unknown_word(words[0]))
+        or any(git_exec_key(word) for word in words)
+        or (key.startswith("alias.") and git_alias_runs(words[1:]))
+    )
+    where = ["--file", path] if scope == "--file" else [scope]
+    marked = ["exec"] if runs else []
+    return ["git", "config", *where, action, *marked, *([key] if words else []), *words[1:]]
+
+
+def unknown_word(word: str) -> bool:
+    """A word the gate cannot read: a parameter, or a substitution or glob it replaced."""
+    return "$" in word or bool(shell.sentinels(word))
+
+
+def git_alias_runs(values: list[str]) -> bool:
+    """An alias value other than one read-only verb runs a command: ``!sh``, ``-c …`` options, or
+    a git command such as ``config --global`` (the alias then writes what the row would ask)."""
+    return bool(values) and not (len(values) == 1 and values[0] in GIT_ALIAS_READS)
+
+
+def git_config_scope(tokens: list[str], plain: list[str]) -> list[str]:
+    """``GIT_CONFIG_GLOBAL=x git config …`` and ``git --git-dir=x config …``: the scope the
+    environment or a global option gives, put after ``config`` so the canonical form reads it."""
+    stripped = strip_global_options(plain)
+    if stripped[:2] != ["git", "config"]:
+        return plain
+    hint: list[str] = []
+    for word in tokens[: len(tokens) - len(plain)]:
+        name, _, value = word.partition("=")
+        scope = GIT_CONFIG_ENV.get(name) if NAME_ASSIGNMENT_RE.match(word) else None
+        hint += ["--file", value] if scope == "--file" else [scope] if scope else []
+    globals_ = plain[1 : 1 + len(plain) - len(stripped)]
+    for at, word in enumerate(globals_):
+        if word.split("=", 1)[0] == "--git-dir":
+            following = globals_[at + 1] if at + 1 < len(globals_) else ""
+            hint += ["--file", word.partition("=")[2] if "=" in word else following]
+    at = len(plain) - len(stripped) + 2
+    return [*plain[:at], *hint, *plain[at:]] if hint else plain
+
+
+VARIABLE_BUILTINS = frozenset({"export", "declare", "typeset", "local"})
+GIT_VARIABLE = "git-config-variable"  # the canonical word for a variable of GIT_CONFIG_ENV
+
+
+def canonical_git_variables(tokens: list[str]) -> list[str]:
+    """``export GIT_DIR=x`` and ``local -x GIT_CONFIG_GLOBAL=y`` become ``<builtin>
+    git-config-variable``: the commands after it read git config from another file."""
+    if tokens[:1] and tokens[0] in VARIABLE_BUILTINS:
+        if any(word.split("=", 1)[0] in GIT_CONFIG_ENV for word in tokens[1:]):
+            return [tokens[0], GIT_VARIABLE]
+    return tokens
+
+
+PRINTS_CREDENTIAL = "--prints-credential"  # the canonical word a credential printer ends with
+SHOW_TOKEN_CLIS = {"gh": frozenset({"-h", "--hostname"}), "glab": frozenset({"-h", "--hostname"})}
+SECRET_OUTPUTS = ("yaml", "kyaml", "json", "jsonpath", "go-template", "custom-columns", "template")
+
+
+def canonical_credential_printers(tokens: list[str]) -> list[str]:
+    """``gh auth status -at`` and ``glab auth status --show-token`` become ``<cli> auth status
+    --prints-credential``; ``kubectl get secret x -o yaml`` (any order, ``-ojson``,
+    ``--output=…``) becomes ``kubectl get secret --prints-credential`` (spec story 4)."""
+    if tokens[:1] and tokens[0] in SHOW_TOKEN_CLIS and tokens[1:3] == ["auth", "status"]:
+        if shows_token(tokens[3:], SHOW_TOKEN_CLIS[tokens[0]]):
+            return [*tokens[:3], PRINTS_CREDENTIAL]
+    if tokens[:2] == ["kubectl", "get"] and prints_secret(tokens[2:]):
+        return ["kubectl", "get", "secret", PRINTS_CREDENTIAL]
+    return tokens
+
+
+def shows_token(args: list[str], takes_value: frozenset[str]) -> bool:
+    """``--show-token`` or a ``t`` in a short cluster, past the hostname option's value."""
+    skip = False
+    for word in args:
+        if skip or word == "--":
+            skip = False
+            continue
+        if word.split("=", 1)[0] == "--show-token":
+            return word.partition("=")[2].lower() not in ("false", "0")
+        if word.startswith("-") and not word.startswith("--"):
+            letters = word[1:]
+            if "t" in letters.split("h", 1)[0]:
+                return True
+            skip = letters.endswith("h")
+        skip = skip or word in takes_value
+    return False
+
+
+KUBECTL_GET_VALUES = frozenset(
+    {
+        "-n", "--namespace", "-l", "--selector", "--context", "--cluster", "--user", "-o",
+        "--output", "--field-selector", "--template", "-L", "--label-columns", "--sort-by",
+        "--chunk-size", "--kubeconfig", "--raw", "-f", "--filename", "-k", "--kustomize",
+    }
+)  # fmt: skip
+
+
+def kubectl_get_options(args: list[str]) -> tuple[str, dict[str, str]]:
+    """The first resource word of ``kubectl get`` and its options' values (``-ojson`` included)."""
+    resource, values, at = "", {}, 0
+    while at < len(args):
+        word = args[at]
+        name, eq, value = word.partition("=")
+        if word.startswith("-o") and not word.startswith("--") and len(word) > 2:
+            values["-o"] = word[2:].removeprefix("=")
+        elif word.startswith("-"):
+            if not eq and name in KUBECTL_GET_VALUES:
+                value, at = (args[at + 1] if at + 1 < len(args) else ""), at + 1
+            values["-o" if name == "--output" else name] = value
+        elif not resource:
+            resource = word.lower()
+        at += 1
+    return resource, values
+
+
+def prints_secret(args: list[str]) -> bool:
+    """A ``kubectl get`` of a secret whose output prints its data: a data format (in any case),
+    ``--template``, or a ``--raw`` API path to secrets."""
+    resource, values = kubectl_get_options(args)
+    if "/secrets" in values.get("--raw", ""):
+        return True
+    kinds = {part.split("/", 1)[0].split(".", 1)[0] for part in resource.split(",")}
+    if not kinds & {"secret", "secrets"}:
+        return False
+    return "--template" in values or values.get("-o", "").lower().startswith(SECRET_OUTPUTS)
+
+
+ALLEXPORT = "set-allexport"  # one word: a `set …` row would ask on every `set -- <glob>`
+
+
+def canonical_allexport(tokens: list[str]) -> list[str]:
+    """``set -a``, ``set -ea`` and ``set -o allexport`` become ``set-allexport``."""
+    if tokens[:1] != ["set"]:
+        return tokens
+    for at, word in enumerate(tokens[1:], start=1):
+        if word == "--":
+            break
+        if (word.startswith("-") and "a" in word[1:] and word[1] != "-") or (
+            word == "-o" and tokens[at + 1 : at + 2] == ["allexport"]
+        ):
+            return [ALLEXPORT]
+    return tokens
+
+
 def canonical_alias(tokens: list[str]) -> list[str]:
     """``glab mr new``, ``gt release new``, ``tea r c`` become ``glab mr create``,
     ``gt release create``, ``tea releases create``: the form the rule rows name."""
@@ -1569,9 +1909,18 @@ def cobra_readings(tokens: list[str]) -> list[list[str]]:
     the group or the verb (bypass review of T01): ``gh release --title x create v1`` is read as
     ``gh release create --title x v1``, the options moved after the verb so a row about their text
     (``*Generated with*``) still sees it. ``api`` is no group: ``canonical_gh_api`` reads it."""
+    out: list[list[str]] = []
+    for _, _, form in cobra_forms(tokens):
+        if form not in out:
+            out.append(form)
+    return out[:MAX_COBRA_READINGS]
+
+
+def cobra_forms(tokens: list[str]) -> list[tuple[int, int, list[str]]]:
+    """Each cobra reading with the positions of its group and verb words in ``tokens``."""
     if not tokens or tokens[0] not in COBRA_CLIS:
         return []
-    out: list[list[str]] = []
+    out: list[tuple[int, int, list[str]]] = []
     known = GROUP_OPTIONS.get(tokens[0], ())
     for g in word_starts(tokens, 1, known):
         if tokens[g] == "api":
@@ -1579,9 +1928,39 @@ def cobra_readings(tokens: list[str]) -> list[list[str]]:
         for v in word_starts(tokens, g + 1, known):
             moved = without_repo_options(tokens[0], [*tokens[1:g], *tokens[g + 1 : v]])
             form = [tokens[0], tokens[g], tokens[v], *moved, *tokens[v + 1 :]]
-            if form != tokens and form not in out:
-                out.append(form)
-    return out[:MAX_COBRA_READINGS]
+            if form != tokens:
+                out.append((g, v, form))
+    return out
+
+
+def uncertain_readings(plain: list[str]) -> set[str]:
+    """The cobra readings, and their canonical forms, that rest on how an unknown option before the
+    verb is read (a boolean, or one taking the next word): ``gh issue --label delete list`` may be
+    ``gh issue delete``. Known options and attached values (``--notes=x``, ``-tx``) are certain."""
+    known = GROUP_OPTIONS.get(plain[0], ()) if plain else ()
+    out: set[str] = set()
+    for g, v, form in cobra_forms(plain):
+        if any(branching_option(word, known) for word in [*plain[1:g], *plain[g + 1 : v]]):
+            out.update((" ".join(form), " ".join(canonical(form))))
+    return out
+
+
+def branching_option(word: str, known: tuple[str, ...]) -> bool:
+    """An option word_starts follows both ways: unknown, with no attached value."""
+    attached = "=" in word or (not word.startswith("--") and len(word) > 2)
+    return option_word(word) and not attached and word not in known
+
+
+def never_through_option_value(
+    verdict: Verdict, matched: list[Rule], segment: list[str], forms: list[str]
+) -> Verdict:
+    """A ``never`` row that only an uncertain cobra reading reaches asks instead (owner,
+    2026-11-17): the word it reads as the verb may be an option's value. No allow lifts it."""
+    uncertain = uncertain_readings(strip_wrappers(segment)) - {forms[0], forms[-1]}
+    nevers = [rule for rule in matched if rule.decision == "never"]
+    if not uncertain or any(matches_bash(rule, [f for f in forms if f not in uncertain]) for rule in nevers):
+        return verdict
+    return Verdict(ASK, None, f"an option value before the verb may make this {nevers[0].shown()}")
 
 
 def is_opaque(plain: list[str]) -> bool:
@@ -2472,11 +2851,21 @@ def expand_units(
 
 
 def canonical(tokens: list[str]) -> list[str]:
-    return canonical_gcloud(
-        canonical_gh_api(
-            canonical_alias(drop_group_options(canonical_package_manager(expand_push_flags(tokens))))
-        )
+    steps = (
+        expand_push_flags,
+        canonical_package_manager,
+        drop_group_options,
+        canonical_alias,
+        canonical_gh_api,
+        canonical_gcloud,
+        canonical_git_config,
+        canonical_git_variables,
+        canonical_allexport,
+        canonical_credential_printers,
     )
+    for step in steps:
+        tokens = step(tokens)
+    return tokens
 
 
 # npm 11.20.0 lib/utils/cmd-list.js, read 2026-11-14: npm takes an alias, or any unique prefix of
@@ -2545,7 +2934,7 @@ def git_alias_set(plain: list[str]) -> bool:
 def candidates(tokens: list[str]) -> list[str]:
     """The forms rules match: as written, each reading past the options before the verb, and last
     the canonical form, the only one an allow matches."""
-    plain = strip_wrappers(tokens)
+    plain = git_config_scope(tokens, strip_wrappers(tokens))
     written, last = " ".join(plain), " ".join(canonical(strip_global_options(plain)))
     read = [" ".join(form) for reading in readings(plain) for form in (reading, canonical(reading))]
     middle = [form for form in dict.fromkeys(read) if form not in (written, last)]
@@ -3331,6 +3720,38 @@ def globs_meet(left: str, right: str) -> bool:
     return False
 
 
+def ask_label(verdict: Verdict) -> str:
+    """How another ask is named in a reason: its rule, or its note cut, then its ``via``: an ask
+    from a runner's body says so, as the first reason does."""
+    name = verdict.rule.shown() if verdict.rule else verdict.note[:ASK_NOTE_LIMIT]
+    return f"{name} via {verdict.via}" if verdict.via else name
+
+
+def scoped(verdict: Verdict) -> bool:
+    return verdict.rule is not None and verdict.rule.agent is not None
+
+
+def named_asks(best: Verdict, asks: list[Verdict], agent: str | None) -> Verdict:
+    """The winning ask with every other distinct ask of the command in ``also`` (F-40). For an
+    agent-scoped call the agent-scoped ask leads, so a grader reading the reason sees it."""
+    if best.decision != ASK:
+        return best
+    if agent:
+        asks = sorted(asks, key=lambda verdict: not scoped(verdict))
+        if asks and scoped(asks[0]) and not scoped(best):
+            best = asks[0]
+    named = {ask_key(best): ""}  # alike asks are one; asks alike only once cut stay apart
+    for verdict in asks:
+        named.setdefault(ask_key(verdict), ask_label(verdict))
+        for label in verdict.also:
+            named.setdefault(label, label)
+    return replace(best, also=tuple(label for label in named.values() if label))
+
+
+def ask_key(verdict: Verdict) -> tuple:
+    return (verdict.rule, verdict.note if verdict.rule is None else "", verdict.via)
+
+
 def outranks(new: Verdict, best: Verdict) -> bool:
     """The stricter decision wins. On a tie a rule-backed verdict replaces a ruleless one, and the
     first ruleless ask keeps its reason: it names what made the command opaque or protected."""
@@ -3546,6 +3967,8 @@ def judge_words(
     agent_allow = [r for r in bash_rules if r.decision == "allow" and r.agent and matches_bash(r, forms)]
     matched = [r for r in bash_rules if matches_bash(r, forms) and not (foreign and r in agent_allow)]
     verdict = resolve(matched, "no rule matched")
+    if verdict.decision == DENY:
+        verdict = never_through_option_value(verdict, matched, segment, forms)
     if refused and agent_allow and verdict.decision == ASK:
         verdict = Verdict(ASK, None, refused)
     if is_opaque(strip_wrappers(segment)) and verdict.decision != DENY:
@@ -3712,6 +4135,309 @@ def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
     return any(PYTHON_WRITES_RE.search(text) for text in code)
 
 
+# ---------------------------------------------------------------- shell writes (gate-f36-f40-f44, story 6)
+
+SHELL_WRITE_EXEMPT = SAFE_WRITE_TARGETS | {"/dev/tty"}
+PASS_THROUGH = frozenset(
+    "cat tee dd sponge tr sed base64 xxd head tail sort uniq cut envsubst cp install".split()
+)
+PATCHERS = (["patch"], ["git", "apply"], ["ed"], ["ex"])
+SHELL_RUNNERS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "su"})
+CODE_OPTIONS = {"nix-shell": ("--run", "--command")}  # runners whose option holds a code string
+OPENERS = frozenset({"{", "("})
+LEADING_WORDS = frozenset({"{", "(", "do", "then", "else", "elif", "if", "while", "until", "!", "time"})
+EXPANSION_ONLY_RE = re.compile(
+    r"(?:\$(?:\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*|[0-9?#@*$!-])|" + shell.SENTINEL_RE.pattern + r")+"
+)
+HERE_OPERATORS = frozenset({"<<", "<<-", "<<<"})
+SHELL_WRITE_ASK = "text written into a file through the shell, or a write the gate cannot trace"
+MAX_SHELL_WRITE_DEPTH = 4
+
+
+def edits_in_place(segment: list[str]) -> bool:
+    """``sed -i``, ``awk -i inplace``, ``ruby -i`` and ``yq -i``: an editor writing its file."""
+    argv = strip_wrappers(segment)
+    if not argv:
+        return False
+    head, words = argv[0].lower(), argv[1:]
+    shorts = [word[1:] for word in words if word.startswith("-") and not word.startswith("--")]
+    if head in ("sed", "gsed"):
+        return any(word.startswith("--in-place") for word in words) or any("i" in s for s in shorts)
+    if head in ("awk", "gawk"):
+        pairs = itertools.pairwise([*words, ""])
+        return any(
+            w == "--include=inplace" or (w in ("-i", "--include") and v == "inplace") for w, v in pairs
+        )
+    if head == "ruby":  # -i after flags that take no value: -pi, -ni, -i.bak
+        return any(re.match(r"[acdlnpsvwyU]*i", s) for s in shorts)
+    if head == "yq":
+        return "--inplace" in words or any(s.startswith("i") or s.endswith("i") for s in shorts)
+    return False
+
+
+def stage_words(scan: shell.Scan, stage: shell.Stage) -> tuple[list[str], list[str]]:
+    """The stage's raw words (openers kept) and its program argv: wrappers and reserved words off,
+    and a ``case`` pattern (``a)``) dropped, so ``case a in a) echo x`` is ``echo x``."""
+    items = shell_items(scan.outer[stage.start : stage.end]) if stage.end > stage.start else []
+    raw = [word for item in items for word in (item if isinstance(item, list) else [item])]
+    if ")" in items and "(" not in items[: items.index(")")]:
+        items = items[len(items) - items[::-1].index(")") :]
+    words = [word for item in items if isinstance(item, list) for word in item if word not in ("{", "}")]
+    return raw, strip_wrappers(words)
+
+
+def lead(raw: list[str]) -> list[str]:
+    """The raw words past the openers and reserved words that start a compound's body."""
+    at = 0
+    while at < len(raw) and raw[at] in LEADING_WORDS:
+        at += 1
+    return raw[at:]
+
+
+def literal_word(word: str, scan: shell.Scan) -> bool:
+    """Text the agent wrote: anything but expansions, or an expansion of text the command holds
+    (a substitution printing a literal, a variable it assigns)."""
+    plain = word.strip("'\"")
+    if not EXPANSION_ONLY_RE.fullmatch(plain):
+        return True
+    holes = [scan.holes[key] for key in shell.sentinels(plain) if key in scan.holes]
+    if any(hole.body is not None and holds_literal(hole.body) for hole in holes):
+        return True
+    names = re.findall(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", plain)
+    return any(re.search(rf"(?:^|[\s;&|(]){name}=", scan.outer) for name in names)
+
+
+def literal_program(plain: list[str], scan: shell.Scan | None = None) -> bool:
+    """``echo``, ``printf``, ``jq -n`` and ``awk 'BEGIN{…}'``: a stage whose output is its own text.
+    An ``echo`` or ``printf`` of expansions alone (``echo "$(git rev-parse HEAD)"``) is output."""
+    if not plain:
+        return False
+    head, args = plain[0], [word for word in plain[1:] if not word.startswith("-")]
+    if head in ("echo", "printf"):
+        return scan is None or any(literal_word(word, scan) for word in args)
+    if head == "jq":
+        shorts = [w for w in plain[1:] if w.startswith("-") and not w.startswith("--")]
+        return any("n" in w for w in shorts) or "--null-input" in plain
+    return head in ("awk", "gawk", "mawk") and len(args) == 1 and args[0].lstrip().startswith("BEGIN")
+
+
+def writer_targets(plain: list[str], scan: shell.Scan | None = None) -> list[str]:
+    """Files a pass-through writer writes from its input: ``tee`` operands, ``dd of=``, ``sponge``,
+    ``sort -o`` (in a cluster, or ``--output``), and ``cp``/``install`` from standard input or a
+    process substitution holding text."""
+    if not plain:
+        return []
+    head, args = plain[0], plain[1:]
+    operands = [word for word in args if not word.startswith("-")]
+    if head == "tee":
+        return [word for word in operands if word != "-"]
+    if head == "dd":
+        return [word[3:] for word in args if word.startswith("of=")]
+    if head == "sponge":
+        return operands[:1]
+    if head == "sort":
+        found = []
+        for word, following in itertools.pairwise([*args, ""]):
+            if word.startswith("--output"):
+                found.append(word.partition("=")[2] or following)
+            elif word.startswith("-") and not word.startswith("--") and "o" in word:
+                found.append(word[word.index("o") + 1 :] or following)
+        return found
+    stdin = {"/dev/stdin", "-", "/dev/fd/0", "/proc/self/fd/0"}
+    fed = scan is not None and any(holds_text(word, scan) for word in operands[:-1])
+    if head in ("cp", "install") and (set(operands) & stdin or fed):
+        return operands[-1:]
+    return []
+
+
+def holds_text(word: str, scan: shell.Scan) -> bool:
+    """A word that is a process substitution whose body holds literal text."""
+    holes = [scan.holes[key] for key in shell.sentinels(word) if key in scan.holes]
+    return any(hole.body is not None and holds_literal(hole.body) for hole in holes)
+
+
+def written_by_stage(
+    redirects: list[shell.Redirect], plain: list[str], scan: shell.Scan | None = None
+) -> list[str]:
+    """Files the stage's standard output reaches, its redirections read in order with an fd table
+    (``2>f >&2`` and ``3>f >&3`` reach ``f``; ``/dev/stderr`` is wherever fd 2 points), or a
+    writer's own operands. A device path is exempt only where it still reaches the terminal."""
+    fds: dict[int, str | None] = {1: None, 2: None}  # None: the terminal, inherited
+    for r in redirects:
+        if r.operator not in shell.WRITING_OPERATORS:
+            continue
+        if r.operator.startswith("&>"):
+            fds[1] = fds[2] = device_target(r.target, fds)
+            continue
+        fd = int(r.fd) if r.fd.isdigit() else 1 if r.fd == "" else None
+        if fd is None:
+            continue
+        if r.operator == ">&" and shell.FD_WORD_RE.match(r.target):
+            source = r.target.rstrip("-")
+            fds[fd] = fds.get(int(source), f"/dev/fd/{source}") if source.isdigit() else None
+            continue
+        fds[fd] = device_target(r.target, fds)
+    written = [fds[1]] if fds[1] is not None else []
+    return written + [t for t in writer_targets(plain, scan) if device_target(t, fds) is not None]
+
+
+def device_target(target: str, fds: dict[int, str | None]) -> str | None:
+    """The file a redirection target reaches: None for the terminal or /dev/null, a /dev/fd/N or
+    /dev/std* path read through the fd table, any other path (a hole included) itself."""
+    path = os.path.normpath(target)
+    aliases = {"/dev/stdout": 1, "/dev/stderr": 2}
+    number = aliases.get(path) or (int(path[8:]) if re.fullmatch(r"/dev/fd/\d+", path) else None)
+    if number is not None:
+        return fds[number] if number in fds else target
+    return None if path in SHELL_WRITE_EXEMPT else target
+
+
+def shell_write(scan: shell.Scan, depth: int = 0) -> tuple[str | None, list[list[str]]]:
+    """DENY when literal text reaches a file through pass-through stages, ASK when a write may carry
+    it but the gate cannot trace that, else None; with every argv an owner allow must lift."""
+    found: list[tuple[str | None, list[list[str]]]] = [pipeline_writes(scan)]
+    for hole in scan.holes.values():
+        if hole.body is not None and depth < MAX_SHELL_WRITE_DEPTH:
+            found.append(shell_write(hole.body, depth + 1))
+    for stage in scan.stages:
+        body = shell_body(stage_words(scan, stage)[1])
+        if body is not None and depth < MAX_SHELL_WRITE_DEPTH:
+            inner = shell.scan(body, frozenset(shell.sentinels(body)))
+            found.append(shell_write(inner, depth + 1) if not inner.error else (ASK, [[]]))
+    denied = [argvs for verdict, argvs in found if verdict == DENY]
+    if denied:
+        return DENY, denied[0]
+    asked = [argv for verdict, argvs in found if verdict == ASK for argv in argvs]
+    return (ASK, asked) if asked else (None, [])
+
+
+def shell_body(plain: list[str]) -> str | None:
+    """The code string of ``bash -c '…'``, ``bash -lc``, ``bash -c -e '…'``, a shell behind a
+    runner (``distrobox enter b -- sh -c``), ``su -c`` or ``nix-shell --run``."""
+    for at, word in enumerate(plain):
+        name = os.path.basename(word)
+        if name in CODE_OPTIONS:
+            following = plain[at + 1 :]
+            for option, value in itertools.pairwise([*following, ""]):
+                if option.split("=", 1)[0] in CODE_OPTIONS[name]:
+                    return option.partition("=")[2] or value
+        if name not in SHELL_RUNNERS:
+            continue
+        rest = plain[at + 1 :]
+        clusters = [
+            i for i, w in enumerate(rest) if w.startswith("-") and not w.startswith("--") and "c" in w
+        ]
+        if clusters:
+            words = [w for w in rest[clusters[0] + 1 :] if not w.startswith("-")]
+            return words[0] if words else None
+    return None
+
+
+def holds_literal(scan: shell.Scan) -> bool:
+    return (
+        any(here_literal(r, scan) for r in scan.redirects)
+        or any(literal_program(stage_words(scan, stage)[1], scan) for stage in scan.stages)
+        or any(hole.body is not None and holds_literal(hole.body) for hole in scan.holes.values())
+    )
+
+
+def here_literal(redirect: shell.Redirect, scan: shell.Scan) -> bool:
+    """A here-document, or a here-string of written text (not ``<<<"$(git log)"`` alone)."""
+    if redirect.operator not in HERE_OPERATORS:
+        return False
+    return redirect.operator != "<<<" or literal_word(redirect.target, scan)
+
+
+def pipeline_writes(scan: shell.Scan) -> tuple[str | None, list[list[str]]]:
+    """The verdict for one scanned text, from its stages and redirections."""
+    if not holds_literal(scan):
+        return None, []
+    stages = {(s.item, s.index): (s, *stage_words(scan, s)) for s in scan.stages}
+    redirects: dict[tuple[int, int], list[shell.Redirect]] = {}
+    for r in scan.redirects:
+        redirects.setdefault((r.item, r.index), []).append(r)
+    asks: list[list[str]] = []
+    functions = {
+        raw[1] if raw[0] == "function" else raw[0]
+        for _, raw, _ in stages.values()
+        if len(raw) > 1 and (raw[1].startswith("(") or raw[0] == "function")
+    }
+    any_write = any(
+        written_by_stage(redirects.get(key, []), plain, scan) for key, (_, _, plain) in stages.items()
+    )
+    for key, (_, raw, plain) in sorted(stages.items()):
+        own = redirects.get(key, [])
+        if written_by_stage([r for r in own if r.after_closer], []):
+            asks.append(plain or raw)
+        if lead(raw)[:1] == ["exec"] and any(r.operator in shell.WRITING_OPERATORS for r in own):
+            asks.append(raw)
+        if functions and any_write:
+            asks.append(plain or raw)
+    for item in sorted({item for item, _ in stages}):
+        verdict, argv = item_writes(item, stages, redirects, scan, functions, any_write)
+        if verdict == DENY:
+            return DENY, [argv]
+        if verdict == ASK:
+            asks.append(argv)
+    return (ASK, asks) if asks else (None, [])
+
+
+def stage_source(scan: shell.Scan, raw: list[str], plain: list[str], own: list[shell.Redirect]) -> str | None:
+    """``emits`` for a stage printing literal text, ``fed`` for one reading it, ``compound`` for
+    a group or loop's output (``{ …; echo x; } | tee f``), else None."""
+    if literal_program(plain, scan):
+        return "emits"
+    if any(here_literal(r, scan) for r in own):
+        return "fed"
+    if raw[:1] and raw[0] in shell.CLOSERS:
+        return "compound"
+    words = [*plain, *(r.target for r in own)]
+    return "fed" if any(holds_text(word, scan) for word in words) else None
+
+
+def item_writes(item, stages, redirects, scan, functions, any_write) -> tuple[str | None, list[str]]:
+    """One pipeline: deny when its literal source reaches a file through pass-through stages."""
+    pipeline = [stages[key] for key in sorted(stages) if key[0] == item]
+    for at, (stage, raw, plain) in enumerate(pipeline):
+        source = stage_source(scan, raw, plain, redirects.get((item, stage.index), []))
+        if source is None:
+            continue
+        clean = source == "emits" or (source == "fed" and bool(plain[:1] and plain[0] in PASS_THROUGH))
+        for later_stage, later_raw, later in pipeline[at:]:
+            if any(later[: len(p)] == p for p in PATCHERS):
+                return DENY, later
+            downstream = later_stage.index != stage.index
+            if downstream:
+                clean = clean and bool(later) and later[0] in PASS_THROUGH
+            own = [r for r in redirects.get((item, later_stage.index), []) if not r.after_closer]
+            if written_by_stage(own, later, scan):
+                return (DENY if clean else ASK), later
+            nested = bool(later_raw[:1]) and later_raw[0] in OPENERS
+            called = bool(later) and (later[0] in functions or runner_writes(later))
+            if called or (downstream and nested and any_write):
+                return ASK, later
+        return None, []
+    return None, []
+
+
+def runner_writes(plain: list[str]) -> bool:
+    """A ``bash -c`` body that writes a file (a redirection or a named writer), or one the
+    scanner cannot read."""
+    body = shell_body(plain)
+    if body is None:
+        return False
+    inner = shell.scan(body, frozenset(shell.sentinels(body)))
+    if inner.error:
+        return True
+    redirects: dict[tuple[int, int], list[shell.Redirect]] = {}
+    for r in inner.redirects:
+        redirects.setdefault((r.item, r.index), []).append(r)
+    return any(
+        written_by_stage(redirects.get((s.item, s.index), []), stage_words(inner, s)[1], inner)
+        for s in inner.stages
+    )
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -3737,21 +4463,42 @@ def judge_bash(
         best = in_protected
     elif touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
+    asks = [best] if best.decision == ASK else []
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
     config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
     for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
-        if writes_by_script(segment, unit, holes):
+        if writes_by_script(segment, unit, holes) or edits_in_place(segment):
             verdict = Verdict(DENY, None, WRITING_SCRIPT)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
         trace.append((form + (f"  <- {origin[:MAX_ORIGIN]}" if origin else ""), matched))
+        if verdict.decision == ASK:
+            asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
-    return best, trace
+    written = shell_write_verdict(scanned, bash_rules)
+    if written.decision == ASK:
+        asks.append(written)
+    if outranks(written, best):
+        best = written
+    return named_asks(best, asks, agent), trace
+
+
+def shell_write_verdict(scanned: shell.Scan, bash_rules: list[Rule]) -> Verdict:
+    """Story 6's verdict for the whole command: a deny with the Edit/Write reason, or an ask an
+    owner allow on the writing stage lifts, as it would a default-layer ask row."""
+    decision, argvs = shell_write(scanned)
+    if decision == DENY:
+        return Verdict(DENY, None, WRITING_SCRIPT)
+    owner = [r for r in bash_rules if r.decision == "allow" and r.layer == "owner"]
+    lifted = all(argv and any(matches_bash(r, candidates(argv)) for r in owner) for argv in argvs)
+    if decision == ASK and not lifted:
+        return Verdict(ASK, None, SHELL_WRITE_ASK)
+    return Verdict(None, None, "no rule matched")
 
 
 def file_forms(path: str, cwd: str | None) -> list[str]:
@@ -4005,10 +4752,8 @@ def gate(stdin: str) -> str | None:
         return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     if verdict.decision is None:
         return None
-    reason = verdict.reason()
-    if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head):
-        reason += stamp_suffix(cwd)
-    return hook_output(verdict.decision, reason)
+    suffix = stamp_suffix(cwd) if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head) else ""
+    return hook_output(verdict.decision, verdict.reason(REASON_LIMIT - len(suffix)) + suffix)
 
 
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)
@@ -4067,13 +4812,16 @@ def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdic
                 (tool, {"file_path": alias})
                 for alias in agy.root_aliases(tool_input["file_path"], workspaces)
             ]
+    asks: list[Verdict] = []
     for tool, tool_input in calls:
         verdict = judge(tool, tool_input, plan.cwd or cwd or workspaces[0], rules, None)
+        if verdict.decision == ASK:
+            asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
     if plan.at_least_ask and best.decision is None:
         return Verdict(ASK, None, plan.note)
-    return best
+    return named_asks(best, asks, None)
 
 
 def agy_workspaces(value: object) -> list[str]:
@@ -4102,10 +4850,10 @@ def gate_agy(stdin: str) -> str:
         log_event(
             {"tool": name, "head": head[:120], "decision": verdict.decision, "reason": verdict.reason()}
         )
-        reason = verdict.reason()
         base = plan.cwd or payload.get("cwd") or (workspaces[0] if workspaces else None)
-        if base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
-            reason += stamp_suffix(base)  # no project, no stamp: the hook's own folder is the plugin
+        pushes = base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head)
+        suffix = stamp_suffix(base) if pushes else ""  # no project, no stamp: the hook's folder is the plugin
+        reason = verdict.reason(REASON_LIMIT - len(suffix)) + suffix
     except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
         return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     return agy_output(verdict.decision, reason)

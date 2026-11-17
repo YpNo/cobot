@@ -48,6 +48,12 @@ about one names its line only (`project:4: unreadable rule ignored`), so reposit
 speaks in a permission prompt or on the hook's stderr. `/cobot:rules explain`, `show` and `sync`
 print the project rules on your own terminal, by design.
 
+When several parts of one command ask, the reason gives the first ask in full, then names the
+others: `…; also asks: ask Bash(git push*), ask Bash(git commit*)`. It names up to three in all,
+then `+N more`. Another ask is named by its row (a project row by its place) and its runner, or
+by the first 40 characters of the gate's note. The reason stays within the prompt's 200
+characters, and a `git push` stamp keeps its room. A deny shows only the deny.
+
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
 names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,
@@ -135,6 +141,92 @@ value option could take the next word (`gh release --title x create v1` is `gh r
 `-R`/`--repo` are known to take one). A top-level `gh` word gh does not know is a user alias or
 an extension, so it asks, and so do `gh alias set` and `gh alias import`. An escaped or quoted
 `;` (`find … -exec x \;`) is a word, not a separator.
+
+`git config` is read into one canonical form, `git config <scope> <read|write> [exec] <key>
+<value>`, where a file scope keeps its path (`--file <path>`). It reads either syntax
+(`git config --global user.name x`, `git config set --global user.name x`) in any option order,
+with options abbreviated as git allows (`--glob`) and short options clustered (`-zf <file>`).
+Reads stay silent, and so do local writes of a plain key (`git config user.email x`,
+`git config alias.st status`). A write asks when it outlives the repository's own config:
+
+- **Scope:** a `--global`, `--system` or `--file` write, including one moved there by a
+  `GIT_CONFIG`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_DIR` or `GIT_COMMON_DIR` prefix,
+  or by `git --git-dir=…`.
+- **Keys that run code (`exec`):** a key whose value git runs or follows later (`core.hooksPath`,
+  `core.fsmonitor`, `core.sshCommand`, any `*.cmd`, `*.command`, `*.program`, `*.helper`,
+  `*.driver`, `*.textconv`, `*.path`, `*.editor` or `*.pager`, `filter.*`, `url.*.insteadOf`,
+  `remote.*.url`, `protocol.allow`, `init.templateDir`, and more).
+- **Aliases:** any alias except one read-only verb alone (`status`, `log`, `diff`, `show`,
+  `blame`, `shortlog`, `describe`). An alias of `config --global` writes what the rows ask for,
+  and one of `push --force` runs what they deny.
+- **Edits and renames:** `--edit` and `--rename-section`.
+- **Unreadable words:** a key or alias value the gate cannot read (`$k`), or an option it does
+  not know.
+
+`export`, `declare`, `typeset` or `local` of those variables asks too, and so do `set -a` and
+`set -o allexport`, which export every later assignment. `git submodule foreach` asks: it runs a
+shell command in each submodule. To allow a form, name the canonical one:
+`allow Bash(git config --global write user.email *)`, or
+`allow Bash(git config --file .gitmodules write submodule.*)`.
+
+Outward and account commands ask: changes to the forge account (`gh auth login`, `setup-git`,
+`switch`), repository settings (`gh repo create|edit|archive`, secrets, variables, labels), CI
+(`gh workflow run`, `gh run rerun|cancel`), issues and PRs (`edit`, `close`, `transfer`),
+releases and gists, keys, and the machine's tool configuration (`rustup update|default`, its
+`toolchain`, `target`, `component`, `override` and `self` verbs, `gcloud config set|unset`,
+npm, pnpm, yarn and pip registry and account config, `docker logout`). Reads such as
+`rustup toolchain list` or `gh secret list` stay silent.
+
+Forge deletions are refused in every layer, for `gh`, `glab`, `gt` and `tea` alike: releases,
+secrets, variables, labels, caches, runs, gists, keys, issues, merge requests, pipelines and
+deploy keys, with or without `-R`. `cobot-rules sync` renders them in `permissions.deny`.
+
+Commands that print a credential into the transcript ask. The claim covers these named printers,
+not every way a secret can be printed:
+
+- `gh auth token`, and `gh auth status` or `glab auth status` showing the token (`-t`,
+  `--show-token`, in a cluster too);
+- `glab config get token`;
+- `gcloud auth print-access-token` and `print-identity-token` (also under `application-default`),
+  `gcloud config config-helper` and `gcloud secrets versions access`;
+- `git credential fill`, `git credential-<helper> get` and `docker-credential-* get`;
+- `kubectl config view --raw` or `--flatten`, `kubectl get secret` with an output that prints its
+  data (`yaml`, `kyaml`, `json`, `jsonpath`, `go-template`, `custom-columns`, in any case, or
+  `--template`), and `kubectl get --raw` of a secrets path;
+- `npm token list`.
+
+An owner `allow` line lifts one form (`allow Bash(gh auth token*)`). A gcloud command is read
+without its release track and the flags between its words (`gcloud beta secrets --project p
+versions access`), so these rows and the read lists see its command words.
+
+Text the agent writes into a file through the shell is refused, wherever the file is, with the
+reason to use Edit or Write instead: their diff is what you review.
+
+- **Refused:** a here-document, a here-string, or an `echo`, `printf`, `jq -n` or
+  `awk 'BEGIN{…}'` stage whose text reaches a file through pass-through stages only (`cat`, `tee`,
+  `dd`, `sponge`, `tr`, `sed`, `base64`, `xxd`, `head`, `tail`, `sort`, `uniq`, `cut`, `envsubst`),
+  by a `>`, `>>` or `&>` redirection, `tee`, `dd of=`, `sponge`, `sort -o`, or `cp`/`install`
+  from standard input. Also refused: `patch`, `git apply`, `ed` and `ex` fed such text, and the
+  in-place editors `sed -i`, `awk -i inplace`, `ruby -i` and `yq -i`.
+- **Asks** (an owner `allow` on the writing command lifts it): a write the gate cannot trace for
+  certain, in a command that holds such text. That covers a stage that is not a pass-through
+  before the write (`ssh h <<EOF > out`), a write owned by a group, subshell or loop
+  (`{ echo a; } > f`), an `exec` redirection, a function defined in the command, and a group or
+  `bash -c` body the text feeds.
+- **Silent:** command output to a file (`cargo metadata > m.json`, `make | tee log`, and an
+  `echo` or here-string of expansions alone, such as `echo "$(git rev-parse HEAD)" > f`), and
+  text to `/dev/null`, `/dev/tty`, or `/dev/stdout`, `/dev/stderr`, `/dev/fd/1` and `/dev/fd/2`
+  while they still reach the terminal. Redirections are read in order, so `2>f >&2` writes `f`.
+  Any other device path, `/dev/tcp/…` included, is a file. An expansion of text the command
+  wrote (`x=a; echo "$x" > f`, `echo "$(printf a)" > f`) is literal text.
+- **Not claimed:** sed's `w` command, `split` and `csplit`, and sources the gate does not name.
+
+A `never` row that only an unknown option before a `gh` or `glab` verb reaches asks instead of
+denying: in `gh issue --label delete list` the word `delete` may be the label's value, and in
+`gh release --title x create v1` the word `create` may be the verb. No `allow` lifts that ask.
+Known options and attached values (`-R o/r`, `--notes=x`, `-tx`) are read for certain, so
+`gh release -R o/r delete v1` is still refused. `gh pr merge --delete-branch` asks like any
+merge; the branch deletion is not refused.
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's

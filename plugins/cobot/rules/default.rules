@@ -43,6 +43,51 @@ never Bash(gh repo delete*)
 never Bash(glab repo delete*)
 never Bash(gt repo delete*)
 never Bash(tea repos delete*)
+# forge deletions (spec gate-f36-f40-f44, story 2): refused like gh repo delete; aliases and -R
+# are rewritten first, so `gh secret remove` and `gh release -R o/r delete` reach these rows
+never Bash(gh release delete*) # deletes a release on the forge
+never Bash(gh secret delete*) # deletes a repository secret
+never Bash(gh variable delete*) # deletes a repository variable
+never Bash(gh label delete*) # deletes a label
+never Bash(gh cache delete*) # deletes an Actions cache
+never Bash(gh run delete*) # deletes a workflow run
+never Bash(gh gist delete*) # deletes a gist
+never Bash(gh ssh-key delete*) # deletes an SSH key from your account
+never Bash(gh gpg-key delete*) # deletes a GPG key from your account
+never Bash(gh issue delete*) # deletes an issue
+never Bash(gh repo deploy-key delete*) # deletes a deploy key
+never Bash(gh codespace delete*) # deletes a codespace
+never Bash(glab ci delete*) # deletes a pipeline
+never Bash(glab variable delete*) # deletes a CI variable
+never Bash(glab release delete*) # deletes a release on the forge
+never Bash(glab issue delete*) # deletes an issue
+never Bash(glab mr delete*) # deletes a merge request
+never Bash(glab label delete*) # deletes a label
+never Bash(glab schedule delete*) # deletes a pipeline schedule
+never Bash(glab deploy-key delete*) # deletes a deploy key
+never Bash(glab ssh-key delete*) # deletes an SSH key from your account
+never Bash(glab gpg-key delete*) # deletes a GPG key from your account
+never Bash(gt pr delete*) # deletes a pull request
+never Bash(gt issue delete*) # deletes an issue
+never Bash(gt release delete*) # deletes a release on the forge
+never Bash(tea comments delete*) # deletes a comment
+never Bash(tea releases delete*) # deletes a release on the forge
+never Bash(tea assets delete*) # deletes a release asset
+never Bash(gh repo autolink delete*) # deletes an autolink
+never Bash(gh project delete*) # deletes a project
+never Bash(gh project item-delete*) # deletes a project item
+never Bash(gh project field-delete*) # deletes a project field
+never Bash(glab snippet delete*) # deletes a snippet
+never Bash(glab token revoke*) # revokes an access token
+never Bash(glab securefile remove*) # deletes a secure file
+never Bash(glab securefile delete*) # deletes a secure file
+never Bash(glab mr del*) # deletes a merge request
+never Bash(glab issue del*) # deletes an issue
+never Bash(tea labels delete*) # deletes a label
+never Bash(tea milestones delete*) # deletes a milestone
+never Bash(tea webhooks delete*) # deletes a webhook
+never Bash(gt label delete*) # deletes a label
+never Bash(gt milestone delete*) # deletes a milestone
 never Bash(git tag -a v*)
 never Bash(gh api -X DELETE*)
 never Bash(gh api --method DELETE*)
@@ -111,6 +156,176 @@ ask Bash(gh pr create*)
 ask Bash(gh repo fork*)
 ask Bash(gh alias set*) # a gh alias can run any command, and the gate cannot read it later
 ask Bash(gh alias import*) # a gh alias can run any command, and the gate cannot read it later
+# the forge account, repository settings and CI (spec gate-f36-f40-f44, story 1)
+ask Bash(gh auth login*) # changes the forge account this machine uses
+ask Bash(gh auth logout*) # changes the forge account this machine uses
+ask Bash(gh auth refresh*) # changes the forge account this machine uses
+ask Bash(gh auth setup-git*) # makes git use your forge credentials
+ask Bash(gh auth switch*) # changes the forge account this machine uses
+ask Bash(gh config set*) # writes your global gh configuration
+ask Bash(gh extension install*) # installs code that runs as a gh command
+ask Bash(gh extension upgrade*) # installs code that runs as a gh command
+ask Bash(gh repo create*) # creates a repository on the forge
+ask Bash(gh repo edit*) # changes repository settings, visibility included
+ask Bash(gh repo rename*) # changes repository settings
+ask Bash(gh repo archive*) # changes repository settings
+ask Bash(gh repo unarchive*) # changes repository settings
+ask Bash(gh repo sync*) # rewrites a branch on the forge or here
+ask Bash(gh secret set*) # writes a repository secret
+ask Bash(gh variable set*) # writes a repository variable
+ask Bash(gh label create*) # changes repository labels
+ask Bash(gh label edit*) # changes repository labels
+ask Bash(gh label clone*) # changes repository labels
+ask Bash(gh workflow run*) # starts CI on the forge
+ask Bash(gh workflow enable*) # changes CI on the forge
+ask Bash(gh workflow disable*) # changes CI on the forge
+ask Bash(gh run rerun*) # starts CI on the forge
+ask Bash(gh run cancel*) # stops CI on the forge
+ask Bash(gh issue edit*) # changes an issue on the forge
+ask Bash(gh issue close*) # changes an issue on the forge
+ask Bash(gh issue reopen*) # changes an issue on the forge
+ask Bash(gh issue transfer*) # moves an issue to another repository
+ask Bash(gh issue pin*) # changes an issue on the forge
+ask Bash(gh issue lock*) # changes an issue on the forge
+ask Bash(gh pr edit*) # changes a pull request on the forge
+ask Bash(gh pr close*) # changes a pull request on the forge
+ask Bash(gh pr reopen*) # changes a pull request on the forge
+ask Bash(gh pr ready*) # changes a pull request on the forge
+ask Bash(gh release edit*) # changes a published release
+ask Bash(gh release upload*) # adds files to a published release
+ask Bash(gh gist create*) # publishes a gist
+ask Bash(gh gist edit*) # changes a published gist
+ask Bash(gh codespace create*) # creates a billed codespace
+ask Bash(gh ssh-key add*) # adds a key to your forge account
+ask Bash(gh gpg-key add*) # adds a key to your forge account
+ask Bash(gh discussion create*) # posts on the forge
+ask Bash(gh discussion edit*) # changes a discussion on the forge
+ask Bash(gh discussion comment*) # posts on the forge
+ask Bash(gh gist rename*) # changes a published gist
+ask Bash(gh issue unlock*) # changes an issue on the forge
+ask Bash(gh issue unpin*) # changes an issue on the forge
+ask Bash(gh issue develop*) # creates a branch on the forge
+ask Bash(gh pr lock*) # changes a pull request on the forge
+ask Bash(gh pr unlock*) # changes a pull request on the forge
+ask Bash(gh pr revert*) # opens a revert pull request
+ask Bash(gh pr update-branch*) # pushes to a pull request branch
+ask Bash(gh project create*) # changes a project on the forge
+ask Bash(gh project edit*) # changes a project on the forge
+ask Bash(gh project close*) # changes a project on the forge
+ask Bash(gh project copy*) # changes a project on the forge
+ask Bash(gh project link*) # changes a project on the forge
+ask Bash(gh project unlink*) # changes a project on the forge
+ask Bash(gh project mark-template*) # changes a project on the forge
+ask Bash(gh project field-create*) # changes a project on the forge
+ask Bash(gh project item-*) # changes a project on the forge
+ask Bash(gh repo autolink create*) # changes repository settings
+ask Bash(gh repo deploy-key add*) # adds a key with access to the repository
+ask Bash(gh skill publish*) # publishes on the forge
+ask Bash(gh codespace edit*) # changes a billed codespace
+ask Bash(gh codespace stop*) # changes a billed codespace
+ask Bash(gh codespace rebuild*) # changes a billed codespace
+ask Bash(gh codespace cp*) # copies files to or from a codespace
+ask Bash(glab auth login*) # changes the forge account this machine uses
+ask Bash(glab auth logout*) # changes the forge account this machine uses
+ask Bash(glab config set*) # writes your glab configuration, a token included
+ask Bash(glab repo create*) # creates a repository on the forge
+ask Bash(glab token create*) # creates an access token
+ask Bash(glab ssh-key add*) # adds a key to your forge account
+# the machine's global tool configuration: toolchains, registries, cloud settings
+ask Bash(rustup update*) # changes the machine's Rust toolchains
+ask Bash(rustup default*) # changes the machine's Rust toolchains
+ask Bash(rustup install*) # changes the machine's Rust toolchains
+ask Bash(rustup uninstall*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain install*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain add*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain uninstall*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain remove*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain link*) # changes the machine's Rust toolchains
+ask Bash(rustup target add*) # changes the machine's Rust toolchains
+ask Bash(rustup target install*) # changes the machine's Rust toolchains
+ask Bash(rustup target remove*) # changes the machine's Rust toolchains
+ask Bash(rustup component add*) # changes the machine's Rust toolchains
+ask Bash(rustup component remove*) # changes the machine's Rust toolchains
+ask Bash(rustup override set*) # changes the machine's Rust toolchains
+ask Bash(rustup override unset*) # changes the machine's Rust toolchains
+ask Bash(rustup self update*) # changes the machine's Rust toolchains
+ask Bash(rustup self uninstall*) # removes rustup from the machine
+ask Bash(rustup set*) # changes the machine's Rust toolchains
+ask Bash(rustup upgrade*) # changes the machine's Rust toolchains
+ask Bash(rustup add*) # changes the machine's Rust toolchains
+ask Bash(rustup remove*) # changes the machine's Rust toolchains
+ask Bash(rustup toolchain rm*) # changes the machine's Rust toolchains
+ask Bash(rustup target rm*) # changes the machine's Rust toolchains
+ask Bash(rustup target uninstall*) # changes the machine's Rust toolchains
+ask Bash(rustup component rm*) # changes the machine's Rust toolchains
+ask Bash(rustup component uninstall*) # changes the machine's Rust toolchains
+ask Bash(rustup component install*) # changes the machine's Rust toolchains
+ask Bash(rustup override add*) # changes the machine's Rust toolchains
+ask Bash(rustup override remove*) # changes the machine's Rust toolchains
+ask Bash(rustup self upgrade-data*) # changes the machine's Rust toolchains
+ask Bash(gcloud config set) # changes your gcloud configuration
+ask Bash(gcloud config unset) # changes your gcloud configuration
+ask Bash(gcloud * activate) # switches your gcloud configuration
+ask Bash(npm login*) # changes the npm account this machine uses
+ask Bash(npm logout*) # changes the npm account this machine uses
+ask Bash(npm adduser*) # changes the npm account this machine uses
+ask Bash(npm set*) # writes your npm configuration
+ask Bash(npm config set*) # writes your npm configuration
+ask Bash(npm config delete*) # writes your npm configuration
+ask Bash(npm config edit*) # writes your npm configuration
+ask Bash(npm config rm*) # writes your npm configuration
+ask Bash(npm config del*) # writes your npm configuration
+ask Bash(npm config fix*) # writes your npm configuration
+ask Bash(npm config -* set*) # writes your npm configuration
+ask Bash(npm config -* delete*) # writes your npm configuration
+ask Bash(npm token create*) # creates an npm token
+ask Bash(npm token revoke*) # revokes an npm token
+ask Bash(npm token rm*) # revokes an npm token
+ask Bash(npm token delete*) # revokes an npm token
+ask Bash(npm token remove*) # revokes an npm token
+ask Bash(pnpm config set*) # writes your pnpm configuration
+ask Bash(pnpm config delete*) # writes your pnpm configuration
+ask Bash(yarn config set*) # writes your yarn configuration
+ask Bash(yarn config unset*) # writes your yarn configuration
+ask Bash(yarn config delete*) # writes your yarn configuration
+ask Bash(yarn npm login*) # changes the npm account this machine uses
+ask Bash(yarn npm logout*) # changes the npm account this machine uses
+ask Bash(pip* config *set *) # writes your pip configuration, unset included
+ask Bash(pip* config *edit*) # writes your pip configuration
+ask Bash(python* *pip config *set *) # writes your pip configuration, unset included
+ask Bash(uv pip config *set *) # writes your pip configuration
+ask Bash(docker logout*) # changes the registry account this machine uses
+# credential printers (story 4): the named printers, not every way a secret can be printed
+ask Bash(gh auth token*) # prints a credential into the transcript
+ask Bash(gh auth status --prints-credential) # prints a credential into the transcript
+ask Bash(glab auth status --prints-credential) # prints a credential into the transcript
+ask Bash(glab config*get*token*) # prints a credential into the transcript
+ask Bash(git-credential-* get*) # prints a credential into the transcript
+ask Bash(kubectl config view*--flatten*) # prints a credential into the transcript
+ask Bash(gcloud * print-access-token) # prints a credential into the transcript
+ask Bash(gcloud * print-identity-token) # prints a credential into the transcript
+ask Bash(gcloud * config-helper) # prints a credential into the transcript
+ask Bash(gcloud secrets versions access*) # prints a credential into the transcript
+ask Bash(git credential fill*) # prints a credential into the transcript
+ask Bash(git credential-* get*) # prints a credential into the transcript
+ask Bash(docker-credential-* get*) # prints a credential into the transcript
+ask Bash(kubectl config view*--raw*) # prints a credential into the transcript
+ask Bash(kubectl get secret --prints-credential) # prints a credential into the transcript
+ask Bash(npm token list*) # prints a credential into the transcript
+ask Bash(npm token ls*) # prints a credential into the transcript
+# git config writes that outlive the session (spec gate-f36-f40-f44, story 3). The canonical form
+# is `git config <scope> <read|write> [exec] <key> <value>`, `--file <path>` for a file scope;
+# an owner allow line names that form
+ask Bash(git config --global write *) # writes your global git configuration
+ask Bash(git config --system write *) # writes the machine's git configuration
+ask Bash(git config --file * write *) # writes a git configuration file the repository does not own
+ask Bash(git config * write exec*) # sets a git key whose value git runs later
+ask Bash(export git-config-variable) # moves git config to another file for the commands after it
+ask Bash(declare git-config-variable) # moves git config to another file for the commands after it
+ask Bash(typeset git-config-variable) # moves git config to another file for the commands after it
+ask Bash(local git-config-variable) # moves git config to another file for the commands after it
+ask Bash(set-allexport) # set -a exports every later assignment, git config variables included
+ask Bash(git submodule *foreach*) # runs a shell command in every submodule
 ask Bash(git remote add*)
 ask Bash(git remote set-url*)
 ask Bash(gh pr merge*)
@@ -120,10 +335,7 @@ ask Bash(glab mr update*)
 ask Bash(glab ci run*)
 ask Bash(glab ci retry*)
 ask Bash(glab ci cancel*)
-ask Bash(glab ci delete*)
 ask Bash(glab variable set*)
-ask Bash(glab variable delete*)
-ask Bash(glab release delete*)
 ask Bash(glab mr note*)
 ask Bash(glab mr approve*)
 ask Bash(glab issue create*)
@@ -135,12 +347,9 @@ ask Bash(gt pr merge*)
 ask Bash(gt pr review*)
 ask Bash(gt pr comment*)
 ask Bash(gt pr ready*)
-ask Bash(gt pr delete*)
 ask Bash(gt issue create*)
 ask Bash(gt issue edit*)
 ask Bash(gt issue comment*)
-ask Bash(gt issue delete*)
-ask Bash(gt release delete*)
 ask Bash(gt release edit*)
 ask Bash(gt repo create*)
 ask Bash(gt repo fork*)
@@ -160,14 +369,11 @@ ask Bash(tea pulls review*)
 ask Bash(tea pulls close*)
 ask Bash(tea comments add*)
 ask Bash(tea comments edit*)
-ask Bash(tea comments delete*)
 ask Bash(tea issues create*)
 ask Bash(tea issues edit*)
 ask Bash(tea issues close*)
-ask Bash(tea releases delete*)
 ask Bash(tea releases edit*)
 ask Bash(tea assets create*)
-ask Bash(tea assets delete*)
 ask Bash(tea repos create*)
 ask Bash(tea repos fork*)
 ask Bash(tea repos migrate*)
@@ -591,6 +797,8 @@ never Bash(kubectl get *--kustomize*) @consultant
 never Bash(kubectl get *--kustomize*) @learner
 never Bash(kubectl config view*--raw*) @consultant
 never Bash(kubectl config view*--raw*) @learner
+never Bash(kubectl config view*--flatten*) @consultant
+never Bash(kubectl config view*--flatten*) @learner
 allow Bash(gcloud * list) @consultant
 allow Bash(gcloud * describe) @consultant
 allow Bash(gcloud * get-iam-policy) @consultant

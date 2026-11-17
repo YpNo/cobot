@@ -4135,6 +4135,309 @@ def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
     return any(PYTHON_WRITES_RE.search(text) for text in code)
 
 
+# ---------------------------------------------------------------- shell writes (gate-f36-f40-f44, story 6)
+
+SHELL_WRITE_EXEMPT = SAFE_WRITE_TARGETS | {"/dev/tty"}
+PASS_THROUGH = frozenset(
+    "cat tee dd sponge tr sed base64 xxd head tail sort uniq cut envsubst cp install".split()
+)
+PATCHERS = (["patch"], ["git", "apply"], ["ed"], ["ex"])
+SHELL_RUNNERS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "su"})
+CODE_OPTIONS = {"nix-shell": ("--run", "--command")}  # runners whose option holds a code string
+OPENERS = frozenset({"{", "("})
+LEADING_WORDS = frozenset({"{", "(", "do", "then", "else", "elif", "if", "while", "until", "!", "time"})
+EXPANSION_ONLY_RE = re.compile(
+    r"(?:\$(?:\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*|[0-9?#@*$!-])|" + shell.SENTINEL_RE.pattern + r")+"
+)
+HERE_OPERATORS = frozenset({"<<", "<<-", "<<<"})
+SHELL_WRITE_ASK = "text written into a file through the shell, or a write the gate cannot trace"
+MAX_SHELL_WRITE_DEPTH = 4
+
+
+def edits_in_place(segment: list[str]) -> bool:
+    """``sed -i``, ``awk -i inplace``, ``ruby -i`` and ``yq -i``: an editor writing its file."""
+    argv = strip_wrappers(segment)
+    if not argv:
+        return False
+    head, words = argv[0].lower(), argv[1:]
+    shorts = [word[1:] for word in words if word.startswith("-") and not word.startswith("--")]
+    if head in ("sed", "gsed"):
+        return any(word.startswith("--in-place") for word in words) or any("i" in s for s in shorts)
+    if head in ("awk", "gawk"):
+        pairs = itertools.pairwise([*words, ""])
+        return any(
+            w == "--include=inplace" or (w in ("-i", "--include") and v == "inplace") for w, v in pairs
+        )
+    if head == "ruby":  # -i after flags that take no value: -pi, -ni, -i.bak
+        return any(re.match(r"[acdlnpsvwyU]*i", s) for s in shorts)
+    if head == "yq":
+        return "--inplace" in words or any(s.startswith("i") or s.endswith("i") for s in shorts)
+    return False
+
+
+def stage_words(scan: shell.Scan, stage: shell.Stage) -> tuple[list[str], list[str]]:
+    """The stage's raw words (openers kept) and its program argv: wrappers and reserved words off,
+    and a ``case`` pattern (``a)``) dropped, so ``case a in a) echo x`` is ``echo x``."""
+    items = shell_items(scan.outer[stage.start : stage.end]) if stage.end > stage.start else []
+    raw = [word for item in items for word in (item if isinstance(item, list) else [item])]
+    if ")" in items and "(" not in items[: items.index(")")]:
+        items = items[len(items) - items[::-1].index(")") :]
+    words = [word for item in items if isinstance(item, list) for word in item if word not in ("{", "}")]
+    return raw, strip_wrappers(words)
+
+
+def lead(raw: list[str]) -> list[str]:
+    """The raw words past the openers and reserved words that start a compound's body."""
+    at = 0
+    while at < len(raw) and raw[at] in LEADING_WORDS:
+        at += 1
+    return raw[at:]
+
+
+def literal_word(word: str, scan: shell.Scan) -> bool:
+    """Text the agent wrote: anything but expansions, or an expansion of text the command holds
+    (a substitution printing a literal, a variable it assigns)."""
+    plain = word.strip("'\"")
+    if not EXPANSION_ONLY_RE.fullmatch(plain):
+        return True
+    holes = [scan.holes[key] for key in shell.sentinels(plain) if key in scan.holes]
+    if any(hole.body is not None and holds_literal(hole.body) for hole in holes):
+        return True
+    names = re.findall(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", plain)
+    return any(re.search(rf"(?:^|[\s;&|(]){name}=", scan.outer) for name in names)
+
+
+def literal_program(plain: list[str], scan: shell.Scan | None = None) -> bool:
+    """``echo``, ``printf``, ``jq -n`` and ``awk 'BEGIN{…}'``: a stage whose output is its own text.
+    An ``echo`` or ``printf`` of expansions alone (``echo "$(git rev-parse HEAD)"``) is output."""
+    if not plain:
+        return False
+    head, args = plain[0], [word for word in plain[1:] if not word.startswith("-")]
+    if head in ("echo", "printf"):
+        return scan is None or any(literal_word(word, scan) for word in args)
+    if head == "jq":
+        shorts = [w for w in plain[1:] if w.startswith("-") and not w.startswith("--")]
+        return any("n" in w for w in shorts) or "--null-input" in plain
+    return head in ("awk", "gawk", "mawk") and len(args) == 1 and args[0].lstrip().startswith("BEGIN")
+
+
+def writer_targets(plain: list[str], scan: shell.Scan | None = None) -> list[str]:
+    """Files a pass-through writer writes from its input: ``tee`` operands, ``dd of=``, ``sponge``,
+    ``sort -o`` (in a cluster, or ``--output``), and ``cp``/``install`` from standard input or a
+    process substitution holding text."""
+    if not plain:
+        return []
+    head, args = plain[0], plain[1:]
+    operands = [word for word in args if not word.startswith("-")]
+    if head == "tee":
+        return [word for word in operands if word != "-"]
+    if head == "dd":
+        return [word[3:] for word in args if word.startswith("of=")]
+    if head == "sponge":
+        return operands[:1]
+    if head == "sort":
+        found = []
+        for word, following in itertools.pairwise([*args, ""]):
+            if word.startswith("--output"):
+                found.append(word.partition("=")[2] or following)
+            elif word.startswith("-") and not word.startswith("--") and "o" in word:
+                found.append(word[word.index("o") + 1 :] or following)
+        return found
+    stdin = {"/dev/stdin", "-", "/dev/fd/0", "/proc/self/fd/0"}
+    fed = scan is not None and any(holds_text(word, scan) for word in operands[:-1])
+    if head in ("cp", "install") and (set(operands) & stdin or fed):
+        return operands[-1:]
+    return []
+
+
+def holds_text(word: str, scan: shell.Scan) -> bool:
+    """A word that is a process substitution whose body holds literal text."""
+    holes = [scan.holes[key] for key in shell.sentinels(word) if key in scan.holes]
+    return any(hole.body is not None and holds_literal(hole.body) for hole in holes)
+
+
+def written_by_stage(
+    redirects: list[shell.Redirect], plain: list[str], scan: shell.Scan | None = None
+) -> list[str]:
+    """Files the stage's standard output reaches, its redirections read in order with an fd table
+    (``2>f >&2`` and ``3>f >&3`` reach ``f``; ``/dev/stderr`` is wherever fd 2 points), or a
+    writer's own operands. A device path is exempt only where it still reaches the terminal."""
+    fds: dict[int, str | None] = {1: None, 2: None}  # None: the terminal, inherited
+    for r in redirects:
+        if r.operator not in shell.WRITING_OPERATORS:
+            continue
+        if r.operator.startswith("&>"):
+            fds[1] = fds[2] = device_target(r.target, fds)
+            continue
+        fd = int(r.fd) if r.fd.isdigit() else 1 if r.fd == "" else None
+        if fd is None:
+            continue
+        if r.operator == ">&" and shell.FD_WORD_RE.match(r.target):
+            source = r.target.rstrip("-")
+            fds[fd] = fds.get(int(source), f"/dev/fd/{source}") if source.isdigit() else None
+            continue
+        fds[fd] = device_target(r.target, fds)
+    written = [fds[1]] if fds[1] is not None else []
+    return written + [t for t in writer_targets(plain, scan) if device_target(t, fds) is not None]
+
+
+def device_target(target: str, fds: dict[int, str | None]) -> str | None:
+    """The file a redirection target reaches: None for the terminal or /dev/null, a /dev/fd/N or
+    /dev/std* path read through the fd table, any other path (a hole included) itself."""
+    path = os.path.normpath(target)
+    aliases = {"/dev/stdout": 1, "/dev/stderr": 2}
+    number = aliases.get(path) or (int(path[8:]) if re.fullmatch(r"/dev/fd/\d+", path) else None)
+    if number is not None:
+        return fds[number] if number in fds else target
+    return None if path in SHELL_WRITE_EXEMPT else target
+
+
+def shell_write(scan: shell.Scan, depth: int = 0) -> tuple[str | None, list[list[str]]]:
+    """DENY when literal text reaches a file through pass-through stages, ASK when a write may carry
+    it but the gate cannot trace that, else None; with every argv an owner allow must lift."""
+    found: list[tuple[str | None, list[list[str]]]] = [pipeline_writes(scan)]
+    for hole in scan.holes.values():
+        if hole.body is not None and depth < MAX_SHELL_WRITE_DEPTH:
+            found.append(shell_write(hole.body, depth + 1))
+    for stage in scan.stages:
+        body = shell_body(stage_words(scan, stage)[1])
+        if body is not None and depth < MAX_SHELL_WRITE_DEPTH:
+            inner = shell.scan(body, frozenset(shell.sentinels(body)))
+            found.append(shell_write(inner, depth + 1) if not inner.error else (ASK, [[]]))
+    denied = [argvs for verdict, argvs in found if verdict == DENY]
+    if denied:
+        return DENY, denied[0]
+    asked = [argv for verdict, argvs in found if verdict == ASK for argv in argvs]
+    return (ASK, asked) if asked else (None, [])
+
+
+def shell_body(plain: list[str]) -> str | None:
+    """The code string of ``bash -c '…'``, ``bash -lc``, ``bash -c -e '…'``, a shell behind a
+    runner (``distrobox enter b -- sh -c``), ``su -c`` or ``nix-shell --run``."""
+    for at, word in enumerate(plain):
+        name = os.path.basename(word)
+        if name in CODE_OPTIONS:
+            following = plain[at + 1 :]
+            for option, value in itertools.pairwise([*following, ""]):
+                if option.split("=", 1)[0] in CODE_OPTIONS[name]:
+                    return option.partition("=")[2] or value
+        if name not in SHELL_RUNNERS:
+            continue
+        rest = plain[at + 1 :]
+        clusters = [
+            i for i, w in enumerate(rest) if w.startswith("-") and not w.startswith("--") and "c" in w
+        ]
+        if clusters:
+            words = [w for w in rest[clusters[0] + 1 :] if not w.startswith("-")]
+            return words[0] if words else None
+    return None
+
+
+def holds_literal(scan: shell.Scan) -> bool:
+    return (
+        any(here_literal(r, scan) for r in scan.redirects)
+        or any(literal_program(stage_words(scan, stage)[1], scan) for stage in scan.stages)
+        or any(hole.body is not None and holds_literal(hole.body) for hole in scan.holes.values())
+    )
+
+
+def here_literal(redirect: shell.Redirect, scan: shell.Scan) -> bool:
+    """A here-document, or a here-string of written text (not ``<<<"$(git log)"`` alone)."""
+    if redirect.operator not in HERE_OPERATORS:
+        return False
+    return redirect.operator != "<<<" or literal_word(redirect.target, scan)
+
+
+def pipeline_writes(scan: shell.Scan) -> tuple[str | None, list[list[str]]]:
+    """The verdict for one scanned text, from its stages and redirections."""
+    if not holds_literal(scan):
+        return None, []
+    stages = {(s.item, s.index): (s, *stage_words(scan, s)) for s in scan.stages}
+    redirects: dict[tuple[int, int], list[shell.Redirect]] = {}
+    for r in scan.redirects:
+        redirects.setdefault((r.item, r.index), []).append(r)
+    asks: list[list[str]] = []
+    functions = {
+        raw[1] if raw[0] == "function" else raw[0]
+        for _, raw, _ in stages.values()
+        if len(raw) > 1 and (raw[1].startswith("(") or raw[0] == "function")
+    }
+    any_write = any(
+        written_by_stage(redirects.get(key, []), plain, scan) for key, (_, _, plain) in stages.items()
+    )
+    for key, (_, raw, plain) in sorted(stages.items()):
+        own = redirects.get(key, [])
+        if written_by_stage([r for r in own if r.after_closer], []):
+            asks.append(plain or raw)
+        if lead(raw)[:1] == ["exec"] and any(r.operator in shell.WRITING_OPERATORS for r in own):
+            asks.append(raw)
+        if functions and any_write:
+            asks.append(plain or raw)
+    for item in sorted({item for item, _ in stages}):
+        verdict, argv = item_writes(item, stages, redirects, scan, functions, any_write)
+        if verdict == DENY:
+            return DENY, [argv]
+        if verdict == ASK:
+            asks.append(argv)
+    return (ASK, asks) if asks else (None, [])
+
+
+def stage_source(scan: shell.Scan, raw: list[str], plain: list[str], own: list[shell.Redirect]) -> str | None:
+    """``emits`` for a stage printing literal text, ``fed`` for one reading it, ``compound`` for
+    a group or loop's output (``{ …; echo x; } | tee f``), else None."""
+    if literal_program(plain, scan):
+        return "emits"
+    if any(here_literal(r, scan) for r in own):
+        return "fed"
+    if raw[:1] and raw[0] in shell.CLOSERS:
+        return "compound"
+    words = [*plain, *(r.target for r in own)]
+    return "fed" if any(holds_text(word, scan) for word in words) else None
+
+
+def item_writes(item, stages, redirects, scan, functions, any_write) -> tuple[str | None, list[str]]:
+    """One pipeline: deny when its literal source reaches a file through pass-through stages."""
+    pipeline = [stages[key] for key in sorted(stages) if key[0] == item]
+    for at, (stage, raw, plain) in enumerate(pipeline):
+        source = stage_source(scan, raw, plain, redirects.get((item, stage.index), []))
+        if source is None:
+            continue
+        clean = source == "emits" or (source == "fed" and bool(plain[:1] and plain[0] in PASS_THROUGH))
+        for later_stage, later_raw, later in pipeline[at:]:
+            if any(later[: len(p)] == p for p in PATCHERS):
+                return DENY, later
+            downstream = later_stage.index != stage.index
+            if downstream:
+                clean = clean and bool(later) and later[0] in PASS_THROUGH
+            own = [r for r in redirects.get((item, later_stage.index), []) if not r.after_closer]
+            if written_by_stage(own, later, scan):
+                return (DENY if clean else ASK), later
+            nested = bool(later_raw[:1]) and later_raw[0] in OPENERS
+            called = bool(later) and (later[0] in functions or runner_writes(later))
+            if called or (downstream and nested and any_write):
+                return ASK, later
+        return None, []
+    return None, []
+
+
+def runner_writes(plain: list[str]) -> bool:
+    """A ``bash -c`` body that writes a file (a redirection or a named writer), or one the
+    scanner cannot read."""
+    body = shell_body(plain)
+    if body is None:
+        return False
+    inner = shell.scan(body, frozenset(shell.sentinels(body)))
+    if inner.error:
+        return True
+    redirects: dict[tuple[int, int], list[shell.Redirect]] = {}
+    for r in inner.redirects:
+        redirects.setdefault((r.item, r.index), []).append(r)
+    return any(
+        written_by_stage(redirects.get((s.item, s.index), []), stage_words(inner, s)[1], inner)
+        for s in inner.stages
+    )
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -4167,7 +4470,7 @@ def judge_bash(
     for segment, origin, unit, _ in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
-        if writes_by_script(segment, unit, holes):
+        if writes_by_script(segment, unit, holes) or edits_in_place(segment):
             verdict = Verdict(DENY, None, WRITING_SCRIPT)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
@@ -4177,7 +4480,25 @@ def judge_bash(
             asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
+    written = shell_write_verdict(scanned, bash_rules)
+    if written.decision == ASK:
+        asks.append(written)
+    if outranks(written, best):
+        best = written
     return named_asks(best, asks, agent), trace
+
+
+def shell_write_verdict(scanned: shell.Scan, bash_rules: list[Rule]) -> Verdict:
+    """Story 6's verdict for the whole command: a deny with the Edit/Write reason, or an ask an
+    owner allow on the writing stage lifts, as it would a default-layer ask row."""
+    decision, argvs = shell_write(scanned)
+    if decision == DENY:
+        return Verdict(DENY, None, WRITING_SCRIPT)
+    owner = [r for r in bash_rules if r.decision == "allow" and r.layer == "owner"]
+    lifted = all(argv and any(matches_bash(r, candidates(argv)) for r in owner) for argv in argvs)
+    if decision == ASK and not lifted:
+        return Verdict(ASK, None, SHELL_WRITE_ASK)
+    return Verdict(None, None, "no rule matched")
 
 
 def file_forms(path: str, cwd: str | None) -> list[str]:

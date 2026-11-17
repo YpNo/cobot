@@ -63,6 +63,12 @@ All notable changes to this project are documented here. The format follows
   rendered in `permissions.deny`. `glab ci delete` and the `gt` and `tea` deletions used to ask.
   A `never` row reached only through an unknown option before a `gh` or `glab` verb asks instead
   (`gh issue --label delete list`), and no `allow` lifts that ask.
+- **Shell writes are refused (F-44).** Text written into a file through the shell, such as
+  `cat > f <<EOF`, `printf x > f`, `tee f <<< x` or `echo x | dd of=f`, is denied with the reason
+  to use Edit or Write, wherever the file is, and so are `sed -i`, `awk -i inplace`, `ruby -i`,
+  `yq -i`, and `patch` or `git apply` fed such text. A write the gate cannot trace for certain
+  asks (`{ echo a; } > f`, `ssh h <<EOF > out`). Command output to a file stays silent. The
+  scanner now records each pipeline stage and the stage each redirection belongs to.
 
 ### Fixed
 

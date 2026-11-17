@@ -199,6 +199,28 @@ An owner `allow` line lifts one form (`allow Bash(gh auth token*)`). A gcloud co
 without its release track and the flags between its words (`gcloud beta secrets --project p
 versions access`), so these rows and the read lists see its command words.
 
+Text the agent writes into a file through the shell is refused, wherever the file is, with the
+reason to use Edit or Write instead: their diff is what you review.
+
+- **Refused:** a here-document, a here-string, or an `echo`, `printf`, `jq -n` or
+  `awk 'BEGIN{…}'` stage whose text reaches a file through pass-through stages only (`cat`, `tee`,
+  `dd`, `sponge`, `tr`, `sed`, `base64`, `xxd`, `head`, `tail`, `sort`, `uniq`, `cut`, `envsubst`),
+  by a `>`, `>>` or `&>` redirection, `tee`, `dd of=`, `sponge`, `sort -o`, or `cp`/`install`
+  from standard input. Also refused: `patch`, `git apply`, `ed` and `ex` fed such text, and the
+  in-place editors `sed -i`, `awk -i inplace`, `ruby -i` and `yq -i`.
+- **Asks** (an owner `allow` on the writing command lifts it): a write the gate cannot trace for
+  certain, in a command that holds such text. That covers a stage that is not a pass-through
+  before the write (`ssh h <<EOF > out`), a write owned by a group, subshell or loop
+  (`{ echo a; } > f`), an `exec` redirection, a function defined in the command, and a group or
+  `bash -c` body the text feeds.
+- **Silent:** command output to a file (`cargo metadata > m.json`, `make | tee log`, and an
+  `echo` or here-string of expansions alone, such as `echo "$(git rev-parse HEAD)" > f`), and
+  text to `/dev/null`, `/dev/tty`, or `/dev/stdout`, `/dev/stderr`, `/dev/fd/1` and `/dev/fd/2`
+  while they still reach the terminal. Redirections are read in order, so `2>f >&2` writes `f`.
+  Any other device path, `/dev/tcp/…` included, is a file. An expansion of text the command
+  wrote (`x=a; echo "$x" > f`, `echo "$(printf a)" > f`) is literal text.
+- **Not claimed:** sed's `w` command, `split` and `csplit`, and sources the gate does not name.
+
 A `never` row that only an unknown option before a `gh` or `glab` verb reaches asks instead of
 denying: in `gh issue --label delete list` the word `delete` may be the label's value, and in
 `gh release --title x create v1` the word `create` may be the verb. No `allow` lifts that ask.

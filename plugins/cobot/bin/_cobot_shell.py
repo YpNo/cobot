@@ -46,6 +46,7 @@ QUOTING_MODES = ("top", "sub", "arith", "param")  # where quotes quote; not insi
 FD_PREFIX_RE = re.compile(r"(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
 CAT_HEREDOC_RE = re.compile(r"^\s*cat\s*$")
 WRITING_OPERATORS = frozenset({">", ">>", ">|", "&>", "&>>", "<>", ">&"})
+CLOSERS = frozenset({")", "}", "done", "fi", "esac"})  # a compound command ends: it owns what follows
 FD_WORD_RE = re.compile(r"^\d*-?$")  # ``>&2``, ``>&-``, ``>&3-``: a descriptor, not a file
 EXPANDING_MODES = ("top", "sub")  # where bash expands braces and globs in a word
 EXTGLOB_CHARS = "?*+@!"  # before ``(``: an extended glob when ``extglob`` is on
@@ -79,6 +80,31 @@ class HereDoc:
     body: str = ""
 
 
+@dataclass(frozen=True)
+class Stage:
+    """One pipeline stage of this text: its list item (split on ``;``, ``&&``, ``||``, ``&`` and
+    newline), its place in the pipeline, and its span in ``outer`` (spec gate-f36-f40-f44, Plan 6)."""
+
+    item: int
+    index: int
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class Redirect:
+    """A redirection, here-document (``<<``) or here-string (``<<<``) with the stage it sits in;
+    ``after_closer`` when a ``)``, ``}``, ``done``, ``fi`` or ``esac`` precedes it in that stage,
+    so a compound command owns it."""
+
+    item: int
+    index: int
+    operator: str
+    fd: str
+    target: str
+    after_closer: bool
+
+
 @dataclass
 class Scan:
     outer: str = ""
@@ -86,6 +112,8 @@ class Scan:
     targets: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)  # targets a redirection writes
     heredocs: list[HereDoc] = field(default_factory=list)
+    stages: list[Stage] = field(default_factory=list)
+    redirects: list[Redirect] = field(default_factory=list)
     inert_code: bool = False  # data text (a quoted here-document, a here-string) holds ``$(`` or a backtick
     error: str | None = None
 
@@ -185,6 +213,9 @@ class _Scanner:
         self.capture: int | None = None  # start of a redirection target in ``out``
         self.capture_data = False  # the target is a here-string: data, not a file
         self.capture_operator = ""  # the operator of the pending target
+        self.capture_where: tuple[int, int, str, bool] = (0, 0, "", False)  # item, stage, fd, closer
+        self.item = self.stage_index = self.stage_start = 0
+        self.skip_separator = False  # the second character of ``&&``, ``||`` or ``|&``
 
     # ------------------------------------------------------------ driver
 
@@ -197,8 +228,45 @@ class _Scanner:
                 raise ShellError("unclosed substitution")
         self.end_capture()  # a here-document still pending has no body: bash reads nothing
         self.end_word()
+        self.close_stage()
         self.scan.outer = "".join(self.out)
         return self.scan
+
+    # ------------------------------------------------------------ lists and pipelines
+
+    def length(self) -> int:
+        return sum(len(piece) for piece in self.out)
+
+    def close_stage(self) -> None:
+        stage = Stage(self.item, self.stage_index, self.stage_start, self.length())
+        self.scan.stages.append(stage)
+
+    def separator(self, c: str) -> str | None:
+        """``item`` or ``stage`` when ``c`` ends a pipeline stage here, else None."""
+        if self.mode not in ("top", "sub") or c not in ";&|\n":
+            return None
+        if self.skip_separator:
+            self.skip_separator = False
+            return "rest"  # the next stage starts after this character
+        if c == "\n" and "".join(self.out).rstrip(" \t").endswith(("|", "&&")):
+            return None  # ``echo x |`` then a newline: the pipeline or list goes on
+        following = self.text[self.i + 1 : self.i + 2]
+        if c == "|":
+            self.skip_separator = following in ("|", "&")
+            return "item" if following == "|" else "stage"
+        self.skip_separator = c == "&" and following == "&"
+        return "item"
+
+    def open_stage(self, kind: str) -> None:
+        if kind == "item":
+            self.item, self.stage_index = self.item + 1, 0
+        elif kind == "stage":
+            self.stage_index += 1
+        self.stage_start = self.length()
+
+    def after_closer(self) -> bool:
+        so_far = "".join(self.out)[self.stage_start :]
+        return any(word in CLOSERS for word in re.findall(r"[()]|[^\s()]+", so_far))
 
     def step(self) -> bool:
         """Handle the text at ``self.i``; True when this level ends."""
@@ -247,7 +315,12 @@ class _Scanner:
         if c in " \t\n" or c in ";&|":
             self.end_capture()
         if c == "\n":
+            kind = self.separator(c)
+            if kind in ("item", "stage"):
+                self.close_stage()
             self.emit(c)
+            if kind:
+                self.open_stage(kind)
             self.i += 1
             self.read_heredocs()
             return False
@@ -268,7 +341,12 @@ class _Scanner:
             return self.close_paren()
         if self.mode == "sub" and self.at_word_start() and self.word_is("case"):
             raise ShellError("'case' inside a substitution")
+        kind = self.separator(c)
+        if kind in ("item", "stage"):
+            self.close_stage()
         self.emit(c)
+        if kind:
+            self.open_stage(kind)
         self.i += 1
         return False
 
@@ -575,11 +653,13 @@ class _Scanner:
         if not match or (text[i] == "&" and not match.group().startswith("&>")):
             return False
         operator = match.group()
-        self.drop_fd_prefix()
+        fd = self.drop_fd_prefix()
         self.i = i + len(operator)
         self.skip_blanks()
+        where = (self.item, self.stage_index, fd, self.after_closer())
         if operator in ("<<", "<<-"):
             self.pending.append(self.read_delimiter(operator == "<<-"))
+            self.scan.redirects.append(Redirect(where[0], where[1], operator, fd, "", where[3]))
             self.emit(" ")
             return True
         self.end_capture()
@@ -587,17 +667,20 @@ class _Scanner:
         self.capture = len(self.out)
         self.capture_data = operator == "<<<"
         self.capture_operator = operator
+        self.capture_where = where
         return True
 
-    def drop_fd_prefix(self) -> None:
+    def drop_fd_prefix(self) -> str:
+        """Take a ``2`` or ``{fd}`` before the operator out of the words, and return it."""
         word: list[str] = []
         while self.out and self.out[-1] and not ends_word(self.out[-1]):
             word.insert(0, self.out.pop())
         joined = "".join(word)
         prefix = FD_PREFIX_RE.search(joined)
         if prefix and prefix.start() == 0:
-            return  # ``2>``, ``{fd}>``: the number or name belongs to the operator
+            return joined  # ``2>``, ``{fd}>``: the number or name belongs to the operator
         self.out.extend(word)
+        return ""
 
     def skip_blanks(self) -> None:
         while self.i < len(self.text) and self.text[self.i] in " \t":
@@ -608,6 +691,8 @@ class _Scanner:
             return
         word = "".join(self.out[self.capture :])
         del self.out[self.capture :]
+        item, index, fd, closer = self.capture_where
+        self.scan.redirects.append(Redirect(item, index, self.capture_operator, fd, word.strip(), closer))
         if self.capture_data:
             self.scan.inert_code = self.scan.inert_code or ("$(" in word or "`" in word)
         else:

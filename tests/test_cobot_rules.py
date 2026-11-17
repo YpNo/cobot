@@ -52,13 +52,13 @@ DEFAULT_DECISIONS = [
     ("gh api repos/o/r", None),
     ("terragrunt run-all apply", "deny"),
     ("terragrunt plan", None),
-    ("echo x > ~/.claude/settings.json", "ask"),
-    ("sed -i s/a/b/ ~/.claude/settings.json", "ask"),
+    ("date > ~/.claude/settings.json", "ask"),
+    ("sed -i s/a/b/ ~/.claude/settings.json", "deny"),  # an in-place editor (story 6)
     ("cat ~/.claude/settings.json", "ask"),
     ("cat .claude/settings.local.json", "ask"),
-    ("echo x | tee ~/.claude/settings.json", "ask"),
-    ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", None),
-    ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", None),
+    ("date | tee ~/.claude/settings.json", "ask"),
+    ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", "deny"),  # a shell write (story 6)
+    ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", "deny"),
     ("terraform apply -auto-approve", "deny"),
     ("terraform -chdir=envs/prod apply", "deny"),
     ("tofu destroy", "deny"),
@@ -2840,7 +2840,7 @@ SUBSTITUTION_SILENT = [
     "cat docs/$(date +%F).md",
     "grep -n 'use $(x) here' f",
     "x=$'\\n'; echo \"$x\"",
-    "cat <<'EOF' > notes.md\nrun `cargo test` and $(make)\nEOF",
+    "cat <<'EOF' > /dev/null\nrun `cargo test` and $(make)\nEOF",
     "case $(uname) in Linux) echo l;; esac",
     "echo x # $(git push --force)",
 ]
@@ -2936,7 +2936,7 @@ BYPASSES_CLOSED = [
     ("(echo $((echo $'\\'(') ; git push ; (true)))", "ask"),
     ("echo ${x:->(terraform apply)}", "deny"),
     ("echo ${x:-<(git push)}", "ask"),
-    ("(echo x >~/.claude/settings.json)", "ask"),
+    ("(date >~/.claude/settings.json)", "ask"),
     ("exec -- git push", "ask"),
     ("command -- git push --force", "deny"),
     ("nohup -- git push", "ask"),
@@ -3013,7 +3013,7 @@ def test_judgeBash_definedCat_dropsTheKnownValue(rules):
 
 def test_judgeBash_protectedPathWithAHole_asks(rules, tmp_path):
     assert judge_in(rules, "cat .claude/$(echo settings.local.json)", tmp_path)[0].decision == "ask"
-    assert judge_in(rules, 'echo x > "$(echo ~)/.claude/settings.json"', tmp_path)[0].decision == "ask"
+    assert judge_in(rules, 'date > "$(echo ~)/.claude/settings.json"', tmp_path)[0].decision == "ask"
     assert judge_in(rules, "cat docs/$(date).md", tmp_path)[0].decision is None
 
 
@@ -3154,7 +3154,7 @@ def test_judgeBash_unanchoredGlobUnderAnAgent_saysHowToAnchor(rules):
     "command",
     [
         "cat ~/.claude/settings.js?",
-        "echo x > ~/.claude/settings.js?",
+        "date > ~/.claude/settings.js?",
         "cp x ~/.claude/{settings.json,y}",
         "cat ~/.claude/settings.[]j]son",
         "cat ~/.claude/settings.j[[:alpha:]]on",
@@ -3252,8 +3252,8 @@ def test_commandParts_plantedSentinelInABody_isRefused(rules):
 
 REVIEW_ROWS = [
     # runner-body redirection targets: quotes removed, braces expanded
-    ("bash -c 'echo {} > {~/.claude/settings.json,}'", "ask"),
-    ("bash -c 'echo x > ~/.claude/\"settings.json\"'", "ask"),
+    ("bash -c 'date > {~/.claude/settings.json,}'", "ask"),
+    ("bash -c 'date > ~/.claude/\"settings.json\"'", "ask"),
     # brace quote skipping as the scanner reads it, failing closed
     ("cat ~/.claude/{settings.json,$'\\''}", "ask"),
     ('cat ~/.claude/{settings.json,"$(echo "\'")"}', "ask"),
@@ -3582,7 +3582,8 @@ AGENT_READS = [
 
 @pytest.mark.parametrize("command", AGENT_GUARDED)
 def test_decide_agentReadList_neverCoversAWriteOrARun(rules, command):
-    assert decide(rules, command, agent="cobot:consultant")[0].decision == "ask", command
+    # ask, or deny where story 6 refuses the write outright (yq -i)
+    assert decide(rules, command, agent="cobot:consultant")[0].decision in ("ask", "deny"), command
 
 
 @pytest.mark.parametrize("command", AGENT_READS)
@@ -4174,7 +4175,7 @@ AGY_SELF_COMMANDS = [
     ("install.sh --check", "ask"),
     ("/home/x/cobot/install.sh --agy", "ask"),
     ("sh install.sh", "ask"),
-    ("echo x > ~/.gemini/config/hooks.json", "ask"),
+    ("date > ~/.gemini/config/hooks.json", "ask"),
     ("cat ~/.gemini/jetski/grants.json", "ask"),
     ("cp evil.json ~/.gemini/antigravity-cli/settings.json", "ask"),
     ("cp x .agents/hooks.json", "ask"),
@@ -4316,7 +4317,7 @@ def agy_installed(rules, tmp_path, monkeypatch):
         ("python3 -I {bin}/cobot-memory check > {bin}/cobot-rules", "ask"),
         ("python3 -c 'print(1)' {bin}/cobot-rules", "ask"),
         ("python3 -I {bin}/../hooks.json", "ask"),
-        ("sed -i s/a/b/ {bin}/cobot-rules", "ask"),
+        ("date > {bin}/cobot-rules", "ask"),
         ("cat {root}/hooks.json", "ask"),
     ],
 )
@@ -4349,7 +4350,7 @@ def fake_home(rules, tmp_path, monkeypatch):
         (".gemini/config", "cp /tmp/evil.json mcp_config.json", "ask"),
         (".gemini/config", "rm *", "ask"),
         ("ws/.agents", "tee hooks.json", "ask"),
-        ("ws/.agents", "printf x > hooks.json", "ask"),
+        ("ws/.agents", "date > hooks.json", "ask"),
         ("ws", "cat README.md", None),
         ("ws", "git add hooks.json", None),
         ("ws", "ls *.log", None),
@@ -4444,7 +4445,7 @@ def test_judgeFile_symlinkedHome_folderRowProtectsTheRealFolderItself(rules, tmp
 
 @pytest.mark.parametrize(
     "command",
-    ["echo x > door/key.txt", "cat ./alias", "cat door/*", "cat door/$(echo key.txt)"],
+    ["date > door/key.txt", "cat ./alias", "cat door/*", "cat door/$(echo key.txt)"],
 )
 def test_protectedFileTouched_tokenThroughASymlink_asks(rules, vault, command):
     verdict = judge_in(rules, command, vault)[0]
@@ -4592,7 +4593,7 @@ def test_caseFold_allowRowsNeverFold(rules, layers, tmp_path):
         "tee ${HOME}/.gemini/config/x",
         'tee "$HOME/.gemini/jetski/x"',
         "rm -r $HOME/.gemini/config",
-        "echo x > $HOME/.gemini/config/x",
+        "date > $HOME/.gemini/config/x",
         "cd $HOME/.gemini/config && ls",
         "mv $HOME/.gemini /tmp/g",
         "cp x ${HOME}/.gemini/antigravity-cli/settings.json",
@@ -4634,8 +4635,8 @@ def workspace(rules, tmp_path, layers):
         "cd .agents; tee hooks.json",
         "pushd vault && cat key.txt",
         "cd docs && cd ../.claude && cp /tmp/x settings.local.json",
-        "cd .claude && echo x > settings.json",
-        "cd .agents && echo x >> hooks.json",
+        "cd .claude && date > settings.json",
+        "cd .agents && date >> hooks.json",
         "cd .agents && tee plugins/x.sh",
         "cd .claude && tee ./settings.json",
         "cd .claude || exit; tee settings.json",
@@ -4680,7 +4681,7 @@ def test_cdOperand_ordinaryVariables_staySilent(rules, fake_home, command):
 
 @pytest.mark.parametrize(
     "command",
-    ['cd "$d" && tee settings.json', 'cd "$d" && echo x > hooks.json', "cd $(x) && cp a Settings.local.json"],
+    ['cd "$d" && tee settings.json', 'cd "$d" && date > hooks.json', "cd $(x) && cp a Settings.local.json"],
 )
 def test_cdUnknown_wordNamingAProtectedFile_asks(rules, workspace, command):
     assert judge_in(rules, command, workspace)[0].decision == "ask", command
@@ -4746,7 +4747,7 @@ def linked(workspace):
         "cat ./a?ias",
         "cat [[:alpha:]]lias",
         "cat [^x]lias",
-        "echo x > al*",
+        "date > al*",
         "shopt -s dotglob; cat .?",
         "tee d*/new.txt",
         "cp x do?r/",
@@ -4798,7 +4799,7 @@ def claude_dir(fake_home):
     "command",
     [
         'for f in settings.json; do cp /tmp/evil "$f"; done',
-        'for f in settings.local.json; do echo "{}" > $f; done',
+        "for f in settings.local.json; do date > $f; done",
         "select f in settings.json; do cp /tmp/evil $f; break; done",
         "flock settings.local.json true",
         "case x in settings.json) :;; esac",
@@ -4831,7 +4832,7 @@ def test_bypassFold_globNamingTheProtectedFolder_asks(rules, claude_dir, command
     "command",
     [
         "cd && tee .gemini/config/x",
-        "cd; echo x > .gemini/config/x",
+        "cd; date > .gemini/config/x",
         "cd -- && tee .gemini/config/x",
         "bash -c 'cd && tee .gemini/config/x'",
         "cd ~/.gemini && tee ~+/config/x",
@@ -4839,7 +4840,7 @@ def test_bypassFold_globNamingTheProtectedFolder_asks(rules, claude_dir, command
         "pushd ~/.gemini; pushd /; tee ~1/config/x",
         "CDPATH=~/.gemini cd config && tee x",
         "CDPATH=~/.gemini; cd config; tee x",
-        "CDPATH=$HOME/.gemini; cd config; echo y > x",
+        "CDPATH=$HOME/.gemini; cd config; date > x",
     ],
 )
 def test_bypassFold_cdForms_reachTheProtectedFolder(rules, claude_dir, command):
@@ -4886,12 +4887,12 @@ def deep_links(claude_dir):
 @pytest.mark.parametrize(
     "command",
     [
-        "echo x > a*/l/config/x",
+        "date > a*/l/config/x",
         "cat a*/l/config/x",
         "cat s*/../.gemini/config/x",
         "shopt -s nocaseglob; cat LNK*/x",
         'cd "$d" && cp /etc/hosts hooks.js?n',
-        'cd "$d"; echo x > settings.js[o]n',
+        'cd "$d"; date > settings.js[o]n',
     ],
 )
 def test_bypassFold_globsThroughLinksDotsAndCase_ask(rules, deep_links, command):
@@ -5171,3 +5172,136 @@ def test_readingScript_keepsItsAsk(rules, command):
 
 def test_readingPerl_isNotDenied(rules):
     assert decide(rules, "perl -ne 'print if /x/' x.txt")[0].decision != "deny"
+
+
+# ---------------------------------------------------------------- shell writes (F-44, story 6)
+
+SHELL_WRITES_DENIED = [
+    "cat > a.md <<'EOF'\nx\nEOF",
+    "cat >> src/lib.rs <<'EOF'\nx\nEOF",
+    "printf x > a.txt",
+    "echo x >> .agent/JOURNAL.md",
+    "tee a.txt <<< x",
+    "echo x | dd of=f",
+    "patch -p1 <<'EOF'\nx\nEOF",
+    "jq -rn x > f",
+    "printf x | tee -a f > /dev/null",
+    "echo x | sponge f",
+    "sort -o f <<< x",
+    "cp /dev/stdin f <<< x",
+    "printf x | git apply",
+    "/bin/echo x > f",
+    "awk 'BEGIN{print 1}' > f",
+    "echo x &> f",
+    "printf x | base64 -d | tee f",
+    "cat <(echo x) > f",
+    "cat > f < <(printf x)",
+    "printf x | { cat > f; }",
+    "bash -c 'cat > f <<EOF\nx\nEOF'",
+    "echo x > /dev/fd/3",
+    "echo x > /dev/tcp/h/80",
+    "sed -i s/a/b/ f.txt",
+    "sed -i.bak s/a/b/ f.txt",
+    "gsed --in-place=.b s/a/b/ f",
+    "sed -Ei s/a/b/ f",
+    "awk -i inplace 1 f",
+    "gawk --include=inplace 1 f",
+    "ruby -pi -e 'x' f",
+    "yq -i .a=1 f.yaml",
+    "distrobox enter b -- sed -i s/a/b/ f",
+    "fd -X sed -i s/a/b/",
+    "find . -name x -exec sed -i s/a/b/ {} +",
+    # the T05 review
+    "exec 3> f; echo x >&3",  # fd 3 is a file: the fd table follows it
+    "echo x 3>f >&3",
+    "echo x 2>f 1>&2",
+    "cat <<<x 2>f >&2",
+    "echo x 2>f >/dev/stderr",
+    "echo x |\ntee f",
+    "bash -lc 'echo x > f'",
+    "bash -c -e 'cat > f <<<x'",
+    "distrobox enter b -- sh -c 'cat > f <<<x'",
+    "nix-shell --run 'echo x > f'",
+    "echo x | sort --output f",
+    "sort -uo f <<<x",
+    "cp <(echo x) f",
+    "install -D <(printf x) f",
+    'x=secret; echo "$x" > f',
+    "echo \"$(printf 'a b')\" > f",
+]
+SHELL_WRITES_ASK = [
+    "{ echo a; } > f",
+    "for i in 1; do echo a; done > f",
+    "(echo a; cat) > f",
+    "ssh h <<'EOF' > out\nls\nEOF",
+    "echo x | kubectl apply -f - > log",
+    "exec 2>build.log; echo start; make",
+    'w(){ cat > "$1"; }; echo x | w f',
+    "cat <<< x | bash -c 'cat > f'",
+    "printf x | { read l; cat > f; }",
+    "{ true; echo x; } | cat > f",
+    "for i in 1; do echo x; done | tee f",
+    "if true; then echo x; fi | tee f",
+    "case a in a) echo x;; esac > f",
+    "{ exec >f; }; echo x",
+    "echo x | bash -c 'tee f'",
+    "sh -c 'cat > f' <<<x",
+]
+SHELL_WRITES_SILENT = [
+    "cargo metadata > m.json && echo done",
+    "echo done && cargo metadata > m.json",
+    "cat a b > c",
+    "cp a b",
+    "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+    "echo x > /dev/null",
+    "echo x >&2",
+    "printf x > /dev/stderr",
+    "echo x | tee /dev/null",
+    "echo x 2> e.log",
+    "cat <<'EOF' | kubectl apply -f -\nx\nEOF",
+    "echo x | grep x",
+    "tee - <<< x",
+    "sed -n p f",
+    "echo $(date) && ls > l",
+    "printf 'b\\na\\n' | sort",
+    "sort <<<x",
+    "ls | gawk",
+    "awk",
+    'echo "$(git rev-parse HEAD)" > f',
+    "echo $? > rc",
+    'echo "$HOME" > f',
+    'cat > f <<<"$(git log)"',
+    "make | tee log",
+]
+
+
+def test_shellWriteAsk_ownerAllowMustCoverEveryAsk(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(grep *)\n")
+    assert decide(rules, "echo a | grep a > f; echo b | awk 1 > g")[0].decision == "ask"
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_DENIED)
+def test_shellWrite_isDeniedWithTheEditReason(rules, command):
+    verdict = decide(rules, command)[0]
+    assert verdict.decision == "deny", command
+    assert "Edit or Write" in verdict.reason(), command
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_ASK)
+def test_shellWrite_uncertain_asks(rules, command):
+    assert decide(rules, command)[0].decision == "ask", command
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES_SILENT)
+def test_shellWrite_commandOutputAndDevices_noShellWriteVerdict(rules, command):
+    verdict = decide(rules, command)[0]  # git commit and kubectl apply keep their own ask rows
+    assert verdict.decision != "deny" and rules.SHELL_WRITE_ASK not in verdict.reason(), command
+    assert rules.shell_write(rules.shell.scan(command)) == (None, []), command
+
+
+def test_shellWriteAsk_ownerAllowLiftsIt(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(ssh h*)\n")
+    assert decide(rules, "ssh h <<'EOF' > out\nls\nEOF")[0].decision is None
+    assert decide(rules, "cat > a.md <<'EOF'\nx\nEOF")[0].decision == "deny"

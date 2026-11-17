@@ -88,6 +88,10 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
         ("gh secret set X", "force_ask"),
         ("gh auth token", "force_ask"),
         ("gh release delete v1", "deny"),
+        ("printf x > a.txt", "deny"),
+        ("sed -i s/a/b/ f", "deny"),
+        ("{ echo a; } > f", "force_ask"),
+        ("cargo metadata > m.json && echo done", "allow"),
     ],
 )
 def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):
@@ -647,7 +651,7 @@ def test_corpus_noAnswerEverAutoApproves():
         "tee $HOME/.gemini/config/settings.json",
         "rm -r $HOME/.gemini/config",
         "cd .agents && tee hooks.json",
-        "cd .agents && echo x > hooks.json",
+        "cd .agents && date > hooks.json",
         'cd "$d" && tee hooks.json',
         "rm -r ~/.gemini",
         "mv ~/.GEMINI ~/g",

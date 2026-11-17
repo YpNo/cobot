@@ -225,3 +225,11 @@ Proof: tests first (eight failing); a security review of the diff found no decis
 Open: a single long ask on a command holding git push still loses its stamp to the 200-character cut, as before F-40 (review item 4, kept); T03–T06 pending; F-40 closes in T06.
 Next: T03, the git config canonical form.
 verified: 9465eb9 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, security review
+
+## 2026-11-17 — gate T03: git config writes that outlive the repository ask
+Changed: cb34eda canonical_git_config (both syntaxes, unique long-option prefixes, short clusters, unknown options fail closed as exec), git_config_scope (GIT_CONFIG*, GIT_DIR, GIT_COMMON_DIR prefixes and --git-dir, the file path kept in the form), git_exec_key families, an alias is exec unless one read-only verb, canonical_git_variables (export, declare, typeset, local of those variables), canonical_allexport (set -a, set -o allexport as one word so set -- <glob> stays silent), canonical() as a loop of steps; rows for --global, --system, --file <path> and exec writes, the variable builtins, set-allexport, git submodule foreach; docs/configuration.md, CHANGELOG Changed; spec Plan 5 shortened to as built.
+Why: F-36 and story 3 of spec gate-f36-f40-f44: git config --global, local hooksPath-style keys and their environment routes passed silently.
+Proof: tests first (44 failing); a bypass review of the first version found six gaps (abbreviated options, short clusters, aliases running a git command, missing exec keys, set -a and local -x, an owner allow unable to name the file), each reproduced against real git in a scratch HOME and by cobot-rules check, then made a failing test and fixed; full suite 3076 passed, 98.56 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: git -c and GIT_CONFIG_COUNT run code for the session only (the agent's own command, silent as before); shell writes to .git/config and ~/.gitconfig belong to story 6 (T05); export -n of a git variable asks (LOW, accepted).
+Next: T04, the outward and account rows, credential printers and forge deletions.
+verified: cb34eda · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, bypass review

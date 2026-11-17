@@ -283,4 +283,5 @@ T01 built 2026-11-17 (ab9bb3a, 97b18ef), merged as PR 71. Revision 3 folds pass 
 built 2026-11-17 (9465eb9, review folded); T03 built (cb34eda, bypass review's six gaps folded);
 T04 built (13283f0, review folded); owner: a never row reached only through an unknown option's
 reading asks (a4b33b1), `--delete-branch` stays an ask. T05 built (b12d5ea, bypass review's crash
-and nine gaps folded); T06 pending on this branch.
+and nine gaps folded); T06 built (agy parity sweep, docs, F-36, F-40, F-44 closed, F-48 filed).
+Every task built: the spec is done when this branch merges.

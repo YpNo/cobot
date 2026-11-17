@@ -124,6 +124,28 @@ def test_judgePlan_asksAcrossCalls_areNamed(rules, workspace):
     )
 
 
+PARITY_SWEEP = [  # spec gate-f36-f40-f44, T06: one sample per story, both runtimes agree
+    "gh release -R o/r create v1", "gh pr new", "fd -x git push --force",  # story 0
+    "gh auth setup-git", "gh secret set X", "rustup default stable", "gh secret list",  # story 1
+    "gh secret delete X", "glab ci delete 1", "gh issue --label delete list",  # story 2
+    "git config --global user.name x", "git config core.hooksPath .h", "git config user.name",  # 3
+    "gh auth status -t", "kubectl get secret x -o yaml", "kubectl get secrets",  # story 4
+    "git rebase main && git push origin x && git commit -m y",  # story 5
+    "cat > a.md <<'EOF'\nx\nEOF", "{ echo a; } > f", "cargo metadata > m.json", "yq -i .a=1 f",  # 6
+]  # fmt: skip
+CLAUDE_TO_AGY = {None: "allow", "ask": "force_ask", "deny": "deny"}
+
+
+@pytest.mark.parametrize("command", PARITY_SWEEP)
+def test_paritySweep_bothRuntimesReachTheSameDecision(rules, workspace, monkeypatch, command):
+    monkeypatch.chdir(workspace)
+    call = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(workspace)}
+    claude = rules.gate(json.dumps(call))
+    decision = json.loads(claude)["hookSpecificOutput"]["permissionDecision"] if claude else None
+    args = {"CommandLine": command, "Cwd": str(workspace)}
+    assert decide(rules, "run_command", args, [workspace]) == CLAUDE_TO_AGY[decision]
+
+
 def test_runCommand_denyNamesTheRule(rules, workspace):
     data = answer(rules, payload("run_command", {"CommandLine": "git push -f"}, [workspace]))
     assert data["reason"].startswith("cobot rule: never Bash(")

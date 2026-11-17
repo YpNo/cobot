@@ -29,7 +29,9 @@ careful colleague would bring:
   `.agent/`, committed with your code (kept outside the tree in a repository you don't own), so
   each session starts where the last one stopped.
 - **A rules gate.** Every shell command, file edit and MCP call passes `never`, `ask` and
-  `allow` rules: force pushes, `terraform apply` and publishing never run on their own.
+  `allow` rules: force pushes, `terraform apply`, publishing and forge deletions never run on
+  their own. Account and settings changes and credential printers ask, and files are written
+  with the host's edit tools, whose diff you see, not through the shell.
 - **Experts on call.** GitHub Actions, GitLab CI, Gitea, CI/CD, containers, Google Cloud,
   Kubernetes, service mesh, UI and API experts; the audits read your files and change nothing.
 

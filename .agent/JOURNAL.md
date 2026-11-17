@@ -209,3 +209,11 @@ Proof: tests first (five failing, then five more after the review); a security r
 Open: gt and tea option placement not checked (not installed); watch git status now asks; T02–T06 of the spec pending; a second challenger pass on story 6 not run.
 Next: owner pushes security/gate-f36-f40-f44 and opens its PR (spec plus T01); T02–T06 follow on a new branch.
 verified: 97b18ef · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, bypass review
+
+## 2026-11-17 — spec gate-f36-f40-f44 revision 3, story 6 challenged again
+Changed: 9201ec7 .agent/specs/gate-f36-f40-f44.md (revision 3): story 6 denies only literal text that reaches a non-exempt fd-1 file through pass-through stages or a named writer (tee, dd of=, sponge, sort -o, cp/install from stdin); writes it cannot trace for certain ask (group, loop or exec ownership, nested stages, functions, a non-pass-through stage); named sources by basename (jq -n, awk BEGIN), process substitution, yq -i, patch/git apply/ed/ex from any literal source; /dev/fd/1 and /2 only; Plan 6 adds list indexes, opener stacks, textual exec scope, one shared split and inner scans for runner bodies; Plan 7 lists changed tests at T05 start; story 0 and Plan 1 shrunk to "built, T01"; pass 1 table condensed.
+Why: the owner asked for a second challenger pass on story 6 before T02–T06; it came back UNSOUND (5 MAJOR, 3 MINOR), SOUND WITH CHANGES once folded; the owner said yes to folding all eight, including asking rather than denying the uncertain cases (a change to the Q1 answer's letter, in its direction).
+Proof: the verified points reproduced on b972f61 (bash -c here-doc only asks; the scanner gives identical writes for both orders of cargo metadata > m.json and echo done; jq -rn x > f, cp /dev/stdin f <<<x, yq -i, printf x | git apply silent); the deny override at cobot-rules:3746 read; spec 299 lines.
+Open: F-36, F-40, F-44 stay open until the build; the bypass-aimed review after T05 still applies.
+Next: /cobot:build gate-f36-f40-f44 from T02 on security/gate-asks-and-writes.
+verified: 9201ec7 · gate dry runs, challenger pass 2

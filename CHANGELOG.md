@@ -40,6 +40,11 @@ All notable changes to this project are documented here. The format follows
   `trust not recorded:`, the gate's failure behaviour per runtime, mise and asdf shims (not
   trusted in foreign mode), and branch work in `.claude/worktrees/` (docs/development.md, which
   also gains the agy checks and smoke).
+- **The gate names every ask (F-40).** When several parts of a command ask, the reason names up to
+  three in all, then `+N more`: `cobot rule: ask Bash(git rebase*) (default layer); also asks:
+  ask Bash(git push*), ask Bash(git commit*)`. A single ask keeps its reason. A deny still shows
+  only the deny. For an agent's call its own scoped ask comes first. The git push stamp keeps its
+  room in both hosts.
 
 ### Fixed
 

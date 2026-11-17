@@ -48,6 +48,12 @@ about one names its line only (`project:4: unreadable rule ignored`), so reposit
 speaks in a permission prompt or on the hook's stderr. `/cobot:rules explain`, `show` and `sync`
 print the project rules on your own terminal, by design.
 
+When several parts of one command ask, the reason gives the first ask in full, then names the
+others: `…; also asks: ask Bash(git push*), ask Bash(git commit*)`. It names up to three in all,
+then `+N more`. Another ask is named by its row (a project row by its place) and its runner, or
+by the first 40 characters of the gate's note. The reason stays within the prompt's 200
+characters, and a `git push` stamp keeps its room. A deny shows only the deny.
+
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
 names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,

@@ -998,7 +998,9 @@ def test_judgeBash_protectedFileWithSubstitution_keepsProtectedReason(rules, tmp
 
 def test_judgeBash_ruleBackedAskAfterOpaque_reportsTheRule(rules, tmp_path):
     verdict, _ = judge_in(rules, "python3 - <<'PY'\nx\nPY\nrm -rf build", tmp_path)
-    assert verdict.reason() == "cobot rule: ask Bash(rm -rf*) (default layer)"
+    assert verdict.reason() == (
+        "cobot rule: ask Bash(rm -rf*) (default layer); also asks: opaque command 'python3 -'"
+    )
 
 
 def test_makeTarget_noMakefileOrUnreadable_staysOpaque(rules, tmp_path):
@@ -1542,6 +1544,99 @@ def test_gate_forcePush_noStampSuffix(rules, tmp_path):
 def test_stamp_suffix_unreadable_isEmpty(rules, monkeypatch):
     monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
     assert rules.stamp_suffix("/") == ""
+
+
+# ---------------------------------------------------------------- every ask named (F-40, story 5)
+
+
+def reason_of(rules, command, **extra):
+    out = json.loads(rules.gate(payload(command, **extra)))["hookSpecificOutput"]
+    return out["permissionDecision"], out["permissionDecisionReason"]
+
+
+def test_gate_severalAsks_reasonNamesEach(rules, tmp_path):
+    command = "git rebase main && git commit -m y && rm -rf build"
+    decision, reason = reason_of(rules, command, cwd=str(tmp_path))
+    assert decision == "ask"
+    assert reason == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(git commit*), "
+        "ask Bash(rm -rf*)"
+    )
+
+
+def test_gate_oneAsk_keepsTodaysReason(rules, tmp_path):
+    assert reason_of(rules, "git rebase main && ls", cwd=str(tmp_path))[1] == (
+        "cobot rule: ask Bash(git rebase*) (default layer)"
+    )
+
+
+def test_gate_sameAskTwice_namedOnce(rules, tmp_path):
+    reason = reason_of(rules, "git commit -m a && git commit -m b", cwd=str(tmp_path))[1]
+    assert reason == "cobot rule: ask Bash(git commit*) (default layer)"
+
+
+def test_gate_denyAmongAsks_showsOnlyTheDeny(rules, tmp_path):
+    decision, reason = reason_of(rules, "git rebase main; git push --force", cwd=str(tmp_path))
+    assert decision == "deny" and "also" not in reason and "rebase" not in reason
+
+
+def test_gate_protectedFileAsk_isInTheList(rules, tmp_path):
+    reason = reason_of(rules, "cat ~/.claude/settings.json; git rebase main", cwd=str(tmp_path))[1]
+    assert "ask Bash(git rebase*)" in reason and "protected file" in reason
+
+
+def test_gate_fourAsksWithPush_endsMoreAndKeepsTheStamp(rules, tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    command = "git rebase main && git commit -m y && rm -rf build && git push origin x"
+    reason = reason_of(rules, command, cwd=str(tmp_path))[1]
+    assert reason.startswith("cobot rule: ask Bash(git rebase*) (default layer); also asks: ")
+    assert " +1 more" in reason and reason.endswith(rules.stamp_suffix(str(tmp_path)))
+    assert " · stamp: missing" in reason and len(reason) <= rules.REASON_LIMIT
+
+
+def test_gate_agentScopedAsk_comesFirst(rules, tmp_path):
+    reason = reason_of(rules, "git push; curl x", cwd=str(tmp_path), agent_type="cobot:consultant")[1]
+    assert reason.startswith("cobot rule: ask Bash(*) @consultant (default layer)")
+    assert "also asks: ask Bash(git push*)" in reason
+
+
+def test_verdictReason_longNotesCut_andTheBudgetHolds(rules):
+    rule = rules.Rule("ask", "Bash", "x*", None, "default", 1)
+    others = tuple(f"note {n} " + "y" * 33 for n in range(5))  # ask_label's 40 characters
+    verdict = rules.Verdict(rules.ASK, rule, also=others)
+    for budget in (200, 120, 60):
+        assert len(verdict.reason(budget)) <= budget
+    assert verdict.reason(200).endswith(f"{others[1]} +3 more")
+    assert verdict.reason(120).endswith(f"also asks: {others[0]} +4 more")
+    assert verdict.reason(60).endswith("; +5 more asks")
+    assert verdict.reason(50) == verdict.own_reason()  # the first reason is never cut for the tail
+
+
+def test_gate_runnerAsks_namedWithTheirRunner(rules, tmp_path):
+    (tmp_path / "Makefile").write_text('deploy:\n\tgit push\n\tpython3 -c "print(1)"\n')
+    reason = judge_in(rules, "make deploy", tmp_path)[0].reason()
+    assert reason == (
+        "cobot rule: ask Bash(git push*) (default layer) via make deploy; also asks: "
+        "opaque command 'python3 -c print(1)' via make deploy"
+    )
+
+
+def test_gate_asksAlikeAfterTheCut_stillCounted(rules, tmp_path):
+    command = "npm run build-the-frontend-a; npm run build-the-frontend-b; npm run build-the-frontend-c"
+    reason = judge_in(rules, command, tmp_path)[0].reason()
+    assert reason.startswith("cobot gate: opaque command 'npm run build-the-frontend-a'; also asks: ")
+    assert reason.count("opaque command 'npm run build-the-fro") == 3
+
+
+def test_askLabel_ruleWithVia_orNoteCut(rules):
+    rule = rules.Rule("ask", "Bash", "git push*", None, "default", 1)
+    assert rules.ask_label(rules.Verdict(rules.ASK, rule, via="mise run ship")) == (
+        "ask Bash(git push*) via mise run ship"
+    )
+    assert rules.ask_label(rules.Verdict(rules.ASK, None, "n" * 90)) == "n" * 40
+    assert rules.ask_label(rules.Verdict(rules.ASK, None, "n" * 90, via="make x")) == "n" * 40 + " via make x"
 
 
 # ---------------------------------------------------------------- push option hoisting (R2)

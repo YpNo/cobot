@@ -381,20 +381,47 @@ class Rule:
         return f"{self.decision} {tool} rule at {RULES_FILE}:{self.line}"
 
 
+MAX_NAMED_ASKS = 3  # the asks a reason names in all, its own first (F-40)
+ASK_NOTE_LIMIT = 40  # a ruleless ask's note, as another ask's name
+
+
+def other_asks(shown: list[str], rest: int) -> str:
+    """``; also asks: a, b +N more``, or ``; +N more asks`` when none fits by name."""
+    if not shown:
+        return f"; +{rest} more asks" if rest else ""
+    return f"; also asks: {', '.join(shown)}" + (f" +{rest} more" if rest else "")
+
+
 @dataclass(frozen=True)
 class Verdict:
     decision: str | None
     rule: Rule | None
     note: str = ""
     via: str = ""  # the runner invocation this verdict was resolved from, e.g. ``mise run deploy``
+    also: tuple[str, ...] = ()  # the other distinct asks of the command, as ask_label names them
 
-    def reason(self) -> str:
+    def own_reason(self) -> str:
         if self.rule:
             text = f"cobot rule: {self.rule.shown()} ({self.rule.layer} layer)"
             text += f": {self.rule.note}" if self.rule.note else ""
         else:
             text = f"cobot gate: {self.note}"
         return f"{text} via {self.via}" if self.via else text
+
+    def reason(self, budget: int = REASON_LIMIT) -> str:
+        """The verdict's own reason, then the other asks (F-40): up to MAX_NAMED_ASKS named in
+        all, then ``+N more``, inside ``budget``. The own reason is never cut for them: with no
+        room, or no other ask, it stands alone, as before F-40."""
+        first = self.own_reason()
+        shown = list(self.also[: MAX_NAMED_ASKS - 1])
+        while self.also:
+            tail = other_asks(shown, len(self.also) - len(shown))
+            if len(first) + len(tail) <= budget:
+                return first + tail
+            if not shown:
+                break
+            shown.pop()
+        return first
 
 
 # ---------------------------------------------------------------- rule files
@@ -3331,6 +3358,38 @@ def globs_meet(left: str, right: str) -> bool:
     return False
 
 
+def ask_label(verdict: Verdict) -> str:
+    """How another ask is named in a reason: its rule, or its note cut, then its ``via``: an ask
+    from a runner's body says so, as the first reason does."""
+    name = verdict.rule.shown() if verdict.rule else verdict.note[:ASK_NOTE_LIMIT]
+    return f"{name} via {verdict.via}" if verdict.via else name
+
+
+def scoped(verdict: Verdict) -> bool:
+    return verdict.rule is not None and verdict.rule.agent is not None
+
+
+def named_asks(best: Verdict, asks: list[Verdict], agent: str | None) -> Verdict:
+    """The winning ask with every other distinct ask of the command in ``also`` (F-40). For an
+    agent-scoped call the agent-scoped ask leads, so a grader reading the reason sees it."""
+    if best.decision != ASK:
+        return best
+    if agent:
+        asks = sorted(asks, key=lambda verdict: not scoped(verdict))
+        if asks and scoped(asks[0]) and not scoped(best):
+            best = asks[0]
+    named = {ask_key(best): ""}  # alike asks are one; asks alike only once cut stay apart
+    for verdict in asks:
+        named.setdefault(ask_key(verdict), ask_label(verdict))
+        for label in verdict.also:
+            named.setdefault(label, label)
+    return replace(best, also=tuple(label for label in named.values() if label))
+
+
+def ask_key(verdict: Verdict) -> tuple:
+    return (verdict.rule, verdict.note if verdict.rule is None else "", verdict.via)
+
+
 def outranks(new: Verdict, best: Verdict) -> bool:
     """The stricter decision wins. On a tie a rule-backed verdict replaces a ruleless one, and the
     first ruleless ask keeps its reason: it names what made the command opaque or protected."""
@@ -3737,6 +3796,7 @@ def judge_bash(
         best = in_protected
     elif touched:
         best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
+    asks = [best] if best.decision == ASK else []
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
     config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
@@ -3749,9 +3809,11 @@ def judge_bash(
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
         trace.append((form + (f"  <- {origin[:MAX_ORIGIN]}" if origin else ""), matched))
+        if verdict.decision == ASK:
+            asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
-    return best, trace
+    return named_asks(best, asks, agent), trace
 
 
 def file_forms(path: str, cwd: str | None) -> list[str]:
@@ -4005,10 +4067,8 @@ def gate(stdin: str) -> str | None:
         return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     if verdict.decision is None:
         return None
-    reason = verdict.reason()
-    if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head):
-        reason += stamp_suffix(cwd)
-    return hook_output(verdict.decision, reason)
+    suffix = stamp_suffix(cwd) if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head) else ""
+    return hook_output(verdict.decision, verdict.reason(REASON_LIMIT - len(suffix)) + suffix)
 
 
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)
@@ -4067,13 +4127,16 @@ def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdic
                 (tool, {"file_path": alias})
                 for alias in agy.root_aliases(tool_input["file_path"], workspaces)
             ]
+    asks: list[Verdict] = []
     for tool, tool_input in calls:
         verdict = judge(tool, tool_input, plan.cwd or cwd or workspaces[0], rules, None)
+        if verdict.decision == ASK:
+            asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
     if plan.at_least_ask and best.decision is None:
         return Verdict(ASK, None, plan.note)
-    return best
+    return named_asks(best, asks, None)
 
 
 def agy_workspaces(value: object) -> list[str]:
@@ -4102,10 +4165,10 @@ def gate_agy(stdin: str) -> str:
         log_event(
             {"tool": name, "head": head[:120], "decision": verdict.decision, "reason": verdict.reason()}
         )
-        reason = verdict.reason()
         base = plan.cwd or payload.get("cwd") or (workspaces[0] if workspaces else None)
-        if base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head):
-            reason += stamp_suffix(base)  # no project, no stamp: the hook's own folder is the plugin
+        pushes = base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head)
+        suffix = stamp_suffix(base) if pushes else ""  # no project, no stamp: the hook's folder is the plugin
+        reason = verdict.reason(REASON_LIMIT - len(suffix)) + suffix
     except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
         return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     return agy_output(verdict.decision, reason)

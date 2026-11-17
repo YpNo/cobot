@@ -89,6 +89,31 @@ def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, comma
     assert decide(rules, "run_command", {"CommandLine": command}, [workspace]) == expected
 
 
+def test_runCommand_severalAsks_reasonNamesEach(rules, workspace):
+    # spec gate-f36-f40-f44, story 5 under agy
+    data = answer(rules, payload("run_command", {"CommandLine": "git rebase main && rm -rf b"}, [workspace]))
+    assert data["decision"] == "force_ask"
+    assert data["reason"] == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(rm -rf*)"
+    )
+
+
+def test_runCommand_denyAmongAsks_showsOnlyTheDeny(rules, workspace):
+    data = answer(rules, payload("run_command", {"CommandLine": "git rebase main; git push -f"}, [workspace]))
+    assert data["decision"] == "deny" and "also" not in data["reason"]
+
+
+def test_judgePlan_asksAcrossCalls_areNamed(rules, workspace):
+    plan = rules.agy.Plan(
+        calls=(("Bash", {"command": "git rebase main"}), ("Bash", {"command": "rm -rf b"})),
+        cwd=str(workspace),
+    )
+    verdict = rules.judge_plan(plan, [str(workspace)], str(workspace))
+    assert verdict.reason() == (
+        "cobot rule: ask Bash(git rebase*) (default layer); also asks: ask Bash(rm -rf*)"
+    )
+
+
 def test_runCommand_denyNamesTheRule(rules, workspace):
     data = answer(rules, payload("run_command", {"CommandLine": "git push -f"}, [workspace]))
     assert data["reason"].startswith("cobot rule: never Bash(")

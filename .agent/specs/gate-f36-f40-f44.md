@@ -187,29 +187,12 @@ Asked 2026-11-16 in one call; the owner took every recommended default.
      `docker-credential-* get`;
    - `kubectl config view --raw`, and `kubectl get secret(s)` with `-o yaml|json|jsonpath|go-template`;
    - `npm token list`.
-5. **git config canonical form:** `canonical_git_config` beside `canonical_gh_api`.
-   - It uses a full option table. These take a value: `-f`/`--file`, `--blob`, `--comment`,
-     `--default`, `--type`, `--value`, `--url`.
-   - It scans the scope over all of argv, and an assignment prefix `GIT_CONFIG*` or `GIT_DIR`
-     means `--file`.
-   - It reads both syntaxes:
-     - the old one: `--get*`, `--list`, `-l` and a single key are reads; `--unset*`, `--add`,
-       `--replace-all`, `--edit`, `-e`, `--rename-section`, `--remove-section` and key plus value
-       are writes;
-     - the new one (git 2.46+): `get`, `list`, `set`, `unset`, `edit`, `rename-section`,
-       `remove-section`.
-   - It emits `git config <scope> <read|write> <key> <value>`, with `--local` when no scope is
-     given.
-   - Exec keys, matched case-insensitively:
-     - by suffix family: `.cmd`, `.command`, `.program`, `.helper`, `.driver`, `.textconv`, `.path`,
-       `.editor`, `.pager`;
-     - named keys: `core.hooksPath`, `core.fsmonitor`, `core.sshCommand`, `core.gitProxy`,
-       `core.alternateRefsCommand`, `core.worktree`, `core.askPass`, `pager.*`,
-       `remote.*.uploadpack|receivepack`, `protocol.*.allow`, `url.*.insteadOf`, `sendemail.*`,
-       `interactive.diffFilter`, `submodule.*.update`, `filter.*.*`, `include.path`,
-       `includeIf.*.path`;
-     - `alias.*` whose value starts with `!` or `-`.
-   - Docs: an owner allow line must name the canonical form (`git config --global write …`).
+5. **git config canonical form (built, T03):** `canonical_git_config` emits `git config <scope>
+   [<path>] <read|write> [exec] <key> <value>` from both syntaxes, in any order, with git's unique
+   abbreviations and short clusters read; an unknown option fails closed (`exec`). Scope comes
+   from argv, a `GIT_CONFIG*`, `GIT_DIR` or `GIT_COMMON_DIR` prefix, or `--git-dir`; `export`,
+   `local -x`, `set -a` of those variables ask. Exec families as `docs/configuration.md` lists
+   them; an alias is `exec` unless it is one read-only verb. An owner allow names that form.
 6. **Shell writes.**
    - `_cobot_shell.py` tags each redirection, here-document and here-string (recorded now) with its
      list index and its stack of enclosing `{`, `(` and loop or `if`/`case` openers. That needs the
@@ -296,4 +279,5 @@ ask; a target with a hole fails closed; no cobot skill runs a pattern story 6 re
 ## Converge
 
 T01 built 2026-11-17 (ab9bb3a, 97b18ef), merged as PR 71. Revision 3 folds pass 2 on story 6. T02
-built 2026-11-17 (9465eb9, review folded); T03–T06 pending on `security/gate-asks-and-writes`.
+built 2026-11-17 (9465eb9, review folded); T03 built (cb34eda, bypass review's six gaps folded);
+T04–T06 pending on `security/gate-asks-and-writes`.

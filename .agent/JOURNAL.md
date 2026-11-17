@@ -273,3 +273,11 @@ Proof: tests first for T01 and T02 (the auditor gets the consultant's decision o
 Open: the evals have run locally only (CI runs them from main after merge); one test file edit early in T02 used a shell heredoc instead of the Edit tool (owner rule broken, reported); the brief sits at its 6000-character budget.
 Next: owner pushes feat/security-auditor and opens its PR; then the memory and ship spec (F-37, F-41 to F-43, F-46 to F-49 where they belong).
 verified: 65e4c58 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, agy plugin validate, local evals
+
+## 2026-11-18 — spec memory-and-ship, challenged
+Changed: 3bff15e .agent/specs/memory-and-ship.md (revision 2, stories 1–9, T01–T07): keyed-tree stamp so code and journal share one commit, journal add exits 1 on an invalid entry; the gate offers an owner allow line from the third ask of an offered row (git commit, git rebase); builders' Noticed items parked in .agent/noticed.md and cleared at wrap; promotion lint in promote_entries; every skill's dated lines scanned; trust commands show their file and carry CLAUDE_CONFIG_DIR; cobot-deps toolchain channels and the Actions hint only with workflows; ship reads its remote (unreachable is not empty), toolchains and pins first; eval ship-ground.
+Why: findings F-37, F-41, F-42, F-43, F-46, F-47, F-48 (dogfood 2026-11-15/16, evals); the owner answered four questions on 2026-11-18, all recommended: tree stamp, offer after repeats, hook parks and wrap clears, refuse promotions.
+Proof: the brief is at its budget by design (build_brief fills the room), so it left the scope; the challenger's SOUND WITH CHANGES (5 MAJOR, 7 MINOR) checked by hand before folding: a written tree pruned by git gc --prune=now and a mktree key that survives it, ask Bash(*) @consultant at default.rules 608-609, promote_entries skipping filter_delta; spec 276 lines.
+Open: the revision header was set with sed -i instead of the Edit tool (owner rule broken, reported); F-35, F-39, F-49 stay their own specs.
+Next: owner reviews; then build from T01 on feat/memory-and-ship.
+verified: 3bff15e · challenger pass, gate dry runs, scratch git checks

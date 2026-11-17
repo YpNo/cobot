@@ -217,3 +217,11 @@ Proof: the verified points reproduced on b972f61 (bash -c here-doc only asks; th
 Open: F-36, F-40, F-44 stay open until the build; the bypass-aimed review after T05 still applies.
 Next: /cobot:build gate-f36-f40-f44 from T02 on security/gate-asks-and-writes.
 verified: 9201ec7 · gate dry runs, challenger pass 2
+
+## 2026-11-17 — gate T02: every ask named
+Changed: 9465eb9 Verdict gains also and reason(budget): the winning ask, then up to two other distinct asks and +N more; ask_label (a rule shown as F-29 allows, or a note cut to 40, each with its via), ask_key, named_asks in judge_bash (the protected-file ask included) and judge_plan; agent-scoped asks lead for an agent's call; gate() and gate_agy() budget the reason as REASON_LIMIT minus the stamp suffix; docs/configuration.md, CHANGELOG Changed; test_judgeBash_ruleBackedAskAfterOpaque_reportsTheRule gains the list (Plan 7).
+Why: F-40, story 5 of spec gate-f36-f40-f44: a compound that asks for several reasons named only the first.
+Proof: tests first (eight failing); a security review of the diff found no decision change and three LOW items, each reproduced or proved by a test, then fixed: a runner body's ask now carries its via, asks alike only after the 40-character cut stay apart, the first reason is never cut for the tail; decisions compared against main on 18 compounds by the reviewer; full suite 2984 passed, 98.56 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: a single long ask on a command holding git push still loses its stamp to the 200-character cut, as before F-40 (review item 4, kept); T03–T06 pending; F-40 closes in T06.
+Next: T03, the git config canonical form.
+verified: 9465eb9 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, security review

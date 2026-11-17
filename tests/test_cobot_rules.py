@@ -1639,6 +1639,136 @@ def test_askLabel_ruleWithVia_orNoteCut(rules):
     assert rules.ask_label(rules.Verdict(rules.ASK, None, "n" * 90, via="make x")) == "n" * 40 + " via make x"
 
 
+# ---------------------------------------------------------------- git config (story 3)
+
+
+@pytest.mark.parametrize(
+    ("tokens", "form"),
+    [
+        ("git config user.name", "git config --local read user.name"),
+        ("git config --global user.name x", "git config --global write user.name x"),
+        ("git config user.email x --global", "git config --global write user.email x"),
+        ("git config -f ~/.gitconfig user.email x", "git config --file ~/.gitconfig write user.email x"),
+        ("git config --file=a user.email x", "git config --file a write user.email x"),
+        ("git config -zfa user.email x", "git config --file a write user.email x"),
+        ("git config --glob --unset-a a.b", "git config --global write a.b"),
+        ("git config --global --get-all x", "git config --global read x"),
+        ("git config get --global x", "git config --global read x"),
+        ("git config set --worktree k.x v", "git config --worktree write k.x v"),
+        ("git config --comment c core.hooksPath .h", "git config --local write exec core.hookspath .h"),
+        ("git config --type bool --global a.b true", "git config --global write a.b true"),
+        ("git config --global --unset a.b", "git config --global write a.b"),
+        ("git config --rename-section foo core", "git config --local write exec foo core"),
+        ("git config --edit", "git config --local write exec"),
+        ("git config alias.x !sh", "git config --local write exec alias.x !sh"),
+        ("git config alias.x status", "git config --local write alias.x status"),
+        ("git config --list", "git config --local read"),
+    ],
+)
+def test_canonicalGitConfig_scopeActionKeyValue(rules, tokens, form):
+    assert " ".join(rules.canonical_git_config(tokens.split())) == form
+
+
+GIT_CONFIG_ASKS = [
+    "git config --global user.name x",
+    "git config -f ~/.gitconfig user.email x",
+    "git config --file=~/.gitconfig user.email x",
+    "git config --system core.editor vim",
+    "git config set --global user.name x",
+    "git config --global --unset user.name",
+    "git config --unset-all --global user.name",
+    "git -C x config --global user.email y",
+    "git config core.hooksPath .h",
+    "git config core.hooksPath .h --local",
+    "git config Core.HooksPath .h",
+    "git config --comment c core.hooksPath .h",
+    "git config --worktree core.fsmonitor x",
+    "git config alias.x '!sh'",
+    "git config alias.x '-c core.fsmonitor=y status'",
+    "git config --add filter.lfs.clean x",
+    "git config diff.x.textconv cat",
+    "git config credential.helper store",
+    "git config includeIf.gitdir:~/w/.path ~/x",
+    "git config url.x.insteadOf https://github.com/",
+    "git config remote.origin.uploadpack x",
+    "git config hook.pre-commit.command x",
+    "git config diff.external x",
+    "git config --rename-section foo core",
+    "git config --edit",
+    "git config edit --global",
+    'git config "$K" v',
+    'git config alias.x "$V"',
+    "GIT_CONFIG=~/.gitconfig git config user.email x",
+    "GIT_CONFIG_GLOBAL=/tmp/g git config user.email x",
+    "env GIT_CONFIG_SYSTEM=/tmp/s git config user.name x",
+    "GIT_DIR=/tmp/r git config user.email x",
+    "git --git-dir=/tmp/r config user.email x",
+    "export GIT_CONFIG_GLOBAL=/tmp/g; git config user.name x",
+    # the T03 bypass review: abbreviations, clusters, aliases running git, missing keys, set -a
+    "git config --glob user.name x",
+    "git config --ed",
+    "git config --ren foo core",
+    "git config --unknown-option alias.x v",
+    "git config -zf ~/.gitconfig user.c x",
+    "git config -ef ~/.gitconfig",
+    "git config alias.cg 'config --global'",
+    "git config alias.c config",
+    "git config gpg.ssh.defaultKeyCommand x",
+    "git config protocol.allow always",
+    "git config remote.origin.url x",
+    "git config init.templateDir /t",
+    "git config lfs.extension.x.clean y",
+    "set -a; GIT_CONFIG=~/.gitconfig; git config user.name x",
+    "local -x GIT_DIR=/r",
+    "GIT_COMMON_DIR=/r git config user.name x",
+    "git submodule foreach true",
+]
+GIT_CONFIG_SILENT = [
+    "git config --global --get user.name",
+    "git config --global --get-all x",
+    "git config get --global x",
+    "git config --list",
+    "git config --global -l",
+    "git config list --show-origin",
+    "git config --get-regexp alias",
+    "git config user.name",
+    "git config user.email x",
+    "git config alias.x status",
+    "git config --blob HEAD:.gitmodules --list",
+    "git -c core.pager=cat log",
+    "git config --glob --get user.name",
+    "git config --get-reg alias",
+    "git config -lz",
+    "git config --add remote.origin.fetch +refs/heads/x:refs/remotes/origin/x",
+    "export GIT_DIRTY=1",
+    "set -euo pipefail",
+]
+
+
+@pytest.mark.parametrize("command", GIT_CONFIG_ASKS)
+def test_gate_gitConfigWritesThatOutliveTheSession_ask(rules, command):
+    assert decision_of(rules, command) == "ask", command
+
+
+@pytest.mark.parametrize("command", GIT_CONFIG_SILENT)
+def test_gate_gitConfigReadsAndLocalPlainWrites_staySilent(rules, command):
+    assert decision_of(rules, command) is None, command
+
+
+def test_gate_gitConfigOwnerAllow_namesTheCanonicalForm(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git config --global write user.email *)\n")
+    assert decision_of(rules, "git config --global user.email me@example.org") is None
+    assert decision_of(rules, "git config --global user.name x") == "ask"
+
+
+def test_gate_gitConfigFileAllow_namesItsPath(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(git config --file .gitmodules write submodule.*)\n")
+    assert decision_of(rules, "git config -f .gitmodules submodule.x.url u") is None
+    assert decision_of(rules, "git config -f ~/.gitconfig submodule.x.url u") == "ask"
+
+
 # ---------------------------------------------------------------- push option hoisting (R2)
 
 

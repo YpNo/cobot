@@ -1445,6 +1445,224 @@ def canonical_gh_api(tokens: list[str]) -> list[str]:
     return [tokens[0], "api", "-X", method, *rest] if method else tokens
 
 
+# git config's grammar, git 2.46+ (both syntaxes), for its canonical form (spec gate-f36-f40-f44,
+# story 3): `git config <scope> <read|write> [exec] <key> <value>`
+GIT_CONFIG_VALUE_OPTIONS = frozenset(
+    {"-f", "--file", "--blob", "--comment", "--default", "--type", "--value", "--url"}
+)
+GIT_CONFIG_SCOPES = frozenset({"--global", "--system", "--local", "--worktree"})
+GIT_CONFIG_READS = frozenset(
+    {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "--list", "-l"}
+)
+GIT_CONFIG_WRITES = frozenset(
+    {
+        "--unset", "--unset-all", "--add", "--replace-all", "--rename-section", "--remove-section",
+        "--edit", "-e",
+    }
+)  # fmt: skip
+GIT_CONFIG_SUBCOMMANDS = {
+    "get": "read", "list": "read", "set": "write", "unset": "write", "edit": "write",
+    "rename-section": "write", "remove-section": "write",
+}  # fmt: skip
+# an editor may write any key, and a renamed section may become one that runs code
+GIT_CONFIG_ANY_KEY = frozenset({"--edit", "-e", "edit", "--rename-section", "rename-section"})
+# keys whose value git runs, or that make git run or fetch other code later
+GIT_EXEC_NAMES = frozenset(
+    {
+        "cmd", "command", "program", "helper", "driver", "textconv", "path", "editor", "pager",
+        "defaultkeycommand", "tunnel", "clean", "smudge", "authorsprog", "httpd",
+    }
+)  # fmt: skip
+GIT_EXEC_KEYS = frozenset(
+    {
+        "core.hookspath", "core.fsmonitor", "core.sshcommand", "core.gitproxy",
+        "core.alternaterefscommand", "core.worktree", "core.askpass", "interactive.difffilter",
+        "diff.external", "uploadpack.packobjectshook", "protocol.allow", "init.templatedir",
+    }
+)  # fmt: skip
+GIT_EXEC_SECTIONS = frozenset({"pager", "filter", "sendemail"})
+GIT_EXEC_SUBSECTION_NAMES = {
+    "remote": {"uploadpack", "receivepack", "url", "pushurl", "vcs"}, "protocol": {"allow"},
+    "url": {"insteadof", "pushinsteadof"}, "submodule": {"update"},
+}  # fmt: skip
+# an alias of one of these words alone stays a plain key; any other alias runs a command
+GIT_ALIAS_READS = frozenset({"status", "log", "diff", "show", "blame", "shortlog", "describe"})
+# a variable that moves `git config` to another file; GIT_CONFIG_COUNT and its pairs last one run
+GIT_CONFIG_ENV = {
+    "GIT_CONFIG": "--file", "GIT_DIR": "--file", "GIT_COMMON_DIR": "--file",
+    "GIT_CONFIG_GLOBAL": "--global", "GIT_CONFIG_SYSTEM": "--system",
+}  # fmt: skip
+GIT_CONFIG_FLAGS = frozenset(
+    {
+        "--show-origin", "--show-scope", "--name-only", "--null", "--includes", "--bool", "--int",
+        "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--all", "--append", "--regexp",
+    }
+)  # fmt: skip
+GIT_CONFIG_KNOWN = GIT_CONFIG_SCOPES | GIT_CONFIG_VALUE_OPTIONS | GIT_CONFIG_READS | GIT_CONFIG_WRITES
+GIT_CONFIG_LONG = frozenset(name for name in GIT_CONFIG_KNOWN | GIT_CONFIG_FLAGS if name.startswith("--"))
+GIT_CONFIG_SHORT = {"f": "--file", "l": "--list", "e": "--edit", "z": "--null"}
+
+
+def git_exec_key(key: str) -> bool:
+    """A key whose value git runs later, matched without case: by its last name, its section, or
+    by name (spec gate-f36-f40-f44, Plan 5)."""
+    parts = key.lower().split(".")
+    if len(parts) < 2:
+        return False
+    section, last = parts[0], parts[-1]
+    return (
+        last in GIT_EXEC_NAMES
+        or f"{section}.{last}" in GIT_EXEC_KEYS
+        or section in GIT_EXEC_SECTIONS
+        or (len(parts) > 2 and last in GIT_EXEC_SUBSECTION_NAMES.get(section, ()))
+    )
+
+
+def git_config_long(raw: str) -> str | None:
+    """The long option a word names, as git's parse-options reads it: exact, or a unique prefix
+    (``--glob`` is ``--global``); a ``--no-`` form changes nothing here. None when unknown."""
+    negated = raw.startswith("--no-")
+    base = "--" + raw[5:] if negated else raw
+    found = [base] if base in GIT_CONFIG_LONG else [name for name in GIT_CONFIG_LONG if name.startswith(base)]
+    if len(found) != 1:
+        return None
+    return "--no-" + found[0][2:] if negated else found[0]
+
+
+def git_config_option(word: str) -> tuple[list[str] | None, str | None, bool]:
+    """The options a word names, its attached value, and whether it takes the next word. A short
+    cluster is read letter by letter (``-zf <file>``). None when any part is unknown."""
+    if word.startswith("--"):
+        raw, eq, value = word.partition("=")
+        name = git_config_long(raw)
+        if name is None:
+            return None, None, False
+        return [name], value if eq else None, not eq and name in GIT_CONFIG_VALUE_OPTIONS
+    names: list[str] = []
+    for at, letter in enumerate(word[1:], start=2):
+        if letter not in GIT_CONFIG_SHORT:
+            return None, None, False
+        names.append(GIT_CONFIG_SHORT[letter])
+        if letter == "f":
+            return names, word[at:] or None, not word[at:]
+    return names, None, False
+
+
+def git_config_parts(tokens: list[str]) -> tuple[str, str, str | None, bool, list[str]]:
+    """The scope, its file, the action an option names, whether it may write any key, and the
+    words. An unknown option counts as a word that may write any key: fail closed."""
+    scope, path, action, any_key, words, i = "--local", "", None, False, [], 2
+    while i < len(tokens):
+        word = tokens[i]
+        if word == "--":
+            words += tokens[i + 1 :]
+            break
+        optional = word.startswith("-") and word != "-"
+        names, value, takes_next = git_config_option(word) if optional else ([], None, False)
+        if not names:
+            words.append(word)
+            any_key = any_key or names is None
+            i += 1
+            continue
+        if takes_next:
+            value = tokens[i + 1] if i + 1 < len(tokens) else ""
+        for name in names:
+            if name in ("--file", "--blob"):
+                scope, path = "--file", value or ""
+            elif name in GIT_CONFIG_SCOPES and scope in ("--local", "--worktree"):
+                scope = name
+            if name in GIT_CONFIG_WRITES | GIT_CONFIG_READS:
+                action = "write" if name in GIT_CONFIG_WRITES else action or "read"
+                any_key = any_key or name in GIT_CONFIG_ANY_KEY
+        i += 2 if takes_next else 1
+    return scope, path, action, any_key, words
+
+
+def canonical_git_config(tokens: list[str]) -> list[str]:
+    """``git config --global user.name x``, ``git config set --global user.name x`` and
+    ``git config user.name x --global`` become ``git config --global write user.name x``; a key
+    that runs code later (or one the command cannot show) adds ``exec`` after the action."""
+    if tokens[:2] != ["git", "config"]:
+        return tokens
+    scope, path, action, any_key, words = git_config_parts(tokens)
+    if words and words[0] in GIT_CONFIG_SUBCOMMANDS:
+        action = "write" if action == "write" else GIT_CONFIG_SUBCOMMANDS[words[0]]
+        any_key = any_key or words[0] in GIT_CONFIG_ANY_KEY
+        words = words[1:]
+    action = action or ("write" if len(words) > 1 else "read")
+    key = words[0].lower() if words else ""
+    runs = action == "write" and (
+        any_key
+        or (bool(words) and unknown_word(words[0]))
+        or any(git_exec_key(word) for word in words)
+        or (key.startswith("alias.") and git_alias_runs(words[1:]))
+    )
+    where = ["--file", path] if scope == "--file" else [scope]
+    marked = ["exec"] if runs else []
+    return ["git", "config", *where, action, *marked, *([key] if words else []), *words[1:]]
+
+
+def unknown_word(word: str) -> bool:
+    """A word the gate cannot read: a parameter, or a substitution or glob it replaced."""
+    return "$" in word or bool(shell.sentinels(word))
+
+
+def git_alias_runs(values: list[str]) -> bool:
+    """An alias value other than one read-only verb runs a command: ``!sh``, ``-c …`` options, or
+    a git command such as ``config --global`` (the alias then writes what the row would ask)."""
+    return bool(values) and not (len(values) == 1 and values[0] in GIT_ALIAS_READS)
+
+
+def git_config_scope(tokens: list[str], plain: list[str]) -> list[str]:
+    """``GIT_CONFIG_GLOBAL=x git config …`` and ``git --git-dir=x config …``: the scope the
+    environment or a global option gives, put after ``config`` so the canonical form reads it."""
+    stripped = strip_global_options(plain)
+    if stripped[:2] != ["git", "config"]:
+        return plain
+    hint: list[str] = []
+    for word in tokens[: len(tokens) - len(plain)]:
+        name, _, value = word.partition("=")
+        scope = GIT_CONFIG_ENV.get(name) if NAME_ASSIGNMENT_RE.match(word) else None
+        hint += ["--file", value] if scope == "--file" else [scope] if scope else []
+    globals_ = plain[1 : 1 + len(plain) - len(stripped)]
+    for at, word in enumerate(globals_):
+        if word.split("=", 1)[0] == "--git-dir":
+            following = globals_[at + 1] if at + 1 < len(globals_) else ""
+            hint += ["--file", word.partition("=")[2] if "=" in word else following]
+    at = len(plain) - len(stripped) + 2
+    return [*plain[:at], *hint, *plain[at:]] if hint else plain
+
+
+VARIABLE_BUILTINS = frozenset({"export", "declare", "typeset", "local"})
+GIT_VARIABLE = "git-config-variable"  # the canonical word for a variable of GIT_CONFIG_ENV
+
+
+def canonical_git_variables(tokens: list[str]) -> list[str]:
+    """``export GIT_DIR=x`` and ``local -x GIT_CONFIG_GLOBAL=y`` become ``<builtin>
+    git-config-variable``: the commands after it read git config from another file."""
+    if tokens[:1] and tokens[0] in VARIABLE_BUILTINS:
+        if any(word.split("=", 1)[0] in GIT_CONFIG_ENV for word in tokens[1:]):
+            return [tokens[0], GIT_VARIABLE]
+    return tokens
+
+
+ALLEXPORT = "set-allexport"  # one word: a `set …` row would ask on every `set -- <glob>`
+
+
+def canonical_allexport(tokens: list[str]) -> list[str]:
+    """``set -a``, ``set -ea`` and ``set -o allexport`` become ``set-allexport``."""
+    if tokens[:1] != ["set"]:
+        return tokens
+    for at, word in enumerate(tokens[1:], start=1):
+        if word == "--":
+            break
+        if (word.startswith("-") and "a" in word[1:] and word[1] != "-") or (
+            word == "-o" and tokens[at + 1 : at + 2] == ["allexport"]
+        ):
+            return [ALLEXPORT]
+    return tokens
+
+
 def canonical_alias(tokens: list[str]) -> list[str]:
     """``glab mr new``, ``gt release new``, ``tea r c`` become ``glab mr create``,
     ``gt release create``, ``tea releases create``: the form the rule rows name."""
@@ -2499,11 +2717,20 @@ def expand_units(
 
 
 def canonical(tokens: list[str]) -> list[str]:
-    return canonical_gcloud(
-        canonical_gh_api(
-            canonical_alias(drop_group_options(canonical_package_manager(expand_push_flags(tokens))))
-        )
+    steps = (
+        expand_push_flags,
+        canonical_package_manager,
+        drop_group_options,
+        canonical_alias,
+        canonical_gh_api,
+        canonical_gcloud,
+        canonical_git_config,
+        canonical_git_variables,
+        canonical_allexport,
     )
+    for step in steps:
+        tokens = step(tokens)
+    return tokens
 
 
 # npm 11.20.0 lib/utils/cmd-list.js, read 2026-11-14: npm takes an alias, or any unique prefix of
@@ -2572,7 +2799,7 @@ def git_alias_set(plain: list[str]) -> bool:
 def candidates(tokens: list[str]) -> list[str]:
     """The forms rules match: as written, each reading past the options before the verb, and last
     the canonical form, the only one an allow matches."""
-    plain = strip_wrappers(tokens)
+    plain = git_config_scope(tokens, strip_wrappers(tokens))
     written, last = " ".join(plain), " ".join(canonical(strip_global_options(plain)))
     read = [" ".join(form) for reading in readings(plain) for form in (reading, canonical(reading))]
     middle = [form for form in dict.fromkeys(read) if form not in (written, last)]

@@ -45,6 +45,14 @@ All notable changes to this project are documented here. The format follows
   ask Bash(git push*), ask Bash(git commit*)`. A single ask keeps its reason. A deny still shows
   only the deny. For an agent's call its own scoped ask comes first. The git push stamp keeps its
   room in both hosts.
+- **`git config` writes that outlive the repository ask (F-36).** That covers a `--global`,
+  `--system` or `--file` write (also through `GIT_CONFIG*`, `GIT_DIR` or `--git-dir`), a key
+  that runs code later (`core.hooksPath`, `*.command`, `filter.*`, `remote.*.url` and more), any
+  alias other than one read-only verb, an `--edit` and a `--rename-section`. Reads and local
+  writes of plain keys stay silent. Both syntaxes, abbreviated options and short clusters are
+  read into one canonical form, `git config --global write user.email x` (a file scope keeps its
+  path), which an owner `allow` line names. Exporting a git config variable (`export`, `local -x`,
+  `set -a`) and `git submodule foreach` ask too. These used to pass silently.
 
 ### Fixed
 

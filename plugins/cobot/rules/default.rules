@@ -111,6 +111,19 @@ ask Bash(gh pr create*)
 ask Bash(gh repo fork*)
 ask Bash(gh alias set*) # a gh alias can run any command, and the gate cannot read it later
 ask Bash(gh alias import*) # a gh alias can run any command, and the gate cannot read it later
+# git config writes that outlive the session (spec gate-f36-f40-f44, story 3). The canonical form
+# is `git config <scope> <read|write> [exec] <key> <value>`, `--file <path>` for a file scope;
+# an owner allow line names that form
+ask Bash(git config --global write *) # writes your global git configuration
+ask Bash(git config --system write *) # writes the machine's git configuration
+ask Bash(git config --file * write *) # writes a git configuration file the repository does not own
+ask Bash(git config * write exec*) # sets a git key whose value git runs later
+ask Bash(export git-config-variable) # moves git config to another file for the commands after it
+ask Bash(declare git-config-variable) # moves git config to another file for the commands after it
+ask Bash(typeset git-config-variable) # moves git config to another file for the commands after it
+ask Bash(local git-config-variable) # moves git config to another file for the commands after it
+ask Bash(set-allexport) # set -a exports every later assignment, git config variables included
+ask Bash(git submodule *foreach*) # runs a shell command in every submodule
 ask Bash(git remote add*)
 ask Bash(git remote set-url*)
 ask Bash(gh pr merge*)

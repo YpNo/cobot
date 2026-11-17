@@ -82,6 +82,9 @@ def test_runCommand_judgedAsBash_verdictsMapped(rules, workspace, command, expec
         ("fd -Hx git push --force", "deny"),
         ("pkexec git push", "force_ask"),
         ("gh my-extension", "force_ask"),
+        ("git config --global user.name x", "force_ask"),
+        ("git config core.hooksPath .h", "force_ask"),
+        ("git config --global --get user.name", "allow"),
     ],
 )
 def test_runCommand_rowsReachTheirCommand_inBothRuntimes(rules, workspace, command, expected):

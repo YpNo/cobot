@@ -142,6 +142,33 @@ value option could take the next word (`gh release --title x create v1` is `gh r
 an extension, so it asks, and so do `gh alias set` and `gh alias import`. An escaped or quoted
 `;` (`find … -exec x \;`) is a word, not a separator.
 
+`git config` is read into one canonical form, `git config <scope> <read|write> [exec] <key>
+<value>`, where a file scope keeps its path (`--file <path>`). It reads either syntax
+(`git config --global user.name x`, `git config set --global user.name x`) in any option order,
+with options abbreviated as git allows (`--glob`) and short options clustered (`-zf <file>`).
+Reads stay silent, and so do local writes of a plain key (`git config user.email x`,
+`git config alias.st status`). A write asks when it outlives the repository's own config:
+
+- **Scope:** a `--global`, `--system` or `--file` write, including one moved there by a
+  `GIT_CONFIG`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_DIR` or `GIT_COMMON_DIR` prefix,
+  or by `git --git-dir=…`.
+- **Keys that run code (`exec`):** a key whose value git runs or follows later (`core.hooksPath`,
+  `core.fsmonitor`, `core.sshCommand`, any `*.cmd`, `*.command`, `*.program`, `*.helper`,
+  `*.driver`, `*.textconv`, `*.path`, `*.editor` or `*.pager`, `filter.*`, `url.*.insteadOf`,
+  `remote.*.url`, `protocol.allow`, `init.templateDir`, and more).
+- **Aliases:** any alias except one read-only verb alone (`status`, `log`, `diff`, `show`,
+  `blame`, `shortlog`, `describe`). An alias of `config --global` writes what the rows ask for,
+  and one of `push --force` runs what they deny.
+- **Edits and renames:** `--edit` and `--rename-section`.
+- **Unreadable words:** a key or alias value the gate cannot read (`$k`), or an option it does
+  not know.
+
+`export`, `declare`, `typeset` or `local` of those variables asks too, and so do `set -a` and
+`set -o allexport`, which export every later assignment. `git submodule foreach` asks: it runs a
+shell command in each submodule. To allow a form, name the canonical one:
+`allow Bash(git config --global write user.email *)`, or
+`allow Bash(git config --file .gitmodules write submodule.*)`.
+
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's
 value. A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo

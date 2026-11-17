@@ -280,5 +280,5 @@ ask; a target with a hole fails closed; no cobot skill runs a pattern story 6 re
 
 T01 built 2026-11-17 (ab9bb3a, 97b18ef), merged as PR 71. Revision 3 folds pass 2 on story 6. T02
 built 2026-11-17 (9465eb9, review folded); T03 built (cb34eda, bypass review's six gaps folded);
-T04 built (13283f0, review folded but two owner calls: a never row reading an option value before
-the verb, and `--delete-branch`); T05–T06 pending on `security/gate-asks-and-writes`.
+T04 built (13283f0, review folded); owner: a never row reached only through an unknown option's
+reading asks (a4b33b1), `--delete-branch` stays an ask. T05–T06 pending on this branch.

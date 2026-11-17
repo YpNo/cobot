@@ -61,6 +61,8 @@ All notable changes to this project are documented here. The format follows
 - **Forge deletions are refused (F-36).** Deleting a release, secret, variable, label, cache,
   run, gist, key, issue or merge request through `gh`, `glab`, `gt` or `tea` is a `never` row,
   rendered in `permissions.deny`. `glab ci delete` and the `gt` and `tea` deletions used to ask.
+  A `never` row reached only through an unknown option before a `gh` or `glab` verb asks instead
+  (`gh issue --label delete list`), and no `allow` lifts that ask.
 
 ### Fixed
 

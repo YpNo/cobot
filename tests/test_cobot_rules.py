@@ -2714,15 +2714,16 @@ def test_gate_parallelAndWatch_askAsOpaqueRunners(rules):
 
 def test_gate_cobraOptionsBeforeTheVerb_everyReadingJudged(rules):
     # cobra drops every option before choosing a subcommand: a value option takes the next word,
-    # a boolean does not, so both readings are judged (bypass review of T01, HIGH-1 and HIGH-2)
+    # a boolean does not, so both readings are judged (bypass review of T01, HIGH-1 and HIGH-2).
+    # A never row reached only through an unknown option's reading asks (owner, 2026-11-17).
     expect = {
-        "gh release --title x create v1": "deny",
+        "gh release --title x create v1": "ask",
         "gh release --notes=x create v1": "deny",
         "gh release -tx create v1": "deny",
-        "gh release -R o/r --title x create v1": "deny",
-        "gh pr --body 'Generated with x' create": "deny",
-        "gh --title x release create v1": "deny",
-        "gh -t x release new v1": "deny",
+        "gh release -R o/r --title x create v1": "ask",
+        "gh pr --body 'Generated with x' create": "ask",
+        "gh --title x release create v1": "ask",
+        "gh -t x release new v1": "ask",
         "glab -R o/r release create v1": "deny",
         "glab --repo o/r mr create --fill": "ask",
         "gh api --hostname -XDELETE repos/x": "deny",  # api is no group: its own canonical form
@@ -2733,6 +2734,20 @@ def test_gate_cobraOptionsBeforeTheVerb_everyReadingJudged(rules):
     silent = ("gh -R o/r pr list", "gh pr -R o/r view 3", "glab -R o/r mr list", "gh release -- create v1")
     for command in silent:
         assert decision_of(rules, command) is None, command
+
+
+def test_gate_neverThroughAnOptionValue_asksAndNoAllowLiftsIt(rules, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(gh issue*)\nallow Bash(gh secret*)\n")
+    for command in (
+        "gh issue --label delete list",
+        "gh secret --env delete list",
+        "glab mr --label delete list",
+    ):
+        decision, reason = reason_of(rules, command)
+        assert decision == "ask" and "option value before the verb" in reason, command
+    for command in ("gh release delete v1", "gh release -R o/r delete v1", "gh issue delete 1 --yes"):
+        assert decision_of(rules, command) == "deny", command
 
 
 def test_gate_escapedOrQuotedSemicolon_isAWordNotASeparator(rules):

@@ -199,9 +199,12 @@ An owner `allow` line lifts one form (`allow Bash(gh auth token*)`). A gcloud co
 without its release track and the flags between its words (`gcloud beta secrets --project p
 versions access`), so these rows and the read lists see its command words.
 
-Known costs: a `never` row also reads an option's value placed before the verb as the verb, so
-`gh issue --label delete list` is denied (run it yourself, or put the option after the verb).
-`gh pr merge --delete-branch` asks like any merge; the branch deletion is not refused.
+A `never` row that only an unknown option before a `gh` or `glab` verb reaches asks instead of
+denying: in `gh issue --label delete list` the word `delete` may be the label's value, and in
+`gh release --title x create v1` the word `create` may be the verb. No `allow` lifts that ask.
+Known options and attached values (`-R o/r`, `--notes=x`, `-tx`) are read for certain, so
+`gh release -R o/r delete v1` is still refused. `gh pr merge --delete-branch` asks like any
+merge; the branch deletion is not refused.
 
 `${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
 hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's

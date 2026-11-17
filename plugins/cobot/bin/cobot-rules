@@ -1909,9 +1909,18 @@ def cobra_readings(tokens: list[str]) -> list[list[str]]:
     the group or the verb (bypass review of T01): ``gh release --title x create v1`` is read as
     ``gh release create --title x v1``, the options moved after the verb so a row about their text
     (``*Generated with*``) still sees it. ``api`` is no group: ``canonical_gh_api`` reads it."""
+    out: list[list[str]] = []
+    for _, _, form in cobra_forms(tokens):
+        if form not in out:
+            out.append(form)
+    return out[:MAX_COBRA_READINGS]
+
+
+def cobra_forms(tokens: list[str]) -> list[tuple[int, int, list[str]]]:
+    """Each cobra reading with the positions of its group and verb words in ``tokens``."""
     if not tokens or tokens[0] not in COBRA_CLIS:
         return []
-    out: list[list[str]] = []
+    out: list[tuple[int, int, list[str]]] = []
     known = GROUP_OPTIONS.get(tokens[0], ())
     for g in word_starts(tokens, 1, known):
         if tokens[g] == "api":
@@ -1919,9 +1928,39 @@ def cobra_readings(tokens: list[str]) -> list[list[str]]:
         for v in word_starts(tokens, g + 1, known):
             moved = without_repo_options(tokens[0], [*tokens[1:g], *tokens[g + 1 : v]])
             form = [tokens[0], tokens[g], tokens[v], *moved, *tokens[v + 1 :]]
-            if form != tokens and form not in out:
-                out.append(form)
-    return out[:MAX_COBRA_READINGS]
+            if form != tokens:
+                out.append((g, v, form))
+    return out
+
+
+def uncertain_readings(plain: list[str]) -> set[str]:
+    """The cobra readings, and their canonical forms, that rest on how an unknown option before the
+    verb is read (a boolean, or one taking the next word): ``gh issue --label delete list`` may be
+    ``gh issue delete``. Known options and attached values (``--notes=x``, ``-tx``) are certain."""
+    known = GROUP_OPTIONS.get(plain[0], ()) if plain else ()
+    out: set[str] = set()
+    for g, v, form in cobra_forms(plain):
+        if any(branching_option(word, known) for word in [*plain[1:g], *plain[g + 1 : v]]):
+            out.update((" ".join(form), " ".join(canonical(form))))
+    return out
+
+
+def branching_option(word: str, known: tuple[str, ...]) -> bool:
+    """An option word_starts follows both ways: unknown, with no attached value."""
+    attached = "=" in word or (not word.startswith("--") and len(word) > 2)
+    return option_word(word) and not attached and word not in known
+
+
+def never_through_option_value(
+    verdict: Verdict, matched: list[Rule], segment: list[str], forms: list[str]
+) -> Verdict:
+    """A ``never`` row that only an uncertain cobra reading reaches asks instead (owner,
+    2026-11-17): the word it reads as the verb may be an option's value. No allow lifts it."""
+    uncertain = uncertain_readings(strip_wrappers(segment)) - {forms[0], forms[-1]}
+    nevers = [rule for rule in matched if rule.decision == "never"]
+    if not uncertain or any(matches_bash(rule, [f for f in forms if f not in uncertain]) for rule in nevers):
+        return verdict
+    return Verdict(ASK, None, f"an option value before the verb may make this {nevers[0].shown()}")
 
 
 def is_opaque(plain: list[str]) -> bool:
@@ -3928,6 +3967,8 @@ def judge_words(
     agent_allow = [r for r in bash_rules if r.decision == "allow" and r.agent and matches_bash(r, forms)]
     matched = [r for r in bash_rules if matches_bash(r, forms) and not (foreign and r in agent_allow)]
     verdict = resolve(matched, "no rule matched")
+    if verdict.decision == DENY:
+        verdict = never_through_option_value(verdict, matched, segment, forms)
     if refused and agent_allow and verdict.decision == ASK:
         verdict = Verdict(ASK, None, refused)
     if is_opaque(strip_wrappers(segment)) and verdict.decision != DENY:

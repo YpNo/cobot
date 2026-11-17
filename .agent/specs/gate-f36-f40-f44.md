@@ -1,7 +1,7 @@
 # Spec — outward and account commands, every ask named, shell writes (findings F-36, F-40, F-44)
 
-size: medium-large · profile: library · owner: YpNo · date: 2026-11-17 · revision 2 (challenger
-pass folded) · built on `main` `7cb4fa5` (docs tidy merged as PR 70)
+size: medium-large · profile: library · owner: YpNo · date: 2026-11-17 · revision 3 (two
+challenger passes folded) · T02–T06 built on `main` `b972f61` (T01 merged as PR 71)
 
 ## Goal
 
@@ -23,7 +23,8 @@ empty owner and project layer:
 | F-36 | `gh release delete v1` · `gh secret delete X` · `gh label delete x` · `gh cache delete x` | none | deny |
 | F-36 | `glab ci delete 1` · `tea releases delete v1` | ask | deny |
 | F-40 | `git rebase main && git push origin x && git commit -m y` | ask, reason names `git rebase*` only | ask, reason names all three |
-| F-44 | `cat > a.md <<'EOF'` · `cat >> src/lib.rs <<'EOF'` · `printf x > a.txt` · `echo x >> .agent/JOURNAL.md` · `tee a.txt <<< x` · `{ echo a; } > f` · `echo x \| dd of=f` · `patch -p1 <<'EOF'` | none | deny |
+| F-44 | `cat > a.md <<'EOF'` · `cat >> src/lib.rs <<'EOF'` · `printf x > a.txt` · `echo x >> .agent/JOURNAL.md` · `tee a.txt <<< x` · `echo x \| dd of=f` · `patch -p1 <<'EOF'` · `jq -rn x > f` | none | deny |
+| F-44 | `{ echo a; } > f` · `printf x \| { cat > f; }` · `ssh h <<'EOF' > out` | none | ask |
 | F-44 | `sed -i s/a/b/ f.txt` · `sed -i.bak …` · `awk -i inplace 1 f` · `ruby -pi -e … f` | none | deny |
 
 Already asking or denied and unchanged:
@@ -36,7 +37,7 @@ Already asking or denied and unchanged:
 Silent and unchanged:
 - `gh auth status`, `gh secret list`;
 - `git config --get`, `git -c k=v <cmd>` (the gate already judges `-c`);
-- command output to a file (`cargo metadata > m.json`, also inside `cargo metadata > m.json && echo done`);
+- command output to a file (`cargo metadata > m.json`, also beside `echo done` in either order);
 - `cat a b > c`, `cp`, `mv`;
 - `git commit -m "$(cat <<'EOF' … EOF)"` (a here-document read by a substitution, no file written).
 
@@ -62,28 +63,16 @@ Silent and unchanged:
   - in the scanner: ownership data;
   - rows in `default.rules`.
 - **New dependencies:** none.
-- **Delivery:** one branch `security/gate-f36-f40-f44`, one PR; the tasks below are the commits.
-  T01 is a live bypass fix that could ship alone (see Converge).
+- **Delivery:** T01 shipped alone (PR 71, a live bypass fix). T02–T06 are the commits of one
+  branch `security/gate-asks-and-writes`, one PR.
 
 ## Stories and acceptance
 
-0. **Existing rows reach their commands.**
-   - For `gh` and `glab`, the canonical form drops `-R`, `--repo[=]`, `-R<value>` (and gh's
-     `--hostname`) between the group word and the verb. `gt` and `tea` are not installed here, so
-     their option placement could not be checked: left as they are, noted in the PR.
-   - `CLI_ALIASES` gains a `gh` entry, taken from the ALIASES sections of `gh <group> --help`
-     (gh 2.103): `new` for `create` and `remove` for `delete` per group, `ext`/`extensions` for
-     `extension`, `cs` for `codespace`, and the rest the help names. `gh release new` was a live
-     bypass of a never row.
-   - `fd -x/-X/--exec[=]/--exec-batch` bodies are judged like `find -exec`. `parallel` and
-     `watch` run a shell command line, so they ask as opaque runners, as `xargs` does.
-   - **Folded from the bypass review of T01's first commit (2026-11-17), which found the class
-     open:** every cobra reading of options before a gh/glab group or verb; an escaped or quoted
-     `;` is a word; fd clusters (`-Hx`) start a body; more runners ask (`pkexec`, `run0`,
-     `setsid`, `tmux`, GNU parallel's family, job queues); `busybox` unwrapped; a gh user alias
-     or extension asks, as do `gh alias set|import`; `gh api` kept out of the group-option drop.
-     Accepted: `watch git status` asks, like any `xargs`.
-   - Accept: the story-0 rows match the same row as their plain forms; one test per CLI and runner.
+0. **Existing rows reach their commands.** Built as T01 (PR 71; details in its body, the
+   CHANGELOG and `docs/configuration.md`): cobra readings of options before a gh/glab group or
+   verb, gh's built-in aliases (gh 2.103), a literal `;` kept a word, `fd -x` bodies and clusters,
+   more opaque runners, `busybox` unwrapped, gh user aliases and extensions ask. `gt` and `tea`
+   option placement is unchecked; `watch git status` asks, like any `xargs`.
 1. **Outward and account commands ask.** A command that changes the forge account, a
    repository's settings, CI state or the machine's global tool configuration asks.
    - Accept: every F-36 "ask" row.
@@ -120,26 +109,34 @@ Silent and unchanged:
      stamp; `cat ~/.claude/settings.json; git push` names both.
    - The budget is `REASON_LIMIT` minus the ` · stamp: …` suffix that `gate()` and `gate_agy()`
      add.
-6. **Shell writes are refused.** Text the agent writes into a file through the shell is denied
-   with `WRITING_SCRIPT`'s reason (use Edit or Write), wherever the file is.
-   - **Exempt** after the path is normalised: exactly `/dev/null`, `/dev/stdout`, `/dev/stderr`,
-     `/dev/tty` and `/dev/fd/N`. Nothing else under `/dev`, `/proc` or `/sys` (`/dev/tcp/…` sends
-     the text out).
-   - **A literal source:** a here-document, a here-string, or an `echo`/`printf` stage.
-   - **Denied:** a pipeline whose non-interpreter stage is fed by a literal source and that writes a
-     file, through:
-     - a redirection owned by the pipeline, an enclosing group, subshell or loop, or an earlier
-       `exec` redirection;
-     - `tee`'s file operands, `dd of=`, or `sponge`.
-
-     `-` counts as no file operand.
-   - **Also denied:**
-     - `patch`, `git apply`, `ed` and `ex` fed by a here-document;
-     - in-place editors: `sed`/`gsed` `-i`/`--in-place` (suffix and combined flags), `awk`/`gawk`
-       `-i inplace`/`--include=inplace`, and `ruby -i`.
-   - Accept: the F-44 rows deny; the "silent and unchanged" rows stay silent, the compound with
-     `&& echo done` included.
-   - `bash -c 'cat > f <<EOF …'`, `distrobox enter b -- sed -i …` and `fd -X sed -i …` deny.
+6. **Shell writes are refused, or ask when uncertain.** Text the agent writes into a file through
+   the shell is denied with `WRITING_SCRIPT`'s reason (use Edit or Write), wherever the file is. A
+   write the gate cannot trace for certain asks, so an owner `allow` line can lift it. The claim is
+   the named sources, stages and writers, as story 4 bounds its printers.
+   - **Exempt** after normalisation: exactly `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`,
+     `/dev/fd/1` and `/dev/fd/2`. Nothing else under `/dev`, `/proc` or `/sys`.
+   - **A literal source:** a here-document, a here-string, a process substitution holding one, or an
+     `echo`, `printf`, `jq -n` or `awk 'BEGIN{…}'` stage, matched by basename (`/bin/echo`).
+   - **Deny**, within one list item (split on top-level `;`, `&&`, `||`, `&`, newline): a pipeline
+     holding a literal source and no interpreter stage, whose later stages are all pass-through
+     (`cat tee dd sponge tr sed base64 xxd head tail sort uniq cut envsubst`), writing a
+     non-exempt file:
+     - on fd 1 or `&>`, by its own redirection;
+     - or through `tee`'s file operands (`-` is none), `dd of=`, `sponge`, `sort -o`, or
+       `cp`/`install` from `/dev/stdin` or `-`.
+   - **Ask**, in a command holding a literal source:
+     - a stage that is not pass-through before such a write (`ssh h <<EOF > out`);
+     - a write owned by an enclosing group, subshell or loop, or by an `exec` in scope;
+     - a literal source feeding a nested group, subshell or runner body that writes, or a function
+       defined in the command whose body writes.
+   - **Also denied:** `patch`, `git apply`, `ed` and `ex` fed by any literal source; in-place
+     editors: `sed`/`gsed` `-i`/`--in-place` (suffix and combined flags), `awk`/`gawk`
+     `-i inplace`/`--include=inplace`, `ruby -i`, and `yq -i`.
+   - **Not claimed:** sed's `w` command, `split`/`csplit`, a source the gate does not name.
+   - Accept: the F-44 rows deny or ask as the Goal table says; the "silent and unchanged" rows stay
+     silent. `bash -c 'cat > f <<EOF …'`, `distrobox enter b -- sed -i …`, `fd -X sed -i …`,
+     `cp /dev/stdin f <<<x` and `printf x | git apply` deny. An owner allow line lifts an ask
+     (tested).
 7. **Both runtimes.** Under agy, `run_command` reaches the same judgement.
    - Accept: one agy test per story through `judge_plan`.
    - `scripts/sync-agents.py --check` and `check-plugin` pass.
@@ -149,8 +146,9 @@ Silent and unchanged:
 Asked 2026-11-16 in one call; the owner took every recommended default.
 
 - **Q1** Literal shell writes and in-place editors: a) deny, any file except `/dev` · b) deny in
-  the project only · c) ask. **Answer:** a). The fold narrows "except `/dev`" to five exact paths
-  (challenger 7): stricter, in the answer's direction.
+  the project only · c) ask. **Answer:** a). The fold narrows "except `/dev`" to exact paths
+  (challenger 7). Pass 2 makes the uncertain cases ask; the plain ones still deny (owner yes,
+  2026-11-17).
 - **Q2** Forge-CLI deletions: a) never, like `gh api -X DELETE` · b) ask. **Answer:** a).
   `glab ci delete` and the `tea` deletions move from ask to never.
 - **Q3** Which git config calls ask: a) global/system writes plus local exec keys · b) global
@@ -159,10 +157,7 @@ Asked 2026-11-16 in one call; the owner took every recommended default.
 
 ## Plan
 
-1. **Readings, aliases, runners (story 0).**
-   - `readings()` gains the `-R`/`--repo`/`--hostname` drop for `API_CLIS` after the group word.
-   - `CLI_ALIASES["gh"]` comes from gh 2.103's help, dated in a comment.
-   - `fd` exec options, `parallel` and `watch` join the unwrapped runners.
+1. **Readings, aliases, runners (story 0):** built, T01.
 2. **F-40.** `judge_bash` collects every asking verdict, including the initial protected-file one,
    with its `via`. `Verdict.reason()` composes the first reason, then `; also asks: …` and
    `+N more`, inside a budget the caller passes: `REASON_LIMIT` minus the stamp suffix. When the
@@ -215,18 +210,24 @@ Asked 2026-11-16 in one call; the owner took every recommended default.
        `includeIf.*.path`;
      - `alias.*` whose value starts with `!` or `-`.
    - Docs: an owner allow line must name the canonical form (`git config --global write …`).
-6. **Shell writes.** `_cobot_shell.py` records, per pipeline:
-   - the writes it owns: its own redirections, plus those of the group, subshell or loop around it,
-     plus earlier `exec` redirections;
-   - its here-documents and here-strings (here-strings are not recorded today), and its stages.
-
-   `writes_by_shell(segment, unit, holes)` reads these, beside `writes_by_script`: same deny, same
-   reason, one call site.
-7. **Tests that change, named up front** (challenger 13):
+6. **Shell writes.**
+   - `_cobot_shell.py` tags each redirection, here-document and here-string (recorded now) with its
+     list index and its stack of enclosing `{`, `(` and loop or `if`/`case` openers. That needs the
+     reserved words `{ } do done fi esac`, not a full compound-command model.
+   - `exec` scope is textual: it ends at a closing `)` or at a substitution, and runs through `}`,
+     `done` and `fi` (`{ exec >f; }; echo x` keeps it, `( exec >f ); echo x` does not).
+   - One split for both sides: the scanner exports its list items as offsets into `outer`, and
+     `cobot-rules` reads stages only within one item.
+   - `command_parts` returns each `Part`'s inner `Scan`, and runner entries use it as their unit,
+     so a here-document in a `bash -c` body reaches `writes_by_script` and the new check.
+   - `writes_by_shell(segment, unit, holes)` sits beside `writes_by_script`, one call site. Its deny
+     overrides as today; its ask is judged like a default-layer ask row, so an owner allow lifts it.
+7. **Tests that change** (challenger 13, pass 2 point 8):
    - `test_judgeBash_ruleBackedAskAfterOpaque_reportsTheRule` gains the list.
-   - The protected-file cases written as `cat >`, `printf >` or `echo >` (lines 54, 55, 58, 59, 60,
-     3647, 3789, 3822 on `7cb4fa5`) are rewritten with `cp` or command output, so they keep testing
-     the protected-file check. The write forms gain their own deny tests.
+   - Protected-file cases written as `cat >`, `printf >` or `echo >` are rewritten with `cp` or
+     command output, so they keep testing that check; the write forms get their own tests.
+   - T05 starts by running the suite against a stub deny and records the list here. Pass 2 counted
+     26 lines on `b972f61` in the two test files.
 8. **Docs:** `docs/configuration.md` (what asks, what is refused, what stays silent and why,
    canonical forms for allow lines), CHANGELOG, findings (below).
 
@@ -238,7 +239,7 @@ Asked 2026-11-16 in one call; the owner took every recommended default.
 | T02 | F-40: every ask named, budget minus stamp, agent-scoped first; tests incl. agy (stories 5, 7) | a | auth | T01 |
 | T03 | git config canonical form, option table, env prefixes, exec families; tests (story 3) | a | auth | T02 |
 | T04 | rows: outward and account, credential printers, gcloud verbs, deletions in never; note lint; parity and sync tests (stories 1, 2, 4) | a | auth | T03 |
-| T05 | scanner ownership per pipeline; shell writes and in-place editors denied; protected-file tests rewritten (story 6) | a | auth | T04 |
+| T05 | scanner list indexes, openers, `exec` scope, inner scans for runners; shell writes deny or ask; in-place editors denied; changed tests listed then rewritten (story 6) | a | auth | T04 |
 | T06 | agy parity sweep, docs/configuration.md, CHANGELOG, findings F-36 and F-40 closed, F-44's gate part closed and its rest re-filed (story 7) | b | — | T05 |
 
 Every code task touches `cobot-rules`, so one lane: sequential commits. **F-44's rest** is not the
@@ -252,9 +253,10 @@ gate's; T06 re-files it as one finding for the memory and ship spec:
 
 - **Deny literal writes everywhere, not only in the tree (Q1):** one rule, no path judgement to
   bypass. Command output to a file stays silent: it is a tool run, which Write cannot replace.
-- **Ownership in the scanner over a whole-command test:** a whole-command test either denies
-  `cargo metadata > m.json && echo done` or misses `{ echo a; } > f`. Per-pipeline data is the
-  only reading that gets both right.
+  Where the gate cannot tell the two apart, it asks rather than denies, so no tool run is walled.
+- **List indexes and openers over a whole-command test:** a whole-command test either denies
+  `cargo metadata > m.json && echo done` or misses `{ echo a; } > f`. Indexes and an opener
+  stack get both right without modelling every compound command.
 - **Never for deletions (Q2):** rendered into `permissions.deny`, a hard wall in every layer.
 - **A canonical form for git config (Q3):** globs cannot tell a read from a write, and git's
   grammar has value-taking options anywhere.
@@ -267,33 +269,31 @@ gate's; T06 re-files it as one finding for the memory and ship spec:
 
 ## Challenger verdict
 
-**2026-11-16: UNSOUND** (2 BLOCKER, 8 MAJOR, 7 MINOR). The challenger said that, with its folds,
-F-36 and F-40 would be SOUND WITH CHANGES. Revision 2 folds every point below. The reworked
-story 6 (scanner ownership) has not been challenged again: second pass not run.
+**Pass 1, 2026-11-16: UNSOUND** (2 BLOCKER, 8 MAJOR, 7 MINOR), all folded in revision 2:
+write data (Plan 6); `-R`, gh aliases, fd/parallel/watch (story 0, verified live); gcloud verbs,
+`rustup list`, npm/pnpm/yarn/pip3, tea deletions (Plan 3); git config grammar, exec keys (Plan 5);
+`/dev` prefixes, closed sources (story 6); credential argument order (Plan 4); the F-40 budget,
+`via`, protected-file ask, consult grader (story 5); test changes (Plan 7); `)` in notes (story 1).
+Checked clear: `sync` renders never rows, precedence, read-only allows, runners, agy's path.
+
+**Pass 2 on story 6, 2026-11-17: UNSOUND, SOUND WITH CHANGES once folded** (5 MAJOR, 3 MINOR).
+Each verified point was reproduced on `b972f61`. Revision 3 folds all eight (owner yes):
 
 | # | level | point | fold |
 |---|---|---|---|
-| 1 | BLOCKER | writes and here-docs are whole-command data; here-strings are not recorded | Plan 6, story 6 |
-| 2 | BLOCKER | `-R`/`--repo` after the group word bypasses every gh/glab row, never rows included (verified live) | story 0, T01 |
-| 3 | MAJOR | gh built-in aliases (`pr new`, `secret remove`, `ext`, `cs`) are not rewritten (verified live) | story 0 |
-| 4 | MAJOR | gcloud verb sets lack `set`, `print-access-token` and others; rows with no star never match | Plan 3 |
-| 5 | MAJOR | git config grammar: value options, `-f`, scope anywhere, `GIT_CONFIG` env | Plan 5, story 3 |
-| 6 | MAJOR | exec keys incomplete; an alias starting with `-` sets config | Plan 5 families |
-| 7 | MAJOR | the `/dev`, `/proc`, `/sys` prefix exemption is escapable (`/proc/self/root`, `/dev/tcp`) | story 6, five exact paths |
-| 8 | MAJOR | closed lists of sources and writers; patch, git apply and ed as a fallback | story 6, generalised |
-| 9 | MAJOR | fd, parallel and watch not unwrapped (verified live) | story 0 |
-| 10 | MAJOR | credential rows depend on argument order; printers missing | Plan 4, story 4 bounded |
-| 11 | MINOR | the stamp suffix eats the F-40 budget | story 5 |
-| 12 | MINOR | `via`, long notes, and the protected-file ask outside the list | story 5 |
-| 13 | MINOR | existing tests change unannounced | Plan 7 |
-| 14 | MINOR | `rustup … list` would ask | Plan 3, per verb |
-| 15 | MINOR | `npm set`, pnpm, yarn, pip3; tea deletions | Plan 3, Q2 |
-| 16 | MINOR | the consult-fan-out grader would stop seeing the agent-scoped ask | story 5 |
-| 17 | MINOR | the greedy rule regex takes a `)` in a note into the pattern | story 1, note lint |
+| 1 | MAJOR | "fed by" never checks that the text reaches the file: `ssh h <<EOF > out` denied, no allow lifts it | pass-through stages, else ask |
+| 2 | MAJOR | here-docs in runner bodies dropped: `bash -c` acceptance cannot pass (verified) | Plan 6, inner `Scan` |
+| 3 | MAJOR | the scanner has no positions or openers; `exec` scope is not "earlier" (verified) | Plan 6, indexes, openers, one split |
+| 4 | MAJOR | literal text into nested groups, process substitution, functions, runners: silent | story 6 asks |
+| 5 | MAJOR | sources and writers still closed (`jq -n`, `cp /dev/stdin`, `yq -i`, `git apply` from printf; verified) | story 6, named and bounded |
+| 6 | MINOR | `/dev/fd/N` reaches a descriptor the command opened | `/dev/fd/1` and `/2` only |
+| 7 | MINOR | `echo x > f` is not a stage "fed by" a source | "holding a literal source" |
+| 8 | MINOR | Plan 7's test list is stale and short | Plan 7, listed at T05 start |
 
-Checked clear by the challenger: `sync` renders the never rows; precedence holds; the read-only
-agents' allows cover none of the new rows; `bash -c`, `distrobox`, `find -exec`, `timeout`, `nice`
-unwrap; the commit-message substitution stays silent; agy reaches `judge_bash`.
+Checked clear: `find -exec`/`fd -X` arrive as segments; `timeout`/`env` stripped; `xargs`/`parallel`
+ask; a target with a hole fails closed; no cobot skill runs a pattern story 6 refuses.
+
 ## Converge
 
-T01 built 2026-11-17 (ab9bb3a, then 97b18ef after its bypass review); T02–T06 pending.
+T01 built 2026-11-17 (ab9bb3a, then 97b18ef after its bypass review), merged as PR 71. Revision 3
+folds the second pass on story 6; T02–T06 pending on `security/gate-asks-and-writes`.

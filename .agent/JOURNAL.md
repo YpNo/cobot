@@ -257,3 +257,11 @@ Proof: tests first (44 failing, then 29 more after the review); a bypass review 
 Open: exec scope is the whole command (stricter than the spec's textual scope); //dev/null and ../dev/null are denied; in a pipeline with two sources only the first decides; yes and read loops are not named sources; sed w, split and csplit not claimed.
 Next: T06, the agy parity sweep, docs, and closing F-36, F-40, F-44.
 verified: b12d5ea · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, gate dry runs, bypass review, fuzz
+
+## 2026-11-17 — gate T06: parity sweep, docs, findings closed
+Changed: 3437cf5 tests/test_gate_agy.py PARITY_SWEEP (21 samples, stories 0 to 6, Claude Code and agy agree); README (forge deletions never, account changes and credential printers ask, files written with the edit tools), docs/architecture.md (stage records, canonical forms, bounded claims); FINDINGS: F-36, F-40, F-44 closed, F-48 filed (F-44's rest: commit approvals with no allow line offered, Noticed items never parked, the cobot-deps Actions hint, ship's global unpinned installs) toward the memory and ship spec; spec converge line: every task built.
+Why: T06 of spec gate-f36-f40-f44.
+Proof: full suite 3379 passed, 98.56 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory check (10 open findings of 48, brief 6000 of 6000).
+Open: the brief sits at its 6000-character budget; the branch is unpushed (T02 to T06 and the never-through-an-option fix); known limits are in the T04 and T05 entries.
+Next: owner pushes security/gate-asks-and-writes and opens its PR; then the security-auditor build or the memory and ship spec (F-37, F-41 to F-43, F-46 to F-48).
+verified: 3437cf5 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, parity sweep

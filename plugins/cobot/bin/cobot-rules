@@ -2941,10 +2941,16 @@ def candidates(tokens: list[str]) -> list[str]:
     return [written, *middle, last] if middle or written != last else [written]
 
 
+SCOPE_ALIASES = {"cobot:auditor": "consultant"}  # spec security-auditor: one read list, two agents
+
+
 def agent_matches(scope: str, agent: str | None) -> bool:
-    """``@consultant`` matches ``consultant`` and ``cobot:consultant``."""
+    """``@consultant`` matches ``consultant`` and ``cobot:consultant``, and ``cobot:auditor`` (the
+    hook's namespaced name only: a user's own agent called ``auditor`` keeps no scope)."""
     if not agent:
         return False
+    if agent in SCOPE_ALIASES:
+        return scope.split(":")[-1] == SCOPE_ALIASES[agent]
     return scope in (agent, agent.split(":")[-1]) or agent in (scope, scope.split(":")[-1])
 
 

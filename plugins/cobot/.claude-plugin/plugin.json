@@ -8,6 +8,7 @@
   "license": "MIT",
   "keywords": ["orchestrator", "rules", "challenger", "builders", "memory"],
   "agents": [
+    "./claude-agents/auditor.md",
     "./claude-agents/builder.md",
     "./claude-agents/challenger.md",
     "./claude-agents/consultant.md",

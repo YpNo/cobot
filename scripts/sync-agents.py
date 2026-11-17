@@ -22,7 +22,7 @@ from _cobot_agy import CLAUDE_TO_AGY, CLAUDE_TO_TIER, COMMAND_TOOLS, TIER_BY_AGE
 from _cobot_agy import agent_fields as agy_fields  # noqa: E402, F401  (tests read the output)
 
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
-NO_COMMANDS = frozenset({"consultant", "learner"})  # their @agent read lists cannot reach agy hooks
+NO_COMMANDS = frozenset({"consultant", "learner", "auditor"})  # their read lists cannot reach agy hooks
 SKILL_READ = "under the plugin path in your brief with `view_file`"
 NO_COMMANDS_LINE = (
     "Under Antigravity you have no command tool: read files and pages only, and say in your report "

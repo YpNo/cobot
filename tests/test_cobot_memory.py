@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -942,6 +943,34 @@ def test_journalAdd_invalidEntry_exitsOne_andCheckWritesNothing(memory, repo, ca
     assert memory.main(["journal", "add", "--check", GOOD_ENTRY]) == 0
     assert "journal: valid" in capsys.readouterr().out
     assert (mem.dir / "JOURNAL.md").read_text() == before
+
+
+# ---------------------------------------------------------------- trust writes show where they went (story 6)
+
+
+def test_trustRoot_namesTheFileItWrote(memory, repo):
+    commit(repo)
+    out = memory.add_root_commit(memory.Memory())
+    assert out.startswith("root commit added to " + config("trusted"))
+    assert memory.add_root_commit(memory.Memory()).startswith("root commit already present in ")
+
+
+def test_trustAndCheck_untrusted_nameTheFileTheyRead(memory, repo, capsys):
+    remote(repo, "origin", "https://github.com/stranger/r.git")
+    commit(repo)
+    assert memory.main(["trust"]) == 0
+    assert f"trust file: {os.path.dirname(config('trusted'))}" in capsys.readouterr().out
+    assert f"trust file: {os.path.dirname(config('trusted'))}" in memory.cmd_check(memory.Memory())
+
+
+def test_trustNotRecorded_carriesTheConfigDirOfThisRun(memory, repo, monkeypatch):
+    mem = memory.Memory()
+    error = OSError(30, "Read-only file system")
+    line = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert f"CLAUDE_CONFIG_DIR={os.environ['CLAUDE_CONFIG_DIR']} " in line
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+    plain = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert "CLAUDE_CONFIG_DIR=" not in plain
 
 
 # ---------------------------------------------------------------- noticed items (story 3)

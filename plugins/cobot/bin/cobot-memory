@@ -59,6 +59,7 @@ from _cobot_common import (  # noqa: E402
     parse_cli,
     plugin_root,
     read_lines,
+    remote_owners,
     remotes,
     repo_root,
     repo_trust,
@@ -519,8 +520,21 @@ def trust_not_recorded(mem: Memory, path: Path, error: OSError, flag: str) -> st
     return (
         f"{TRUST_NOT_RECORDED} cannot write {path} ({error.strerror}); Claude Code's sandbox keeps the"
         f" config directory read-only to Bash. The memory files above are written. The owner runs, in"
-        f" their own terminal: cd {shlex.quote(str(mem.root))} && {shlex.quote(str(Path(__file__).resolve()))} init {flag}"
+        f" their own terminal: cd {shlex.quote(str(mem.root))} && {config_prefix()}"
+        f"{shlex.quote(str(Path(__file__).resolve()))} init {flag}"
     )
+
+
+def config_prefix() -> str:
+    """``CLAUDE_CONFIG_DIR=<dir> `` when this run has one: a command the owner runs elsewhere must
+    write and read the same trust files (F-47: init and check disagreed on the folder)."""
+    value = os.environ.get("CLAUDE_CONFIG_DIR")
+    return f"CLAUDE_CONFIG_DIR={shlex.quote(value)} " if value else ""
+
+
+def trust_file_note(trusted: bool) -> str:
+    """Where trust is read, shown when it is not given."""
+    return "" if trusted else f" (trust file: {cobot_config_dir()})"
 
 
 def add_identity(mem: Memory) -> str:
@@ -534,7 +548,7 @@ def add_identity(mem: Memory) -> str:
         added = append_unique(path, line)
     except OSError as error:
         return trust_not_recorded(mem, path, error, "--add-identity")
-    return f"identity {'added' if added else 'already present'}: {line}"
+    return f"identity {'added' if added else 'already present'}: {line} (in {path})"
 
 
 def add_root_commit(mem: Memory) -> str:
@@ -546,7 +560,8 @@ def add_root_commit(mem: Memory) -> str:
         added = append_unique(path, f"{roots[0]} {mem.root.name}")
     except OSError as error:
         return trust_not_recorded(mem, path, error, "--trust-root")
-    return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
+    where = f"added to {path}" if added else f"already present in {path}"
+    return f"root commit {where}: {roots[0][:12]} ({mem.root.name})"
 
 
 def read_payload(positional: list[str]) -> str:
@@ -695,26 +710,72 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", text.lower()).strip("-")
 
 
-def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool) -> list[str]:
+RUN_ID_RE = re.compile(r"/(?:actions/runs|pipelines|jobs)/\d+")
+HOME_PATH_RE = re.compile(r"/home/[^/\s]+/|/Users/[^/\s]+/|(?<![\w])[A-Za-z]:\\")
+SNAPSHOT_RE = re.compile(r"(?i)\b(?:latest (?:release|version) is|as of today)\b")
+
+
+def promote_lint(entries: list[dict], owners: set[str], exempt: set[str], allow_reported: bool) -> tuple[list[dict], list[str]]:
+    """Entries fit for the plugin, and a reason for each refused one (spec memory-and-ship,
+    story 4): a run id, a user's home path, a release snapshot, an ``owner/repo`` slug of the
+    owner's (``exempt`` holds the cobot checkout's own), a secret, or ``reported`` unless allowed."""
+    kept, refused = [], []
+    for entry in entries:
+        text = f"{entry.get('claim', '')} {entry.get('source', '')}"
+        slugs = {m.group(0).lower() for owner in owners for m in re.finditer(rf"(?<![\w.-]){re.escape(owner)}/[\w.-]+", text, re.I)}
+        reasons = [
+            reason
+            for reason, hit in (
+                ("run id", RUN_ID_RE.search(text)),
+                ("home path", HOME_PATH_RE.search(text)),
+                ("release snapshot", SNAPSHOT_RE.search(text)),
+                ("owner slug", slugs - {s.lower() for s in exempt}),
+                ("secret", SECRET_RE.search(text)),
+                ("reported", entry.get("status") == "reported" and not allow_reported),
+            )
+            if hit
+        ]
+        if reasons:
+            refused.append(f"  promote: refused ({', '.join(reasons)}): {str(entry.get('claim', ''))[:60]}")
+        else:
+            kept.append(entry)
+    return kept, refused
+
+
+def lint_context(mem: Memory, checkout: Path) -> tuple[set[str], set[str]]:
+    """The owner names whose slugs stay out of the plugin (origin's owner, the identities), and the
+    cobot checkout's own slugs, which a line may cite."""
+    owners_by_remote, identities = remote_owners(mem.root)
+    owners = {value.split("/", 1)[-1].lower() for value in owners_by_remote.values()}
+    owners |= {identity.split("/", 1)[-1] for identity in identities}
+    exempt = {f"{p[1]}/{p[2]}".lower() for url in remotes(checkout).values() if (p := host_owner_repo(url))}
+    return {owner for owner in owners if owner}, exempt
+
+
+def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool, allow_reported: bool = False) -> list[str]:
     if not entries:
         return ["  promote: no general entry"]
     checkout = source_checkout(source)
     if checkout is None:
         return ["  promote: no cobot checkout known (a directory marketplace, $COBOT_SOURCE or --source DIR)"]
+    owners, exempt = lint_context(mem, checkout)
+    entries, refused = promote_lint(entries, owners, exempt, allow_reported)
+    if not entries:
+        return [*refused, "  promote: no general entry"]
     worktrees = data_dir().parent / "promote"
     result = promote(checkout, topic, entries, delta, date.today(), in_place, worktrees)
     if isinstance(result, str):
-        return [f"  {result}"]
-    return [f"  {line}" for line in result.lines()]
+        return [*refused, f"  {result}"]
+    return [*refused, *(f"  {line}" for line in result.lines())]
 
 
-def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False) -> str:
+def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False, allow_reported: bool = False) -> str:
     try:
         delta = json.loads(raw)
     except json.JSONDecodeError as error:
         if promoting and raw.strip() and slug(raw.strip()) == raw.strip():
             entries = pending_general(mem, raw.strip())
-            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place)])
+            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place, allow_reported)])
         return f"learn: delta is not JSON ({error})"
     if not isinstance(delta, dict):
         return "learn: delta must be a JSON object"
@@ -757,7 +818,7 @@ def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promotin
             path.write_text(head.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n", encoding="utf-8")
         report.append(f"  written: {path}")
     if promoting and not dry_run:
-        report.extend(promote_entries(mem, topic, general, delta, source, in_place))
+        report.extend(promote_entries(mem, topic, general, delta, source, in_place, allow_reported))
     elif promoting:
         report.append(f"  promote: dry run, {len(general)} general entry(ies) would be promoted")
     return "\n".join(report)
@@ -972,7 +1033,8 @@ def missing_header_fields(mem: Memory) -> list[str]:
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
-    lines = [f"memory: {mem.dir}", f"mode: {mode}", f"trust: {'trusted' if trusted else 'untrusted'} ({reason})"]
+    trust = f"trust: {'trusted' if trusted else 'untrusted'} ({reason}){trust_file_note(trusted)}"
+    lines = [f"memory: {mem.dir}", f"mode: {mode}", trust]
     lines.append(f"tree: {mem.tree()}")
     for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "ARCHITECTURE.md", "cobot.rules"):
         path = mem.dir / name
@@ -1029,7 +1091,7 @@ SWITCHES = {
     "init": {"foreign", "add-identity", "trust-root"},
     "brief": {"no-trust-check"},
     "findings": {"open"},
-    "learn": {"dry-run", "keep-assumed", "promote", "in-place"},
+    "learn": {"dry-run", "keep-assumed", "promote", "in-place", "allow-reported"},
     "knowledge": {"stale", "json", "brief"},
     "compact": {"dry-run", "force"},
     "stamp": {"tree"},
@@ -1073,7 +1135,7 @@ def main(argv: list[str]) -> int:
         print(cmd_stamp(mem))
     elif command == "trust":
         trusted, reason = mem.trust()
-        print(f"{'trusted' if trusted else 'untrusted'}: {reason}")
+        print(f"{'trusted' if trusted else 'untrusted'}: {reason}{trust_file_note(trusted)}")
     elif command == "check":
         print(cmd_check(mem))
     elif command == "brief":
@@ -1105,6 +1167,7 @@ def main(argv: list[str]) -> int:
                 promoting="promote" in flags,
                 source=options.get("source"),
                 in_place="in-place" in flags,
+                allow_reported="allow-reported" in flags,
             )
         )
     elif command == "knowledge":

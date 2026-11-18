@@ -124,7 +124,7 @@ def test_staleness_thresholds(days, claim, stale, due):
 # ---------------------------------------------------------------- scanning and summaries
 
 
-def test_scanPlugin_knowledgeSkillsOnly_andMemoryTopics(tmp_path):
+def test_scanPlugin_everySkillWithDatedLines_andMemoryTopics(tmp_path):
     plugin = make_plugin(
         tmp_path,
         {
@@ -138,12 +138,15 @@ def test_scanPlugin_knowledgeSkillsOnly_andMemoryTopics(tmp_path):
             "expert-y": {"references/a.md": [dated(5, status="reported")]},
             "fw-z": {"references/versions.md": [dated(6, claim="framework 2.0")]},
             "consult-y": {"SKILL.md": ["---\nname: consult-y\ndescription: d\n---", dated(2)]},
-            "spec": {"SKILL.md": ["---\nname: spec\ndescription: d\n---", dated(400, claim="never counted")]},
+            "spec": {
+                "SKILL.md": ["---\nname: spec\ndescription: d\n---", dated(400, claim="a workflow line")]
+            },
             "lang-empty": {"references/none.md": ["no dated line here"]},
         },
     )
     groups = knowledge.scan_plugin(plugin)
-    assert sorted(groups) == ["expert-y", "fw-z", "lang-x"]  # consult procedures hold no dated lines
+    # every skill whose files date a claim, not only the knowledge prefixes (F-46); none without one
+    assert sorted(groups) == ["consult-y", "expert-y", "fw-z", "lang-x", "spec"]
     assert [line.file.name for line in groups["lang-x"]] == ["SKILL.md", "versions.md", "versions.md"]
     memory = tmp_path / ".agent"
     (memory / "knowledge").mkdir(parents=True)
@@ -690,6 +693,64 @@ def test_learn_promote_pendingGeneralLinesByTopic(memory, repo, source):
     assert f"+ - [verified {date.today().isoformat()} · src: https://s] pending general 2.0" in out
     assert "not JSON" in memory.cmd_learn(mem, "{", False, False, promoting=True)
     assert "must be a JSON object" in memory.cmd_learn(mem, "[1]", False, False)
+
+
+LINT_CASES = [
+    ("see https://github.com/acme/app/actions/runs/123456 for the failure", "verified", "run id"),
+    ("the cache lives in /home/alice/.cache/x", "verified", "home path"),
+    ("the cache lives in C:\\Users\\alice\\x", "verified", "home path"),
+    ("the latest release is 4.2.0", "verified", "release snapshot"),
+    ("acme/private-app pins its runner", "verified", "owner slug"),
+    ("a reported fact 1.0", "reported", "reported"),
+]
+
+
+@pytest.mark.parametrize(("claim", "status", "rule"), LINT_CASES)
+def test_promoteLint_refusesEachRule(memory, claim, status, rule):
+    # spec memory-and-ship, story 4
+    entry = {"claim": claim, "status": status, "source": "https://s", "scope": "general"}
+    kept, refused = memory.promote_lint([entry], {"acme"}, set(), allow_reported=False)
+    assert kept == [] and len(refused) == 1 and rule in refused[0], refused
+
+
+def test_promoteLint_cleanLines_tildeAndExemptSlugPass(memory):
+    entries = [
+        {"claim": "Cargo auto-GC of ~/.cargo runs weekly", "status": "verified", "source": "https://s"},
+        {
+            "claim": "acme/cobot ships the gate",
+            "status": "verified",
+            "source": "https://github.com/acme/cobot",
+        },
+        {"claim": "a reported fact 1.0", "status": "reported", "source": "https://s"},
+    ]
+    kept, refused = memory.promote_lint(entries, {"acme"}, {"acme/cobot"}, allow_reported=True)
+    assert len(kept) == 3 and refused == []
+
+
+def test_learn_promote_pendingPath_isLintedToo(memory, repo, source):
+    mem = memory.Memory()
+    raw = json.dumps(
+        {
+            "topic": "go",
+            "entries": [
+                {"claim": "run 1 at /actions/runs/42 was red", "status": "verified", "source": "https://s",
+                 "scope": "general"},
+            ],
+        }
+    )  # fmt: skip
+    memory.cmd_learn(mem, raw, False, False)
+    out = memory.cmd_learn(mem, "go", False, False, promoting=True, source=str(source))
+    assert "refused (run id)" in out and "promote: no general entry" in out
+
+
+def test_scanPlugin_readsEverySkill_andHintsByKind(tmp_path):
+    files = {"references/workstation.md": [dated(400, claim="old route")]}
+    plugin = make_plugin(tmp_path / "p", {"onboard": files})
+    found = knowledge.scan_plugin(plugin)
+    assert "onboard" in found
+    line = knowledge.brief_line(knowledge.summaries(found, TODAY), TODAY)
+    assert "onboard (1)" in line and "edit its references (a cobot PR)" in line
+    assert "/cobot:learn" not in line
 
 
 def test_learn_local_redatesAndSupersedes(memory, repo):

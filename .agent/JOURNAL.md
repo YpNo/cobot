@@ -305,3 +305,11 @@ Proof: tests first (four failing): third ask names the line, fourth does not; co
 Open: agy sends no session id, so no offer there; T04–T07 of the spec.
 Next: T04, the promotion lint, every skill scanned, and the trust paths.
 verified: tree 0706fcfa51ceb3e75747adc6c8de9782e7fbf950 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T04: promotion lint, every skill scanned, trust paths shown
+Changed: cobot-memory: promote_lint (run ids, a user's home path, release snapshots, the owner's owner/repo slugs from origin and the identities with the cobot checkout's own exempt, secrets, reported unless --allow-reported) and lint_context, inside promote_entries so the pending-lines path is linted too; --allow-reported threaded through cmd_learn; root commit and identity lines name their file; trust and check name the trust file when untrusted; trust_not_recorded's command carries CLAUDE_CONFIG_DIR when set (config_prefix); _cobot_knowledge: scan_plugin reads every skill, refreshed_by_learn, the brief's hint per kind; onboard step 2 re-checks after init and names the prefixed init command, never cobot-memory trust; tests; the old prefix-only scan test now expects every dated skill.
+Why: F-42 (a slug, a run id, a snapshot and an unproven line promoted), F-46 (onboard's dated lines never in the brief), F-47 (init and check read different config folders); stories 4, 5 and 6 of spec memory-and-ship; challenger 4 and 5.
+Proof: tests first (twelve failing): one per lint rule, clean lines with ~/ and the exempt slug pass, the pending path refuses a run id, an onboard reference is scanned and hinted, the trust lines name their files, the prefix appears only with the variable; full suite 3441 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory knowledge --brief still fresh on the plugin.
+Open: T05–T07 of the spec.
+Next: T05, cobot-deps toolchain channels and ship's ground step.
+verified: tree 1e8780298ec4ab9765c2848ec626810693c7bd2e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

@@ -25,6 +25,13 @@ def test_build_journalsWithTheTreeStamp():
     assert "cobot-memory stamp --tree" in text("build")
 
 
+def test_onboard_untrustedAfterInit_namesInitWithTheConfigDir():
+    # story 6 (F-47): both paths, the prefixed init command, never `cobot-memory trust`
+    onboard = text("onboard")
+    assert "run `cobot-memory check` again" in onboard and "trust file:" in onboard
+    assert "CLAUDE_CONFIG_DIR=<path>" in onboard and "Never send the owner to `cobot-memory trust`" in onboard
+
+
 def test_wrapAndBuild_clearTheParkedNotices():
     # story 3: wrap files or drops each parked item, build parks an async hand-back's itself
     wrap = text("wrap")

@@ -561,10 +561,13 @@ def check(root: Path, today: date, force: bool = False, runner: Run = run) -> di
         "cached": False,
     }
     path = cache_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({k: v for k, v in data.items() if k != "cached"}, indent=1) + "\n", encoding="utf-8"
-    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({k: v for k, v in data.items() if k != "cached"}, indent=1) + "\n", encoding="utf-8"
+        )
+    except OSError as error:  # a read-only data folder (an eval sandbox): report, uncached
+        data["cache"] = f"not written ({error.strerror})"
     return data
 
 
@@ -606,6 +609,8 @@ def report(data: dict, today: date) -> str:
     if data.get("unsupported"):
         lines.append(f"  unsupported here, check by hand: {', '.join(data['unsupported'])}")
     lines.extend(f"  toolchain: {row}" for row in data.get("toolchains") or [])
+    if data.get("cache"):
+        lines.append(f"  cache: {data['cache']}")
     if data.get("workflows"):
         lines.append("  GitHub Actions pins: /cobot:consult gha")
     return "\n".join(lines)

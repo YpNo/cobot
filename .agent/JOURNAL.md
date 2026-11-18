@@ -321,3 +321,11 @@ Proof: tests first (seventeen failing): every file kind and form floats or passe
 Open: T06 (the ship-ground eval) and T07 (docs, decision 31, CHANGELOG, findings).
 Next: T06.
 verified: tree da47ace9ff42d90080baec91afd89fbd8571bd9e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T06: the ship-ground eval
+Changed: evals/ship-ground (case, prompt, fixture, graders): a Rust library with rust-toolchain.toml on stable, committed memory with a wrap stamp, forge: github in CONTEXT, an empty bare origin at .git/remote.git, the root commit trusted as gitlab-ci-shape does; graders: toolchain-flagged and empty-remote regexes on last_message, remote-read (Bash input_match ls-remote), ship-skill; _cobot_deps: a cache that cannot be written (a read-only data folder, as in the eval sandbox) is reported as "cache: not written (<reason>)" instead of failing the check; a test for it.
+Why: story 9 of spec memory-and-ship, proving story 8 (F-37, F-43) end to end; challenger 10.
+Proof: the fixture run in scratch gives a clean tree, an empty remote (ls-remote exit 0, no output), stamp ok and the stable row; one local eval run scored 1.00 (4 graders, 0.11 USD, 19 s), and its trace shows cobot-deps, git remote get-url and the ls-remote form run, the empty remote told and main proposed first, no Rust version guessed; full suite 3463 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate. The read-only cache test was written together with its fix, not seen failing first.
+Open: in that local run cobot-memory stamp answered "untrusted memory": the fixture's trust seeding (copied from gitlab-ci-shape) did not reach the run's config folder here; ship reported it and no grader depends on it; T07 remains.
+Next: T07, docs, decision 31, CHANGELOG, findings closed.
+verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, local eval

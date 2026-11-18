@@ -487,6 +487,21 @@ def test_toolchainRows_goModWithoutToolchain_isANote(repo):
     assert deps.toolchain_rows(repo) == []
 
 
+def test_check_readOnlyCache_reportsAnyway(tools, repo, monkeypatch):
+    # an eval sandbox mounts the data folder read-only: the report must still come out (T06)
+    write_fakes(tools)
+    seed_repo(repo, "go.mod")
+    (repo / "rust-toolchain").write_text("stable\n")
+
+    def refuse(*args, **kwargs):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(deps.Path, "write_text", refuse)
+    data = deps.check(repo, TODAY)
+    text = deps.report(data, TODAY)
+    assert "cache: not written (Read-only file system)" in text and "rust-toolchain: stable floats" in text
+
+
 def test_report_actionsHint_onlyWithAWorkflow_andToolchainsShown(tools, repo):
     write_fakes(tools)
     seed_repo(repo, "go.mod")

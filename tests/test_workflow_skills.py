@@ -32,6 +32,26 @@ def test_onboard_untrustedAfterInit_namesInitWithTheConfigDir():
     assert "CLAUDE_CONFIG_DIR=<path>" in onboard and "Never send the owner to `cobot-memory trust`" in onboard
 
 
+def test_ship_groundChecksToolchainsRemoteAndTools():
+    # story 8 (F-37, F-43, F-48)
+    ship = text("ship")
+    for rule in (
+        "`cobot-deps check`",
+        "pin Dependabot cannot see",
+        "git remote get-url origin",
+        "GIT_TERMINAL_PROMPT=0",
+        "timeout 20 git",
+        "ls-remote --symref origin HEAD",
+        "**empty** remote",
+        "**unreachable**, never empty",
+        "Name the base branch",
+        "never run",
+        "REMOTE",
+        "PINS",
+    ):
+        assert rule in ship, rule
+
+
 def test_wrapAndBuild_clearTheParkedNotices():
     # story 3: wrap files or drops each parked item, build parks an async hand-back's itself
     wrap = text("wrap")

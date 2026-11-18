@@ -313,3 +313,11 @@ Proof: tests first (twelve failing): one per lint rule, clean lines with ~/ and 
 Open: T05–T07 of the spec.
 Next: T05, cobot-deps toolchain channels and ship's ground step.
 verified: tree 1e8780298ec4ab9765c2848ec626810693c7bd2e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T05: cobot-deps toolchains, and a ship that checks its ground
+Changed: _cobot_deps: floats, toolchain_versions and toolchain_rows (rust-toolchain.toml and rust-toolchain, .nvmrc, .node-version, .python-version, .tool-versions, mise.toml, .mise.toml, .config/mise.toml, mise/config.toml in string, list and table forms; go.mod without a toolchain line as a note), has_workflows, file_facts read fresh on a cached result too, report prints toolchain rows and the Actions hint only with a workflow; ship step 1 gains the toolchain, remote (get-url, then ls-remote with prompts off and a 20 s timeout; empty and unreachable told apart) and absent-tool checks, and the report's REMOTE and PINS lines; tests; the old check test now expects no hint without a workflow.
+Why: F-37 (rust-toolchain on stable while CI took a newer release), F-43 (a PR proposed against an empty remote), F-48 (the Actions hint with no workflow, global unpinned installs); stories 7 and 8 of spec memory-and-ship; challenger 8 and 9.
+Proof: tests first (seventeen failing): every file kind and form floats or passes, the go note, the hint only with a workflow, cached results re-read; ship text test names each rule; the gate is silent on the ls-remote form and git remote get-url; full suite 3459 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: T06 (the ship-ground eval) and T07 (docs, decision 31, CHANGELOG, findings).
+Next: T06.
+verified: tree da47ace9ff42d90080baec91afd89fbd8571bd9e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

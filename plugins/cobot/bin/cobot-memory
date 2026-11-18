@@ -40,6 +40,8 @@ import os
 import re
 import shlex
 import sys
+import unicodedata
+import urllib.parse
 from datetime import date
 from pathlib import Path
 
@@ -54,6 +56,7 @@ from _cobot_common import (  # noqa: E402
     data_dir,
     external_memory,
     git,
+    git_bytes,
     host_owner_repo,
     memory_dir,
     parse_cli,
@@ -95,7 +98,7 @@ BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
 PART_SEPARATOR = "\n\n"  # between the text, the findings and each tail line
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
-STAMP_RE = re.compile(r"^verified: (?:(tree) )?([0-9a-f]{7,40})(\+working-tree)?( · .*)?$", re.M)
+STAMP_RE = re.compile(r"^verified: (?:(tree) )?([0-9a-f]{7,64})(\+working-tree)?( · .*)?$", re.M)
 DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
 DOC_ROOT_ENTRIES = frozenset({".agent", "docs", "CHANGELOG.md", "README.md"})  # the same, as root entries
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
@@ -594,12 +597,25 @@ def noticed(mem: Memory) -> list[str]:
     return NOTICED_LINE_RE.findall(mem.read(NOTICED_FILE))
 
 
-def cmd_noticed_add(mem: Memory, text: str) -> str:
-    """Park each line of ``text`` as a dated notice, once; in a trusted memory only (the hook runs
-    in whatever checkout the session is in)."""
+def noticed_refusal(mem: Memory) -> str:
+    """Why ``noticed.md`` may not be touched: an untrusted or absent memory, or a file that is a
+    symlink or resolves outside the memory folder (a merged link would make the hook write
+    elsewhere). Empty when it may."""
     trusted, _ = mem.trust()
     if not trusted or not mem.dir.is_dir():
         return "noticed: untrusted or absent memory, nothing parked"
+    path = mem.dir / NOTICED_FILE
+    if path.is_symlink() or (path.exists() and not path.resolve().is_relative_to(mem.dir.resolve())):
+        return "noticed: refused, .agent/noticed.md is a link; remove it"
+    return ""
+
+
+def cmd_noticed_add(mem: Memory, text: str) -> str:
+    """Park each line of ``text`` as a dated notice, once; in a trusted memory only (the hook runs
+    in whatever checkout the session is in)."""
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
     seen = set(noticed(mem))
     fresh: list[str] = []
     for raw in text.splitlines():
@@ -618,11 +634,17 @@ def cmd_noticed_add(mem: Memory, text: str) -> str:
 
 
 def cmd_noticed_list(mem: Memory) -> str:
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
     items = noticed(mem)
     return "\n".join(items) if items else "noticed: none"
 
 
 def cmd_noticed_clear(mem: Memory) -> str:
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
     path = mem.dir / NOTICED_FILE
     if path.is_file():
         path.write_text(NOTICED_HEAD, encoding="utf-8")
@@ -710,9 +732,16 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", text.lower()).strip("-")
 
 
-RUN_ID_RE = re.compile(r"/(?:actions/runs|pipelines|jobs)/\d+")
-HOME_PATH_RE = re.compile(r"/home/[^/\s]+/|/Users/[^/\s]+/|(?<![\w])[A-Za-z]:\\")
-SNAPSHOT_RE = re.compile(r"(?i)\b(?:latest (?:release|version) is|as of today)\b")
+RUN_ID_RE = re.compile(r"(?i)(?:^|[/\s])actions/runs/\d+|/pipelines/\d+(?:\b|/)|/-/jobs/\d+")
+HOME_PATH_RE = re.compile(r"(?:/home|/Users)/(?!<)[^/\s<>]+|/root/|(?<![\w])[A-Za-z]:\\")
+SNAPSHOT_RE = re.compile(
+    r"(?i)\b(?:latest|newest)(?:\s+\w+)?\s+is\s+v?\d|\bas of (?:today|\d{4}-\d{2}-\d{2})\b"
+)
+
+
+def lint_text(text: str) -> str:
+    """The text as a reader sees it: URL-decoded, and NFKC-folded (a fullwidth letter is a letter)."""
+    return unicodedata.normalize("NFKC", urllib.parse.unquote(text))
 
 
 def promote_lint(entries: list[dict], owners: set[str], exempt: set[str], allow_reported: bool) -> tuple[list[dict], list[str]]:
@@ -721,8 +750,9 @@ def promote_lint(entries: list[dict], owners: set[str], exempt: set[str], allow_
     owner's (``exempt`` holds the cobot checkout's own), a secret, or ``reported`` unless allowed."""
     kept, refused = [], []
     for entry in entries:
-        text = f"{entry.get('claim', '')} {entry.get('source', '')}"
-        slugs = {m.group(0).lower() for owner in owners for m in re.finditer(rf"(?<![\w.-]){re.escape(owner)}/[\w.-]+", text, re.I)}
+        text = lint_text(f"{entry.get('claim', '')} {entry.get('source', '')} {entry.get('checked', '')}")
+        found = (m.group(0) for owner in owners for m in re.finditer(rf"(?<![\w.-]){re.escape(owner)}/[\w.-]+", text, re.I))
+        slugs = {slug.rstrip(".").lower() for slug in found}
         reasons = [
             reason
             for reason, hit in (
@@ -980,24 +1010,33 @@ def tree_key(checkout: Path, treeish: str, foreign: bool) -> str | None:
     tree = git(["rev-parse", "--verify", "--quiet", f"{treeish}^{{tree}}"], checkout)
     if not tree or foreign:
         return tree
-    listing = git(["ls-tree", "-z", tree], checkout)
+    listing = git_bytes(["ls-tree", "-z", tree], checkout)
     if listing is None:
         return None
-    kept = [entry for entry in listing.split("\0") if entry and entry.split("\t", 1)[-1] not in DOC_ROOT_ENTRIES]
-    return git(["mktree", "-z"], checkout, stdin="".join(f"{entry}\0" for entry in kept))
+    doc_names = {name.encode() for name in DOC_ROOT_ENTRIES}
+    kept = [entry for entry in listing.split(b"\0") if entry and entry.split(b"\t", 1)[-1] not in doc_names]
+    key = git_bytes(["mktree", "-z"], checkout, stdin=b"".join(entry + b"\0" for entry in kept))
+    return key.decode("ascii").strip() if key else None
 
 
 def stamp_readiness(checkout: Path) -> str:
     """Why the index is not what the tests ran on: code changed but not staged, or code left
     untracked. Doc entries do not count. Empty when ready."""
-    status = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], checkout)
-    if status is None:
+    raw = git_bytes(["status", "--porcelain=v1", "-z", "--untracked-files=all"], checkout)
+    if raw is None:
         return "git status failed"
-    records = status.split("\0")
-    for index, record in enumerate(records):
-        if len(record) < 4 or (index and records[index - 1][:1] in "RC" and records[index - 1][1:2] != " "):
+    # bytes, never stripped: the first record may start with a space (" M path"); names decode
+    # losslessly, so a non-UTF-8 name is named, not a crash
+    records = raw.decode("utf-8", errors="surrogateescape").split("\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if len(record) < 4:
             continue
         code, path = record[:2], record[3:]
+        if "R" in code or "C" in code:
+            index += 1  # the next record is the rename's or copy's source path, whatever it holds
         if path.split("/", 1)[0] in DOC_ROOT_ENTRIES:
             continue
         if code == "??":

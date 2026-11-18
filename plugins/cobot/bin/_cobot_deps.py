@@ -472,7 +472,9 @@ def first_line(path: Path) -> str:
 
 def mise_versions(path: Path) -> list[tuple[str, str]]:
     """``(tool, version)`` from a mise file's ``[tools]``: a string, a list, or ``{ version = … }``."""
-    tools = tomllib.loads(path.read_text(encoding="utf-8")).get("tools") or {}
+    tools = tomllib.loads(path.read_text(encoding="utf-8")).get("tools")
+    if not isinstance(tools, dict):
+        return []  # a value where mise wants a table: nothing to read
     pairs = []
     for tool, spec in tools.items():
         values = spec if isinstance(spec, list) else [spec]
@@ -488,7 +490,8 @@ def toolchain_versions(root: Path) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     toml = root / "rust-toolchain.toml"
     if toml.is_file():
-        channel = (tomllib.loads(toml.read_text(encoding="utf-8")).get("toolchain") or {}).get("channel")
+        table = tomllib.loads(toml.read_text(encoding="utf-8")).get("toolchain")
+        channel = table.get("channel") if isinstance(table, dict) else None
         found += [("rust-toolchain.toml", channel)] if isinstance(channel, str) else []
     for name in ("rust-toolchain", ".nvmrc", ".node-version"):
         if (root / name).is_file():

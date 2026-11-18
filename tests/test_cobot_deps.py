@@ -479,6 +479,20 @@ def test_toolchainRows_pinnedFile_nothing(repo, name, text):
     assert deps.toolchain_rows(repo) == []
 
 
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [
+        ("mise.toml", 'tools = "node"\n'),
+        ("mise.toml", "tools = [1]\n"),
+        ("rust-toolchain.toml", 'toolchain = "stable"\n'),
+    ],
+)
+def test_toolchainRows_wrongShapes_noCrash(repo, name, text):
+    # review M1: a value where a table is expected
+    (repo / name).write_text(text)
+    assert isinstance(deps.toolchain_rows(repo), list)
+
+
 def test_toolchainRows_goModWithoutToolchain_isANote(repo):
     (repo / "go.mod").write_text("module x\n\ngo 1.27\n")
     rows = deps.toolchain_rows(repo)

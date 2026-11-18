@@ -702,6 +702,18 @@ LINT_CASES = [
     ("the latest release is 4.2.0", "verified", "release snapshot"),
     ("acme/private-app pins its runner", "verified", "owner slug"),
     ("a reported fact 1.0", "reported", "reported"),
+    # review M3: case, no leading slash, URL encoding, wider homes and snapshots, fullwidth slugs
+    ("see actions/runs/123456", "verified", "run id"),
+    ("see /Actions/Runs/123", "verified", "run id"),
+    ("see %2Factions%2Fruns%2F99", "verified", "run id"),
+    ("the cache lives in /root/.cargo", "verified", "home path"),
+    ("a file under /home/bob", "verified", "home path"),
+    ("the newest release is 1.2", "verified", "release snapshot"),
+    ("latest stable is 1.80", "verified", "release snapshot"),
+    ("Latest  release is 2", "verified", "release snapshot"),
+    ("as of 2026-11-18 the default is x", "verified", "release snapshot"),
+    ("acme%2Fsecret-repo pins its runner", "verified", "owner slug"),
+    ("ａcme/secret pins its runner", "verified", "owner slug"),
 ]
 
 
@@ -722,9 +734,12 @@ def test_promoteLint_cleanLines_tildeAndExemptSlugPass(memory):
             "source": "https://github.com/acme/cobot",
         },
         {"claim": "a reported fact 1.0", "status": "reported", "source": "https://s"},
+        {"claim": "check the latest version is pinned before release", "status": "verified", "source": "s"},
+        {"claim": "config lives in /home/<user>/.config/x", "status": "verified", "source": "https://s"},
+        {"claim": "see acme/cobot.", "status": "verified", "source": "https://s"},
     ]
     kept, refused = memory.promote_lint(entries, {"acme"}, {"acme/cobot"}, allow_reported=True)
-    assert len(kept) == 3 and refused == []
+    assert len(kept) == 6 and refused == [], refused
 
 
 def test_learn_promote_pendingPath_isLintedToo(memory, repo, source):

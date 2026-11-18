@@ -337,3 +337,11 @@ Proof: full suite 3463 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-a
 Open: the eval's trust seed not seen in a local run (T06); F-35, F-39, F-49.
 Next: owner pushes feat/memory-and-ship and opens its PR.
 verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship: branch review folded
+Changed: stamp_readiness reads git status -z as bytes, unstripped, and walks the records consuming each rename's or copy's source; tree_key reads ls-tree and feeds mktree as bytes; git() decodes with surrogateescape and git_bytes takes stdin; STAMP_RE reads 64-hex keys; noticed_refusal refuses a noticed.md that is a link or resolves outside the memory, and list and clear need a trusted memory too; promote_lint folds the text (URL-decoded, NFKC) and lints the checked field, RUN_ID_RE case-insensitive without a leading slash, HOME_PATH_RE adds /root/ and a home without a trailing slash but not a <user> placeholder, SNAPSHOT_RE wants a version or a date, slugs lose a trailing dot; _cobot_deps tolerates a mise tools or a rust toolchain value that is not a table; tests.
+Why: an independent review of the whole branch found three HIGH (an unstaged first record read as staged, so stamp --tree said ready; the rename skip looked at the wrong record; noticed add wrote through a merged symlink), three MEDIUM (cobot-deps crashed on a wrong TOML shape; a non-UTF-8 name crashed the stamp; lint bypasses by case, encoding, fullwidth letters and wider phrasings) and LOW items.
+Proof: tests first (twenty failing), each review input reproduced, H1 by hand in a scratch repo (now refused, exit 1); full suite 3481 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: kept as LOW: docs/ and .agent/cobot.rules sit outside the stamp key by design; submodule ignore=all hides a dirty submodule; parallel gate calls may lose an ask count; an offer that never fits is retried on each ask; .python-version 3.12 and rust 1.80 resolve to the latest patch but do not count as floating.
+Next: owner pushes feat/memory-and-ship and opens its PR.
+verified: tree c3bb687429dc6b4467d01ce9f01cc71ac65393ea · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, branch review

@@ -925,6 +925,36 @@ def test_stampTree_untrackedOrUnstagedCode_notReady(memory, repo, capsys):
     assert memory.main(["stamp", "--tree"]) == 0
 
 
+def test_stampReadiness_unstagedFirstRecord_andRenames_readRight(memory, repo):
+    # review of the branch, H1 and H2: a leading-space status record, and rename sources
+    commit(repo)
+    (repo / "src").mkdir()
+    for name in ("main.rs", "lib.rs"):
+        (repo / "src" / name).write_text("a\n")
+    (repo / "CONTRIBUTING.md").write_text("c\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "files"], check=True)
+    (repo / "src" / "main.rs").write_text("b\n")  # " M src/main.rs", the first record
+    assert "src/main.rs has unstaged changes" in memory.stamp_readiness(repo)
+    subprocess.run(["git", "-C", str(repo), "add", "src/main.rs"], check=True)
+    subprocess.run(["git", "-C", str(repo), "mv", "CONTRIBUTING.md", "docs-CONTRIBUTING.md"], check=True)
+    (repo / "src" / "lib.rs").write_text("b\n")  # must not hide behind the rename's source
+    assert "src/lib.rs has unstaged changes" in memory.stamp_readiness(repo)
+    subprocess.run(["git", "-C", str(repo), "add", "src/lib.rs"], check=True)
+    assert memory.stamp_readiness(repo) == ""
+
+
+def test_stampReadiness_nonUtf8Name_noCrash(memory, repo):
+    commit(repo)
+    (repo / os.fsdecode(b"\xff.rs")).write_text("x\n")
+    assert "is untracked" in memory.stamp_readiness(repo)
+
+
+def test_stamp_sha256Key_isRead(memory):
+    line = "verified: tree " + "a" * 64 + " · pytest"
+    assert memory.STAMP_RE.search(line).group(2) == "a" * 64
+
+
 def test_stampTree_foreignMode_keyIsTheWholeTree(memory, repo):
     commit(repo)
     whole = subprocess.run(
@@ -991,6 +1021,17 @@ def test_noticed_addListClear_dedupedAndCountedByCheck(memory, repo, capsys):
     assert "noticed.md" not in memory.build_brief(mem, 6000)  # a known file, not "also in .agent"
 
 
+def test_noticed_symlinkedFile_refused(memory, repo, tmp_path):
+    # review H3: a merged symlink must not turn the hook into a writer elsewhere
+    mem, _ = stamped(memory, repo, "Proof: x")
+    target = tmp_path / "outside"
+    target.write_text("keep\n")
+    (mem.dir / "noticed.md").symlink_to(target)
+    assert "refused" in memory.cmd_noticed_add(mem, "x\n")
+    assert "refused" in memory.cmd_noticed_clear(mem)
+    assert target.read_text() == "keep\n"
+
+
 def test_noticed_untrustedMemory_parksNothing(memory, repo, capsys):
     remote(repo, "origin", "https://github.com/stranger/r.git")
     commit(repo)
@@ -998,6 +1039,9 @@ def test_noticed_untrustedMemory_parksNothing(memory, repo, capsys):
     assert memory.main(["noticed", "add", "x\n"]) == 0
     assert "untrusted" in capsys.readouterr().out
     assert not (repo / ".agent" / "noticed.md").exists()
+    (repo / ".agent" / "noticed.md").write_text("- 2026-01-01 · repository text\n")
+    assert "untrusted" in memory.cmd_noticed_list(memory.Memory())
+    assert "untrusted" in memory.cmd_noticed_clear(memory.Memory())
 
 
 def test_noticed_hookToMemory_endToEnd(memory, repo, rules):

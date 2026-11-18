@@ -377,3 +377,11 @@ Proof: markdownlint clean (one MD038 fixed); full suite 3502 passed, 98.46 %; ru
 Open: none for the spec; F-39, F-49 remain open findings.
 Next: the owner reviews the branch, pushes feat/builder-proof-hosts and opens its PR; then remove the /probe/ line from .git/info/exclude with the worktree.
 verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-18 — spec trust-boundaries (F-49), challenged
+Changed: .agent/specs/trust-boundaries.md (revision 2, stories 1–6, T01–T05): every spec carries a Trust boundaries section (each boundary the change creates or alters with its guard and a negative-test story, or none: with why); the challenger attacks a missed or unproven one as MAJOR; the sweep router passes Memory: trusted|untrusted from cobot-memory trust, and in trusted memory the auditor checks each declared guard at its site as inventory lines; two graders on medium-spec-then-challenge.
+Why: F-49; the owner answered four questions on 2026-11-18, all recommended, and a fifth after the challenger pass: check declared guards, no found-not-declared lines.
+Proof: the challenger's SOUND WITH CHANGES (3 MAJOR, 3 MINOR) checked by hand before folding: foreign mode's .agent is the owner's external memory (docs/02-design.md), a clone shipping .agent/ is the untrusted case, cobot-memory trust prints trusted:/untrusted:; spec 184 lines.
+Open: none before the build.
+Next: owner reviews; then T01.
+verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · challenger pass

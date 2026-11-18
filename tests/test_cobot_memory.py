@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 from datetime import date
@@ -469,7 +470,7 @@ def test_cli_journalAdd_takesTheArgumentAndNeverWaitsOnATerminal(memory, repo, c
     assert memory.main(["journal", "add", entry]) == 0
     assert "appended" in capsys.readouterr().out
     assert memory.Memory().journal_entries()[0][0] == "2026-05-06"
-    assert memory.main(["journal", "add"]) == 0
+    assert memory.main(["journal", "add"]) == 1  # an invalid entry stops a chained commit (F-41)
     assert "must start with" in capsys.readouterr().out
     assert memory.main(["learn", "--dry-run", '{"topic": "x", "lines": []}']) == 0
 
@@ -861,6 +862,86 @@ def test_stamp_untrustedMemory_missingWithoutReadingJournal(memory, repo):
     (mem.dir).mkdir(exist_ok=True)
     (mem.dir / "JOURNAL.md").write_text("verified: 0000000 · <script>evil</script>\n")
     assert memory.cmd_stamp(mem) == "missing — untrusted memory"
+
+
+# ---------------------------------------------------------------- one commit per change (story 1)
+
+GOOD_ENTRY = "## 2026-11-18 — x\nChanged: a\nWhy: b\nProof: c\n"
+
+
+def tree_stamped(memory, repo, capsys):
+    """Code staged, the key taken, the journal written with it, one commit of both."""
+    mem, _ = stamped(memory, repo, "Proof: before")
+    (repo / "src").mkdir()
+    (repo / "src" / "main.py").write_text("print(1)\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    assert memory.main(["stamp", "--tree"]) == 0
+    key = capsys.readouterr().out.strip()
+    assert re.fullmatch(r"tree [0-9a-f]{40}", key), key
+    entry = GOOD_ENTRY + f"verified: {key} · pytest\n"
+    assert memory.main(["journal", "add", entry]) == 0
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "code and journal"], check=True)
+    return mem
+
+
+def test_stampTree_oneCommitOfCodeAndJournal_ok(memory, repo, capsys):
+    mem = tree_stamped(memory, repo, capsys)
+    assert memory.cmd_stamp(mem).startswith("ok ")
+
+
+def test_stampTree_survivesGcAndDocsAfter_codeAfterMisses(memory, repo, capsys):
+    mem = tree_stamped(memory, repo, capsys)
+    subprocess.run(["git", "-C", str(repo), "gc", "-q", "--prune=now"], check=True)
+    assert memory.cmd_stamp(mem).startswith("ok ")
+    add_commit(repo, "docs/x.md")
+    assert memory.cmd_stamp(mem).startswith("ok ")
+    add_commit(repo, "src/other.py")
+    assert memory.cmd_stamp(mem) == "missing — HEAD moved since the stamp"
+
+
+def test_stampTree_freshClone_ok(memory, repo, capsys, tmp_path, monkeypatch):
+    mem = tree_stamped(memory, repo, capsys)
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True)
+    journal = (mem.dir / "JOURNAL.md").read_text()
+    key = re.search(r"verified: tree ([0-9a-f]{40})", journal).group(1)
+    assert memory.tree_key(clone, "HEAD", foreign=False) == key
+
+
+def test_stampTree_untrackedOrUnstagedCode_notReady(memory, repo, capsys):
+    stamped(memory, repo, "Proof: before")
+    (repo / "src").mkdir()
+    (repo / "src" / "x.py").write_text("x\n")
+    assert memory.main(["stamp", "--tree"]) == 1
+    assert "stamp: not ready" in capsys.readouterr().out
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    (repo / "src" / "x.py").write_text("y\n")
+    assert memory.main(["stamp", "--tree"]) == 1
+    (repo / "docs").mkdir()
+    (repo / "docs" / "n.md").write_text("n\n")  # an untracked doc is not code
+    subprocess.run(["git", "-C", str(repo), "add", "src"], check=True)
+    assert memory.main(["stamp", "--tree"]) == 0
+
+
+def test_stampTree_foreignMode_keyIsTheWholeTree(memory, repo):
+    commit(repo)
+    whole = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"], capture_output=True, text=True
+    ).stdout.strip()
+    assert memory.tree_key(repo, "HEAD", foreign=True) == whole
+    add_commit(repo, "docs/x.md")
+    assert memory.tree_key(repo, "HEAD", foreign=True) != whole  # foreign mode: an exact tree
+
+
+def test_journalAdd_invalidEntry_exitsOne_andCheckWritesNothing(memory, repo, capsys):
+    stamped(memory, repo, "Proof: before")
+    mem = memory.Memory()
+    before = (mem.dir / "JOURNAL.md").read_text()
+    assert memory.main(["journal", "add", "## not a date\nChanged: x"]) == 1
+    assert memory.main(["journal", "add", "--check", GOOD_ENTRY]) == 0
+    assert "journal: valid" in capsys.readouterr().out
+    assert (mem.dir / "JOURNAL.md").read_text() == before
 
 
 # ---------------------------------------------------------------- never-push rules at foreign init (R2)

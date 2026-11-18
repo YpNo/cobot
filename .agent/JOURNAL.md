@@ -281,3 +281,11 @@ Proof: the brief is at its budget by design (build_brief fills the room), so it 
 Open: the revision header was set with sed -i instead of the Edit tool (owner rule broken, reported); F-35, F-39, F-49 stay their own specs.
 Next: owner reviews; then build from T01 on feat/memory-and-ship.
 verified: 3bff15e · challenger pass, gate dry runs, scratch git checks
+
+## 2026-11-18 — memory-and-ship T01: one commit per verified change
+Changed: cobot-memory: tree_key (the tree with its root doc entries out, rebuilt by git mktree; the whole tree in foreign mode), stamp_readiness, stamp --tree, the tree form in STAMP_RE and cmd_stamp; journal add exits 1 on an invalid entry and takes --check; _cobot_common.git gains stdin; wrap step 6 and build step 5 name the one-commit flow; tests (test_cobot_memory story 1 block, test_workflow_skills); test_cli_journalAdd now expects 1 for an empty entry (the F-41 bug it pinned).
+Why: F-41, story 1 of spec memory-and-ship (owner answer: one commit, tree stamp); challenger 1 and 2: a written tree is pruned by gc, and foreign mode has no journal to add.
+Proof: tests first (six failing); the key survives git gc --prune=now and holds in a fresh clone; untracked or unstaged code is not ready, an untracked doc is; full suite 3409 passed, 98.51 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; the gate is silent on stamp --tree and journal add --check. This entry is the first committed with its code under the new flow.
+Open: T02–T07 of the spec; CHANGELOG and decision 31 come in T07.
+Next: T02, the Noticed parking.
+verified: tree c9e1c976796e57d72ab8223904f085d328d658d4 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

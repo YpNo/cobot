@@ -42,7 +42,8 @@ verified commands, run `/code-review low` for small, then one journal line throu
 4. A builder that fails the same check twice hands back: decide yourself whether to fix inline,
    split the task, or stop and ask the owner. Never let a builder loop.
 5. After a task group (a lane, or three tasks): one journal entry (`Changed / Why / Proof / Open /
-   Next`) through `cobot-memory journal add`.
+   Next`) through `cobot-memory journal add`, committed with the task's code in one commit when
+   it carries a stamp (`cobot-memory stamp --tree`, as wrap's journal step does).
 6. Never push, tag or open anything outward from here; the PR belongs to `/cobot:wrap`.
 
 When every task is ticked, say so and hand over to `/cobot:wrap`.

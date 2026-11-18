@@ -1,5 +1,5 @@
 {
-  "description": "Rules gate on every governed call (never widens, blocks on failure), the builder report check after each Agent call (blocks a report without command and exit code), and the SessionStart brief (protocol, rule counts, trusted memory).",
+  "description": "Rules gate on every governed call (never widens, blocks on failure), the builder report check where each host delivers the report (after an Agent call, or on a background builder's hand-back; sends back a report without command and exit code once, then lets it through marked UNPROVEN), and the SessionStart brief (protocol, rule counts, trusted memory).",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/gate.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^SubagentHandback$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/report.sh\" handback",
             "timeout": 10
           }
         ]

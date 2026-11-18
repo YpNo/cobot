@@ -23,7 +23,9 @@ named in the default layer, and an owner or project ``ask`` outranks both.
 from __future__ import annotations
 
 import difflib
+import fcntl
 import fnmatch
+import hashlib
 import itertools
 import json
 import os
@@ -4690,26 +4692,140 @@ def noticed_items(report: str) -> list[str]:
     return []
 
 
-def park_noticed(items: list[str], cwd: str | None) -> None:
+def park_noticed(items: list[str], cwd: str | None, wait: bool = True) -> None:
     """Hand the items to ``cobot-memory noticed add`` in the session's checkout; never raises: a
-    report hook must not strand a session over its notices."""
+    report hook must not strand a session over its notices. A hook passes ``wait=False``: the park
+    runs detached, so it can never push the hook past its timeout and lose the decision."""
+    argv = [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "noticed", "add"]
+    text = "\n".join(items) + "\n"
     try:
-        subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "noticed", "add"],
-            cwd=cwd or None,
-            input="\n".join(items) + "\n",
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
+        if wait:
+            subprocess.run(  # noqa: S603 - fixed argv, no shell
+                argv, cwd=cwd or None, input=text, capture_output=True, text=True, timeout=5, check=False
+            )
+            return
+        child = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            argv, cwd=cwd or None, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, text=True, start_new_session=True,
+        )  # fmt: skip
+        child.stdin.write(text)
+        child.stdin.close()
     except Exception:  # noqa: BLE001, S110 - parking is best effort; wrap reads what landed
         pass
 
 
-def report(stdin: str) -> str | None:
-    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything
-    odd); park the ``Noticed:`` items of a report that passes."""
+# ---------------------------------------------------------------- builder reports in every host
+
+UNPROVEN = "UNPROVEN: "  # what the orchestrator sees on a report let through without proof
+UNPROVEN_CONTEXT = "UNPROVEN: the builder's report has no command and exit code; do not tick its task"
+REPORT_STATE_DAYS = 7
+
+
+def report_state_path(session: str) -> Path:
+    return data_dir().parent / "reports" / f"{session}.json"
+
+
+def load_report_state(path: Path) -> dict:
+    """``{"refused": [keys], "allowed": [key:digest]}``; empty on any defect, so a broken or planted
+    file never switches the check off."""
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    state = state if isinstance(state, dict) else {}
+    lists = {key: state.get(key) for key in ("refused", "allowed")}
+    return {
+        key: [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+        for key, value in lists.items()
+    }
+
+
+def save_report_state(path: Path, state: dict) -> None:
+    """Through a temporary file and a rename (the temporary never outlives a failure); session files
+    older than a week are pruned, and a pruning race is nobody's error."""
+    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(state), encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    try:
+        cutoff = time.time() - REPORT_STATE_DAYS * 86400
+        for old in [*path.parent.glob("*.json"), *path.parent.glob("*.tmp"), *path.parent.glob("*.lock")]:
+            if old.stem.split(".")[0] != path.stem and old.stat().st_mtime < cutoff:
+                old.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple[str, list[str]]:
+    """``allow``, ``deny`` or ``unproven`` for one builder report, wherever it was delivered, and the
+    notices to park. ``key`` names the builder (its agent id, or the call's tool_use_id). The state
+    is read, decided and written under one lock, so parallel builders keep each other's records. A
+    report this builder already had let through is not judged again; a first failure is refused
+    once; a second failure, or one whose refusal cannot be recorded, goes through marked unproven."""
+    digest = hashlib.sha256(text.removeprefix(UNPROVEN).encode()).hexdigest()
+    path = report_state_path(session) if isinstance(session, str) and SESSION_RE.match(session) else None
+    try:
+        if not key or not path:
+            raise OSError("no builder or session to record against")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.with_suffix(".lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            state = load_report_state(path)
+            if f"{key}:{digest}" in state["allowed"]:
+                return "allow", []
+            ok, why = check_report(text)
+            verdict = "allow" if ok else "unproven" if key in state["refused"] else "deny"
+            if verdict == "deny":
+                state["refused"].append(key)
+            else:  # let through, proven or marked: a later path does not judge it again
+                state["allowed"].append(f"{key}:{digest}")
+            save_report_state(path, state)
+    except OSError:
+        ok, why = check_report(text)
+        verdict = "allow" if ok else "unproven"  # a refusal that cannot be recorded is never made
+    log_event({"tool": "report", "head": agent_type, "decision": verdict, "reason": why})
+    items = noticed_items(text) if verdict != "deny" else []
+    if verdict == "unproven":
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "")[:120]
+        items.insert(0, f"unproven report from {agent_type}: {first}")
+    return verdict, items
+
+
+def handback(stdin: str, wait: bool = True) -> str | None:
+    """PreToolUse on SubagentHandback: the report a background builder hands back (the desktop app,
+    probe of 2026-11-18). A failing first report is denied, so the builder works again; a second is
+    let through with its message marked ``UNPROVEN:``. Anything odd allows."""
+    try:
+        payload = json.loads(stdin)
+        agent_type = str(payload.get("agent_type", ""))
+        if payload.get("tool_name") != "SubagentHandback" or not BUILDER_TYPE_RE.match(agent_type):
+            return None
+        tool_input = payload.get("tool_input")
+        if not isinstance(tool_input, dict) or not isinstance(tool_input.get("message"), str):
+            return None
+        key = str(payload.get("agent_id") or "")
+        verdict, items = judge_report(tool_input["message"], agent_type, key, payload.get("session_id"))
+        if items:
+            park_noticed(items, payload.get("cwd"), wait)
+    except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
+        print(f"cobot report: unreadable hand-back ({type(error).__name__}); allowing", file=sys.stderr)
+        return None
+    if verdict == "deny":
+        decision = {"permissionDecision": "deny", "permissionDecisionReason": REPORT_BLOCK_REASON}
+    elif verdict == "unproven":
+        marked = {**tool_input, "message": UNPROVEN + tool_input["message"]}
+        decision = {"permissionDecision": "allow", "updatedInput": marked}
+    else:
+        return None
+    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", **decision}})
+
+
+def report(stdin: str, wait: bool = True) -> str | None:
+    """PostToolUse on Agent: a foreground builder's report (the CLI), judged through the same state as
+    the hand-back, so a report already let through is not judged twice. The builder is named by the
+    result's agentId, else by the call's tool_use_id. Anything odd allows."""
     try:
         payload = json.loads(stdin)
         if payload.get("tool_name") != "Agent":
@@ -4719,19 +4835,21 @@ def report(stdin: str) -> str | None:
             return None
         response = payload.get("tool_response")
         if isinstance(response, dict) and response.get("status") == "async_launched":
-            return None
-        text = response_text(response)
-        ok, why = check_report(text)
-        log_event({"tool": "Agent", "head": subagent, "decision": None if ok else "block", "reason": why})
-        items = noticed_items(text) if ok else []
+            return None  # the hand-back's PreToolUse judges it (probe of 2026-11-18)
+        agent_id = str(response.get("agentId") or "") if isinstance(response, dict) else ""
+        key = agent_id or str(payload.get("tool_use_id") or "")
+        verdict, items = judge_report(response_text(response), subagent, key, payload.get("session_id"))
         if items:
-            park_noticed(items, payload.get("cwd"))
+            park_noticed(items, payload.get("cwd"), wait)
     except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
         print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
         return None
-    if ok:
-        return None
-    return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+    if verdict == "deny":
+        return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+    if verdict == "unproven":
+        context = {"hookEventName": "PostToolUse", "additionalContext": UNPROVEN_CONTEXT}
+        return json.dumps({"hookSpecificOutput": context})
+    return None
 
 
 def hook_output(decision: str, reason: str) -> str:
@@ -4819,7 +4937,7 @@ def gate(stdin: str) -> str | None:
 OFFERED_ROWS = frozenset({"ask Bash(git commit*)", "ask Bash(git rebase*)"})
 OFFER_AFTER = 3  # the ask that names the line: two were shown before it
 ASK_STATE_DAYS = 7
-SESSION_RE = re.compile(r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+SESSION_RE = re.compile(r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z")  # \Z: no trailing newline
 
 
 def ask_state_path(session: str) -> Path:
@@ -5116,8 +5234,8 @@ def main(argv: list[str]) -> int:
         if output:
             print(output)
         return 0
-    if command == "report":
-        output = report(sys.stdin.read())
+    if command in ("report", "handback"):
+        output = (report if command == "report" else handback)(sys.stdin.read(), wait=False)
         if output:
             print(output)
         return 0

@@ -353,3 +353,11 @@ Proof: the Claude Code hooks and sub-agents docs read through the docs agent (Su
 Open: the probe needs the owner to add a hook to a test project's .claude/settings.local.json and run one desktop session; agy not probed.
 Next: owner reviews; then T01, the probe.
 verified: tree c3bb687429dc6b4467d01ce9f01cc71ac65393ea · challenger pass, docs read
+
+## 2026-11-18 — T02 builder-proof-hosts: the hand-back is checked, one shared state
+Changed: plugins/cobot/hooks/hooks.json (PreToolUse on ^SubagentHandback$ runs report.sh handback); report.sh takes the mode as its argument, every failure still allows; cobot-rules: handback(), judge_report(text, agent_type, key, session) shared with report(), the per-session state in data_dir().parent/reports/<session>.json (refusals by key, allowed entries as key:sha256, written under an flock through a temporary file and a rename, a week kept, a bad file read as empty), one refusal then let through with UNPROVEN: in the message (updatedInput) or as additionalContext on the PostToolUse path, Noticed items parked detached from the hooks; report() keys by agentId, else tool_use_id; SESSION_RE anchored with \Z.
+Why: F-35; the T01 probe showed the desktop app delivers a background builder's report only through the hand-back, that a deny reaches the builder and that updatedInput reaches the orchestrator.
+Proof: tests first; the T02 review's 4 HIGH (an allowed id waving through later reports, the parallel race, a bad state disabling the check, no agentId losing the block), 2 MEDIUM (digest-only matching, a slow park timing the hook out) and 3 LOW (temporary files, the pruning race, a trailing newline in the session id) each reproduced as a failing test, then fixed; full suite 3497 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: LOW 11 accepted: a resumed session with a new id starts a fresh state, so a builder may be refused once more. probe/ is excluded locally in .git/info/exclude; remove the line with the worktree.
+Next: T04, the six skills, build step 3 and check-plugin.
+verified: tree b92df5884f2278cc6e1f3eb0a45ac0947f3e0ecc · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, T02 review folded

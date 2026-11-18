@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -1443,15 +1444,146 @@ Deps added: none
 """
 
 
-def agent_payload(subagent: str, content, status: str = "completed") -> str:
+REPORT_SESSION = "5aeb587b-beb1-4253-ad0b-9502492f6bfe"
+
+
+REAL_PARK = {}
+
+
+@pytest.fixture(autouse=True)
+def report_state(rules, tmp_path, monkeypatch):
+    """Every test's report and ask state in its own data folder, never the owner's, and notices
+    never parked into the checkout the tests run in (a test that wants them stubs its own)."""
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    REAL_PARK.setdefault("park", rules.park_noticed)
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd, wait=True: None)
+    return tmp_path / "share" / "cobot" / "reports"
+
+
+def agent_payload(subagent: str, content, status: str = "completed", agent_id: str = "a1") -> str:
     return json.dumps(
         {
             "hook_event_name": "PostToolUse",
+            "session_id": REPORT_SESSION,
             "tool_name": "Agent",
             "tool_input": {"subagent_type": subagent, "prompt": "T1"},
-            "tool_response": {"status": status, "content": content},
+            "tool_response": {"status": status, "content": content, "agentId": agent_id},
         }
     )
+
+
+def handback_payload(message, agent_type="cobot:builder", agent_id="h1", session=REPORT_SESSION) -> str:
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": session,
+            "tool_name": "SubagentHandback",
+            "agent_type": agent_type,
+            "agent_id": agent_id,
+            "tool_input": {"message": message},
+        }
+    )
+
+
+def handback_answer(rules, payload):
+    out = rules.handback(payload)
+    return json.loads(out)["hookSpecificOutput"] if out else None
+
+
+def test_handback_passingReport_allowedAndParked(rules, monkeypatch):
+    # spec builder-proof-hosts, story 2
+    parked = []
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd, wait=True: parked.append(items))
+    assert handback_answer(rules, handback_payload(GOOD_REPORT + "Noticed:\n- x\n")) is None
+    assert parked == [["x"]]
+
+
+def test_handback_firstUnprovenDenied_secondLetThroughMarked(rules, monkeypatch):
+    # stories 2 and 4: one refusal, then through, marked UNPROVEN in what the orchestrator gets
+    parked = []
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd, wait=True: parked.append(items))
+    first = handback_answer(rules, handback_payload(PROMISE_REPORT))
+    assert first["permissionDecision"] == "deny" and "exit <n>" in first["permissionDecisionReason"]
+    second = handback_answer(rules, handback_payload(PROMISE_REPORT))
+    assert second["permissionDecision"] == "allow"
+    assert second["updatedInput"]["message"].startswith("UNPROVEN: ")
+    assert any("unproven report from cobot:builder" in item for items in parked for item in items)
+    other = handback_answer(rules, handback_payload(PROMISE_REPORT, agent_id="h2"))
+    assert other["permissionDecision"] == "deny"  # another builder starts at zero
+
+
+def test_handback_nonBuilderOrMalformed_untouched(rules):
+    assert handback_answer(rules, handback_payload(PROMISE_REPORT, agent_type="cobot:consultant")) is None
+    assert rules.handback("not json") is None
+    assert rules.handback(json.dumps({"tool_name": "SubagentHandback"})) is None
+
+
+@pytest.mark.parametrize(
+    "payload_args",
+    [{"agent_id": ""}, {"session": "not-a-uuid"}],
+)
+def test_handback_refusalCannotBeRecorded_failsOpenMarked(rules, payload_args):
+    # story 4: never denied twice; no agent id or session means the first failure goes through
+    answer = handback_answer(rules, handback_payload(PROMISE_REPORT, **payload_args))
+    assert answer["permissionDecision"] == "allow"
+    assert answer["updatedInput"]["message"].startswith("UNPROVEN: ")
+
+
+def test_handback_unwritableState_failsOpenMarked(rules, report_state):
+    report_state.parent.mkdir(parents=True)
+    report_state.write_text("a file where the folder should be")
+    answer = handback_answer(rules, handback_payload(PROMISE_REPORT))
+    assert answer["permissionDecision"] == "allow"
+    assert answer["updatedInput"]["message"].startswith("UNPROVEN: ")
+
+
+def test_report_reportTheHandbackLetThrough_notBlockedAgain(rules):
+    # story 3: the CLI hands back too; PostToolUse must not judge the same report a second time
+    handback_answer(rules, handback_payload(PROMISE_REPORT, agent_id="a1"))
+    handback_answer(rules, handback_payload(PROMISE_REPORT, agent_id="a1"))
+    out = rules.report(agent_payload("cobot:builder", "UNPROVEN: " + PROMISE_REPORT, agent_id="a1"))
+    assert out is None or "block" not in out
+
+
+def test_judgeReport_allowedBuilder_laterReportStillJudged(rules):
+    # review H1: an allowed id does not wave through that builder's next, different report
+    assert rules.judge_report(GOOD_REPORT, "cobot:builder", "r1", REPORT_SESSION)[0] == "allow"
+    assert rules.judge_report("done, trust me", "cobot:builder", "r1", REPORT_SESSION)[0] == "deny"
+
+
+def test_judgeReport_badStateFile_isAnEmptyState(rules, report_state):
+    # review H3: a planted or broken state never switches the check off
+    report_state.mkdir(parents=True)
+    (report_state / f"{REPORT_SESSION}.json").write_text('{"refused": 5, "allowed": "x"}')
+    assert rules.judge_report(PROMISE_REPORT, "cobot:builder", "b1", REPORT_SESSION)[0] == "deny"
+
+
+def test_judgeReport_stateUnderLock_noTmpLeft(rules, report_state):
+    # review H2 and L8: the state is written under a lock; no temporary file stays behind
+    rules.judge_report(PROMISE_REPORT, "cobot:builder", "l1", REPORT_SESSION)
+    assert (report_state / f"{REPORT_SESSION}.lock").exists()
+    assert not list(report_state.glob("*.tmp"))
+
+
+def test_report_noAgentId_toolUseIdKeys_firstFailureStillBlocks(rules):
+    # review H4 and M5: a CLI result without agentId keys on tool_use_id, never on the text alone
+    payload = json.loads(agent_payload("cobot:builder", PROMISE_REPORT))
+    del payload["tool_response"]["agentId"]
+    payload["tool_use_id"] = "toolu_1"
+    assert json.loads(rules.report(json.dumps(payload)))["decision"] == "block"
+    payload["tool_use_id"] = "toolu_2"  # another call with the same words is judged on its own
+    assert json.loads(rules.report(json.dumps(payload)))["decision"] == "block"
+
+
+def test_sessionRe_trailingNewline_refused(rules):
+    assert not rules.SESSION_RE.match(REPORT_SESSION + "\n")
+
+
+def test_report_secondUnprovenReport_letThroughWithContext(rules):
+    first = json.loads(rules.report(agent_payload("cobot:builder", PROMISE_REPORT, agent_id="p1")))
+    assert first["decision"] == "block"
+    second = json.loads(rules.report(agent_payload("cobot:builder", PROMISE_REPORT, agent_id="p1")))
+    assert "UNPROVEN" in second["hookSpecificOutput"]["additionalContext"]
 
 
 def test_report_builderWithExitCodes_allows(rules):
@@ -1479,7 +1611,7 @@ def test_noticedItems_bulletsOrInline_noneIsNothing(rules, report, items):
 
 def test_report_passingReportWithNotices_parksThemInTheSessionCheckout(rules, monkeypatch):
     parked = []
-    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd: parked.append((items, cwd)))
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd, wait=True: parked.append((items, cwd)))
     payload = json.loads(agent_payload("cobot:builder", GOOD_REPORT + "Noticed:\n- x\n"))
     payload["cwd"] = "/work/repo"
     assert rules.report(json.dumps(payload)) is None
@@ -1488,7 +1620,7 @@ def test_report_passingReportWithNotices_parksThemInTheSessionCheckout(rules, mo
 
 def test_report_blockedOrAsyncReport_parksNothing(rules, monkeypatch):
     parked = []
-    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd: parked.append(items))
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd, wait=True: parked.append(items))
     rules.report(agent_payload("cobot:builder", PROMISE_REPORT + "Noticed:\n- x\n"))
     rules.report(agent_payload("cobot:builder", "Noticed:\n- x\n", status="async_launched"))
     assert parked == []
@@ -1496,7 +1628,24 @@ def test_report_blockedOrAsyncReport_parksNothing(rules, monkeypatch):
 
 def test_parkNoticed_failureNeverRaises(rules, monkeypatch):
     monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
-    rules.park_noticed(["x"], "/nonexistent")
+    REAL_PARK["park"](["x"], "/nonexistent")  # the real function, not the fixture's stub
+    REAL_PARK["park"](["x"], "/nonexistent", wait=False)
+
+
+def test_parkNoticed_detached_feedsTheItemsAndReturns(rules, monkeypatch):
+    # review M7: a hook's park runs detached, in its own session, so it cannot time the hook out
+    calls = []
+
+    class Child:
+        def __init__(self, argv, **kwargs):
+            calls.append(kwargs)
+            self.stdin = io.StringIO()
+            self.stdin.close = lambda: calls.append(self.stdin.getvalue())
+
+    monkeypatch.setattr(rules.subprocess, "Popen", Child)
+    REAL_PARK["park"](["a", "b"], "/work/repo", wait=False)
+    assert calls[0]["start_new_session"] is True and calls[0]["cwd"] == "/work/repo"
+    assert calls[1] == "a\nb\n"
 
 
 def test_report_checksNoneWithReason_allows(rules):
@@ -1519,7 +1668,8 @@ def test_report_contentAsBlocks_isRead(rules):
     blocks = [{"type": "text", "text": GOOD_REPORT}]
     assert rules.report(agent_payload("cobot:typescript-builder", blocks)) is None
     blocks = [{"type": "text", "text": PROMISE_REPORT}]
-    assert json.loads(rules.report(agent_payload("cobot:typescript-builder", blocks)))["decision"] == "block"
+    out = rules.report(agent_payload("cobot:typescript-builder", blocks, agent_id="a2"))  # another builder
+    assert json.loads(out)["decision"] == "block"
 
 
 def test_report_nonBuilderAgent_isIgnored(rules):
@@ -1545,6 +1695,30 @@ def test_check_report_exitMarkerForms(rules):
         assert ok, marker
     ok, why = rules.check_report("Checks:\n- make test exit 0\n")
     assert not ok and "command" in why
+
+
+def test_report_shim_handbackMode_deniesAndNeverFails():
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN)}
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM), "handback"],
+        input=handback_payload(PROMISE_REPORT, agent_id="shim1"),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert run.returncode == 0
+    assert json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    run = subprocess.run(
+        ["/bin/sh", str(REPORT_SHIM), "handback"], input="garbage", capture_output=True, text=True, env=env
+    )
+    assert run.returncode == 0 and run.stdout == "" and "allowing" in run.stderr
+
+
+def test_hooksJson_handbackEntry_runsTheShimInHandbackMode():
+    hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
+    entry = next(h for h in hooks if h["matcher"] == "^SubagentHandback$")
+    assert entry["hooks"][0]["command"].endswith('report.sh" handback')
 
 
 def test_report_shim_blocksAndNeverFails(tmp_path):

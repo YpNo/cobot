@@ -35,6 +35,7 @@ AGY_MANIFEST = ".antigravity-plugin/plugin.json"  # agy reads it first and ignor
 MANIFEST_AGREE = ("name", "version", "description", "license", "repository")
 CLAUDE_AGENTS = "claude-agents"  # Claude Code's agents, listed by file; agents/ holds agy's
 AGY_AGENTS = "agents"
+AGENT_DEFS = "agent-defs"
 # strict YAML (agy parses frontmatter with a strict parser; Claude Code tolerates more)
 KEY_LINE = re.compile(r"([A-Za-z0-9_-]+):(?: (.*))?")
 BLOCK_SCALAR = re.compile(r"[|>][+-]?")
@@ -171,7 +172,7 @@ def agent_list_problems(plugin: Path) -> list[str]:
 
 
 def twin_problems(plugin: Path) -> list[str]:
-    """Every Claude Code agent has its agy twin and the reverse (scripts/sync-agents.py writes them)."""
+    """Every Claude Code agent has its agy twin and canonical agent-def when agent-defs/ is present."""
     claude = {p.stem for p in (plugin / CLAUDE_AGENTS).glob("*.md")}
     agy = {p.stem for p in (plugin / AGY_AGENTS).glob("*.md")}
     problems = [
@@ -181,6 +182,15 @@ def twin_problems(plugin: Path) -> list[str]:
     problems += [
         f"{plugin / AGY_AGENTS / name}.md: no {CLAUDE_AGENTS}/{name}.md" for name in sorted(agy - claude)
     ]
+    defs_dir = plugin / AGENT_DEFS
+    if defs_dir.is_dir():
+        defs = {p.stem for p in defs_dir.glob("*.md")}
+        for def_file in sorted(defs_dir.glob("*.md")):
+            problems.extend(strict_yaml(def_file))
+        for name in sorted((claude | agy) - defs):
+            problems.append(f"{defs_dir / name}.md: missing canonical definition")
+        for name in sorted(defs - (claude & agy)):
+            problems.append(f"{defs_dir / name}.md: out of sync (python3 scripts/sync-agents.py)")
     return problems
 
 

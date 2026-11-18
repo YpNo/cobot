@@ -74,30 +74,22 @@ def remove_path(target: Path) -> None:
 
 def load_overrides(host: str, explicit: str | None, skip_user: bool) -> dict[str, str]:
     """Validated agent -> model overrides for ``host``; invalid entries raise ValueError."""
-    if explicit:
-        path = Path(explicit)
-    elif skip_user:
-        return {}
-    else:
-        path = common.cobot_config_dir() / "models.json"
-        if not path.is_file():
-            return {}
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    mapping = raw.get(host, {}) if isinstance(raw, dict) else {}
-    if not isinstance(mapping, dict):
-        raise ValueError(f"{path}: '{host}' must map agent names to model names")
     allowed = AGENT_TIERS if host == "agy" else CLAUDE_MODELS
-    for agent, model in mapping.items():
-        if not isinstance(agent, str) or model not in allowed:
-            raise ValueError(f"{path}: invalid model {model!r} for {agent!r} (allowed: {sorted(allowed)})")
-    return dict(mapping)
+    return common.resolve_model_overrides(
+        host,
+        allowed,
+        explicit_file=Path(explicit) if explicit else None,
+        skip_user=skip_user,
+    )
 
 
 def apply_model_overrides(dest: Path, host: str, overrides: dict[str, str]) -> None:
     folder = dest / ("agents" if host == "agy" else "claude-agents")
-    for agent, model in overrides.items():
-        agent_file = folder / f"{agent}.md"
-        if agent_file.is_file():
+    wildcard = overrides.get("*")
+    targets = sorted(folder.glob("*.md")) if folder.is_dir() else []
+    for agent_file in targets:
+        model = overrides.get(agent_file.stem, wildcard)
+        if model:
             updated = MODEL_LINE.sub(f"model: {model}", agent_file.read_text(encoding="utf-8"), count=1)
             agent_file.write_text(updated, encoding="utf-8")
 

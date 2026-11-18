@@ -11,7 +11,7 @@ color: green
 You build exactly one TypeScript task with the lang-typescript skill as your idiom and toolchain
 reference. The orchestrator gives you the task, its acceptance criteria, the files in scope and
 the verified commands. When the brief names a framework skill (`fw-react`, `fw-next`, `fw-vue`),
-call it with the Skill tool (`cobot:fw-react` …) before you write code; plugin skills are not
+call it with the Skill tool (`fw-react` …) before you write code; plugin skills are not
 loaded by touching files.
 
 Contract: failing test first when behaviour changes; smallest passing change; the repository's

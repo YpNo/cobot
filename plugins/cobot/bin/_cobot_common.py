@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -128,6 +129,58 @@ def owner_rules_path() -> Path:
     flat = xdg / "cobot.rules"
     nested = xdg / "cobot" / "cobot.rules"
     return flat if flat.exists() and not nested.exists() else nested
+
+
+AGENT_NAME_RE = re.compile(r"^\*|[a-z][a-z0-9-]*$")
+
+
+def parse_models_file(path: Path, host: str, allowed: frozenset[str]) -> dict[str, str]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    mapping = raw.get(host, {}) if isinstance(raw, dict) else {}
+    if not isinstance(mapping, dict):
+        raise ValueError(f"{path}: '{host}' must map agent names to model names")
+    for agent, model in mapping.items():
+        if not isinstance(agent, str) or not AGENT_NAME_RE.fullmatch(agent) or model not in allowed:
+            raise ValueError(f"{path}: invalid model {model!r} for {agent!r} (allowed: {sorted(allowed)})")
+    return dict(mapping)
+
+
+def parse_models_env(spec: str, allowed: frozenset[str]) -> dict[str, str]:
+    """Parse ``COBOT_AGENT_MODELS`` (``consultant=pro,builder=pro`` or global ``pro`` / ``*=pro``)."""
+    entries: dict[str, str] = {}
+    for item in (part.strip() for part in spec.split(",") if part.strip()):
+        agent, sep, model = item.partition("=")
+        if not sep:
+            agent, model = "*", agent
+        agent, model = agent.strip(), model.strip()
+        if not AGENT_NAME_RE.fullmatch(agent) or model not in allowed:
+            raise ValueError(
+                f"COBOT_AGENT_MODELS: invalid model {model!r} for {agent!r} (allowed: {sorted(allowed)})"
+            )
+        entries[agent] = model
+    return entries
+
+
+def resolve_model_overrides(
+    host: str,
+    allowed: frozenset[str],
+    *,
+    agent_dir: Path | None = None,
+    trusted: bool = False,
+    explicit_file: Path | None = None,
+    skip_user: bool = False,
+) -> dict[str, str]:
+    """Per-agent model overrides (project < owner < explicit file < COBOT_AGENT_MODELS)."""
+    merged: dict[str, str] = {}
+    if trusted and agent_dir is not None and (agent_dir / "models.json").is_file():
+        merged.update(parse_models_file(agent_dir / "models.json", host, allowed))
+    if not skip_user and (cobot_config_dir() / "models.json").is_file():
+        merged.update(parse_models_file(cobot_config_dir() / "models.json", host, allowed))
+    if explicit_file is not None:
+        merged.update(parse_models_file(explicit_file, host, allowed))
+    if env_spec := os.environ.get("COBOT_AGENT_MODELS", "").strip():
+        merged.update(parse_models_env(env_spec, allowed))
+    return merged
 
 
 def data_dir() -> Path:

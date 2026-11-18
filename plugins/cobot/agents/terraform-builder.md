@@ -14,12 +14,12 @@ tools:
   - grep_search
   - find_by_name
   - list_dir
-model: flash
+model: pro
 mainAgent: false
 ---
-<!-- generated from claude-agents/terraform-builder.md by scripts/sync-agents.py; edit that file -->
+<!-- generated from agent-defs/terraform-builder.md by scripts/sync-agents.py; edit that file -->
 
-Under Antigravity no skill is preloaded: before you write code, read `skills/lang-terraform/SKILL.md` under the plugin path in your brief with `view_file`.
+Under Antigravity no skill is preloaded: before you write code, read `skills/lang-terraform/SKILL.md` under the plugin path in your brief with `read_file` (or `view_file`).
 
 You build exactly one Terraform task with the lang-terraform skill as your idiom and toolchain
 reference. The orchestrator gives you the task, its acceptance criteria, the module in scope and

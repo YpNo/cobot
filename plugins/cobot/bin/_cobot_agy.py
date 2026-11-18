@@ -43,10 +43,35 @@ ORCHESTRATION_TOOLS = frozenset(
 )
 AGY_TOOLS = READ_TOOLS | FILE_TOOLS | ORCHESTRATION_TOOLS | {"run_command", "call_mcp_tool"}
 
-# Claude model -> agy tier. agy accepts only tiers (a model name skips the agent) and ignores
-# effort, so an agent that relies on effort gets a stronger tier by name.
-CLAUDE_TO_TIER: dict[str, str] = {"sonnet": "flash", "inherit": "inherit"}
-TIER_BY_AGENT: dict[str, str] = {"learner": "pro"}  # effort: high under Claude Code
+# Explicit task-matched tiers under Antigravity (never inherit by default):
+# - pro (Gemini 4 Pro family): adversarial design, security auditing, primary research, language builders
+# - flash (Gemini 3.8 Flash): 8-way parallel domain checklist audits and lightweight generic tasks
+CLAUDE_TO_TIER: dict[str, str] = {"sonnet": "flash", "inherit": "pro", "opus": "pro", "haiku": "flash"}
+DEFAULT_AGENT_TIERS: dict[str, str] = {
+    "auditor": "pro",
+    "builder": "flash",
+    "challenger": "pro",
+    "consultant": "flash",
+    "go-builder": "pro",
+    "learner": "pro",
+    "python-builder": "pro",
+    "rust-builder": "pro",
+    "terraform-builder": "pro",
+    "typescript-builder": "pro",
+}
+TIER_BY_AGENT: dict[str, str] = DEFAULT_AGENT_TIERS
+SWARM_GEMINI4_MODELS: dict[str, str] = {
+    "auditor": "gemini-4-carbon-high",
+    "builder": "gemini-3.8-flash-high",
+    "challenger": "gemini-4-carbon-high",
+    "consultant": "gemini-3.8-flash-high",
+    "go-builder": "gemini-4-hydrogen-high",
+    "learner": "gemini-4-argon-high",
+    "python-builder": "gemini-4-hydrogen-high",
+    "rust-builder": "gemini-4-hydrogen-high",
+    "terraform-builder": "gemini-4-hydrogen-high",
+    "typescript-builder": "gemini-4-hydrogen-high",
+}
 AGENT_TIERS = frozenset({"inherit", "flash", "pro"})  # flash_lite exists; cobot uses none of it
 
 AGENT_FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)

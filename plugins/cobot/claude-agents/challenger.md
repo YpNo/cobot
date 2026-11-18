@@ -1,6 +1,6 @@
 ---
 name: challenger
-description: Red-team reviewer for a spec or design before any code is written. Returns SOUND, or objections ranked BLOCKER / MAJOR / MINOR, each falsifiable with the simplest fix, plus the list of what it checked. Use after /cobot:spec, before tasks start, or on any plan the owner wants attacked.
+description: Red-team reviewer for a spec or design before any code is written. Returns SOUND, or objections ranked BLOCKER / MAJOR / MINOR, each falsifiable with the simplest fix, plus the list of what it checked. Use after /spec, before tasks start, or on any plan the owner wants attacked.
 tools: Read, Grep, Glob
 model: inherit
 effort: high

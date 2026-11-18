@@ -113,3 +113,24 @@ def test_packagePlugin_help_exitsZeroAndWritesNothing(tmp_path: Path) -> None:
     assert "--host" in result.stdout
     assert not out.exists()
     assert PLUGIN.is_dir()
+
+
+def test_packagePlugin_modelOverrides_fromFileAndEnvVar(tmp_path: Path) -> None:
+    models_file = tmp_path / "models.json"
+    models_file.write_text(json.dumps({"agy": {"consultant": "pro", "rust-builder": "flash"}}))
+    out = tmp_path / "cobot"
+    result = run_package("--host", "agy", "--out", str(out), "--models", str(models_file))
+    assert result.returncode == 0, result.stderr
+    assert "model: pro\n" in (out / "agents" / "consultant.md").read_text(encoding="utf-8")
+    assert "model: flash\n" in (out / "agents" / "rust-builder.md").read_text(encoding="utf-8")
+    assert "model: flash\n" in (out / "agents" / "builder.md").read_text(encoding="utf-8")
+
+    # COBOT_AGENT_MODELS env override (single agent or *=pro wildcard)
+    import os
+
+    env = {**os.environ, "COBOT_AGENT_MODELS": "builder=pro,consultant=pro"}
+    out_env = tmp_path / "cobot-env"
+    res_env = run_package("--host", "agy", "--out", str(out_env), "--no-user-models", env=env)
+    assert res_env.returncode == 0, res_env.stderr
+    assert "model: pro\n" in (out_env / "agents" / "builder.md").read_text(encoding="utf-8")
+    assert "model: pro\n" in (out_env / "agents" / "consultant.md").read_text(encoding="utf-8")

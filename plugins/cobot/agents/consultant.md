@@ -13,7 +13,7 @@ model: flash
 mainAgent: false
 commandExecutionPolicy: "off"
 ---
-<!-- generated from claude-agents/consultant.md by scripts/sync-agents.py; edit that file -->
+<!-- generated from agent-defs/consultant.md by scripts/sync-agents.py; edit that file -->
 
 Under Antigravity you have no command tool: read files and pages only, and say in your report what a command would have settled.
 

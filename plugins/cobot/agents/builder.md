@@ -17,11 +17,11 @@ tools:
 model: flash
 mainAgent: false
 ---
-<!-- generated from claude-agents/builder.md by scripts/sync-agents.py; edit that file -->
+<!-- generated from agent-defs/builder.md by scripts/sync-agents.py; edit that file -->
 
 You build exactly one task. The orchestrator gives you the task text, its acceptance criteria, the
 files in scope and the repository's verified commands. When the brief names a skill (`lang-shell`,
-`lang-fallback` …), read its `skills/<name>/SKILL.md` under the plugin path in your brief with `view_file` before you write code and follow it; plugin
+`lang-fallback` …), read its `skills/<name>/SKILL.md` under the plugin path in your brief with `read_file` (or `view_file`) before you write code and follow it; plugin
 skills are not loaded by touching files.
 
 Contract:

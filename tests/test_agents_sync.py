@@ -34,9 +34,31 @@ def test_agents_committedCopies_matchTheSync(sync):
 
 
 def test_agents_everyClaudeAgentHasAnAgyTwin():
+    defs_names = {p.stem for p in (PLUGIN / "agent-defs").glob("*.md")}
     claude_names = {p.stem for p in (PLUGIN / "claude-agents").glob("*.md")}
-    assert claude_names == {p.stem for p in (PLUGIN / "agents").glob("*.md")}
-    assert len(claude_names) == 10  # the auditor joined in spec security-auditor
+    agy_names = {p.stem for p in (PLUGIN / "agents").glob("*.md")}
+    assert defs_names == claude_names == agy_names
+    assert len(defs_names) == 10  # the auditor joined in spec security-auditor
+
+
+def test_agents_taskMatchedDefaultModels_noInheritUnderAgy(sync):
+    expected = {
+        "auditor": "pro",
+        "challenger": "pro",
+        "learner": "pro",
+        "rust-builder": "pro",
+        "go-builder": "pro",
+        "python-builder": "pro",
+        "typescript-builder": "pro",
+        "terraform-builder": "pro",
+        "consultant": "flash",
+        "builder": "flash",
+    }
+    actual = {
+        p.stem: fields(sync, p.read_text(encoding="utf-8"))["model"] for p in (PLUGIN / "agents").glob("*.md")
+    }
+    assert actual == expected
+    assert "inherit" not in actual.values()
 
 
 def test_agents_builderTools_mappedToBothFileToolFamilies_skillDropped(sync):
@@ -70,11 +92,11 @@ def test_agents_readOnlyResearchers_getNoRunCommand_andCommandsOff(sync, name):
     assert "no command tool: read files and pages only" in sync.render(claude(name, "Read, Bash"), name)
 
 
-def test_agents_models_sonnetToFlash_inheritKept_learnerOnPro(sync):
+def test_agents_models_taskTierMappingAndNoInheritDefault(sync):
     assert fields(sync, sync.render(claude("x", "Read"), "x"))["model"] == "flash"
-    assert (
-        fields(sync, sync.render(claude("challenger", "Read", "inherit"), "challenger"))["model"] == "inherit"
-    )
+    assert fields(sync, sync.render(claude("challenger", "Read", "inherit"), "challenger"))["model"] == "pro"
+    assert fields(sync, sync.render(claude("rust-builder", "Read"), "rust-builder"))["model"] == "pro"
+    assert fields(sync, sync.render(claude("consultant", "Read"), "consultant"))["model"] == "flash"
     assert fields(sync, sync.render(claude("learner", "Read"), "learner"))["model"] == "pro"
 
 
@@ -90,15 +112,23 @@ def test_agents_descriptionWithAColon_isQuotedStrictYaml(sync):
         "Names a framework skill, call it with the Skill tool (`cobot:fw-react` …) before you write code.\n",
     ],
 )
-def test_agents_skillToolLine_becomesAViewFileRead(sync, line):
+def test_agents_skillToolLine_becomesReadFileRead(sync, line):
     body = sync.render(claude("x", "Read, Skill", body=line), "x")
     assert "Skill tool" not in body and "cobot:fw-react" not in body
-    assert "read its `skills/<name>/SKILL.md` under the plugin path in your brief with `view_file`" in body
+    expected = (
+        "read its `skills/<name>/SKILL.md` under the plugin path in your brief "
+        "with `read_file` (or `view_file`)"
+    )
+    assert expected in body
 
 
 def test_agents_preloadedSkill_becomesAnExplicitRead(sync):
     body = sync.render(claude("rust-builder", "Read", extra="skills: [lang-rust]\n"), "rust-builder")
-    assert "read `skills/lang-rust/SKILL.md` under the plugin path in your brief with `view_file`" in body
+    expected = (
+        "read `skills/lang-rust/SKILL.md` under the plugin path in your brief "
+        "with `read_file` (or `view_file`)"
+    )
+    assert expected in body
     assert "skills:" not in body.split("---")[1]  # agy's own preload is not relied on
 
 
@@ -116,10 +146,11 @@ def test_agents_everyBodyRewriteStillMatchesAClaudeAgent(sync):
         assert pattern.search(bodies), f"rewrite {pattern.pattern!r} matches no Claude agent any more"
 
 
-@pytest.mark.parametrize("tools, model", [("Read, Teleport", "sonnet"), ("Read", "opus")])
-def test_agents_unknownToolOrModel_failsFast(sync, tools, model):
-    with pytest.raises(ValueError, match="Teleport|opus"):
-        sync.render(claude("x", tools, model), "x")
+def test_agents_unknownToolOrModel_failsFast(sync):
+    with pytest.raises(ValueError, match="Teleport"):
+        sync.render(claude("x", "Read, Teleport", "sonnet"), "x")
+    with pytest.raises(ValueError, match="gpt-4"):
+        sync.render(claude("x", "Read", "gpt-4"), "x")
 
 
 def test_agents_syncWritesThenChecksClean(sync, tmp_path):
@@ -149,7 +180,7 @@ def test_agents_auditorTwin_hasNoCommandTool_andCommandsOff(sync):
     # spec security-auditor, story 1: the auditor runs the consultant's read list, never agy commands
     twin = fields(sync, (PLUGIN / "agents" / "auditor.md").read_text(encoding="utf-8"))
     assert "run_command" not in twin["tools"] and "manage_task" not in twin["tools"]
-    assert twin["commandExecutionPolicy"] == "off" and twin["model"] == "inherit"
+    assert twin["commandExecutionPolicy"] == "off" and twin["model"] == "pro"
     source = sync.claude_fields((PLUGIN / "claude-agents" / "auditor.md").read_text(encoding="utf-8"))
     assert source["model"] == "inherit" and source["effort"] == "high"
 

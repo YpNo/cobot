@@ -26,18 +26,22 @@ verified commands, run `/code-review low` for small, then one journal line throu
      (headplane has `package.json` and `go.mod`) is split into one task per stack, or goes to the
      builder of the files it changes most with the other skill named in the brief. Brief = the
      task row, its acceptance, the files in scope, the verified commands, nothing more (not the
-     whole spec). Every builder call sets `run_in_background: false`: step 3 needs its report.
+     whole spec). Every builder call sets `run_in_background: false` where the host offers it;
+     where a call comes back "Async agent launched", wait for every hand-back: step 3 needs its
+     report.
    - Tasks with disjoint file sets and no mutual deps may run as parallel lanes: at most three
      Agent calls in one message with `isolation: worktree`. You integrate; builders never merge.
 3. On each report: refuse it if `Checks:` lacks a command, an exit code or output; re-run the
    focused check yourself when in doubt. Refuse a `Deps added:` entry the spec does not name
-   (decision 22). Tick the task in the spec (`[x]` or a `done` column).
+   (decision 22). A report that starts with `UNPROVEN:` (the report hook refused it once, then
+   let it through) is never ticked: re-run the task, or ask the owner. Tick the task in the spec
+   (`[x]` or a `done` column).
    When CONTEXT.md's verified table holds only the `none yet` row (a new project), record the
    accepted task's proof commands there with their result and today's date, remove that row,
    run `cobot-memory check`, and print the owner-layer allow lines as onboard step 7 does.
    Items under `Noticed:` never go into the code. The report hook parks them in
-   `.agent/noticed.md` for wrap. Where the `Agent` call came back "Async agent launched", the
-   hook saw no report: pass the hand-back's items to `cobot-memory noticed add` yourself.
+   `.agent/noticed.md` for wrap, from the `Agent` result or the hand-back. Where no hook saw the
+   report (agy), pass its items to `cobot-memory noticed add` yourself.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
    layer allows it; never push from here.

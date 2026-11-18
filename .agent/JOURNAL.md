@@ -361,3 +361,11 @@ Proof: tests first; the T02 review's 4 HIGH (an allowed id waving through later 
 Open: LOW 11 accepted: a resumed session with a new id starts a fresh state, so a builder may be refused once more. probe/ is excluded locally in .git/info/exclude; remove the line with the worktree.
 Next: T04, the six skills, build step 3 and check-plugin.
 verified: tree b92df5884f2278cc6e1f3eb0a45ac0947f3e0ecc · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, T02 review folded
+
+## 2026-11-18 — T04 builder-proof-hosts: the skills say what every host can do
+Changed: the six skills that call Agent (build, consult, ship, security-sweep, wrap, spec) carry "`run_in_background: false` where the host offers it" and "wait for every hand-back"; security-sweep's "every unit's hand-back" reworded to match; build step 3 never ticks a report that starts with `UNPROVEN:` (re-run the task, or ask the owner); build's parking line says the hook parks from the Agent result or the hand-back, and only agy needs the manual noticed add; check-plugin's FOREGROUND rule requires both strings and names each missing one.
+Why: F-35 story 6 and story 4's build rule; the desktop app has no run_in_background, so the wait is the rule that holds there.
+Proof: tests first (five failing: one text test per skill rule, three check-plugin cases); the new check caught two real misses on its first run (spec's capitalised "Wait", ship's phrase split across a line), both fixed; full suite 3502 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: a text check cannot see a negation or a phrase split across lines; accepted in the spec.
+Next: T05, docs, decision 32, CHANGELOG, F-35 closed.
+verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

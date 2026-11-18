@@ -49,7 +49,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    the prompt of `/cobot:consult` step 2 (`${CLAUDE_PLUGIN_ROOT}/skills/consult/SKILL.md`): `gha`
    when workflows change, `gcp` for a Google Cloud module, `kubernetes` for manifests,
    `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Every call sets
-   `run_in_background: false`; agents in one message still run in parallel. Wait for all.
+   `run_in_background: false` where the host offers it; agents in one message still run in
+   parallel. Then wait for every hand-back.
 6. **Fold.** Fold every BLOCKER and MAJOR into the spec yourself. Ask the owner, with the
    challenger's scenario and your recommendation, only to overrule an objection or when the fold
    drops or moves something the owner asked for; write the answer under *Challenger verdict*.

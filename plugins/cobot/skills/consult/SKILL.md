@@ -31,7 +31,8 @@ Arguments: `$ARGUMENTS`. You stay in the main thread; the consultants do the rea
    | `api` | `**/*openapi*.json`, `**/*openapi*.y*ml`, `**/swagger*.json`, `**/*.proto` |
 
 2. **Fan out.** In **one message**, one `Agent` call per domain, `subagent_type: cobot:consultant`,
-   `run_in_background: false`, description `consult <domain>`, prompt (fill the brackets; the
+   `run_in_background: false` where the host offers it (else wait for every hand-back),
+   description `consult <domain>`, prompt (fill the brackets; the
    plugin root is
    `${CLAUDE_PLUGIN_ROOT}`, or the folder two levels above this skill's base directory if the
    variable is not expanded):

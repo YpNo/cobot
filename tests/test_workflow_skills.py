@@ -57,4 +57,21 @@ def test_wrapAndBuild_clearTheParkedNotices():
     wrap = text("wrap")
     assert "cobot-memory noticed list" in wrap and "cobot-memory noticed clear" in wrap
     build = text("build")
-    assert "Async agent launched" in build and "cobot-memory noticed add" in build
+    assert "hand-back" in build and "cobot-memory noticed add" in build
+
+
+AGENT_SKILLS = ("build", "consult", "ship", "security-sweep", "wrap", "spec")
+
+
+def test_agentSkills_carryBothHostStrings():
+    # builder-proof-hosts story 6: the parameter where the host has it, and the wait everywhere
+    for name in AGENT_SKILLS:
+        body = text(name)
+        assert "`run_in_background: false` where the host offers it" in body, name
+        assert "wait for every hand-back" in body, name
+
+
+def test_build_neverTicksAnUnprovenReport():
+    # builder-proof-hosts story 4: the hook's mark stops the tick; re-run or ask
+    build = text("build")
+    assert "`UNPROVEN:`" in build and "never ticked" in build and "ask the owner" in build

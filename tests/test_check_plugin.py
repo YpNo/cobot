@@ -137,8 +137,29 @@ def test_check_skillNamingAnAgentWithoutForegroundFlag_fails(contract, plugin):
     problems = contract.check(plugin)
     assert any("consult" in p and "run_in_background: false" in p for p in problems)
     assert not any("learn" in p for p in problems)
-    skill(plugin, "wrap", "fan-out", body="One `cobot:consultant` (`run_in_background: false`).\n")
+    both = "`run_in_background: false` where the host offers it; wait for every hand-back.\n"
+    skill(plugin, "wrap", "fan-out", body="One `cobot:consultant`, " + both)
     assert not any("wrap" in p for p in contract.check(plugin))
+
+
+FLAG_ONLY = "`cobot:consultant`, `run_in_background: false` where the host offers it.\n"
+WAIT_ONLY = "`cobot:consultant`; wait for every hand-back.\n"
+OLD_FLAG = "`cobot:consultant` (`run_in_background: false`); wait for every hand-back.\n"
+
+
+@pytest.mark.parametrize(
+    ("body", "missing"),
+    [
+        (FLAG_ONLY, "wait for every hand-back"),
+        (WAIT_ONLY, "where the host offers it"),
+        (OLD_FLAG, "where the host offers it"),
+    ],
+)
+def test_check_skillWithOneHostStringWithoutTheOther_fails(contract, plugin, body, missing):
+    # F-35: the desktop app has no run_in_background, so a skill also waits for every hand-back
+    agent(plugin, "consultant", "d")
+    skill(plugin, "wrap", "fan-out", body=body)
+    assert any("wrap" in p and missing in p for p in contract.check(plugin))
 
 
 def test_check_theFixturePlugin_passes(contract, plugin):

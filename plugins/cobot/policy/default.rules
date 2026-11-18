@@ -1,4 +1,4 @@
-# cobot default rules (layer: default). Owner layer: ~/.claude/cobot.rules.
+# cobot default rules (layer: default). Owner layer: ~/.config/cobot/cobot.rules (or ~/.claude/cobot.rules).
 # Project layer: .agent/cobot.rules (never / ask only). Syntax: decision Tool(pattern) [@agent]
 # never: denied in every layer, cannot be relaxed. ask: the gate asks unless an owner allow matches.
 
@@ -99,6 +99,15 @@ never Edit(~/.claude/settings*.json)
 never Write(~/.claude/settings*.json)
 never Edit(.claude/settings*.json)
 never Write(.claude/settings*.json)
+# cobot owner configuration and trust roots (identities, trusted, owner cobot.rules, models.json)
+never Edit(~/.config/cobot.rules)
+never Edit(~/.config/cobot/*)
+never Write(~/.config/cobot.rules)
+never Write(~/.config/cobot/*)
+never Edit(~/.claude/cobot.rules)
+never Edit(~/.claude/cobot/*)
+never Write(~/.claude/cobot.rules)
+never Write(~/.claude/cobot/*)
 # Antigravity (agy): its settings, hooks, MCP servers, installed plugins, command sidecars and
 # access grants; and in every customization root, at any depth, the files that add a hook or a
 # plugin, which run outside the gate and may answer auto_approve. `*` crosses folders here.

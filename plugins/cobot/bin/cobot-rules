@@ -56,6 +56,7 @@ from _cobot_common import (  # noqa: E402
     git,
     git_bytes,
     memory_dir,
+    owner_rules_path,
     parse_cli,
     plugin_root,
     remote_owners,
@@ -432,10 +433,9 @@ class Verdict:
 
 def fixed_layer_paths() -> dict[str, Path]:
     """The default and owner layers: neither depends on the project."""
-    owner = os.environ.get("COBOT_RULES_OWNER")
     return {
         "default": plugin_root() / "policy" / "default.rules",
-        "owner": Path(owner) if owner else config_dir() / "cobot.rules",
+        "owner": owner_rules_path(),
     }
 
 

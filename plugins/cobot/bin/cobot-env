@@ -16,7 +16,8 @@ Detection runs no program (decision 29): a hit on a PATH entry under the reposit
 entry is reported as not trusted. A hit in a mise or asdf shims folder is a shim in the owner's
 repositories and not trusted in a foreign one (.agent a symlink, cobot-memory init --foreign).
 Neither is followed. The profile is
-~/.claude/cobot/machine.md, one section per host or host/container; it holds answers only. When
+~/.config/cobot/machine.md (or ~/.claude/cobot/machine.md when present), one section per host or
+host/container; it holds answers only. When
 the config directory is read-only (Claude Code's sandbox), prefer and decline print
 `answer not recorded:` with the command for the owner's terminal and exit 1.
 """

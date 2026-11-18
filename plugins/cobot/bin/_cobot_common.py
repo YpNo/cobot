@@ -86,11 +86,48 @@ def plugin_root() -> Path:
 
 
 def config_dir() -> Path:
+    """Claude Code's configuration folder (marketplaces, Claude settings.json)."""
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 
 
+def xdg_config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def legacy_claude_cobot_present() -> bool:
+    legacy = Path.home() / ".claude"
+    return (legacy / "cobot").exists() or (legacy / "cobot.rules").exists()
+
+
 def cobot_config_dir() -> Path:
-    return config_dir() / "cobot"
+    """Host-agnostic owner folder for identities, trusted, machine.md and models.json.
+
+    Resolution: ``$COBOT_CONFIG_DIR``, then ``$CLAUDE_CONFIG_DIR/cobot``, then existing
+    ``~/.claude/cobot`` (zero breaking change), else ``$XDG_CONFIG_HOME/cobot`` (``~/.config/cobot``).
+    """
+    if explicit := os.environ.get("COBOT_CONFIG_DIR"):
+        return Path(explicit)
+    if claude_env := os.environ.get("CLAUDE_CONFIG_DIR"):
+        return Path(claude_env) / "cobot"
+    if legacy_claude_cobot_present():
+        return Path.home() / ".claude" / "cobot"
+    return xdg_config_home() / "cobot"
+
+
+def owner_rules_path() -> Path:
+    """Host-agnostic owner rules file (``cobot.rules``)."""
+    if explicit := os.environ.get("COBOT_RULES_OWNER"):
+        return Path(explicit)
+    if cobot_env := os.environ.get("COBOT_CONFIG_DIR"):
+        return Path(cobot_env) / "cobot.rules"
+    if claude_env := os.environ.get("CLAUDE_CONFIG_DIR"):
+        return Path(claude_env) / "cobot.rules"
+    if legacy_claude_cobot_present():
+        return Path.home() / ".claude" / "cobot.rules"
+    xdg = xdg_config_home()
+    flat = xdg / "cobot.rules"
+    nested = xdg / "cobot" / "cobot.rules"
+    return flat if flat.exists() and not nested.exists() else nested
 
 
 def data_dir() -> Path:
@@ -213,7 +250,7 @@ def external_memory(root: Path) -> Path | None:
 
 
 def remote_owners(root: Path) -> tuple[dict[str, str], set[str]]:
-    """Each remote's ``host/owner`` and the owner's identities (``~/.claude/cobot/identities``)."""
+    """Each remote's ``host/owner`` and the owner's identities (``identities`` in ``cobot_config_dir``)."""
     owners = {name: f"{p[0]}/{p[1]}" for name, url in remotes(root).items() if (p := host_owner_repo(url))}
     return owners, {line.lower() for line in read_lines(cobot_config_dir() / "identities")}
 
@@ -224,8 +261,8 @@ def trusted_roots() -> set[str]:
 
 def repo_trust(root: Path, agent_dir: Path) -> tuple[bool, str]:
     """Whether the memory at ``agent_dir`` may be read as the owner's: foreign mode resolving to the
-    external memory, every remote owner an identity, or a root commit listed in
-    ``~/.claude/cobot/trusted``. Reads remotes, root commits and two config files; scans no tree."""
+    external memory, every remote owner an identity, or a root commit listed in ``trusted`` under
+    ``cobot_config_dir()``. Reads remotes, root commits and two config files; scans no tree."""
     if agent_dir.is_symlink():
         expected = external_memory(root)
         if expected and agent_dir.resolve() == expected.resolve():
@@ -245,7 +282,7 @@ def repo_trust(root: Path, agent_dir: Path) -> tuple[bool, str]:
         ]
     roots = set(root_commits(root))
     if roots and roots & trusted_roots():
-        return True, "root commit listed in ~/.claude/cobot/trusted"
+        return True, f"root commit listed in {cobot_config_dir() / 'trusted'}"
     if not remote_map and not roots:
         return False, "no remote and no commit: /cobot:onboard starts it"
     detail = f" ({', '.join(strangers)})" if strangers else ""

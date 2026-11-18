@@ -5626,3 +5626,23 @@ def test_gate_otherAgents_getNoConsultantRow(rules, agent):
         plain, _ = rules.judge_bash(command, loaded, None)
         assert scoped.decision == plain.decision, (agent, command)
         assert "@consultant" not in scoped.reason(), (agent, command)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "~/.config/cobot/cobot.rules",
+        "~/.config/cobot/identities",
+        "~/.config/cobot/models.json",
+        "~/.config/cobot.rules",
+        "~/.claude/cobot/identities",
+        "~/.claude/cobot/trusted",
+        "~/.claude/cobot.rules",
+    ],
+)
+def test_gate_ownerCobotConfigFiles_deniedForEditWriteAndProtectedInBash(rules, path):
+    loaded, _, _ = rules.load_rules(None)
+    expanded = os.path.expanduser(path)
+    assert rules.judge_file("Edit", expanded, None, loaded, None).decision == "deny"
+    assert rules.judge_file("Write", expanded, None, loaded, None).decision == "deny"
+    assert decide(rules, f"rm {path}")[0].decision in ("ask", "deny")

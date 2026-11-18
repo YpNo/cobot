@@ -1256,3 +1256,39 @@ def test_check_agyLegacy_silentOnCobotsOwnFiles(memory, repo):
     (mem.dir / "specs").mkdir(exist_ok=True)
     (mem.dir / "rules.md").write_text("not a folder named rules")
     assert "Antigravity" not in memory.cmd_check(mem)
+
+
+def test_cobotConfigDir_defaultsToXdgConfigCobotWhenLegacyAbsent(tmp_path, monkeypatch):
+    import _cobot_common as common
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for var in ("COBOT_CONFIG_DIR", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "COBOT_RULES_OWNER"):
+        monkeypatch.delenv(var, raising=False)
+    assert common.cobot_config_dir() == tmp_path / ".config" / "cobot"
+    assert common.owner_rules_path() == tmp_path / ".config" / "cobot" / "cobot.rules"
+
+
+def test_cobotConfigDir_honorsXdgConfigHomeAndCobotConfigDir(tmp_path, monkeypatch):
+    import _cobot_common as common
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for var in ("COBOT_CONFIG_DIR", "CLAUDE_CONFIG_DIR", "COBOT_RULES_OWNER"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    assert common.cobot_config_dir() == tmp_path / "xdg" / "cobot"
+    assert common.owner_rules_path() == tmp_path / "xdg" / "cobot" / "cobot.rules"
+
+    monkeypatch.setenv("COBOT_CONFIG_DIR", str(tmp_path / "explicit"))
+    assert common.cobot_config_dir() == tmp_path / "explicit"
+    assert common.owner_rules_path() == tmp_path / "explicit" / "cobot.rules"
+
+
+def test_cobotConfigDir_fallsBackToLegacyClaudeDirWhenPresent(tmp_path, monkeypatch):
+    import _cobot_common as common
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for var in ("COBOT_CONFIG_DIR", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "COBOT_RULES_OWNER"):
+        monkeypatch.delenv(var, raising=False)
+    (tmp_path / ".claude" / "cobot").mkdir(parents=True)
+    assert common.cobot_config_dir() == tmp_path / ".claude" / "cobot"
+    assert common.owner_rules_path() == tmp_path / ".claude" / "cobot.rules"

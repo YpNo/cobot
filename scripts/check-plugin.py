@@ -27,8 +27,9 @@ PROTOCOL_MAX_CHARS = 3000  # protocol.md is injected into every session (docs/02
 KNOWLEDGE_PREFIXES = ("lang-", "expert-", "fw-")  # the prefixes _cobot_knowledge tracks for staleness
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.S)
-# an Agent call that omits it may start in the background, and the skill reports before the agent
-FOREGROUND = "run_in_background: false"
+# an Agent call that omits the flag may start in the background, and the skill reports before the
+# agent; the desktop app has no such flag, so the skill also waits (F-35, spec builder-proof-hosts)
+FOREGROUND = ("`run_in_background: false` where the host offers it", "wait for every hand-back")
 CLAUDE_MANIFEST = ".claude-plugin/plugin.json"
 AGY_MANIFEST = ".antigravity-plugin/plugin.json"  # agy reads it first and ignores .claude-plugin/
 MANIFEST_AGREE = ("name", "version", "description", "license", "repository")
@@ -219,7 +220,8 @@ def listing_chars(plugin: Path) -> int:
 
 
 def background_spawns(plugin: Path) -> list[str]:
-    """Skills whose body names one of the plugin's agents (``cobot:<agent>``) without FOREGROUND."""
+    """Skills whose body names one of the plugin's agents (``cobot:<agent>``) without both FOREGROUND
+    strings. A text check: it cannot see a negation, a limit the spec accepts."""
     names = [a.stem for a in claude_agents(plugin)]
     if not names:
         return []
@@ -227,8 +229,9 @@ def background_spawns(plugin: Path) -> list[str]:
     problems = []
     for skill in sorted((plugin / "skills").glob("*/SKILL.md")):
         body = FRONTMATTER.sub("", skill.read_text(encoding="utf-8"), count=1)
-        if named.search(body) and FOREGROUND not in body:
-            problems.append(f"{skill}: names an agent to run but not `{FOREGROUND}`")
+        if named.search(body):
+            missing = [rule for rule in FOREGROUND if rule not in body]
+            problems += [f'{skill}: names an agent to run but not "{rule}"' for rule in missing]
     return problems
 
 

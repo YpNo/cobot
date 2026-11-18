@@ -345,3 +345,35 @@ Proof: tests first (twenty failing), each review input reproduced, H1 by hand in
 Open: kept as LOW: docs/ and .agent/cobot.rules sit outside the stamp key by design; submodule ignore=all hides a dirty submodule; parallel gate calls may lose an ask count; an offer that never fits is retried on each ask; .python-version 3.12 and rust 1.80 resolve to the latest patch but do not count as floating.
 Next: owner pushes feat/memory-and-ship and opens its PR.
 verified: tree c3bb687429dc6b4467d01ce9f01cc71ac65393ea · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, branch review
+
+## 2026-11-18 — spec builder-proof-hosts (F-35), challenged
+Changed: .agent/specs/builder-proof-hosts.md (revision 2, stories 1–7, T01–T05): a probe in a test project's settings.local measures the hook points in the desktop app first; PreToolUse on SubagentHandback checks a builder's report; one shared state (refusals by agent_id, hashes of allowed texts) so a report is judged once across paths; one refusal then through, marked UNPROVEN in the report itself and parked, failing open when no refusal can be recorded; SubagentStop only if the probe finds a host that needs it; the six skills carry two exact strings that check-plugin enforces; build step 3 refuses to tick an UNPROVEN task.
+Why: F-35 (no builder report checked in the desktop app, where Agent returns "Async agent launched"); the owner answered three questions on 2026-11-18, all recommended: check every place a report is delivered, send it back, keep the parameter where the host has it and add the wait.
+Proof: the Claude Code hooks and sub-agents docs read through the docs agent (SubagentHandback's message is the report; SubagentStop fields; run_in_background undocumented for Agent; the background case not covered); the challenger's SOUND WITH CHANGES (1 BLOCKER, 4 MAJOR, 3 MINOR) checked by hand before folding: claude plugin marketplace list shows cobot registered from the main checkout, r2.md dropped SubagentStop for the hand-back ambiguity, noticed add parks nothing in untrusted memory; spec 191 lines.
+Open: the probe needs the owner to add a hook to a test project's .claude/settings.local.json and run one desktop session; agy not probed.
+Next: owner reviews; then T01, the probe.
+verified: tree c3bb687429dc6b4467d01ce9f01cc71ac65393ea · challenger pass, docs read
+
+## 2026-11-18 — T02 builder-proof-hosts: the hand-back is checked, one shared state
+Changed: plugins/cobot/hooks/hooks.json (PreToolUse on ^SubagentHandback$ runs report.sh handback); report.sh takes the mode as its argument, every failure still allows; cobot-rules: handback(), judge_report(text, agent_type, key, session) shared with report(), the per-session state in data_dir().parent/reports/<session>.json (refusals by key, allowed entries as key:sha256, written under an flock through a temporary file and a rename, a week kept, a bad file read as empty), one refusal then let through with UNPROVEN: in the message (updatedInput) or as additionalContext on the PostToolUse path, Noticed items parked detached from the hooks; report() keys by agentId, else tool_use_id; SESSION_RE anchored with \Z.
+Why: F-35; the T01 probe showed the desktop app delivers a background builder's report only through the hand-back, that a deny reaches the builder and that updatedInput reaches the orchestrator.
+Proof: tests first; the T02 review's 4 HIGH (an allowed id waving through later reports, the parallel race, a bad state disabling the check, no agentId losing the block), 2 MEDIUM (digest-only matching, a slow park timing the hook out) and 3 LOW (temporary files, the pruning race, a trailing newline in the session id) each reproduced as a failing test, then fixed; full suite 3497 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: LOW 11 accepted: a resumed session with a new id starts a fresh state, so a builder may be refused once more. probe/ is excluded locally in .git/info/exclude; remove the line with the worktree.
+Next: T04, the six skills, build step 3 and check-plugin.
+verified: tree b92df5884f2278cc6e1f3eb0a45ac0947f3e0ecc · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, T02 review folded
+
+## 2026-11-18 — T04 builder-proof-hosts: the skills say what every host can do
+Changed: the six skills that call Agent (build, consult, ship, security-sweep, wrap, spec) carry "`run_in_background: false` where the host offers it" and "wait for every hand-back"; security-sweep's "every unit's hand-back" reworded to match; build step 3 never ticks a report that starts with `UNPROVEN:` (re-run the task, or ask the owner); build's parking line says the hook parks from the Agent result or the hand-back, and only agy needs the manual noticed add; check-plugin's FOREGROUND rule requires both strings and names each missing one.
+Why: F-35 story 6 and story 4's build rule; the desktop app has no run_in_background, so the wait is the rule that holds there.
+Proof: tests first (five failing: one text test per skill rule, three check-plugin cases); the new check caught two real misses on its first run (spec's capitalised "Wait", ship's phrase split across a line), both fixed; full suite 3502 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: a text check cannot see a negation or a phrase split across lines; accepted in the spec.
+Next: T05, docs, decision 32, CHANGELOG, F-35 closed.
+verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-18 — T05 builder-proof-hosts: decision 32, docs, F-35 closed
+Changed: docs/01-decisions.md decision 32 (where a builder's report is checked: both paths, one state, one refusal then UNPROVEN, SubagentStop not used, agy requested not enforced); docs/architecture.md report-check row; docs/02-design.md layout (the hand-back hook, report.sh, SubagentStop dropped); docs/configuration.md the reports state under XDG_DATA_HOME; CHANGELOG Added entry; .agent/FINDINGS.md F-35 closed; the spec's build note (commits, T03 dropped, the T02 review's changes).
+Why: spec builder-proof-hosts story 7.
+Proof: markdownlint clean (one MD038 fixed); full suite 3502 passed, 98.46 %; ruff, check-plugin, sync-agents --check, claude and agy plugin validate; the tree key equals T04's, since only root doc entries changed.
+Open: none for the spec; F-39, F-49 remain open findings.
+Next: the owner reviews the branch, pushes feat/builder-proof-hosts and opens its PR; then remove the /probe/ line from .git/info/exclude with the worktree.
+verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

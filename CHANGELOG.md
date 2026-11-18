@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Builder reports are checked in the desktop app (decision 32, F-35).** There every `Agent`
+  call runs in the background, so no report reached the check. A new `PreToolUse` hook on
+  `SubagentHandback` reads the report the builder hands back. A report without a command and an
+  exit code goes back once; the next one goes through marked `UNPROVEN:`, and build will not tick
+  that task. The CLI's check after an `Agent` call shares the same state, so a report is judged
+  once. The skills that call `Agent` now also wait for every hand-back, and `check-plugin`
+  requires it.
 - **One commit per verified change (decision 31).** `cobot-memory stamp --tree` prints a key for
   the staged tree without its root doc entries; a journal stamp `verified: tree <key>` goes into
   the same commit as the code and stays `ok` after gc and in any clone. Wrap and build now commit

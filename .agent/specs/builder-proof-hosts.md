@@ -188,4 +188,23 @@ plugin-scoped in a subagent's `PreToolUse` (r1 spike E); transcript size and tim
 
 ## Converge
 
-pending
+**T01, the probe, 2026-11-18** (desktop app, one `cobot:builder` call in a test folder; the
+owner ran it, the log quoted in the journal):
+
+- `PreToolUse` on `SubagentHandback` fires for a background builder. It carries `agent_type`
+  `cobot:builder` (plugin-scoped), `agent_id`, a UUID `session_id`, and the report in
+  `tool_input.message`.
+- A deny reaches the background builder: it handed back again two seconds later.
+- `updatedInput` rewrites the hand-back: the orchestrator received the `UNPROVEN-PROBE:` prefix
+  word for word.
+- `PostToolUse` on `Agent` fires once, at launch (`async_launched`). Its `agentId` equals the
+  hand-back's `agent_id`, and it never fires with the result.
+- `SubagentStop` fires for the builder with its identity but no `last_assistant_message`, so it
+  cannot check a report here. Internal agents fire it with an empty `agent_type`.
+
+Design consequences:
+
+- Story 4 marks with `updatedInput`.
+- Story 3 keys refusals and allowed reports by `agent_id` on every path. `PostToolUse` takes it
+  from `tool_response.agentId` when present, and falls back to the text hash.
+- Story 5 (`SubagentStop`) and task T03 are dropped: no host seen needs them.

@@ -58,6 +58,8 @@ def plugin(tmp_path):
     manifests(tmp_path, [])
     agent(tmp_path, "a")
     (tmp_path / "protocol.md").write_text("protocol\n")
+    (tmp_path / "policy").mkdir()
+    (tmp_path / "policy" / "default.rules").write_text("# policy\n")
     return tmp_path
 
 
@@ -289,3 +291,13 @@ def test_installNames_aLiveHookGroupNameInTheTree_fails(tmp_path):
         f"docs/run.md: an installed hook group name ({name}): redact it"
     ]
     assert module.install_name_problems(tmp_path / "docs" / "..") != []
+
+
+def test_check_policyDefaultRulesMissingOrRulesDslUnderRulesDir_fails(contract, plugin):
+    (plugin / "policy" / "default.rules").unlink()
+    assert any("policy/default.rules: missing" in p for p in contract.check(plugin))
+    (plugin / "policy" / "default.rules").write_text("# policy\n")
+    (plugin / "rules").mkdir()
+    (plugin / "rules" / "default.rules").write_text("never Bash(rm -rf /)\n")
+    problems = contract.check(plugin)
+    assert any("rules/default.rules" in p and "prompt rule" in p for p in problems)

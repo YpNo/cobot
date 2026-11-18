@@ -2143,7 +2143,8 @@ def test_credentialPrinterAsk_ownerAllowLiftsOneForm(rules, layers):
 
 
 def test_defaultRows_noteHoldsNoParenthesis(rules):
-    text = (PLUGIN / "rules" / "default.rules").read_text(encoding="utf-8")
+    assert rules.fixed_layer_paths()["default"] == PLUGIN / "policy" / "default.rules"
+    text = (PLUGIN / "policy" / "default.rules").read_text(encoding="utf-8")
     rows = [line for line in text.splitlines() if re.match(r"^(never|ask|allow) ", line)]
     notes = [line.split(" # ", 1)[1] for line in rows if " # " in line]
     assert notes and not [note for note in notes if ")" in note or "(" in note]

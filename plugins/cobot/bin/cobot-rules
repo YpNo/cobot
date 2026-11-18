@@ -434,7 +434,7 @@ def fixed_layer_paths() -> dict[str, Path]:
     """The default and owner layers: neither depends on the project."""
     owner = os.environ.get("COBOT_RULES_OWNER")
     return {
-        "default": plugin_root() / "rules" / "default.rules",
+        "default": plugin_root() / "policy" / "default.rules",
         "owner": Path(owner) if owner else config_dir() / "cobot.rules",
     }
 

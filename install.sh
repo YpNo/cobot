@@ -116,33 +116,21 @@ retire_old_marketplace() { # before the new marketplace registers: a folder carr
 }
 
 # agy merges hook groups by name across sources, so a repository's .agents/hooks.json naming the
-# plugin's group with "enabled": false switches it off (smoke h2): each install gets a group name
-# no committed file can know. The staged copy is validated, installed, then removed.
-AGY_GROUP_LINE='  "cobot": {'
-
-stage_agy() { # DIR: copy the plugin into DIR/cobot with a random hook group name
-  # called as `stage_agy … || exit 1`, where set -e does not apply: every step fails on its own
-  name="cobot-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-  [ ${#name} -eq 22 ] || { echo "install: no random hook group name" >&2; return 1; }
-  cp -R "$PLUGIN_DIR" "$1/cobot" || { echo "install: cannot stage the plugin" >&2; return 1; }
-  # caches of a local test run stay out of the install
-  find "$1/cobot" -name __pycache__ -type d -prune -exec rm -rf {} + || return 1
-  sed "s/^$AGY_GROUP_LINE\$/  \"$name\": {/" "$PLUGIN_DIR/hooks.json" >"$1/cobot/hooks.json" || return 1
-  grep -q "^  \"$name\": {\$" "$1/cobot/hooks.json" || {
-    echo "install: hooks.json has no '$AGY_GROUP_LINE' line to rename; nothing installed" >&2
-    return 1
-  }
-  # the name is a secret of this install: never printed, so it stays out of logs and records
-  echo "agy: hook group renamed to a random name for this install"
+# plugin's group with "enabled": false switches it off (smoke h2): package-plugin.py builds a pure
+# agy bundle (stripping Claude-only files so --strict passes with 0 warnings) and gives the hook
+# group a random name no committed file can know. The staged copy is validated, installed, removed.
+stage_agy() { # DIR: stage a pure Antigravity bundle into DIR/cobot
+  command -v python3 >/dev/null 2>&1 || { echo "install: python3 not found on PATH" >&2; return 1; }
+  python3 -I "$REPO_DIR/scripts/package-plugin.py" --host agy --out "$1/cobot" || return 1
 }
 
-cmd_agy() { # validate, then install: agy replaces an installed copy in place and restores it on failure
+cmd_agy() { # validate strictly, then install: agy replaces an installed copy in place and restores it on failure
   command -v agy >/dev/null 2>&1 || { echo "install: agy not found on PATH" >&2; exit 1; }
   stage=$(mktemp -d) || { echo "install: no temporary folder" >&2; exit 1; }
   trap 'rm -rf "$stage"' EXIT
   stage_agy "$stage" || exit 1
   echo "agy: validating $stage/cobot (staged from $PLUGIN_DIR; run this with no agy session open)"
-  agy plugin validate "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
+  agy plugin validate --strict "$stage/cobot" || { echo "install: agy plugin validate failed; nothing installed" >&2; exit 1; }
   echo "agy: installing $stage/cobot at user scope"
   # agy prints the installed group's name: shown masked, so it stays out of terminal logs
   rc=0; agy plugin install "$stage/cobot" >"$stage/install.log" 2>&1 || rc=$?

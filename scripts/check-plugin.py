@@ -302,8 +302,22 @@ def protocol_problems(plugin: Path) -> tuple[list[str], int]:
     return [], chars
 
 
+def policy_problems(plugin: Path) -> list[str]:
+    """Policy DSL lives under policy/default.rules; agy ingests plugins/<name>/rules/* as LLM prompt rules."""
+    problems: list[str] = []
+    if not (plugin / "policy" / "default.rules").is_file():
+        problems.append("policy/default.rules: missing")
+    rules_dir = plugin / "rules"
+    if rules_dir.is_dir():
+        for leaked in sorted(rules_dir.rglob("*.rules")):
+            rel = leaked.relative_to(plugin)
+            problems.append(f"{rel}: gate policy under rules/ is ingested by agy as an LLM prompt rule")
+    return problems
+
+
 def check(plugin: Path) -> list[str]:
     problems = [*manifest_problems(plugin), *agent_list_problems(plugin), *background_spawns(plugin)]
+    problems.extend(policy_problems(plugin))
     problems.extend(consult_problems(plugin))
     problems.extend(twin_problems(plugin))
     for agent in sorted((plugin / AGY_AGENTS).glob("*.md")):

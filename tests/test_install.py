@@ -54,6 +54,7 @@ TOOLS = (
     "od",
     "tr",
     "find",
+    "python3",
 )
 
 
@@ -337,7 +338,7 @@ def agy_calls(home_dir):
 def staged_pair(home_dir):
     """The validate and install calls name one staged copy, never the checkout; it is gone after."""
     calls = agy_calls(home_dir)
-    assert [c.rsplit(" ", 1)[0] for c in calls] == ["plugin validate", "plugin install"], calls
+    assert [c.rsplit(" ", 1)[0] for c in calls] == ["plugin validate --strict", "plugin install"], calls
     validated, installed = (c.rsplit(" ", 1)[1] for c in calls)
     assert validated == installed and installed != str(PLUGIN) and installed.endswith("/cobot")
     assert not os.path.exists(installed)
@@ -462,3 +463,14 @@ def test_install_agy_neverPrintsTheGroupName(home):
     name, _ = installed_group(home)
     assert name not in result.stdout + result.stderr
     assert "1 installed (cobot-<random>)" in result.stdout
+
+
+def test_install_agy_stagedCopyIsPureAntigravityBundle(home):
+    result = run_install(["--agy"], with_agy(home, fake_claude=False))
+    assert result.returncode == 0, result.stderr
+    installed = home / "agy-installed-copy"
+    assert (installed / "policy" / "default.rules").is_file()
+    assert not (installed / "hooks" / "hooks.json").exists()
+    assert not (installed / ".claude-plugin").exists()
+    assert not (installed / "claude-agents").exists()
+    assert not (installed / "rules").exists()

@@ -1458,6 +1458,47 @@ def test_report_builderWithExitCodes_allows(rules):
     assert rules.report(agent_payload("cobot:rust-builder", GOOD_REPORT)) is None
 
 
+@pytest.mark.parametrize(
+    ("report", "items"),
+    [
+        (
+            GOOD_REPORT + "Noticed:\n- a stale README line\n- an unpinned action\n",
+            ["a stale README line", "an unpinned action"],
+        ),
+        (GOOD_REPORT + "Noticed: the Makefile has no test target\n", ["the Makefile has no test target"]),
+        (GOOD_REPORT + "Noticed: none\n", []),
+        (GOOD_REPORT + "Noticed:\n- nothing\n", []),
+        (GOOD_REPORT, []),
+        ("Noticed:\n* one\nOpen: x\n- not a notice\n", ["one"]),
+    ],
+)
+def test_noticedItems_bulletsOrInline_noneIsNothing(rules, report, items):
+    # spec memory-and-ship, story 3
+    assert rules.noticed_items(report) == items
+
+
+def test_report_passingReportWithNotices_parksThemInTheSessionCheckout(rules, monkeypatch):
+    parked = []
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd: parked.append((items, cwd)))
+    payload = json.loads(agent_payload("cobot:builder", GOOD_REPORT + "Noticed:\n- x\n"))
+    payload["cwd"] = "/work/repo"
+    assert rules.report(json.dumps(payload)) is None
+    assert parked == [(["x"], "/work/repo")]
+
+
+def test_report_blockedOrAsyncReport_parksNothing(rules, monkeypatch):
+    parked = []
+    monkeypatch.setattr(rules, "park_noticed", lambda items, cwd: parked.append(items))
+    rules.report(agent_payload("cobot:builder", PROMISE_REPORT + "Noticed:\n- x\n"))
+    rules.report(agent_payload("cobot:builder", "Noticed:\n- x\n", status="async_launched"))
+    assert parked == []
+
+
+def test_parkNoticed_failureNeverRaises(rules, monkeypatch):
+    monkeypatch.setattr(rules.sys, "executable", "/nonexistent/python")
+    rules.park_noticed(["x"], "/nonexistent")
+
+
 def test_report_checksNoneWithReason_allows(rules):
     text = "Files:\n- README.md\nChecks: none — docs-only task, nothing to run\nOpen: nothing\n"
     assert rules.report(agent_payload("cobot:builder", text)) is None

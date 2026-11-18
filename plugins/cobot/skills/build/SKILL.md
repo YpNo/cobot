@@ -35,7 +35,9 @@ verified commands, run `/code-review low` for small, then one journal line throu
    When CONTEXT.md's verified table holds only the `none yet` row (a new project), record the
    accepted task's proof commands there with their result and today's date, remove that row,
    run `cobot-memory check`, and print the owner-layer allow lines as onboard step 7 does.
-   Items under `Noticed:` go to `cobot-memory findings add`, never into the code.
+   Items under `Noticed:` never go into the code. The report hook parks them in
+   `.agent/noticed.md` for wrap. Where the `Agent` call came back "Async agent launched", the
+   hook saw no report: pass the hand-back's items to `cobot-memory noticed add` yourself.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
    layer allows it; never push from here.

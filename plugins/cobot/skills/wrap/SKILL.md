@@ -26,8 +26,11 @@ argument-hint: [spec slug]
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled
    under `Open` with the finding text, or becomes a findings row.
-4. **Findings triage.** `cobot-memory findings list --open`: each row becomes a spec task, an
-   issue the owner may open (propose the `gh issue create` command, do not run it), or
+4. **Findings triage.** First the parked notices: `cobot-memory noticed list` shows the
+   builders' `Noticed:` items the report hook kept. Each becomes `cobot-memory findings add`, or
+   is dropped with its reason in the journal's `Open:`; then `cobot-memory noticed clear`. Then
+   `cobot-memory findings list --open`: each row becomes a spec task, an issue the owner may open
+   (propose the `gh issue create` command, do not run it), or
    `cobot-memory findings close F-nn "<reason>"`.
 5. **Memory.** If a verified command changed or a new one was proven, update CONTEXT.md's table
    with today's date. Keep CONTEXT.md under 120 lines.

@@ -289,3 +289,11 @@ Proof: tests first (six failing); the key survives git gc --prune=now and holds 
 Open: T02–T07 of the spec; CHANGELOG and decision 31 come in T07.
 Next: T02, the Noticed parking.
 verified: tree c9e1c976796e57d72ab8223904f085d328d658d4 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T02: builders' notices parked and cleared
+Changed: cobot-rules: noticed_items (the text on the Noticed: line and its bullets, none is no item), park_noticed (cobot-memory noticed add in the payload's cwd, timeout 5 s, never raises), report() parks a passing report's items; cobot-memory: noticed add|list|clear on .agent/noticed.md (trusted memory only, dated, de-duplicated, control characters out, 300 characters an item), noticed.md in KNOWN_AGENT_FILES, check prints "noticed: N waiting"; wrap step 4 lists, files or drops, then clears; build step 4 parks an async hand-back's items itself; tests (rules parsing and hook, memory add/list/clear, untrusted, end to end, skill texts).
+Why: F-48 (builder Noticed items never parked), story 3 of spec memory-and-ship (owner answer: the hook parks, wrap clears).
+Proof: tests first (ten failing); full suite 3422 passed, 98.53 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; the gate is silent on noticed clear.
+Open: in a host where Agent returns "Async agent launched" (F-35) the hook sees no report, so the build skill parks the hand-back's items; T03–T07 of the spec.
+Next: T03, the repeated-ask offer in the gate.
+verified: tree ebca4ee720fac3f9661a0e409e1e8c5d82331905 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

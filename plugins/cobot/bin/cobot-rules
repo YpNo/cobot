@@ -4665,8 +4665,50 @@ def response_text(response: object) -> str:
     return ""
 
 
+NOTICED_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Noticed`?:\s*(.*)$")
+NOTICED_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+)$")
+NO_NOTICE_RE = re.compile(r"(?i)^(none|nothing|n/a|—|-)\.?$")
+
+
+def noticed_items(report: str) -> list[str]:
+    """The items under a builder's ``Noticed:``: the text on its line, then each bullet below it
+    until the next section; ``none`` or ``nothing`` is no item (spec memory-and-ship, story 3)."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = NOTICED_HEADER_RE.match(line)
+        if not match:
+            continue
+        items = [match.group(1).strip()]
+        for following in lines[index + 1 :]:
+            if REPORT_SECTION_RE.match(following) or CHECKS_HEADER_RE.match(following):
+                break
+            bullet = NOTICED_BULLET_RE.match(following)
+            if bullet:
+                items.append(bullet.group(1).strip())
+        return [item for item in items if item and not NO_NOTICE_RE.match(item)]
+    return []
+
+
+def park_noticed(items: list[str], cwd: str | None) -> None:
+    """Hand the items to ``cobot-memory noticed add`` in the session's checkout; never raises: a
+    report hook must not strand a session over its notices."""
+    try:
+        subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "noticed", "add"],
+            cwd=cwd or None,
+            input="\n".join(items) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001, S110 - parking is best effort; wrap reads what landed
+        pass
+
+
 def report(stdin: str) -> str | None:
-    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything odd)."""
+    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything
+    odd); park the ``Noticed:`` items of a report that passes."""
     try:
         payload = json.loads(stdin)
         if payload.get("tool_name") != "Agent":
@@ -4677,8 +4719,12 @@ def report(stdin: str) -> str | None:
         response = payload.get("tool_response")
         if isinstance(response, dict) and response.get("status") == "async_launched":
             return None
-        ok, why = check_report(response_text(response))
+        text = response_text(response)
+        ok, why = check_report(text)
         log_event({"tool": "Agent", "head": subagent, "decision": None if ok else "block", "reason": why})
+        items = noticed_items(text) if ok else []
+        if items:
+            park_noticed(items, payload.get("cwd"))
     except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
         print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
         return None

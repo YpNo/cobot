@@ -23,3 +23,11 @@ def test_wrap_namesTheOneCommitFlow():
 
 def test_build_journalsWithTheTreeStamp():
     assert "cobot-memory stamp --tree" in text("build")
+
+
+def test_wrapAndBuild_clearTheParkedNotices():
+    # story 3: wrap files or drops each parked item, build parks an async hand-back's itself
+    wrap = text("wrap")
+    assert "cobot-memory noticed list" in wrap and "cobot-memory noticed clear" in wrap
+    build = text("build")
+    assert "Async agent launched" in build and "cobot-memory noticed add" in build

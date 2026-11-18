@@ -11,6 +11,8 @@ Commands
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
   journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
+  noticed add [TEXT] | noticed list | noticed clear
+                                   builders' Noticed: items parked by the report hook, one per line, for wrap
                                    --goes-to records where a finding is headed (open → X); it stays open
                                    until findings close
   learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
@@ -106,7 +108,11 @@ PLACEHOLDER_ROWS = (
     "| build | `<command>` | <not run yet> | — |\n"
 )
 NONE_YET_ROW = "| — | none yet: the first spec's scaffold task records them | — | {{DATE}} |\n"
-KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md"})
+NOTICED_FILE = "noticed.md"  # builders' notices the report hook parked for wrap (memory-and-ship)
+NOTICED_HEAD = "# Noticed\n\nBuilders' notices waiting for /cobot:wrap: file each as a finding, or drop it.\n"
+NOTICED_LINE_RE = re.compile(r"^- \d{4}-\d{2}-\d{2} · (.+)$", re.M)
+NOTICE_LIMIT = 300  # characters an item keeps
+KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md", NOTICED_FILE})
 AGENT_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
 DROPPED_RE = re.compile(r"sections dropped: (.*)")
@@ -569,6 +575,45 @@ def cmd_journal_add(mem: Memory, entry: str, check_only: bool = False) -> str:
     return f"journal: appended to {path}"
 
 
+def noticed(mem: Memory) -> list[str]:
+    return NOTICED_LINE_RE.findall(mem.read(NOTICED_FILE))
+
+
+def cmd_noticed_add(mem: Memory, text: str) -> str:
+    """Park each line of ``text`` as a dated notice, once; in a trusted memory only (the hook runs
+    in whatever checkout the session is in)."""
+    trusted, _ = mem.trust()
+    if not trusted or not mem.dir.is_dir():
+        return "noticed: untrusted or absent memory, nothing parked"
+    seen = set(noticed(mem))
+    fresh: list[str] = []
+    for raw in text.splitlines():
+        item = re.sub(r"[\x00-\x1f\x7f]", " ", raw).strip()[:NOTICE_LIMIT]
+        if item and item not in seen:
+            seen.add(item)
+            fresh.append(item)
+    if fresh:
+        path = mem.dir / NOTICED_FILE
+        current = path.read_text(encoding="utf-8") if path.is_file() else NOTICED_HEAD
+        if current == NOTICED_HEAD:
+            current += "\n"  # a blank line between the head and the first item
+        today = date.today().isoformat()
+        path.write_text(current + "".join(f"- {today} · {item}\n" for item in fresh), encoding="utf-8")
+    return f"noticed: {len(fresh)} parked"
+
+
+def cmd_noticed_list(mem: Memory) -> str:
+    items = noticed(mem)
+    return "\n".join(items) if items else "noticed: none"
+
+
+def cmd_noticed_clear(mem: Memory) -> str:
+    path = mem.dir / NOTICED_FILE
+    if path.is_file():
+        path.write_text(NOTICED_HEAD, encoding="utf-8")
+    return "noticed: cleared"
+
+
 def next_finding_number(mem: Memory) -> int:
     numbers = [int(f[0][2:]) for f in mem.findings()]
     return max(numbers, default=0) + 1
@@ -936,6 +981,9 @@ def cmd_check(mem: Memory) -> str:
             lines.append(f"{name}: {count} lines")
     lines.append(f"journal: {journal_order(mem)}")
     lines.append(f"findings: {len(mem.open_findings())} open / {len(mem.findings())} total")
+    waiting = noticed(mem)
+    if waiting:
+        lines.append(f"noticed: {len(waiting)} waiting; /cobot:wrap files or drops each")
     lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
     brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
     lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
@@ -1035,6 +1083,12 @@ def main(argv: list[str]) -> int:
         print(out)
         if not out.startswith(("journal: appended", "journal: valid")):
             return 1
+    elif command == "noticed" and sub == "add":
+        print(cmd_noticed_add(mem, read_payload(positional[2:])))
+    elif command == "noticed" and sub == "list":
+        print(cmd_noticed_list(mem))
+    elif command == "noticed" and sub == "clear":
+        print(cmd_noticed_clear(mem))
     elif command == "findings" and sub == "add" and len(positional) >= 4:
         print(cmd_findings_add(mem, positional[2], positional[3], options.get("goes-to", "")))
     elif command == "findings" and sub == "list":

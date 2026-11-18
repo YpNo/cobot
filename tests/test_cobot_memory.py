@@ -944,6 +944,46 @@ def test_journalAdd_invalidEntry_exitsOne_andCheckWritesNothing(memory, repo, ca
     assert (mem.dir / "JOURNAL.md").read_text() == before
 
 
+# ---------------------------------------------------------------- noticed items (story 3)
+
+
+def test_noticed_addListClear_dedupedAndCountedByCheck(memory, repo, capsys):
+    mem, _ = stamped(memory, repo, "Proof: x")
+    assert memory.main(["noticed", "add", "a stale README line\nan unpinned action\n"]) == 0
+    assert memory.main(["noticed", "add", "a stale README line\n"]) == 0  # already parked
+    text = (mem.dir / "noticed.md").read_text()
+    assert text.count("a stale README line") == 1 and "an unpinned action" in text
+    capsys.readouterr()
+    assert memory.main(["noticed", "list"]) == 0
+    assert capsys.readouterr().out.count("\n") == 2
+    assert "noticed: 2 waiting" in memory.cmd_check(mem)
+    assert memory.main(["noticed", "clear"]) == 0
+    assert "noticed:" not in memory.cmd_check(mem).replace("noticed: none", "")
+    assert "noticed.md" not in memory.build_brief(mem, 6000)  # a known file, not "also in .agent"
+
+
+def test_noticed_untrustedMemory_parksNothing(memory, repo, capsys):
+    remote(repo, "origin", "https://github.com/stranger/r.git")
+    commit(repo)
+    seed(repo)
+    assert memory.main(["noticed", "add", "x\n"]) == 0
+    assert "untrusted" in capsys.readouterr().out
+    assert not (repo / ".agent" / "noticed.md").exists()
+
+
+def test_noticed_hookToMemory_endToEnd(memory, repo, rules):
+    mem, _ = stamped(memory, repo, "Proof: x")
+    report = "Checks:\n- `make test` → exit 0\nNoticed:\n- the CI cache key misses the lockfile\n"
+    payload = {
+        "tool_name": "Agent",
+        "tool_input": {"subagent_type": "cobot:builder"},
+        "tool_response": {"status": "completed", "content": report},
+        "cwd": str(repo),
+    }
+    assert rules.report(json.dumps(payload)) is None
+    assert "the CI cache key misses the lockfile" in (mem.dir / "noticed.md").read_text()
+
+
 # ---------------------------------------------------------------- never-push rules at foreign init (R2)
 
 

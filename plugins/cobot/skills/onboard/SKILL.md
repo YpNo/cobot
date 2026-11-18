@@ -27,6 +27,10 @@ disable-model-invocation: true
    When init prints `trust not recorded:` (Claude Code's sandbox keeps the config directory
    read-only to Bash), the memory files are written: carry on, put the command it prints in the
    report for the owner to run in their own terminal, and never record trust another way.
+   After init, run `cobot-memory check` again. If it still says untrusted although init printed
+   `root commit added to <path>` or `identity added`, report both paths (init's, and check's
+   `trust file:`) and name the init command again, prefixed with `CLAUDE_CONFIG_DIR=<path>` when
+   this run has that variable. Never send the owner to `cobot-memory trust`, which only reports.
    Do not read `.agent/*` of an untrusted repository before this step.
 3. **Init.** `cobot-memory init --profile <p>` with the profile you propose (`spike`, `script`,
    `cli`, `library`, `service`, `infra`) and one line of reasoning. Legacy memory (an

@@ -35,14 +35,17 @@ verified commands, run `/code-review low` for small, then one journal line throu
    When CONTEXT.md's verified table holds only the `none yet` row (a new project), record the
    accepted task's proof commands there with their result and today's date, remove that row,
    run `cobot-memory check`, and print the owner-layer allow lines as onboard step 7 does.
-   Items under `Noticed:` go to `cobot-memory findings add`, never into the code.
+   Items under `Noticed:` never go into the code. The report hook parks them in
+   `.agent/noticed.md` for wrap. Where the `Agent` call came back "Async agent launched", the
+   hook saw no report: pass the hand-back's items to `cobot-memory noticed add` yourself.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
    layer allows it; never push from here.
 4. A builder that fails the same check twice hands back: decide yourself whether to fix inline,
    split the task, or stop and ask the owner. Never let a builder loop.
 5. After a task group (a lane, or three tasks): one journal entry (`Changed / Why / Proof / Open /
-   Next`) through `cobot-memory journal add`.
+   Next`) through `cobot-memory journal add`, committed with the task's code in one commit when
+   it carries a stamp (`cobot-memory stamp --tree`, as wrap's journal step does).
 6. Never push, tag or open anything outward from here; the PR belongs to `/cobot:wrap`.
 
 When every task is ticked, say so and hand over to `/cobot:wrap`.

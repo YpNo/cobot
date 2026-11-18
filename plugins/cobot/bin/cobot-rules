@@ -50,6 +50,7 @@ from _cobot_common import (  # noqa: E402
     UsageError,
     checkout_root,
     config_dir,
+    data_dir,
     git,
     git_bytes,
     memory_dir,
@@ -4665,8 +4666,50 @@ def response_text(response: object) -> str:
     return ""
 
 
+NOTICED_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Noticed`?:\s*(.*)$")
+NOTICED_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+)$")
+NO_NOTICE_RE = re.compile(r"(?i)^(none|nothing|n/a|—|-)\.?$")
+
+
+def noticed_items(report: str) -> list[str]:
+    """The items under a builder's ``Noticed:``: the text on its line, then each bullet below it
+    until the next section; ``none`` or ``nothing`` is no item (spec memory-and-ship, story 3)."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = NOTICED_HEADER_RE.match(line)
+        if not match:
+            continue
+        items = [match.group(1).strip()]
+        for following in lines[index + 1 :]:
+            if REPORT_SECTION_RE.match(following) or CHECKS_HEADER_RE.match(following):
+                break
+            bullet = NOTICED_BULLET_RE.match(following)
+            if bullet:
+                items.append(bullet.group(1).strip())
+        return [item for item in items if item and not NO_NOTICE_RE.match(item)]
+    return []
+
+
+def park_noticed(items: list[str], cwd: str | None) -> None:
+    """Hand the items to ``cobot-memory noticed add`` in the session's checkout; never raises: a
+    report hook must not strand a session over its notices."""
+    try:
+        subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-I", str(plugin_root() / "bin" / "cobot-memory"), "noticed", "add"],
+            cwd=cwd or None,
+            input="\n".join(items) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001, S110 - parking is best effort; wrap reads what landed
+        pass
+
+
 def report(stdin: str) -> str | None:
-    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything odd)."""
+    """PostToolUse on Agent: block a builder's report that carries no proof (fails open on anything
+    odd); park the ``Noticed:`` items of a report that passes."""
     try:
         payload = json.loads(stdin)
         if payload.get("tool_name") != "Agent":
@@ -4677,8 +4720,12 @@ def report(stdin: str) -> str | None:
         response = payload.get("tool_response")
         if isinstance(response, dict) and response.get("status") == "async_launched":
             return None
-        ok, why = check_report(response_text(response))
+        text = response_text(response)
+        ok, why = check_report(text)
         log_event({"tool": "Agent", "head": subagent, "decision": None if ok else "block", "reason": why})
+        items = noticed_items(text) if ok else []
+        if items:
+            park_noticed(items, payload.get("cwd"))
     except Exception as error:  # noqa: BLE001 - a report hook must never strand a session
         print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
         return None
@@ -4759,7 +4806,85 @@ def gate(stdin: str) -> str | None:
     if verdict.decision is None:
         return None
     suffix = stamp_suffix(cwd) if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head) else ""
-    return hook_output(verdict.decision, verdict.reason(REASON_LIMIT - len(suffix)) + suffix)
+    reason = verdict.reason(REASON_LIMIT - len(suffix)) + suffix
+    if tool == "Bash" and verdict.decision == ASK:
+        reason = with_offer(reason, verdict, payload.get("session_id"), rules)
+    return hook_output(verdict.decision, reason)
+
+
+# ---------------------------------------------------------------- a repeated ask names its allow line
+
+# rows whose ask guards local, undoable work: never an outward, install, credential, agent-scoped or
+# owner-written row (an offer of ``allow Bash(*)`` would silence an agent's whole read list)
+OFFERED_ROWS = frozenset({"ask Bash(git commit*)", "ask Bash(git rebase*)"})
+OFFER_AFTER = 3  # the ask that names the line: two were shown before it
+ASK_STATE_DAYS = 7
+SESSION_RE = re.compile(r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+
+
+def ask_state_path(session: str) -> Path:
+    return data_dir().parent / "asks" / f"{session}.json"
+
+
+def owner_rules_shown() -> str:
+    """The owner layer's path as the owner would type it (``~`` for the home folder)."""
+    path, home = str(fixed_layer_paths()["owner"]), str(Path.home())
+    return "~" + path[len(home) :] if path.startswith(home + os.sep) else path
+
+
+def offered_rows(verdict: Verdict, rules: list[Rule]) -> list[str]:
+    """The offered rows among the verdict's asks, its own and those in ``also``; none that the
+    owner layer also holds (the owner wrote that ask, and deletes it)."""
+    owned = {r.text() for r in rules if r.layer == "owner"}
+    labels = [verdict.rule.text()] if verdict.rule and verdict.rule.layer == "default" else []
+    labels += [label.split(" via ", 1)[0] for label in verdict.also]
+    return [row for row in dict.fromkeys(labels) if row in OFFERED_ROWS and row not in owned]
+
+
+def load_ask_state(path: Path) -> dict:
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"counts": {}, "offered": []}
+    if not isinstance(state, dict):
+        return {"counts": {}, "offered": []}
+    counts = state.get("counts") if isinstance(state.get("counts"), dict) else {}
+    offered = state.get("offered") if isinstance(state.get("offered"), list) else []
+    return {"counts": counts, "offered": offered}
+
+
+def save_ask_state(path: Path, state: dict) -> None:
+    """Write through a temporary file and a rename; prune session files older than a week."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(temporary, path)
+    cutoff = time.time() - ASK_STATE_DAYS * 86400
+    for old in path.parent.glob("*.json"):
+        if old != path and SESSION_RE.match(old.stem) and old.stat().st_mtime < cutoff:
+            old.unlink(missing_ok=True)
+
+
+def with_offer(reason: str, verdict: Verdict, session: object, rules: list[Rule]) -> str:
+    """Count the verdict's offered rows for the session; from the third ask of one, end the reason
+    with the owner allow line that would lift it, once, when it fits. Any error: the reason as is."""
+    try:
+        rows = offered_rows(verdict, rules)
+        if not rows or not isinstance(session, str) or not SESSION_RE.match(session):
+            return reason
+        path = ask_state_path(session)
+        state = load_ask_state(path)
+        for row in rows:
+            state["counts"][row] = int(state["counts"].get(row, 0)) + 1
+        due = [r for r in rows if state["counts"][r] >= OFFER_AFTER and r not in state["offered"]]
+        offer = f" · to stop asking: allow {due[0][4:]} in {owner_rules_shown()}" if due else ""
+        if offer and len(reason) + len(offer) <= REASON_LIMIT:
+            state["offered"].append(due[0])
+            reason += offer
+        save_ask_state(path, state)
+    except Exception:  # noqa: BLE001 - the offer is a courtesy; the verdict stands without it
+        return reason
+    return reason
 
 
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)

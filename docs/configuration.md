@@ -29,7 +29,8 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
 | `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
-| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>` |
+| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>`; the gate's per-session ask counts under `cobot/asks/` (rule texts and counts, a week kept) |
+| `.agent/noticed.md` | Markdown, one dated line per item | absent | builders' `Noticed:` items the report hook parked; `/cobot:wrap` files or drops each, and `cobot-memory noticed list` and `noticed clear` read and empty it |
 | `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the mise and asdf shims folders (a hit there is a shim, not trusted in foreign mode; decision 29), the distrobox it runs in |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
@@ -53,6 +54,14 @@ others: `…; also asks: ask Bash(git push*), ask Bash(git commit*)`. It names u
 then `+N more`. Another ask is named by its row (a project row by its place) and its runner, or
 by the first 40 characters of the gate's note. The reason stays within the prompt's 200
 characters, and a `git push` stamp keeps its room. A deny shows only the deny.
+
+From the third time `ask Bash(git commit*)` or `ask Bash(git rebase*)` asks in one Claude Code
+session, the reason ends once with the line that would stop it:
+`· to stop asking: allow Bash(git commit*) in ~/.claude/cobot.rules`. cobot never writes the line;
+you add it to your owner layer if you want. Only these two rows of local, undoable work are ever
+offered, never an outward, install, credential, agent-scoped or owner-written row. The gate counts
+asks per session in `~/.local/share/cobot/asks/` (rule texts and counts, no command text; files
+older than a week are removed). agy sends no session id, so it is never offered there.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path

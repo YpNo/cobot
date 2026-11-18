@@ -144,14 +144,19 @@ def scan_skill(folder: Path) -> list[Line]:
 
 
 def scan_plugin(plugin: Path) -> dict[str, list[Line]]:
-    """Every knowledge skill that carries dated lines, by skill name."""
+    """Every skill that carries dated lines, by skill name: knowledge skills and any other whose
+    references date their claims (onboard's workstation routes, F-46)."""
     found: dict[str, list[Line]] = {}
     for folder in sorted((plugin / "skills").glob("*/")):
-        if folder.name.startswith(KNOWLEDGE_SKILL_PREFIXES):
-            lines = scan_skill(folder)
-            if lines:
-                found[folder.name] = lines
+        lines = scan_skill(folder)
+        if lines:
+            found[folder.name] = lines
     return found
+
+
+def refreshed_by_learn(skill: str) -> bool:
+    """A skill ``/cobot:learn`` refreshes; any other is edited by hand, through a cobot PR."""
+    return skill.startswith(KNOWLEDGE_SKILL_PREFIXES) or skill.startswith("knowledge/")
 
 
 def scan_memory(memory_dir: Path) -> dict[str, list[Line]]:
@@ -236,7 +241,12 @@ def brief_line(items: list[Summary], today: date) -> str:
     else:
         named = ", ".join(f"{s.skill} ({s.stale})" for s in stale[:4])
         more = f" +{len(stale) - 4} more" if len(stale) > 4 else ""
-        text = f"knowledge: stale -> {named}{more}; refresh with /cobot:learn <skill>"
+        hints = []
+        if any(refreshed_by_learn(s.skill) for s in stale):
+            hints.append("refresh with /cobot:learn <skill>")
+        if not all(refreshed_by_learn(s.skill) for s in stale):
+            hints.append("for another skill, edit its references (a cobot PR)")
+        text = f"knowledge: stale -> {named}{more}; {'; '.join(hints)}"
     if reported:
         text += f"; {reported} reported line(s)"
     return text[:BRIEF_MAX]

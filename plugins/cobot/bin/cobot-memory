@@ -11,6 +11,8 @@ Commands
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
   journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
+  noticed add [TEXT] | noticed list | noticed clear
+                                   builders' Noticed: items parked by the report hook, one per line, for wrap
                                    --goes-to records where a finding is headed (open → X); it stays open
                                    until findings close
   learn [--dry-run] [--keep-assumed] [JSON]  apply a knowledge delta (argument or stdin) to .agent/knowledge/<topic>.md
@@ -38,6 +40,8 @@ import os
 import re
 import shlex
 import sys
+import unicodedata
+import urllib.parse
 from datetime import date
 from pathlib import Path
 
@@ -52,11 +56,13 @@ from _cobot_common import (  # noqa: E402
     data_dir,
     external_memory,
     git,
+    git_bytes,
     host_owner_repo,
     memory_dir,
     parse_cli,
     plugin_root,
     read_lines,
+    remote_owners,
     remotes,
     repo_root,
     repo_trust,
@@ -92,8 +98,9 @@ BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
 PART_SEPARATOR = "\n\n"  # between the text, the findings and each tail line
 KNOWLEDGE_CAP = 80
 ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b", re.M)
-STAMP_RE = re.compile(r"^verified: ([0-9a-f]{7,40})(\+working-tree)?( · .*)?$", re.M)
+STAMP_RE = re.compile(r"^verified: (?:(tree) )?([0-9a-f]{7,64})(\+working-tree)?( · .*)?$", re.M)
 DOC_ONLY_PREFIXES = (".agent/", "docs/", "CHANGELOG.md", "README.md")
+DOC_ROOT_ENTRIES = frozenset({".agent", "docs", "CHANGELOG.md", "README.md"})  # the same, as root entries
 FINDING_RE = re.compile(r"^\| *(F-\d+) *\|(.*?)\|(.*?)\|(.*?)\|\s*$")
 OPEN_RE = re.compile(r"(?i)open(?![a-z])")  # "", "open", "open → E2" are open; "opened issue 12" is a reason
 ROUTED = "open → "
@@ -105,7 +112,11 @@ PLACEHOLDER_ROWS = (
     "| build | `<command>` | <not run yet> | — |\n"
 )
 NONE_YET_ROW = "| — | none yet: the first spec's scaffold task records them | — | {{DATE}} |\n"
-KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md"})
+NOTICED_FILE = "noticed.md"  # builders' notices the report hook parked for wrap (memory-and-ship)
+NOTICED_HEAD = "# Noticed\n\nBuilders' notices waiting for /cobot:wrap: file each as a finding, or drop it.\n"
+NOTICED_LINE_RE = re.compile(r"^- \d{4}-\d{2}-\d{2} · (.+)$", re.M)
+NOTICE_LIMIT = 300  # characters an item keeps
+KNOWN_AGENT_FILES = frozenset({"CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "JOURNAL-archive.md", NOTICED_FILE})
 AGENT_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADER_FIELD_RE = re.compile(r"(?m)^([a-z]+):")
 DROPPED_RE = re.compile(r"sections dropped: (.*)")
@@ -512,8 +523,21 @@ def trust_not_recorded(mem: Memory, path: Path, error: OSError, flag: str) -> st
     return (
         f"{TRUST_NOT_RECORDED} cannot write {path} ({error.strerror}); Claude Code's sandbox keeps the"
         f" config directory read-only to Bash. The memory files above are written. The owner runs, in"
-        f" their own terminal: cd {shlex.quote(str(mem.root))} && {shlex.quote(str(Path(__file__).resolve()))} init {flag}"
+        f" their own terminal: cd {shlex.quote(str(mem.root))} && {config_prefix()}"
+        f"{shlex.quote(str(Path(__file__).resolve()))} init {flag}"
     )
+
+
+def config_prefix() -> str:
+    """``CLAUDE_CONFIG_DIR=<dir> `` when this run has one: a command the owner runs elsewhere must
+    write and read the same trust files (F-47: init and check disagreed on the folder)."""
+    value = os.environ.get("CLAUDE_CONFIG_DIR")
+    return f"CLAUDE_CONFIG_DIR={shlex.quote(value)} " if value else ""
+
+
+def trust_file_note(trusted: bool) -> str:
+    """Where trust is read, shown when it is not given."""
+    return "" if trusted else f" (trust file: {cobot_config_dir()})"
 
 
 def add_identity(mem: Memory) -> str:
@@ -527,7 +551,7 @@ def add_identity(mem: Memory) -> str:
         added = append_unique(path, line)
     except OSError as error:
         return trust_not_recorded(mem, path, error, "--add-identity")
-    return f"identity {'added' if added else 'already present'}: {line}"
+    return f"identity {'added' if added else 'already present'}: {line} (in {path})"
 
 
 def add_root_commit(mem: Memory) -> str:
@@ -539,7 +563,8 @@ def add_root_commit(mem: Memory) -> str:
         added = append_unique(path, f"{roots[0]} {mem.root.name}")
     except OSError as error:
         return trust_not_recorded(mem, path, error, "--trust-root")
-    return f"root commit {'added' if added else 'already present'}: {roots[0][:12]} ({mem.root.name})"
+    where = f"added to {path}" if added else f"already present in {path}"
+    return f"root commit {where}: {roots[0][:12]} ({mem.root.name})"
 
 
 def read_payload(positional: list[str]) -> str:
@@ -551,17 +576,79 @@ def read_payload(positional: list[str]) -> str:
     return sys.stdin.read()
 
 
-def cmd_journal_add(mem: Memory, entry: str) -> str:
+def cmd_journal_add(mem: Memory, entry: str, check_only: bool = False) -> str:
+    """Append a valid entry; with ``check_only``, validate and write nothing. ``main`` exits 1 on
+    any other answer, so ``journal add … && git commit`` stops at an invalid entry (F-41)."""
     entry = entry.strip()
     if not re.match(r"^## \d{4}-\d{2}-\d{2} — .+", entry):
         return "journal: the entry must start with '## YYYY-MM-DD — title'"
     missing = [f for f in ("Changed:", "Why:", "Proof:") if f not in entry]
     if missing:
         return f"journal: missing fields {', '.join(missing)}"
+    if check_only:
+        return "journal: valid"
     path = mem.dir / "JOURNAL.md"
     text = path.read_text(encoding="utf-8") if path.is_file() else "# Journal\n"
     path.write_text(text.rstrip("\n") + "\n\n" + entry + "\n", encoding="utf-8")
     return f"journal: appended to {path}"
+
+
+def noticed(mem: Memory) -> list[str]:
+    return NOTICED_LINE_RE.findall(mem.read(NOTICED_FILE))
+
+
+def noticed_refusal(mem: Memory) -> str:
+    """Why ``noticed.md`` may not be touched: an untrusted or absent memory, or a file that is a
+    symlink or resolves outside the memory folder (a merged link would make the hook write
+    elsewhere). Empty when it may."""
+    trusted, _ = mem.trust()
+    if not trusted or not mem.dir.is_dir():
+        return "noticed: untrusted or absent memory, nothing parked"
+    path = mem.dir / NOTICED_FILE
+    if path.is_symlink() or (path.exists() and not path.resolve().is_relative_to(mem.dir.resolve())):
+        return "noticed: refused, .agent/noticed.md is a link; remove it"
+    return ""
+
+
+def cmd_noticed_add(mem: Memory, text: str) -> str:
+    """Park each line of ``text`` as a dated notice, once; in a trusted memory only (the hook runs
+    in whatever checkout the session is in)."""
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
+    seen = set(noticed(mem))
+    fresh: list[str] = []
+    for raw in text.splitlines():
+        item = re.sub(r"[\x00-\x1f\x7f]", " ", raw).strip()[:NOTICE_LIMIT]
+        if item and item not in seen:
+            seen.add(item)
+            fresh.append(item)
+    if fresh:
+        path = mem.dir / NOTICED_FILE
+        current = path.read_text(encoding="utf-8") if path.is_file() else NOTICED_HEAD
+        if current == NOTICED_HEAD:
+            current += "\n"  # a blank line between the head and the first item
+        today = date.today().isoformat()
+        path.write_text(current + "".join(f"- {today} · {item}\n" for item in fresh), encoding="utf-8")
+    return f"noticed: {len(fresh)} parked"
+
+
+def cmd_noticed_list(mem: Memory) -> str:
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
+    items = noticed(mem)
+    return "\n".join(items) if items else "noticed: none"
+
+
+def cmd_noticed_clear(mem: Memory) -> str:
+    refusal = noticed_refusal(mem)
+    if refusal:
+        return refusal
+    path = mem.dir / NOTICED_FILE
+    if path.is_file():
+        path.write_text(NOTICED_HEAD, encoding="utf-8")
+    return "noticed: cleared"
 
 
 def next_finding_number(mem: Memory) -> int:
@@ -645,26 +732,80 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9-]+", "-", text.lower()).strip("-")
 
 
-def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool) -> list[str]:
+RUN_ID_RE = re.compile(r"(?i)(?:^|[/\s])actions/runs/\d+|/pipelines/\d+(?:\b|/)|/-/jobs/\d+")
+HOME_PATH_RE = re.compile(r"(?:/home|/Users)/(?!<)[^/\s<>]+|/root/|(?<![\w])[A-Za-z]:\\")
+SNAPSHOT_RE = re.compile(
+    r"(?i)\b(?:latest|newest)(?:\s+\w+)?\s+is\s+v?\d|\bas of (?:today|\d{4}-\d{2}-\d{2})\b"
+)
+
+
+def lint_text(text: str) -> str:
+    """The text as a reader sees it: URL-decoded, and NFKC-folded (a fullwidth letter is a letter)."""
+    return unicodedata.normalize("NFKC", urllib.parse.unquote(text))
+
+
+def promote_lint(entries: list[dict], owners: set[str], exempt: set[str], allow_reported: bool) -> tuple[list[dict], list[str]]:
+    """Entries fit for the plugin, and a reason for each refused one (spec memory-and-ship,
+    story 4): a run id, a user's home path, a release snapshot, an ``owner/repo`` slug of the
+    owner's (``exempt`` holds the cobot checkout's own), a secret, or ``reported`` unless allowed."""
+    kept, refused = [], []
+    for entry in entries:
+        text = lint_text(f"{entry.get('claim', '')} {entry.get('source', '')} {entry.get('checked', '')}")
+        found = (m.group(0) for owner in owners for m in re.finditer(rf"(?<![\w.-]){re.escape(owner)}/[\w.-]+", text, re.I))
+        slugs = {slug.rstrip(".").lower() for slug in found}
+        reasons = [
+            reason
+            for reason, hit in (
+                ("run id", RUN_ID_RE.search(text)),
+                ("home path", HOME_PATH_RE.search(text)),
+                ("release snapshot", SNAPSHOT_RE.search(text)),
+                ("owner slug", slugs - {s.lower() for s in exempt}),
+                ("secret", SECRET_RE.search(text)),
+                ("reported", entry.get("status") == "reported" and not allow_reported),
+            )
+            if hit
+        ]
+        if reasons:
+            refused.append(f"  promote: refused ({', '.join(reasons)}): {str(entry.get('claim', ''))[:60]}")
+        else:
+            kept.append(entry)
+    return kept, refused
+
+
+def lint_context(mem: Memory, checkout: Path) -> tuple[set[str], set[str]]:
+    """The owner names whose slugs stay out of the plugin (origin's owner, the identities), and the
+    cobot checkout's own slugs, which a line may cite."""
+    owners_by_remote, identities = remote_owners(mem.root)
+    owners = {value.split("/", 1)[-1].lower() for value in owners_by_remote.values()}
+    owners |= {identity.split("/", 1)[-1] for identity in identities}
+    exempt = {f"{p[1]}/{p[2]}".lower() for url in remotes(checkout).values() if (p := host_owner_repo(url))}
+    return {owner for owner in owners if owner}, exempt
+
+
+def promote_entries(mem: Memory, topic: str, entries: list[dict], delta: dict, source: str | None, in_place: bool, allow_reported: bool = False) -> list[str]:
     if not entries:
         return ["  promote: no general entry"]
     checkout = source_checkout(source)
     if checkout is None:
         return ["  promote: no cobot checkout known (a directory marketplace, $COBOT_SOURCE or --source DIR)"]
+    owners, exempt = lint_context(mem, checkout)
+    entries, refused = promote_lint(entries, owners, exempt, allow_reported)
+    if not entries:
+        return [*refused, "  promote: no general entry"]
     worktrees = data_dir().parent / "promote"
     result = promote(checkout, topic, entries, delta, date.today(), in_place, worktrees)
     if isinstance(result, str):
-        return [f"  {result}"]
-    return [f"  {line}" for line in result.lines()]
+        return [*refused, f"  {result}"]
+    return [*refused, *(f"  {line}" for line in result.lines())]
 
 
-def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False) -> str:
+def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promoting: bool = False, source: str | None = None, in_place: bool = False, allow_reported: bool = False) -> str:
     try:
         delta = json.loads(raw)
     except json.JSONDecodeError as error:
         if promoting and raw.strip() and slug(raw.strip()) == raw.strip():
             entries = pending_general(mem, raw.strip())
-            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place)])
+            return "\n".join([f"learn: topic {raw.strip()}, {len(entries)} pending general line(s)", *promote_entries(mem, raw.strip(), entries, {}, source, in_place, allow_reported)])
         return f"learn: delta is not JSON ({error})"
     if not isinstance(delta, dict):
         return "learn: delta must be a JSON object"
@@ -707,7 +848,7 @@ def cmd_learn(mem: Memory, raw: str, dry_run: bool, keep_assumed: bool, promotin
             path.write_text(head.rstrip("\n") + "\n" + "\n".join(new_lines) + "\n", encoding="utf-8")
         report.append(f"  written: {path}")
     if promoting and not dry_run:
-        report.extend(promote_entries(mem, topic, general, delta, source, in_place))
+        report.extend(promote_entries(mem, topic, general, delta, source, in_place, allow_reported))
     elif promoting:
         report.append(f"  promote: dry run, {len(general)} general entry(ies) would be promoted")
     return "\n".join(report)
@@ -840,11 +981,16 @@ def cmd_stamp(mem: Memory) -> str:
     matches = STAMP_RE.findall(mem.read("JOURNAL.md"))
     if not matches:
         return "missing — no stamp"
-    sha, dirty, _ = matches[-1]
+    kind, sha, dirty, _ = matches[-1]
     if dirty:
         return "missing — dirty-tree stamp; commit, then wrap"
-    stamp = git(["rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], mem.checkout)
     head = git(["rev-parse", "HEAD"], mem.checkout)
+    if kind == "tree":
+        key = tree_key(mem.checkout, "HEAD", foreign=mem.dir.is_symlink())
+        if not head or not key:
+            return "missing — stamp tree unknown"
+        return f"ok {head[:7]}" if key.startswith(sha) else "missing — HEAD moved since the stamp"
+    stamp = git(["rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], mem.checkout)
     if not stamp or not head:
         return "missing — stamp commit unknown"
     if stamp == head:
@@ -855,6 +1001,61 @@ def cmd_stamp(mem: Memory) -> str:
     if changed is not None and all(path.startswith(DOC_ONLY_PREFIXES) for path in changed.splitlines() if path):
         return f"ok {head[:7]}"
     return "missing — HEAD moved since the stamp"
+
+
+def tree_key(checkout: Path, treeish: str, foreign: bool) -> str | None:
+    """The stamp key of a tree (spec memory-and-ship, story 1): the tree with its root doc entries
+    taken out, as ``git mktree`` names it, so the key is known before the commit that adds the
+    journal and holds in any clone; no object needs to survive. In foreign mode, the whole tree."""
+    tree = git(["rev-parse", "--verify", "--quiet", f"{treeish}^{{tree}}"], checkout)
+    if not tree or foreign:
+        return tree
+    listing = git_bytes(["ls-tree", "-z", tree], checkout)
+    if listing is None:
+        return None
+    doc_names = {name.encode() for name in DOC_ROOT_ENTRIES}
+    kept = [entry for entry in listing.split(b"\0") if entry and entry.split(b"\t", 1)[-1] not in doc_names]
+    key = git_bytes(["mktree", "-z"], checkout, stdin=b"".join(entry + b"\0" for entry in kept))
+    return key.decode("ascii").strip() if key else None
+
+
+def stamp_readiness(checkout: Path) -> str:
+    """Why the index is not what the tests ran on: code changed but not staged, or code left
+    untracked. Doc entries do not count. Empty when ready."""
+    raw = git_bytes(["status", "--porcelain=v1", "-z", "--untracked-files=all"], checkout)
+    if raw is None:
+        return "git status failed"
+    # bytes, never stripped: the first record may start with a space (" M path"); names decode
+    # losslessly, so a non-UTF-8 name is named, not a crash
+    records = raw.decode("utf-8", errors="surrogateescape").split("\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if len(record) < 4:
+            continue
+        code, path = record[:2], record[3:]
+        if "R" in code or "C" in code:
+            index += 1  # the next record is the rename's or copy's source path, whatever it holds
+        if path.split("/", 1)[0] in DOC_ROOT_ENTRIES:
+            continue
+        if code == "??":
+            return f"{path} is untracked"
+        if code[1] != " ":
+            return f"{path} has unstaged changes"
+    return ""
+
+
+def cmd_stamp_tree(mem: Memory) -> tuple[str, int]:
+    """``tree <key>`` of the index, for a journal stamp written before the one commit."""
+    why = stamp_readiness(mem.checkout)
+    if why:
+        return f"stamp: not ready — {why}; stage the code the tests ran on", 1
+    tree = git(["write-tree"], mem.checkout)
+    key = tree_key(mem.checkout, tree, foreign=mem.dir.is_symlink()) if tree else None
+    if not key:
+        return "stamp: not ready — git write-tree failed", 1
+    return f"tree {key}", 0
 
 
 def missing_header_fields(mem: Memory) -> list[str]:
@@ -871,7 +1072,8 @@ def missing_header_fields(mem: Memory) -> list[str]:
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
-    lines = [f"memory: {mem.dir}", f"mode: {mode}", f"trust: {'trusted' if trusted else 'untrusted'} ({reason})"]
+    trust = f"trust: {'trusted' if trusted else 'untrusted'} ({reason}){trust_file_note(trusted)}"
+    lines = [f"memory: {mem.dir}", f"mode: {mode}", trust]
     lines.append(f"tree: {mem.tree()}")
     for name in ("CONTEXT.md", "JOURNAL.md", "FINDINGS.md", "ARCHITECTURE.md", "cobot.rules"):
         path = mem.dir / name
@@ -880,6 +1082,9 @@ def cmd_check(mem: Memory) -> str:
             lines.append(f"{name}: {count} lines")
     lines.append(f"journal: {journal_order(mem)}")
     lines.append(f"findings: {len(mem.open_findings())} open / {len(mem.findings())} total")
+    waiting = noticed(mem)
+    if waiting:
+        lines.append(f"noticed: {len(waiting)} waiting; /cobot:wrap files or drops each")
     lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
     brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
     lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
@@ -925,9 +1130,11 @@ SWITCHES = {
     "init": {"foreign", "add-identity", "trust-root"},
     "brief": {"no-trust-check"},
     "findings": {"open"},
-    "learn": {"dry-run", "keep-assumed", "promote", "in-place"},
+    "learn": {"dry-run", "keep-assumed", "promote", "in-place", "allow-reported"},
     "knowledge": {"stale", "json", "brief"},
     "compact": {"dry-run", "force"},
+    "stamp": {"tree"},
+    "journal": {"check"},
 }
 PROFILES = ("spike", "script", "cli", "library", "service", "infra")
 
@@ -959,17 +1166,30 @@ def main(argv: list[str]) -> int:
         print(out)
         if TRUST_NOT_RECORDED in out:
             return 1
+    elif command == "stamp" and "tree" in flags:
+        out, code = cmd_stamp_tree(mem)
+        print(out)
+        return code
     elif command == "stamp":
         print(cmd_stamp(mem))
     elif command == "trust":
         trusted, reason = mem.trust()
-        print(f"{'trusted' if trusted else 'untrusted'}: {reason}")
+        print(f"{'trusted' if trusted else 'untrusted'}: {reason}{trust_file_note(trusted)}")
     elif command == "check":
         print(cmd_check(mem))
     elif command == "brief":
         print(build_brief(mem, int(options.get("budget", DEFAULT_BUDGET)), trust_check="no-trust-check" not in flags))
     elif command == "journal" and sub == "add":
-        print(cmd_journal_add(mem, read_payload(positional[2:])))
+        out = cmd_journal_add(mem, read_payload(positional[2:]), check_only="check" in flags)
+        print(out)
+        if not out.startswith(("journal: appended", "journal: valid")):
+            return 1
+    elif command == "noticed" and sub == "add":
+        print(cmd_noticed_add(mem, read_payload(positional[2:])))
+    elif command == "noticed" and sub == "list":
+        print(cmd_noticed_list(mem))
+    elif command == "noticed" and sub == "clear":
+        print(cmd_noticed_clear(mem))
     elif command == "findings" and sub == "add" and len(positional) >= 4:
         print(cmd_findings_add(mem, positional[2], positional[3], options.get("goes-to", "")))
     elif command == "findings" and sub == "list":
@@ -986,6 +1206,7 @@ def main(argv: list[str]) -> int:
                 promoting="promote" in flags,
                 source=options.get("source"),
                 in_place="in-place" in flags,
+                allow_reported="allow-reported" in flags,
             )
         )
     elif command == "knowledge":

@@ -350,7 +350,7 @@ def test_check_runsCachesAndReportsStaleness(tools, repo):
     assert (
         "    github.com/a/b v1.0.0 -> v1.2.0" in text
         and "unsupported here, check by hand: yarn" in text
-        and text.endswith("/cobot:consult gha")
+        and "/cobot:consult gha" not in text  # no workflow here: no Actions hint (F-48)
     )
     again = deps.check(repo, TODAY)
     assert again["cached"] is True and deps.report(again, TODAY).startswith(
@@ -440,3 +440,89 @@ def test_rust_adapter_denyWithoutTargetsOrUnreadable_noScopeNote(tools, repo):
     assert not any("deny.toml" in note for note in deps.rust(repo, deps.run).notes)
     (repo / "deny.toml").write_text("not = [valid toml\n")
     assert not any("deny.toml" in note for note in deps.rust(repo, deps.run).notes)
+
+
+# ---------------------------------------------------------------- toolchains and the Actions hint (story 7)
+
+FLOATING = [
+    ("rust-toolchain.toml", '[toolchain]\nchannel = "stable"\n', "rust-toolchain.toml: stable"),
+    ("rust-toolchain", "nightly\n", "rust-toolchain: nightly"),
+    (".nvmrc", "lts/iron\n", ".nvmrc: lts/iron"),
+    (".node-version", "20\n", ".node-version: 20"),
+    (".python-version", "3\n", ".python-version: 3"),
+    (".tool-versions", "rust stable\nnodejs 22.11.0\n", ".tool-versions: rust stable"),
+    ("mise.toml", '[tools]\nnode = "latest"\n', "mise.toml: node latest"),
+    (".mise.toml", '[tools]\npython = { version = "3" }\n', ".mise.toml: python 3"),
+    (".config/mise.toml", '[tools]\ngo = ["lts"]\n', ".config/mise.toml: go lts"),
+]
+PINNED = [
+    ("rust-toolchain.toml", '[toolchain]\nchannel = "1.99.1"\n'),
+    ("rust-toolchain", "nightly-2026-11-01\n"),
+    (".nvmrc", "v22.11.0\n"),
+    (".python-version", "3.12\n"),
+    (".tool-versions", "rust 1.99.1\n"),
+    ("mise.toml", '[tools]\nnode = "22.11.0"\n'),
+]
+
+
+@pytest.mark.parametrize(("name", "text", "row"), FLOATING)
+def test_toolchainRows_floatingChannel_named(repo, name, text, row):
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+    (repo / name).write_text(text)
+    rows = deps.toolchain_rows(repo)
+    assert any(r.startswith(row) and "floats" in r for r in rows), rows
+
+
+@pytest.mark.parametrize(("name", "text"), PINNED)
+def test_toolchainRows_pinnedFile_nothing(repo, name, text):
+    (repo / name).write_text(text)
+    assert deps.toolchain_rows(repo) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [
+        ("mise.toml", 'tools = "node"\n'),
+        ("mise.toml", "tools = [1]\n"),
+        ("rust-toolchain.toml", 'toolchain = "stable"\n'),
+    ],
+)
+def test_toolchainRows_wrongShapes_noCrash(repo, name, text):
+    # review M1: a value where a table is expected
+    (repo / name).write_text(text)
+    assert isinstance(deps.toolchain_rows(repo), list)
+
+
+def test_toolchainRows_goModWithoutToolchain_isANote(repo):
+    (repo / "go.mod").write_text("module x\n\ngo 1.27\n")
+    rows = deps.toolchain_rows(repo)
+    assert rows and "go.mod" in rows[0] and "note" in rows[0] and "floats" not in rows[0]
+    (repo / "go.mod").write_text("module x\n\ngo 1.27\n\ntoolchain go1.27.3\n")
+    assert deps.toolchain_rows(repo) == []
+
+
+def test_check_readOnlyCache_reportsAnyway(tools, repo, monkeypatch):
+    # an eval sandbox mounts the data folder read-only: the report must still come out (T06)
+    write_fakes(tools)
+    seed_repo(repo, "go.mod")
+    (repo / "rust-toolchain").write_text("stable\n")
+
+    def refuse(*args, **kwargs):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(deps.Path, "write_text", refuse)
+    data = deps.check(repo, TODAY)
+    text = deps.report(data, TODAY)
+    assert "cache: not written (Read-only file system)" in text and "rust-toolchain: stable floats" in text
+
+
+def test_report_actionsHint_onlyWithAWorkflow_andToolchainsShown(tools, repo):
+    write_fakes(tools)
+    seed_repo(repo, "go.mod")
+    (repo / "rust-toolchain").write_text("stable\n")
+    text = deps.report(deps.check(repo, TODAY), TODAY)
+    assert "GitHub Actions pins" not in text and "toolchain: rust-toolchain: stable floats" in text
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / ".github" / "workflows" / "ci.yml").write_text("on: push\n")
+    cached = deps.check(repo, TODAY)  # cached result: the file facts are read again
+    assert cached["cached"] is True and "GitHub Actions pins" in deps.report(cached, TODAY)

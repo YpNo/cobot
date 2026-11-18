@@ -28,6 +28,25 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    first; say what you keep. Rows in `actions.md` older than 30 days (the brief flags them) are
    re-resolved with `gh api repos/<o>/<r>/releases/latest` and `git/ref/tags/<tag>` before use;
    a SHA you did not resolve today, or a line that is only `reported`, is not written.
+
+   Then three checks, before any job is planned:
+   - **Toolchains.** Run `cobot-deps check`. Each `toolchain:` row names a floating channel
+     (`stable`, `lts`, a major alone): propose a pin to the release the local proof ran on, since
+     CI would otherwise take a newer one. List every pin Dependabot cannot see, each with its
+     update path: a binary fetched with its sha256, `install-action` tool versions, a scanner's
+     version, a container digest.
+   - **The remote.** Run `git remote get-url origin` first, and say so when there is no origin.
+     Then run `GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes' timeout 20 git
+     ls-remote --symref origin HEAD`:
+     - exit 0 with no output is an **empty** remote: say so, and propose pushing the default
+       branch first, before any branch or PR;
+     - any failure, the timeout included, is **unreachable**, never empty.
+
+     Name the base branch, and say when the work sits on a branch not yet merged.
+   - **Absent tools.** An audit tool a job needs but the machine lacks is printed in the owner's
+     install route (`cobot-env`, decision 29) and never run. Its version comes from a verified
+     knowledge line or a release you resolved today, with the source named; with neither, name
+     the tool without a version and say so. The job installs it in CI.
 2. **Scope by profile**, then name for every job the failure it prevents; a job with no answer
    is dropped:
 
@@ -83,6 +102,8 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    RUNTIME     <expected wall-clock per trigger>
    OMITTED     <what was left out, and why>
    UNVERIFIED  <what could not be run locally, with the command that would>
+   REMOTE      <origin: empty | unreachable | default branch> · base <branch> · committed by <who>
+   PINS        <toolchain pins proposed; pins outside Dependabot, each with its update path>
    ```
 
    Update the README's CI section when behaviour changed, journal one entry, and leave the

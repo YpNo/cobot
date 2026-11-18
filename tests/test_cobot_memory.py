@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -469,7 +471,7 @@ def test_cli_journalAdd_takesTheArgumentAndNeverWaitsOnATerminal(memory, repo, c
     assert memory.main(["journal", "add", entry]) == 0
     assert "appended" in capsys.readouterr().out
     assert memory.Memory().journal_entries()[0][0] == "2026-05-06"
-    assert memory.main(["journal", "add"]) == 0
+    assert memory.main(["journal", "add"]) == 1  # an invalid entry stops a chained commit (F-41)
     assert "must start with" in capsys.readouterr().out
     assert memory.main(["learn", "--dry-run", '{"topic": "x", "lines": []}']) == 0
 
@@ -861,6 +863,198 @@ def test_stamp_untrustedMemory_missingWithoutReadingJournal(memory, repo):
     (mem.dir).mkdir(exist_ok=True)
     (mem.dir / "JOURNAL.md").write_text("verified: 0000000 · <script>evil</script>\n")
     assert memory.cmd_stamp(mem) == "missing — untrusted memory"
+
+
+# ---------------------------------------------------------------- one commit per change (story 1)
+
+GOOD_ENTRY = "## 2026-11-18 — x\nChanged: a\nWhy: b\nProof: c\n"
+
+
+def tree_stamped(memory, repo, capsys):
+    """Code staged, the key taken, the journal written with it, one commit of both."""
+    mem, _ = stamped(memory, repo, "Proof: before")
+    (repo / "src").mkdir()
+    (repo / "src" / "main.py").write_text("print(1)\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    assert memory.main(["stamp", "--tree"]) == 0
+    key = capsys.readouterr().out.strip()
+    assert re.fullmatch(r"tree [0-9a-f]{40}", key), key
+    entry = GOOD_ENTRY + f"verified: {key} · pytest\n"
+    assert memory.main(["journal", "add", entry]) == 0
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "code and journal"], check=True)
+    return mem
+
+
+def test_stampTree_oneCommitOfCodeAndJournal_ok(memory, repo, capsys):
+    mem = tree_stamped(memory, repo, capsys)
+    assert memory.cmd_stamp(mem).startswith("ok ")
+
+
+def test_stampTree_survivesGcAndDocsAfter_codeAfterMisses(memory, repo, capsys):
+    mem = tree_stamped(memory, repo, capsys)
+    subprocess.run(["git", "-C", str(repo), "gc", "-q", "--prune=now"], check=True)
+    assert memory.cmd_stamp(mem).startswith("ok ")
+    add_commit(repo, "docs/x.md")
+    assert memory.cmd_stamp(mem).startswith("ok ")
+    add_commit(repo, "src/other.py")
+    assert memory.cmd_stamp(mem) == "missing — HEAD moved since the stamp"
+
+
+def test_stampTree_freshClone_ok(memory, repo, capsys, tmp_path, monkeypatch):
+    mem = tree_stamped(memory, repo, capsys)
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True)
+    journal = (mem.dir / "JOURNAL.md").read_text()
+    key = re.search(r"verified: tree ([0-9a-f]{40})", journal).group(1)
+    assert memory.tree_key(clone, "HEAD", foreign=False) == key
+
+
+def test_stampTree_untrackedOrUnstagedCode_notReady(memory, repo, capsys):
+    stamped(memory, repo, "Proof: before")
+    (repo / "src").mkdir()
+    (repo / "src" / "x.py").write_text("x\n")
+    assert memory.main(["stamp", "--tree"]) == 1
+    assert "stamp: not ready" in capsys.readouterr().out
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    (repo / "src" / "x.py").write_text("y\n")
+    assert memory.main(["stamp", "--tree"]) == 1
+    (repo / "docs").mkdir()
+    (repo / "docs" / "n.md").write_text("n\n")  # an untracked doc is not code
+    subprocess.run(["git", "-C", str(repo), "add", "src"], check=True)
+    assert memory.main(["stamp", "--tree"]) == 0
+
+
+def test_stampReadiness_unstagedFirstRecord_andRenames_readRight(memory, repo):
+    # review of the branch, H1 and H2: a leading-space status record, and rename sources
+    commit(repo)
+    (repo / "src").mkdir()
+    for name in ("main.rs", "lib.rs"):
+        (repo / "src" / name).write_text("a\n")
+    (repo / "CONTRIBUTING.md").write_text("c\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "files"], check=True)
+    (repo / "src" / "main.rs").write_text("b\n")  # " M src/main.rs", the first record
+    assert "src/main.rs has unstaged changes" in memory.stamp_readiness(repo)
+    subprocess.run(["git", "-C", str(repo), "add", "src/main.rs"], check=True)
+    subprocess.run(["git", "-C", str(repo), "mv", "CONTRIBUTING.md", "docs-CONTRIBUTING.md"], check=True)
+    (repo / "src" / "lib.rs").write_text("b\n")  # must not hide behind the rename's source
+    assert "src/lib.rs has unstaged changes" in memory.stamp_readiness(repo)
+    subprocess.run(["git", "-C", str(repo), "add", "src/lib.rs"], check=True)
+    assert memory.stamp_readiness(repo) == ""
+
+
+def test_stampReadiness_nonUtf8Name_noCrash(memory, repo):
+    commit(repo)
+    (repo / os.fsdecode(b"\xff.rs")).write_text("x\n")
+    assert "is untracked" in memory.stamp_readiness(repo)
+
+
+def test_stamp_sha256Key_isRead(memory):
+    line = "verified: tree " + "a" * 64 + " · pytest"
+    assert memory.STAMP_RE.search(line).group(2) == "a" * 64
+
+
+def test_stampTree_foreignMode_keyIsTheWholeTree(memory, repo):
+    commit(repo)
+    whole = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"], capture_output=True, text=True
+    ).stdout.strip()
+    assert memory.tree_key(repo, "HEAD", foreign=True) == whole
+    add_commit(repo, "docs/x.md")
+    assert memory.tree_key(repo, "HEAD", foreign=True) != whole  # foreign mode: an exact tree
+
+
+def test_journalAdd_invalidEntry_exitsOne_andCheckWritesNothing(memory, repo, capsys):
+    stamped(memory, repo, "Proof: before")
+    mem = memory.Memory()
+    before = (mem.dir / "JOURNAL.md").read_text()
+    assert memory.main(["journal", "add", "## not a date\nChanged: x"]) == 1
+    assert memory.main(["journal", "add", "--check", GOOD_ENTRY]) == 0
+    assert "journal: valid" in capsys.readouterr().out
+    assert (mem.dir / "JOURNAL.md").read_text() == before
+
+
+# ---------------------------------------------------------------- trust writes show where they went (story 6)
+
+
+def test_trustRoot_namesTheFileItWrote(memory, repo):
+    commit(repo)
+    out = memory.add_root_commit(memory.Memory())
+    assert out.startswith("root commit added to " + config("trusted"))
+    assert memory.add_root_commit(memory.Memory()).startswith("root commit already present in ")
+
+
+def test_trustAndCheck_untrusted_nameTheFileTheyRead(memory, repo, capsys):
+    remote(repo, "origin", "https://github.com/stranger/r.git")
+    commit(repo)
+    assert memory.main(["trust"]) == 0
+    assert f"trust file: {os.path.dirname(config('trusted'))}" in capsys.readouterr().out
+    assert f"trust file: {os.path.dirname(config('trusted'))}" in memory.cmd_check(memory.Memory())
+
+
+def test_trustNotRecorded_carriesTheConfigDirOfThisRun(memory, repo, monkeypatch):
+    mem = memory.Memory()
+    error = OSError(30, "Read-only file system")
+    line = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert f"CLAUDE_CONFIG_DIR={os.environ['CLAUDE_CONFIG_DIR']} " in line
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+    plain = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert "CLAUDE_CONFIG_DIR=" not in plain
+
+
+# ---------------------------------------------------------------- noticed items (story 3)
+
+
+def test_noticed_addListClear_dedupedAndCountedByCheck(memory, repo, capsys):
+    mem, _ = stamped(memory, repo, "Proof: x")
+    assert memory.main(["noticed", "add", "a stale README line\nan unpinned action\n"]) == 0
+    assert memory.main(["noticed", "add", "a stale README line\n"]) == 0  # already parked
+    text = (mem.dir / "noticed.md").read_text()
+    assert text.count("a stale README line") == 1 and "an unpinned action" in text
+    capsys.readouterr()
+    assert memory.main(["noticed", "list"]) == 0
+    assert capsys.readouterr().out.count("\n") == 2
+    assert "noticed: 2 waiting" in memory.cmd_check(mem)
+    assert memory.main(["noticed", "clear"]) == 0
+    assert "noticed:" not in memory.cmd_check(mem).replace("noticed: none", "")
+    assert "noticed.md" not in memory.build_brief(mem, 6000)  # a known file, not "also in .agent"
+
+
+def test_noticed_symlinkedFile_refused(memory, repo, tmp_path):
+    # review H3: a merged symlink must not turn the hook into a writer elsewhere
+    mem, _ = stamped(memory, repo, "Proof: x")
+    target = tmp_path / "outside"
+    target.write_text("keep\n")
+    (mem.dir / "noticed.md").symlink_to(target)
+    assert "refused" in memory.cmd_noticed_add(mem, "x\n")
+    assert "refused" in memory.cmd_noticed_clear(mem)
+    assert target.read_text() == "keep\n"
+
+
+def test_noticed_untrustedMemory_parksNothing(memory, repo, capsys):
+    remote(repo, "origin", "https://github.com/stranger/r.git")
+    commit(repo)
+    seed(repo)
+    assert memory.main(["noticed", "add", "x\n"]) == 0
+    assert "untrusted" in capsys.readouterr().out
+    assert not (repo / ".agent" / "noticed.md").exists()
+    (repo / ".agent" / "noticed.md").write_text("- 2026-01-01 · repository text\n")
+    assert "untrusted" in memory.cmd_noticed_list(memory.Memory())
+    assert "untrusted" in memory.cmd_noticed_clear(memory.Memory())
+
+
+def test_noticed_hookToMemory_endToEnd(memory, repo, rules):
+    mem, _ = stamped(memory, repo, "Proof: x")
+    report = "Checks:\n- `make test` → exit 0\nNoticed:\n- the CI cache key misses the lockfile\n"
+    payload = {
+        "tool_name": "Agent",
+        "tool_input": {"subagent_type": "cobot:builder"},
+        "tool_response": {"status": "completed", "content": report},
+        "cwd": str(repo),
+    }
+    assert rules.report(json.dumps(payload)) is None
+    assert "the CI cache key misses the lockfile" in (mem.dir / "noticed.md").read_text()
 
 
 # ---------------------------------------------------------------- never-push rules at foreign init (R2)

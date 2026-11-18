@@ -26,16 +26,28 @@ argument-hint: [spec slug]
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled
    under `Open` with the finding text, or becomes a findings row.
-4. **Findings triage.** `cobot-memory findings list --open`: each row becomes a spec task, an
-   issue the owner may open (propose the `gh issue create` command, do not run it), or
+4. **Findings triage.** First the parked notices: `cobot-memory noticed list` shows the
+   builders' `Noticed:` items the report hook kept. Each becomes `cobot-memory findings add`, or
+   is dropped with its reason in the journal's `Open:`; then `cobot-memory noticed clear`. Then
+   `cobot-memory findings list --open`: each row becomes a spec task, an issue the owner may open
+   (propose the `gh issue create` command, do not run it), or
    `cobot-memory findings close F-nn "<reason>"`.
 5. **Memory.** If a verified command changed or a new one was proven, update CONTEXT.md's table
    with today's date. Keep CONTEXT.md under 120 lines.
-6. **Journal.** One entry through `cobot-memory journal add`:
-   `## YYYY-MM-DD — <title>` then `Changed:` `Why:` `Proof:` (commands, exit codes, tails)
-   `Open:` `Next:` and the stamp `verified: <HEAD sha> · <commands run>`. HEAD must be clean
-   except `.agent/` when the stamp is written: never write `+working-tree`; commit the last task
-   first. `cobot-memory stamp` is what `contribute`, `ship` and the gate's `git push` reason read.
+6. **Journal and commit**, one commit for the code and its entry (decision 31):
+   1. Stage the code the full run tested (`git add`).
+   2. Run `cobot-memory stamp --tree`. It prints `tree <key>`, or exits 1 with
+      `stamp: not ready — <reason>` when code is unstaged or untracked: stage it, or say why not.
+   3. Write one entry through `cobot-memory journal add`: `## YYYY-MM-DD — <title>`, then
+      `Changed:` `Why:` `Proof:` (commands, exit codes, tails) `Open:` `Next:`, and the stamp
+      `verified: tree <key> · <commands run>`. An invalid entry exits 1, so a chained commit
+      stops; `journal add --check` validates first.
+   4. Run `git add .agent/JOURNAL.md` (skip it in foreign mode, where the journal lives outside
+      the tree), then one `git commit`.
+
+   Never write `+working-tree`. The older form, `verified: <commit sha>` in an entry committed
+   after the code, is still read. `cobot-memory stamp` is what `contribute`, `ship` and the gate's
+   `git push` reason read: `ok` while HEAD's tree matches the key outside the doc entries.
 7. **Hand over.** The spec's branch becomes **one PR** (decision 20): check the commit log for an
    attribution footer or an AI named as author (decision 18) before proposing it, then list what
    the owner may now do (push, `gh pr create` with the body you drafted), each as a command the

@@ -98,9 +98,10 @@ def data_dir() -> Path:
     return Path(base) / "cobot" / "repos"
 
 
-def git(args: list[str], cwd: Path) -> str | None:
+def git(args: list[str], cwd: Path, stdin: str | None = None) -> str | None:
     """Run git and return stdout, or None when git is missing or the call fails. Every call turns
-    the repository's fsmonitor program, untracked cache, lazy fetches, prompts and replace refs off."""
+    the repository's fsmonitor program, untracked cache, lazy fetches, prompts and replace refs off.
+    ``stdin`` feeds ``git mktree`` and its kin."""
     try:
         out = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [shutil.which("git") or "git", *NO_FSMONITOR, *args],
@@ -108,6 +109,8 @@ def git(args: list[str], cwd: Path) -> str | None:
             env={**os.environ, **QUIET_GIT_ENV},
             capture_output=True,
             text=True,
+            errors="surrogateescape",  # a non-UTF-8 file name is data, never a crash
+            input=stdin,
             timeout=5,
             check=False,
         )
@@ -116,14 +119,16 @@ def git(args: list[str], cwd: Path) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
-def git_bytes(args: list[str], cwd: Path) -> bytes | None:
-    """``git`` for binary output (``cat-file blob``): stdout as bytes, or None on any failure."""
+def git_bytes(args: list[str], cwd: Path, stdin: bytes | None = None) -> bytes | None:
+    """``git`` for binary output (``cat-file blob``, ``ls-tree -z``): stdout as bytes, unstripped,
+    or None on any failure. ``stdin`` feeds ``git mktree -z`` with names in any encoding."""
     try:
         out = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [shutil.which("git") or "git", *NO_FSMONITOR, *args],
             cwd=cwd,
             env={**os.environ, **QUIET_GIT_ENV},
             capture_output=True,
+            input=stdin,
             timeout=5,
             check=False,
         )

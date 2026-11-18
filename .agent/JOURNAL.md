@@ -273,3 +273,75 @@ Proof: tests first for T01 and T02 (the auditor gets the consultant's decision o
 Open: the evals have run locally only (CI runs them from main after merge); one test file edit early in T02 used a shell heredoc instead of the Edit tool (owner rule broken, reported); the brief sits at its 6000-character budget.
 Next: owner pushes feat/security-auditor and opens its PR; then the memory and ship spec (F-37, F-41 to F-43, F-46 to F-49 where they belong).
 verified: 65e4c58 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, agy plugin validate, local evals
+
+## 2026-11-18 — spec memory-and-ship, challenged
+Changed: 3bff15e .agent/specs/memory-and-ship.md (revision 2, stories 1–9, T01–T07): keyed-tree stamp so code and journal share one commit, journal add exits 1 on an invalid entry; the gate offers an owner allow line from the third ask of an offered row (git commit, git rebase); builders' Noticed items parked in .agent/noticed.md and cleared at wrap; promotion lint in promote_entries; every skill's dated lines scanned; trust commands show their file and carry CLAUDE_CONFIG_DIR; cobot-deps toolchain channels and the Actions hint only with workflows; ship reads its remote (unreachable is not empty), toolchains and pins first; eval ship-ground.
+Why: findings F-37, F-41, F-42, F-43, F-46, F-47, F-48 (dogfood 2026-11-15/16, evals); the owner answered four questions on 2026-11-18, all recommended: tree stamp, offer after repeats, hook parks and wrap clears, refuse promotions.
+Proof: the brief is at its budget by design (build_brief fills the room), so it left the scope; the challenger's SOUND WITH CHANGES (5 MAJOR, 7 MINOR) checked by hand before folding: a written tree pruned by git gc --prune=now and a mktree key that survives it, ask Bash(*) @consultant at default.rules 608-609, promote_entries skipping filter_delta; spec 276 lines.
+Open: the revision header was set with sed -i instead of the Edit tool (owner rule broken, reported); F-35, F-39, F-49 stay their own specs.
+Next: owner reviews; then build from T01 on feat/memory-and-ship.
+verified: 3bff15e · challenger pass, gate dry runs, scratch git checks
+
+## 2026-11-18 — memory-and-ship T01: one commit per verified change
+Changed: cobot-memory: tree_key (the tree with its root doc entries out, rebuilt by git mktree; the whole tree in foreign mode), stamp_readiness, stamp --tree, the tree form in STAMP_RE and cmd_stamp; journal add exits 1 on an invalid entry and takes --check; _cobot_common.git gains stdin; wrap step 6 and build step 5 name the one-commit flow; tests (test_cobot_memory story 1 block, test_workflow_skills); test_cli_journalAdd now expects 1 for an empty entry (the F-41 bug it pinned).
+Why: F-41, story 1 of spec memory-and-ship (owner answer: one commit, tree stamp); challenger 1 and 2: a written tree is pruned by gc, and foreign mode has no journal to add.
+Proof: tests first (six failing); the key survives git gc --prune=now and holds in a fresh clone; untracked or unstaged code is not ready, an untracked doc is; full suite 3409 passed, 98.51 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; the gate is silent on stamp --tree and journal add --check. This entry is the first committed with its code under the new flow.
+Open: T02–T07 of the spec; CHANGELOG and decision 31 come in T07.
+Next: T02, the Noticed parking.
+verified: tree c9e1c976796e57d72ab8223904f085d328d658d4 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T02: builders' notices parked and cleared
+Changed: cobot-rules: noticed_items (the text on the Noticed: line and its bullets, none is no item), park_noticed (cobot-memory noticed add in the payload's cwd, timeout 5 s, never raises), report() parks a passing report's items; cobot-memory: noticed add|list|clear on .agent/noticed.md (trusted memory only, dated, de-duplicated, control characters out, 300 characters an item), noticed.md in KNOWN_AGENT_FILES, check prints "noticed: N waiting"; wrap step 4 lists, files or drops, then clears; build step 4 parks an async hand-back's items itself; tests (rules parsing and hook, memory add/list/clear, untrusted, end to end, skill texts).
+Why: F-48 (builder Noticed items never parked), story 3 of spec memory-and-ship (owner answer: the hook parks, wrap clears).
+Proof: tests first (ten failing); full suite 3422 passed, 98.53 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; the gate is silent on noticed clear.
+Open: in a host where Agent returns "Async agent launched" (F-35) the hook sees no report, so the build skill parks the hand-back's items; T03–T07 of the spec.
+Next: T03, the repeated-ask offer in the gate.
+verified: tree ebca4ee720fac3f9661a0e409e1e8c5d82331905 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T03: a repeated ask names its allow line
+Changed: cobot-rules: OFFERED_ROWS (ask Bash(git commit*), ask Bash(git rebase*)), offered_rows (the winning default row and the rows in also, none the owner layer holds), the per-session counter in data_dir().parent/asks/<session>.json (UUID-shaped ids only, rule texts and counts, temp file and rename, files older than 7 days pruned), with_offer in gate(): from the third ask of an offered row the reason ends once with "· to stop asking: allow Bash(<pattern>) in <owner rules>", marked offered only when it fit; owner_rules_shown honours COBOT_RULES_OWNER and CLAUDE_CONFIG_DIR and shows ~ for home; docs/configuration.md.
+Why: F-48 (four commit approvals with no allow line offered), story 2 of spec memory-and-ship (owner answer: offer after repeats); challenger 3 and 5: never an agent-scoped, outward, install or credential row, and the owner's real path.
+Proof: tests first (four failing): third ask names the line, fourth does not; consultant curl and git push never offered; a new session starts at zero; rows in also count; a bad session id or a corrupt state file never blocks; old files pruned; with no room the next ask tries again; decisions unchanged (with_offer only appends to the reason); full suite 3428 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: agy sends no session id, so no offer there; T04–T07 of the spec.
+Next: T04, the promotion lint, every skill scanned, and the trust paths.
+verified: tree 0706fcfa51ceb3e75747adc6c8de9782e7fbf950 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T04: promotion lint, every skill scanned, trust paths shown
+Changed: cobot-memory: promote_lint (run ids, a user's home path, release snapshots, the owner's owner/repo slugs from origin and the identities with the cobot checkout's own exempt, secrets, reported unless --allow-reported) and lint_context, inside promote_entries so the pending-lines path is linted too; --allow-reported threaded through cmd_learn; root commit and identity lines name their file; trust and check name the trust file when untrusted; trust_not_recorded's command carries CLAUDE_CONFIG_DIR when set (config_prefix); _cobot_knowledge: scan_plugin reads every skill, refreshed_by_learn, the brief's hint per kind; onboard step 2 re-checks after init and names the prefixed init command, never cobot-memory trust; tests; the old prefix-only scan test now expects every dated skill.
+Why: F-42 (a slug, a run id, a snapshot and an unproven line promoted), F-46 (onboard's dated lines never in the brief), F-47 (init and check read different config folders); stories 4, 5 and 6 of spec memory-and-ship; challenger 4 and 5.
+Proof: tests first (twelve failing): one per lint rule, clean lines with ~/ and the exempt slug pass, the pending path refuses a run id, an onboard reference is scanned and hinted, the trust lines name their files, the prefix appears only with the variable; full suite 3441 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory knowledge --brief still fresh on the plugin.
+Open: T05–T07 of the spec.
+Next: T05, cobot-deps toolchain channels and ship's ground step.
+verified: tree 1e8780298ec4ab9765c2848ec626810693c7bd2e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T05: cobot-deps toolchains, and a ship that checks its ground
+Changed: _cobot_deps: floats, toolchain_versions and toolchain_rows (rust-toolchain.toml and rust-toolchain, .nvmrc, .node-version, .python-version, .tool-versions, mise.toml, .mise.toml, .config/mise.toml, mise/config.toml in string, list and table forms; go.mod without a toolchain line as a note), has_workflows, file_facts read fresh on a cached result too, report prints toolchain rows and the Actions hint only with a workflow; ship step 1 gains the toolchain, remote (get-url, then ls-remote with prompts off and a 20 s timeout; empty and unreachable told apart) and absent-tool checks, and the report's REMOTE and PINS lines; tests; the old check test now expects no hint without a workflow.
+Why: F-37 (rust-toolchain on stable while CI took a newer release), F-43 (a PR proposed against an empty remote), F-48 (the Actions hint with no workflow, global unpinned installs); stories 7 and 8 of spec memory-and-ship; challenger 8 and 9.
+Proof: tests first (seventeen failing): every file kind and form floats or passes, the go note, the hint only with a workflow, cached results re-read; ship text test names each rule; the gate is silent on the ls-remote form and git remote get-url; full suite 3459 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: T06 (the ship-ground eval) and T07 (docs, decision 31, CHANGELOG, findings).
+Next: T06.
+verified: tree da47ace9ff42d90080baec91afd89fbd8571bd9e · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T06: the ship-ground eval
+Changed: evals/ship-ground (case, prompt, fixture, graders): a Rust library with rust-toolchain.toml on stable, committed memory with a wrap stamp, forge: github in CONTEXT, an empty bare origin at .git/remote.git, the root commit trusted as gitlab-ci-shape does; graders: toolchain-flagged and empty-remote regexes on last_message, remote-read (Bash input_match ls-remote), ship-skill; _cobot_deps: a cache that cannot be written (a read-only data folder, as in the eval sandbox) is reported as "cache: not written (<reason>)" instead of failing the check; a test for it.
+Why: story 9 of spec memory-and-ship, proving story 8 (F-37, F-43) end to end; challenger 10.
+Proof: the fixture run in scratch gives a clean tree, an empty remote (ls-remote exit 0, no output), stamp ok and the stable row; one local eval run scored 1.00 (4 graders, 0.11 USD, 19 s), and its trace shows cobot-deps, git remote get-url and the ls-remote form run, the empty remote told and main proposed first, no Rust version guessed; full suite 3463 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate. The read-only cache test was written together with its fix, not seen failing first.
+Open: in that local run cobot-memory stamp answered "untrusted memory": the fixture's trust seeding (copied from gitlab-ci-shape) did not reach the run's config folder here; ship reported it and no grader depends on it; T07 remains.
+Next: T07, docs, decision 31, CHANGELOG, findings closed.
+verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, local eval
+
+## 2026-11-18 — memory-and-ship T07: docs, decision 31, findings closed
+Changed: docs/01-decisions.md decision 31 (one commit per verified change through the keyed tree stamp, parked notices, the offered allow line); docs/02-design.md (the journal stamp row, a noticed.md row); docs/configuration.md (noticed.md, the asks folder under XDG_DATA_HOME); CHANGELOG Unreleased (Added: one commit, notices, the offered line, ship's ground; Changed: promotion lint, every skill scanned, trust paths, cobot-deps); FINDINGS F-37, F-41, F-42, F-43, F-46, F-47 and F-48 closed; the spec's converge line.
+Why: T07 of spec memory-and-ship.
+Proof: full suite 3463 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory check: 3 open findings of 49 (F-35, F-39, F-49, each its own spec).
+Open: the eval's trust seed not seen in a local run (T06); F-35, F-39, F-49.
+Next: owner pushes feat/memory-and-ship and opens its PR.
+verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship: branch review folded
+Changed: stamp_readiness reads git status -z as bytes, unstripped, and walks the records consuming each rename's or copy's source; tree_key reads ls-tree and feeds mktree as bytes; git() decodes with surrogateescape and git_bytes takes stdin; STAMP_RE reads 64-hex keys; noticed_refusal refuses a noticed.md that is a link or resolves outside the memory, and list and clear need a trusted memory too; promote_lint folds the text (URL-decoded, NFKC) and lints the checked field, RUN_ID_RE case-insensitive without a leading slash, HOME_PATH_RE adds /root/ and a home without a trailing slash but not a <user> placeholder, SNAPSHOT_RE wants a version or a date, slugs lose a trailing dot; _cobot_deps tolerates a mise tools or a rust toolchain value that is not a table; tests.
+Why: an independent review of the whole branch found three HIGH (an unstaged first record read as staged, so stamp --tree said ready; the rename skip looked at the wrong record; noticed add wrote through a merged symlink), three MEDIUM (cobot-deps crashed on a wrong TOML shape; a non-UTF-8 name crashed the stamp; lint bypasses by case, encoding, fullwidth letters and wider phrasings) and LOW items.
+Proof: tests first (twenty failing), each review input reproduced, H1 by hand in a scratch repo (now refused, exit 1); full suite 3481 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: kept as LOW: docs/ and .agent/cobot.rules sit outside the stamp key by design; submodule ignore=all hides a dirty submodule; parallel gate calls may lose an ask count; an offer that never fits is retried on each ask; .python-version 3.12 and rust 1.80 resolve to the latest patch but do not count as floating.
+Next: owner pushes feat/memory-and-ship and opens its PR.
+verified: tree c3bb687429dc6b4467d01ce9f01cc71ac65393ea · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, branch review

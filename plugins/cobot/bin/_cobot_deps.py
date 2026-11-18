@@ -450,11 +450,99 @@ def cache_state(root: Path, cached: dict | None, today: date) -> str:
     return "fresh"
 
 
+# ---------------------------------------------------------------- toolchains (spec memory-and-ship, story 7)
+
+FLOATING_WORDS = frozenset({"stable", "beta", "nightly", "latest", "lts", "node", "current"})
+MISE_FILES = ("mise.toml", ".mise.toml", ".config/mise.toml", "mise/config.toml")
+GO_NOTE = "go.mod: no toolchain line (note: go is a minimum; setup-go and GOTOOLCHAIN=auto may take newer)"
+
+
+def floats(value: str) -> bool:
+    """A channel naming no exact release: a moving word, ``lts/<codename>``, or a major alone."""
+    word = value.strip().strip("\"'").lower()
+    return bool(word) and (
+        word in FLOATING_WORDS or word.startswith("lts/") or bool(re.fullmatch(r"v?\d+", word))
+    )
+
+
+def first_line(path: Path) -> str:
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return lines[0] if lines and not lines[0].startswith("#") else ""
+
+
+def mise_versions(path: Path) -> list[tuple[str, str]]:
+    """``(tool, version)`` from a mise file's ``[tools]``: a string, a list, or ``{ version = … }``."""
+    tools = tomllib.loads(path.read_text(encoding="utf-8")).get("tools")
+    if not isinstance(tools, dict):
+        return []  # a value where mise wants a table: nothing to read
+    pairs = []
+    for tool, spec in tools.items():
+        values = spec if isinstance(spec, list) else [spec]
+        for value in values:
+            version = value.get("version") if isinstance(value, dict) else value
+            if isinstance(version, str):
+                pairs.append((str(tool), version))
+    return pairs
+
+
+def toolchain_versions(root: Path) -> list[tuple[str, str]]:
+    """``(label, channel)`` for every toolchain pin file present, read from the file alone."""
+    found: list[tuple[str, str]] = []
+    toml = root / "rust-toolchain.toml"
+    if toml.is_file():
+        table = tomllib.loads(toml.read_text(encoding="utf-8")).get("toolchain")
+        channel = table.get("channel") if isinstance(table, dict) else None
+        found += [("rust-toolchain.toml", channel)] if isinstance(channel, str) else []
+    for name in ("rust-toolchain", ".nvmrc", ".node-version"):
+        if (root / name).is_file():
+            found.append((name, first_line(root / name)))
+    if (root / ".python-version").is_file():
+        lines = (root / ".python-version").read_text(encoding="utf-8").split()
+        found += [(".python-version", line) for line in lines]
+    if (root / ".tool-versions").is_file():
+        for line in (root / ".tool-versions").read_text(encoding="utf-8").splitlines():
+            words = line.split("#", 1)[0].split()
+            found += [(f".tool-versions: {words[0]}", words[1])] if len(words) > 1 else []
+    for name in MISE_FILES:
+        if (root / name).is_file():
+            found += [(f"{name}: {tool}", version) for tool, version in mise_versions(root / name)]
+    return found
+
+
+def toolchain_rows(root: Path) -> list[str]:
+    """Floating channels (CI and the local proof may take different releases, F-37), and the note
+    that go.mod's lines are minimums when it names no toolchain. Never runs a tool."""
+    rows = []
+    try:
+        for label, channel in toolchain_versions(root):
+            if floats(channel):
+                named = f"{label} {channel}" if ": " in label else f"{label}: {channel}"
+                rows.append(f"{named} floats; pin a release")
+        gomod = root / "go.mod"
+        if gomod.is_file():
+            text = gomod.read_text(encoding="utf-8")
+            if re.search(r"(?m)^go \S+", text) and not re.search(r"(?m)^toolchain \S+", text):
+                rows.append(GO_NOTE)
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        rows.append(f"toolchain files unreadable: {type(error).__name__}")
+    return rows
+
+
+def has_workflows(root: Path) -> bool:
+    folder = root / ".github" / "workflows"
+    return folder.is_dir() and (any(folder.glob("*.yml")) or any(folder.glob("*.yaml")))
+
+
+def file_facts(root: Path) -> dict:
+    """What the report reads from files alone: fresh on every call, a cached result too."""
+    return {"workflows": has_workflows(root), "toolchains": toolchain_rows(root)}
+
+
 def check(root: Path, today: date, force: bool = False, runner: Run = run) -> dict:
     cached = read_cache(root)
     state = cache_state(root, cached, today)
     if state == "fresh" and not force:
-        return {**cached, "cached": True}
+        return {**cached, **file_facts(root), "cached": True}
     found = lockfiles(root)
     results = []
     for name, adapter in ADAPTERS:
@@ -472,13 +560,17 @@ def check(root: Path, today: date, force: bool = False, runner: Run = run) -> di
         "lockfiles": found,
         "ecosystems": json.loads(scrub(json.dumps(results))),
         "unsupported": skipped,
+        **file_facts(root),
         "cached": False,
     }
     path = cache_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({k: v for k, v in data.items() if k != "cached"}, indent=1) + "\n", encoding="utf-8"
-    )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({k: v for k, v in data.items() if k != "cached"}, indent=1) + "\n", encoding="utf-8"
+        )
+    except OSError as error:  # a read-only data folder (an eval sandbox): report, uncached
+        data["cache"] = f"not written ({error.strerror})"
     return data
 
 
@@ -519,7 +611,11 @@ def report(data: dict, today: date) -> str:
         lines.extend(f"    note: {note}" for note in eco.get("notes") or [])
     if data.get("unsupported"):
         lines.append(f"  unsupported here, check by hand: {', '.join(data['unsupported'])}")
-    lines.append("  GitHub Actions pins: /cobot:consult gha")
+    lines.extend(f"  toolchain: {row}" for row in data.get("toolchains") or [])
+    if data.get("cache"):
+        lines.append(f"  cache: {data['cache']}")
+    if data.get("workflows"):
+        lines.append("  GitHub Actions pins: /cobot:consult gha")
     return "\n".join(lines)
 
 

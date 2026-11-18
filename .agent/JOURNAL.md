@@ -297,3 +297,11 @@ Proof: tests first (ten failing); full suite 3422 passed, 98.53 %; ruff, markdow
 Open: in a host where Agent returns "Async agent launched" (F-35) the hook sees no report, so the build skill parks the hand-back's items; T03–T07 of the spec.
 Next: T03, the repeated-ask offer in the gate.
 verified: tree ebca4ee720fac3f9661a0e409e1e8c5d82331905 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate
+
+## 2026-11-18 — memory-and-ship T03: a repeated ask names its allow line
+Changed: cobot-rules: OFFERED_ROWS (ask Bash(git commit*), ask Bash(git rebase*)), offered_rows (the winning default row and the rows in also, none the owner layer holds), the per-session counter in data_dir().parent/asks/<session>.json (UUID-shaped ids only, rule texts and counts, temp file and rename, files older than 7 days pruned), with_offer in gate(): from the third ask of an offered row the reason ends once with "· to stop asking: allow Bash(<pattern>) in <owner rules>", marked offered only when it fit; owner_rules_shown honours COBOT_RULES_OWNER and CLAUDE_CONFIG_DIR and shows ~ for home; docs/configuration.md.
+Why: F-48 (four commit approvals with no allow line offered), story 2 of spec memory-and-ship (owner answer: offer after repeats); challenger 3 and 5: never an agent-scoped, outward, install or credential row, and the owner's real path.
+Proof: tests first (four failing): third ask names the line, fourth does not; consultant curl and git push never offered; a new session starts at zero; rows in also count; a bad session id or a corrupt state file never blocks; old files pruned; with no room the next ask tries again; decisions unchanged (with_offer only appends to the reason); full suite 3428 passed, 98.50 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate.
+Open: agy sends no session id, so no offer there; T04–T07 of the spec.
+Next: T04, the promotion lint, every skill scanned, and the trust paths.
+verified: tree 0706fcfa51ceb3e75747adc6c8de9782e7fbf950 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

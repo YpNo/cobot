@@ -54,6 +54,14 @@ then `+N more`. Another ask is named by its row (a project row by its place) and
 by the first 40 characters of the gate's note. The reason stays within the prompt's 200
 characters, and a `git push` stamp keeps its room. A deny shows only the deny.
 
+From the third time `ask Bash(git commit*)` or `ask Bash(git rebase*)` asks in one Claude Code
+session, the reason ends once with the line that would stop it:
+`· to stop asking: allow Bash(git commit*) in ~/.claude/cobot.rules`. cobot never writes the line;
+you add it to your owner layer if you want. Only these two rows of local, undoable work are ever
+offered, never an outward, install, credential, agent-scoped or owner-written row. The gate counts
+asks per session in `~/.local/share/cobot/asks/` (rule texts and counts, no command text; files
+older than a week are removed). agy sends no session id, so it is never offered there.
+
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
 names the folder's last part with its `/`: `cp x "$(echo ~)/.gemini/config/hooks.json"` asks,

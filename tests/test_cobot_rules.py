@@ -1644,6 +1644,72 @@ def test_gate_agentScopedAsk_comesFirst(rules, tmp_path):
     assert "also asks: ask Bash(git push*)" in reason
 
 
+# ---------------------------------------------------------------- a repeated ask names its allow line
+
+SESSION = "0b7f6c2e-5d1a-4c3b-9e8f-1a2b3c4d5e6f"
+
+
+@pytest.fixture
+def ask_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    return tmp_path / "share" / "cobot" / "asks"
+
+
+def asked(rules, command, session=SESSION, **extra):
+    out = rules.gate(payload(command, session_id=session, **extra))
+    return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"] if out else ""
+
+
+def test_gate_thirdAskOfAnOfferedRow_namesTheAllowLineOnce(rules, ask_state):
+    reasons = [asked(rules, f"git commit -m m{n}") for n in range(4)]
+    assert "to stop asking" not in reasons[0] + reasons[1]
+    assert reasons[2].endswith("to stop asking: allow Bash(git commit*) in " + rules.owner_rules_shown())
+    assert "to stop asking" not in reasons[3]
+    assert len(reasons[2]) <= rules.REASON_LIMIT
+    assert (ask_state / f"{SESSION}.json").is_file()
+
+
+def test_gate_otherRows_neverOffered(rules, ask_state):
+    for command, extra in (("curl -s u", {"agent_type": "cobot:consultant"}), ("git push origin x", {})):
+        reasons = [asked(rules, command, **extra) for _ in range(4)]
+        assert not any("to stop asking" in r for r in reasons), command
+
+
+def test_gate_askOffer_newSessionStartsAtZero_andRowsInAlsoCount(rules, ask_state):
+    for _ in range(2):
+        asked(rules, "git rebase main && git commit -m x")
+    third = asked(rules, "git rebase main && git commit -m x")
+    assert "allow Bash(git rebase*)" in third or "allow Bash(git commit*)" in third
+    other = "1d7f6c2e-5d1a-4c3b-9e8f-1a2b3c4d5e6f"
+    assert "to stop asking" not in asked(rules, "git commit -m y", session=other)
+
+
+def test_gate_askOffer_badSessionOrCorruptState_neverBlocks(rules, ask_state):
+    for _ in range(3):
+        assert "to stop asking" not in asked(rules, "git commit -m x", session="../../etc/passwd")
+    assert not ask_state.exists() or not any(ask_state.iterdir())
+    ask_state.mkdir(parents=True, exist_ok=True)
+    (ask_state / f"{SESSION}.json").write_text("{not json")
+    assert asked(rules, "git commit -m x").startswith("cobot rule: ask Bash(git commit*)")
+
+
+def test_askState_oldSessionFilesPruned(rules, ask_state):
+    ask_state.mkdir(parents=True)
+    old = ask_state / "2b7f6c2e-5d1a-4c3b-9e8f-1a2b3c4d5e6f.json"
+    old.write_text("{}")
+    os.utime(old, (0, 0))
+    asked(rules, "git commit -m x")
+    assert not old.exists()
+
+
+def test_askOffer_noRoom_triesAgainNextAsk(rules, ask_state, monkeypatch):
+    monkeypatch.setattr(rules, "REASON_LIMIT", 60)
+    reasons = [asked(rules, f"git commit -m m{n}") for n in range(4)]
+    assert not any("to stop asking" in r for r in reasons)
+    state = json.loads((ask_state / f"{SESSION}.json").read_text())
+    assert state["offered"] == []
+
+
 def test_verdictReason_longNotesCut_andTheBudgetHolds(rules):
     rule = rules.Rule("ask", "Bash", "x*", None, "default", 1)
     others = tuple(f"note {n} " + "y" * 33 for n in range(5))  # ask_label's 40 characters

@@ -273,4 +273,12 @@ outside the Bash sandbox; merges need a new stamp as today; F-35 is scoped as wr
 
 ## Converge
 
-pending
+Built 2026-11-18 on `feat/memory-and-ship`, each task one commit with its journal entry under the
+tree stamp it introduced: T01 c78ef75, T02 67688e9, T03 0f56141, T04 68d2795, T05 ad689ec, T06
+8193dee, T07 the docs commit. Decision 31. Every story's acceptance holds; `ship-ground` scored
+1.00 in one local run. Deviations:
+- `cobot-deps` also reports a cache it cannot write (the eval sandbox needed it);
+- the go.mod row is a note, not a float;
+- the eval's trust seed was not seen in the local run (ship reported it; no grader reads it).
+
+F-37, F-41, F-42, F-43, F-46, F-47 and F-48 are closed.

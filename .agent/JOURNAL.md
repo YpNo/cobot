@@ -329,3 +329,11 @@ Proof: the fixture run in scratch gives a clean tree, an empty remote (ls-remote
 Open: in that local run cobot-memory stamp answered "untrusted memory": the fixture's trust seeding (copied from gitlab-ci-shape) did not reach the run's config folder here; ship reported it and no grader depends on it; T07 remains.
 Next: T07, docs, decision 31, CHANGELOG, findings closed.
 verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate, local eval
+
+## 2026-11-18 — memory-and-ship T07: docs, decision 31, findings closed
+Changed: docs/01-decisions.md decision 31 (one commit per verified change through the keyed tree stamp, parked notices, the offered allow line); docs/02-design.md (the journal stamp row, a noticed.md row); docs/configuration.md (noticed.md, the asks folder under XDG_DATA_HOME); CHANGELOG Unreleased (Added: one commit, notices, the offered line, ship's ground; Changed: promotion lint, every skill scanned, trust paths, cobot-deps); FINDINGS F-37, F-41, F-42, F-43, F-46, F-47 and F-48 closed; the spec's converge line.
+Why: T07 of spec memory-and-ship.
+Proof: full suite 3463 passed, 98.49 %; ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate; cobot-memory check: 3 open findings of 49 (F-35, F-39, F-49, each its own spec).
+Open: the eval's trust seed not seen in a local run (T06); F-35, F-39, F-49.
+Next: owner pushes feat/memory-and-ship and opens its PR.
+verified: tree ee7778d84736d7571774cd37889e53aec8f74375 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude plugin validate

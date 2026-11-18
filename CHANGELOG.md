@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **One commit per verified change (decision 31).** `cobot-memory stamp --tree` prints a key for
+  the staged tree without its root doc entries; a journal stamp `verified: tree <key>` goes into
+  the same commit as the code and stays `ok` after gc and in any clone. Wrap and build now commit
+  a change and its journal entry once, so the owner approves one commit, not two. `journal add`
+  exits 1 on an invalid entry and takes `--check`.
+- **Builders' notices are kept (decision 31).** The report hook parks a builder's `Noticed:`
+  items in `.agent/noticed.md`; wrap files each as a finding or drops it, and `check` counts what
+  waits.
+- **A repeated ask names its allow line.** From the third `git commit` or `git rebase` ask in a
+  Claude Code session, the reason ends once with the owner-layer line that would lift it. No other
+  row is ever offered.
+- **Ship checks its ground first.** `cobot-deps check` lists floating toolchain channels
+  (`rust-toolchain.toml` on `stable`, `.nvmrc` on `lts/*`, mise and asdf `latest`, a major
+  alone). Ship proposes pins, lists the pins Dependabot cannot see, tells an empty remote from an
+  unreachable one before proposing a push or a PR, names the base branch, and prints absent tools
+  in the owner's install route without running them. Eval case `ship-ground`.
+
 - **A security auditor agent, and a sweep that fans out (decision 30).** `/cobot:security-sweep`
   now runs in the main thread as a router. It counts the files each rule pack covers, runs one
   `auditor` on a tree of 200 such files or fewer, and otherwise one per pack plus a repo-wide
@@ -43,6 +60,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`learn --promote` is linted.** It refuses a line with a CI run id, a user's home path, a
+  "latest release is" snapshot, a secret, one of your own `owner/repo` slugs, or a `reported`
+  status unless `--allow-reported`, and names each refused line; both promotion paths pass the
+  check.
+- **Every skill's dated lines reach the brief**, not only the knowledge skills', with a hint fit for
+  each kind.
+- **Trust commands show their file.** `init --trust-root` and `--add-identity` name the file they
+  wrote, `trust` and `check` the one they read when untrusted, and the command printed for the
+  owner carries `CLAUDE_CONFIG_DIR` when the session has one.
+- **`cobot-deps`** prints its GitHub Actions hint only when a workflow exists, and reports a cache
+  it cannot write instead of failing.
 - The README is written for the person using cobot and names Claude Code and the Antigravity CLI
   as two supported hosts: what cobot does, both installs, configuration, usage with each host's
   command form, the differences under agy, and the sections the owner's standard asks for.

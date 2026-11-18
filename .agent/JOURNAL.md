@@ -369,3 +369,11 @@ Proof: tests first (five failing: one text test per skill rule, three check-plug
 Open: a text check cannot see a negation or a phrase split across lines; accepted in the spec.
 Next: T05, docs, decision 32, CHANGELOG, F-35 closed.
 verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-18 — T05 builder-proof-hosts: decision 32, docs, F-35 closed
+Changed: docs/01-decisions.md decision 32 (where a builder's report is checked: both paths, one state, one refusal then UNPROVEN, SubagentStop not used, agy requested not enforced); docs/architecture.md report-check row; docs/02-design.md layout (the hand-back hook, report.sh, SubagentStop dropped); docs/configuration.md the reports state under XDG_DATA_HOME; CHANGELOG Added entry; .agent/FINDINGS.md F-35 closed; the spec's build note (commits, T03 dropped, the T02 review's changes).
+Why: spec builder-proof-hosts story 7.
+Proof: markdownlint clean (one MD038 fixed); full suite 3502 passed, 98.46 %; ruff, check-plugin, sync-agents --check, claude and agy plugin validate; the tree key equals T04's, since only root doc entries changed.
+Open: none for the spec; F-39, F-49 remain open findings.
+Next: the owner reviews the branch, pushes feat/builder-proof-hosts and opens its PR; then remove the /probe/ line from .git/info/exclude with the worktree.
+verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

@@ -74,6 +74,8 @@ cobot/
       learn/        SKILL.md + templates/expert-SKILL.md                  context: fork, agent: cobot:learner; skeleton expert template
       <any lang-*/expert-*>/references/<topic>.md                      dated lines: status · source · claim (§8)
     hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
+                                           report check: PostToolUse on Agent, PreToolUse on SubagentHandback (decision 32)
+    hooks/report.sh                        report shim: every failure allows; `handback` picks the hand-back path
     hooks/session.sh protocol.md           SessionStart shim and the ≤ 3k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
     bin/cobot-rules  bin/cobot-memory  bin/cobot-session  bin/cobot-deps          Python 3 stdlib, no deps
@@ -83,7 +85,7 @@ cobot/
     settings/permissions.example.json      the hard-wall block the owner installs via `rules sync`
     .mcp.json                              context7
     evals/<8 cases>/prompt.md + graders/   (foreign-onboard, actions-pinning: R2)
-    (R2: workflows/deep-review.js, SubagentStop report check)
+    (R2: workflows/deep-review.js; a SubagentStop report check was dropped, decision 32)
   tests/  (pytest for bin/, fixtures for hooks)
   install.sh                               --dev | --project | --user | --check | --uninstall (§14, ADR-0003)
   .github/workflows/ci.yml release.yml knowledge-refresh.yml

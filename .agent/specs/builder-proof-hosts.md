@@ -208,3 +208,9 @@ Design consequences:
 - Story 3 keys refusals and allowed reports by `agent_id` on every path. `PostToolUse` takes it
   from `tool_response.agentId` when present, and falls back to the text hash.
 - Story 5 (`SubagentStop`) and task T03 are dropped: no host seen needs them.
+
+**Built, 2026-11-18:** T01 (`1537be3`), T02 (`2e3ee5b`), T04 (`08e869c`) and T05 done; T03
+dropped. T02's review (4 HIGH, 2 MEDIUM, 3 LOW) changed the state: allowed entries are the
+builder's key with the report's hash, written under a lock, a bad file read as empty, the key
+falling back to `tool_use_id`, and the park detached from the hook. A resumed session with a new
+id starts a fresh state (accepted).

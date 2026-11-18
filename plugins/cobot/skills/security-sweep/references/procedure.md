@@ -18,7 +18,8 @@ and line:
 - crypto and randomness;
 - authn and authz decisions;
 - logging sinks;
-- every place a secret is read, held or forwarded.
+- every place a secret is read, held or forwarded;
+- privilege lines: where a call changes role, token scope or sandbox.
 
 A library has no CORS, a CLI no session handling, IaC no injection but a privilege blast radius:
 audit what the shape calls for.

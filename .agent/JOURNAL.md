@@ -385,3 +385,11 @@ Proof: the challenger's SOUND WITH CHANGES (3 MAJOR, 3 MINOR) checked by hand be
 Open: none before the build.
 Next: owner reviews; then T01.
 verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · challenger pass
+
+## 2026-11-18 — T01 trust-boundaries: the template and the spec skill ask for boundaries
+Changed: skills/spec/template.md gains Trust boundaries after Stories and acceptance (the kinds, a row per boundary the change creates or alters as entry or crossing · guard · story, or one none: line); security-sweep/references/procedure.md inventories privilege lines, so both lists name the same kinds; spec SKILL.md step 2 notes the sites of each kind, step 3 fills the section with a guard and a negative-test story per boundary and a checkable reason for none:. New tests/test_spec_skill.py.
+Why: F-49, spec trust-boundaries stories 1–2.
+Proof: tests first (three failing for the right reason); the draft-step test then caught its phrase split across a line, rewrapped; full suite 3505 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: none.
+Next: T02, the challenger's step.
+verified: tree 43e94f746d16923e0a75616378ffa39643b26d32 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

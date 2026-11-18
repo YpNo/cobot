@@ -12,7 +12,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    `governance:`, if any; with a `#heading-slug`, only that section is the principles. Name the size in one line. If it is tiny or small, stop and say so:
    the build path handles it without a spec.
 2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
-   read only what the spec needs. Note the verified commands that will prove each story.
+   read only what the spec needs. Note the verified commands that will prove each story, and
+   note the sites of each trust-boundary kind the change touches (the template lists the kinds).
    **New project** (CONTEXT.md's Stack says `decided by the first spec`, or its verified table
    holds only the `none yet` row): skip the cold read, there is nothing to read. The language is a
    clarify question unless the owner's request names it; once chosen, call the
@@ -27,7 +28,10 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    expanded, the same sections in the same order): goal,
    principles check, stories with acceptance commands, plan, tasks table (`risk` for unsafe or
    `no_std` Rust, concurrency, crypto, auth, Terraform state, migrations; `lane` when file sets are
-   disjoint; `deps`), trade-offs. The spec is the unit of delivery: **one spec = one branch = one
+   disjoint; `deps`), trade-offs. *Trust boundaries* lists
+   every boundary the change creates or alters, each with a guard and a story whose acceptance
+   is a negative test (hostile input refused, a privilege not gained); a change that crosses
+   none writes one line, and its `none:` carries a reason the challenger can check. The spec is the unit of delivery: **one spec = one branch = one
    PR**, each task one commit (decision 20), so size it as a coherent topic, not a single task.
    In the principles check, give **every principle of the governance file** one line: holds,
    not relevant, or violated; a violation becomes a clarify question, never a silent waiver.

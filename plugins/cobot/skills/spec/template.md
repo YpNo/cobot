@@ -19,6 +19,16 @@ size: {{SIZE}} · profile: {{PROFILE}} · owner: {{OWNER}} · date: {{DATE}}
 
 1. As <who>, <what>. Accept: <observable check, with the command that proves it>.
 
+## Trust boundaries
+
+<each boundary the change creates or alters: network listeners and routes, subprocess and shell-out sites, filesystem paths built from input, deserialisation, crypto and randomness, authn and authz decisions, logging sinks, secrets read, held or forwarded, privilege lines (a role, a token scope, a sandbox, the gate)>
+
+| entry or crossing | guard | story |
+|---|---|---|
+| <where untrusted input enters, or what crosses a privilege line> | <the check that refuses it> | <the story whose acceptance is a negative test> |
+
+<or one line instead of the table: none: <why>, a reason the challenger can check>
+
 ## Clarify
 
 <≤ 5 questions, each with options and a recommended default; answers written here once given>

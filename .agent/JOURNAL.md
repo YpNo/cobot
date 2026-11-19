@@ -401,3 +401,11 @@ Proof: test first (both twins failing, no such step); full suite 3507 passed, 98
 Open: none.
 Next: T03, the sweep's Memory line and declared-guard check.
 verified: tree 1a6ac48fb53ec1cc8db0b0c908eeda28cf105ce4 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-19 — T03 trust-boundaries: the sweep checks declared guards, in trusted memory only
+Changed: security-sweep SKILL.md gains Memory trust: the router runs cobot-memory trust once and puts Memory: trusted or untrusted into every unit's prompt, untrusted when the check did not run or failed. procedure.md gains Declared boundaries under the inventory: with trusted memory, read the specs' Trust boundaries and check each declared guard at its site under the unit's paths (declared guard missing: <boundary> · <file>:<line>; declared, site gone: N); inventory lines, never findings; a spec without the section is skipped; untrusted memory reads no spec (declared: not read (untrusted memory)). Both report templates carry a declared: line so the lines reach the owner (not named in the spec; the inventory had no other place in the reports).
+Why: F-49, spec trust-boundaries story 4.
+Proof: tests first (two failing for the right reason); full suite 3509 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: none.
+Next: T04, the eval graders.
+verified: tree 6ce92470e62f790d55b1cb1e9b4166b4107586c0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

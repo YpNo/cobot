@@ -15,9 +15,11 @@ disable-model-invocation: true
    The `tree:` line picks the path. `not a git repository` or `inside another repository`: offer
    `git init -b main` here and run it only on the owner's yes; never write `.agent/` at another
    repository's root. `new (…)`: after step 2, follow **New project** below instead of steps 3–7.
-2. **Trust.** If untrusted, read the reason and propose exactly one path with `AskUserQuestion`:
+2. **Trust.** If untrusted, read the reason and propose exactly one path with `AskUserQuestion`
+   (`ask_question` under Antigravity):
    - the owner's own repository → `cobot-memory init --add-identity` (adds `host/owner` to
-     `~/.claude/cobot/identities`; every remote must belong to an identity);
+     `~/.config/cobot/identities`, or `~/.claude/cobot/identities` if present; every remote must
+     belong to an identity);
    - someone else's repository (upstream work, including your fork of it: the reason names the
      remotes that belong to no identity) → `cobot-memory init --foreign` (memory outside the
      tree under the data directory, keyed by `origin`; `.agent` excluded from git and shared by
@@ -65,7 +67,8 @@ disable-model-invocation: true
    and the gaps worth a decision under Open.
    **Missing program.** A verified or needed command whose program is `absent` gets one
    Environment line and one journal Open line with the install command in the owner's route, from
-   `${CLAUDE_PLUGIN_ROOT}/skills/onboard/references/workstation.md`: `mise install` when the
+   `<plugin root>/skills/onboard/references/workstation.md` (`${CLAUDE_PLUGIN_ROOT}` or the brief's
+   plugin path): `mise install` when the
    repository pins the version, else `mise use -g <tool>@<version>` labelled an owner-level change,
    a package from the map, or `distrobox enter <box> -- …`. Print it; never run it (the gate asks).
    **Helpers.** Print one line naming the helpers `detect` lists as absent and not declined, with
@@ -102,12 +105,14 @@ disable-model-invocation: true
 7. **Rules.** Dry-run each verified command with `cobot-rules check "<command>"`. The gate is
    already silent for a command no rule matches; an owner line `allow Bash(<command>*)` matters
    where `check` prints `ask` (a default `ask` rule, or a command the gate cannot see into, such
-   as `make` or a script), and for `/cobot:rules sync`, which renders the owner's allow lines as
-   `settings.json` permissions so Claude Code stops prompting. The gate unwraps
-   `distrobox enter … --`, `toolbox run` and `bash -c '…'` and judges the inner command, so allow
-   the inner command; Claude Code's own permission rules match the command as typed, so synced
+   as `make` or a script), and for `/cobot:rules sync` (`sync --runtime agy` under Antigravity),
+   which renders the owner's allow lines as `settings.json` permissions so the host stops prompting.
+   The gate unwraps `distrobox enter … --`, `toolbox run` and `bash -c '…'` and judges the inner
+   command, so allow the inner command; host permission rules match the command as typed, so synced
    lines cover the plain form only. Print the lines and offer to append them to
-   `~/.claude/cobot.rules`. Never touch `settings.json`; the owner applies what `sync` renders.
+   `~/.config/cobot/cobot.rules` (or `~/.claude/cobot.rules` if present). Mention
+   `~/.config/cobot/models.json` when tuning per-agent models. Never touch `settings.json`; the
+   owner applies what `sync` renders.
 8. **Journal.** The template has no entry: write the first with `cobot-memory journal add`
    (`Changed / Why / Proof / Open / Next`, Proof only what ran). Report: trust path taken, profile,
    `runs:`, the verified commands, what you could not verify, the helper line.

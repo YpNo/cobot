@@ -23,7 +23,9 @@ in your agent instructions, with exactly one ```json fence holding the `knowledg
 
 1. **Frame.** The argument names a skill (`lang-go`, `expert-gha`, …) or a topic, and may add a
    question. Read the baseline: the skill's `SKILL.md` and `references/*.md` under
-   `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/`, and `.agent/knowledge/<topic>.md` when it exists.
+   `<plugin root>/skills/<skill>/` (`${CLAUDE_PLUGIN_ROOT}` or the brief's plugin path), and `.agent/knowledge/<topic>.md` when it exists.
+   Under Antigravity, where `context: fork` does not auto-fork, launch `invoke_subagent` with
+   `TypeName="learner"` and this `SKILL.md` path in the prompt (main thread runs any needed `exp:` CLI commands).
    No matching skill → say so in the summary; the delta then carries `topic` only, plus a
    `skeleton` block (description, `when_to_use`, `paths` globs) when the argument says
    `--new-expert`.

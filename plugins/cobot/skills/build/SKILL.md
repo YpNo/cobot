@@ -8,8 +8,8 @@ argument-hint: <spec slug, or the small change in one sentence>
 
 **Small or tiny work (no spec):** state the size, write a five-line plan for small, make the
 change (inline, or one builder when isolation helps), run the focused check from CONTEXT.md's
-verified commands, run `/code-review low` for small, then one journal line through
-`cobot-memory journal add`. Stop.
+verified commands, run `/code-review low` (`challenger` on `git diff` under Antigravity) for small,
+then one journal line through `cobot-memory journal add`. Stop.
 
 **From a spec** (`.agent/specs/<slug>.md`):
 
@@ -28,9 +28,12 @@ verified commands, run `/code-review low` for small, then one journal line throu
      task row, its acceptance, the files in scope, the verified commands, nothing more (not the
      whole spec). Every builder call sets `run_in_background: false` where the host offers it;
      where a call comes back "Async agent launched", wait for every hand-back: step 3 needs its
-     report.
+     report (under Antigravity call `invoke_subagent` with unprefixed `TypeName`, passing
+     `Model="pro"` if escalated `[risk]` or overridden, wait for every hand-back, and never edit
+     repo files while in `plan` mode).
    - Tasks with disjoint file sets and no mutual deps may run as parallel lanes: at most three
-     Agent calls in one message with `isolation: worktree`. You integrate; builders never merge.
+     Agent calls in one message with `isolation: worktree` (`Workspace="share"` under Antigravity).
+     You integrate; builders never merge.
 3. On each report: refuse it if `Checks:` lacks a command, an exit code or output; re-run the
    focused check yourself when in doubt. Refuse a `Deps added:` entry the spec does not name
    (decision 22). A report that starts with `UNPROVEN:` (the report hook refused it once, then

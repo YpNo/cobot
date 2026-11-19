@@ -78,7 +78,8 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    not both run the PR set: the PR trigger carries the PR set, the push trigger the merge set.
 4. **Challenge.** Before writing, hand the plan (jobs, triggers, pins, permissions, omissions)
    to `cobot:challenger` as data (`run_in_background: false` where the host offers it;
-   wait for every hand-back); fold the verdict or record the owner's acceptance.
+   wait for every hand-back; under Antigravity `invoke_subagent` with unprefixed `challenger`);
+   fold the verdict or record the owner's acceptance.
 5. **Write** the workflows with the `expert-gha` non-negotiables: SHA pins with the version
    comment, `permissions: contents: read` at the top and write scopes per job with a comment,
    `persist-credentials: false`, `timeout-minutes`, `concurrency`, cache keyed on the lockfile

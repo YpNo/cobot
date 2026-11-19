@@ -13,8 +13,8 @@ own initiative (decision 6). Small PRs are the rule upstream (decision 20): one 
 maintainers' size.
 
 1. **Constraints first.** Read CONTEXT.md's Constraints and `.agent/UPSTREAM.md`. On first use,
-   create `UPSTREAM.md` from `${CLAUDE_PLUGIN_ROOT}/skills/contribute/templates/UPSTREAM.md`
-   (the same sections in the same order if the variable is not expanded) and fill it from
+   create `UPSTREAM.md` from `<plugin root>/skills/contribute/templates/UPSTREAM.md`
+   (`${CLAUDE_PLUGIN_ROOT}` or the brief's plugin folder; the same sections in the same order if absent) and fill it from
    `CONTRIBUTING.md`, `AI_POLICY.md` or its equivalent, `.github/PULL_REQUEST_TEMPLATE*`, the DCO
    or CLA note, the project's agent instructions and `git log` (commit style, sign-offs, branch
    the maintainers merge into). Record every remote other than `origin` under `never push to:`;

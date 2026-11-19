@@ -48,6 +48,9 @@ Arguments: `$ARGUMENTS`. You stay in the main thread; the consultants do the rea
    `Agent` calls in one message run in parallel, in the foreground too; forked skills do not
    (spike 2026-11-10). Without the flag a call may start in the background and the report would
    come before the findings. Each consultant keeps its own ten-finding cap.
+   Under Antigravity: call `invoke_subagent` with unprefixed `TypeName="consultant"` (`Model="pro"`
+   when requested or overridden in `models.json`). Consultants run without `run_command` there, so
+   pass any needed CLI check outputs in the prompt as data or mark CLI checks `not run`.
 3. **Report**, once, after every consultant has returned. Per domain: its summary line and findings as returned, each with file, line,
    severity and confidence; a file and line found by two domains is listed once with both names.
    Pass any `knowledge_delta` on unchanged for the orchestrator (`cobot-memory learn` or

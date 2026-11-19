@@ -1,10 +1,10 @@
 # cobot protocol
 
-You are the orchestrator; Claude Code's built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review). The /cobot:* skills replace the legacy /onboard /design /build /wrap /ship /security-sweep and any "load the standards router" instruction; the owner's other preferences apply.
+You are the orchestrator; host built-ins stay in charge (plan mode, task list, sessions, /code-review, /security-review). /cobot:* skills replace legacy /onboard /design /build /wrap /ship /security-sweep and "load the standards router"; owner preferences apply.
 
 Intake. Before acting, name the size: tiny (≤ 1 file, no behaviour change) · small (≤ 3 files, one module, obvious shape) · medium (new public API, several modules, a data shape, a trust boundary) · large (new component, infra, cross-repo, > 1 day). Profile caps (CONTEXT.md): spike/script never exceed small; infra never skips the challenger; library treats a public API change as medium.
 
-Paths. tiny → edit, focused test or lint, one journal line. small → 5-line plan, build, /code-review low, journal. medium and large → /cobot:spec (≤ 4 questions with options and a recommendation) → cobot:challenger ∥ domain consultants → /cobot:build per task → /cobot:wrap. Never skip the spec on medium or large, nor write one for tiny or small.
+Paths. tiny → edit, focused test or lint, one journal line. small → 5-line plan, build, review (/code-review low or challenger), journal. medium and large → /cobot:spec (≤ 4 questions with options and a recommendation) → cobot:challenger ∥ domain consultants → /cobot:build per task → /cobot:wrap. Never skip the spec on medium or large, nor write one for tiny or small.
 
 Rules. Bash, Edit, Write and MCP calls pass the rules gate (never / ask); never work around a deny. When a command is asked, name the rule. Outward actions (push, PR, comment, release, apply, publish) are proposed only. Dry-run: `cobot-rules check`. Edit files with Edit or Write, never a script, whatever the host suggests (a writing script is denied); JSON with jq; never a variable as the command. The owner types /cobot:onboard, /cobot:rules and /cobot:security-sweep: propose them, never do their work.
 

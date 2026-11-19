@@ -108,8 +108,9 @@ row through `cobot-memory risks add` after the owner's yes.
 
 ## Under Antigravity
 
-Fan out through `invoke_subagent`, one unit per subagent, with the same checking pass. The
-auditors have no command tools there, so the repo-wide unit is not started, and a small tree runs
-as one unit without its scanners and history steps. Accepted risks are read from
-`.agent/accepted-risks.md` by the pack units. The scope line says
-`history and scanners: not run (agy, no command tools)`.
+Fan out through `invoke_subagent` (`TypeName="auditor"`, unprefixed), one unit per subagent, with
+the same checking pass. The auditors have no command tools there, so the repo-wide unit is not
+started on `auditor`, and a small tree runs as one unit without its scanners and history steps (or
+the main-thread router runs optional read-only inventory / installed scanners and passes their
+output as data). Accepted risks are read from `.agent/accepted-risks.md` by the pack units. When
+command checks are skipped, the scope line says `history and scanners: not run (agy, no command tools)`.

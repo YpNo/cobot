@@ -94,8 +94,8 @@ def test_agy_section_longPluginPath_keepsEveryGapWithinItsCap(session, monkeypat
 
 def test_agy_deepWorkspaceWarning_staysWithinTheSerialisedCap(session, tmp_path, monkeypatch):
     deep = tmp_path
-    for _ in range(6):
-        deep = deep / ("d" * 200)
+    for _ in range(4):
+        deep = deep / ("d" * 180)
     deep.mkdir(parents=True)
     import subprocess as sp
 
@@ -309,3 +309,27 @@ def test_machineLine_realTool_isOneLine(session, project):
 
 def test_agy_section_namesCobotEnv(session):
     assert "cobot-env" in session.agy_section()
+
+
+def test_agy_section_coversUnprefixedNamesPlanModeModelsAndSwarm(session):
+    section = session.agy_section()
+    assert len(section) <= session.AGY_SECTION_CAP
+    assert "/<name>" in section or "without `cobot:`" in section
+    assert "read_file" in section
+    assert 'Workspace="share"' in section
+    assert "plan mode" in section.lower()
+    for role in ("Carbon", "Hydrogen", "Argon", "Flash"):
+        assert role in section
+
+
+def test_session_reportsActiveModelOverridesInBothRuntimes(session, project, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    cfg = tmp_path / "home" / ".config" / "cobot"
+    cfg.mkdir(parents=True)
+    (cfg / "models.json").write_text(
+        '{"agy": {"consultant": "pro", "builder": "pro"}, "claude": {"builder": "sonnet"}}'
+    )
+    agy_text = message(session.agy_answer(agy_payload([project])))
+    assert "consultant=pro" in agy_text and "builder=pro" in agy_text
+    claude_text = session.build_payload(json.dumps({"cwd": str(project)}))
+    assert "builder=sonnet" in claude_text

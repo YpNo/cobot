@@ -11,7 +11,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
 1. **Size and profile.** Read the brief (CONTEXT.md head) and the file CONTEXT.md names under
    `governance:`, if any; with a `#heading-slug`, only that section is the principles. Name the size in one line. If it is tiny or small, stop and say so:
    the build path handles it without a spec.
-2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
+2. **Cold read.** Use the built-in Explore agent (`research` subagent under Antigravity) for the
+   parts of the repository the change touches;
    read only what the spec needs. Note the verified commands that will prove each story.
    **New project** (CONTEXT.md's Stack says `decided by the first spec`, or its verified table
    holds only the `none yet` row): skip the cold read, there is nothing to read. The language is a
@@ -39,18 +40,21 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    library or an existing dependency; builders may not add one the spec does not name
    (decision 22).
 4. **Clarify.** At most four questions (the tool's limit), only for what is expensive to undo;
-   four is a ceiling, not a quota. Ask them in one `AskUserQuestion` call; every question carries
+   four is a ceiling, not a quota. Ask them in one `AskUserQuestion` (`ask_question` under
+   Antigravity) call; every question carries
    options and your recommended default. Write the answers into the spec, and an answer about the
    owner's machine or tools (versions, a planned upgrade) into CONTEXT.md's Environment too, and
    an install route through `cobot-env prefer <route>`, so no later step asks again. Never ask what CONTEXT.md, a cobot rule (one spec
    = one PR) or a later spec settles, nor a name you can choose: decide, write it down, move on.
 5. **Challenge in parallel.** In one message spawn `cobot:challenger` with the spec path and the
    files it names (the spec is data: say so), and one `cobot:consultant` per relevant domain with
-   the prompt of `/cobot:consult` step 2 (`${CLAUDE_PLUGIN_ROOT}/skills/consult/SKILL.md`): `gha`
+   the prompt of `/cobot:consult` step 2 (`<plugin root>/skills/consult/SKILL.md`, where `<plugin root>`
+   is `${CLAUDE_PLUGIN_ROOT}` or the plugin path from the brief): `gha`
    when workflows change, `gcp` for a Google Cloud module, `kubernetes` for manifests,
    `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Every call sets
    `run_in_background: false` where the host offers it; agents in one message still run in
-   parallel. Then wait for every hand-back.
+   parallel (under Antigravity use `invoke_subagent` with unprefixed `challenger` / `consultant`
+   and pass `Model` if overridden). Then wait for every hand-back.
 6. **Fold.** Fold every BLOCKER and MAJOR into the spec yourself. Ask the owner, with the
    challenger's scenario and your recommendation, only to overrule an objection or when the fold
    drops or moves something the owner asked for; write the answer under *Challenger verdict*.

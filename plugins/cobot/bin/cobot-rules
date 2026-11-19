@@ -7,7 +7,7 @@ Commands
   check  "<cmd>" [--tool T] [--agent A]   dry run: decision, rule, layer
   explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
   show                       the merged rule set with provenance
-  sync   [--settings PATH]   permissions fragment and diff against settings.json; writes nothing
+  sync   [--runtime claude|agy] [--settings PATH]   permissions fragment and diff; writes nothing
   -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
 Contract: the gate never emits ``allow``; any internal error ends in ``ask``;
@@ -403,6 +403,7 @@ class Verdict:
     note: str = ""
     via: str = ""  # the runner invocation this verdict was resolved from, e.g. ``mise run deploy``
     also: tuple[str, ...] = ()  # the other distinct asks of the command, as ask_label names them
+    session_ask: bool | None = None  # agy: True when every ask in this verdict is local repeatable dev
 
     def own_reason(self) -> str:
         if self.rule:
@@ -3736,6 +3737,74 @@ def ask_label(verdict: Verdict) -> str:
     return f"{name} via {verdict.via}" if verdict.via else name
 
 
+AGY_SESSION_ASK_PATTERNS = frozenset(
+    {
+        "git commit*",
+        "git rebase*",
+        "git init*",
+        "docker run*",
+        "podman run*",
+        "cargo add*",
+        "npm install *",
+        "npm i *",
+        "npm add*",
+        "pnpm add*",
+        "yarn add*",
+        "bun add*",
+        "go get*",
+        "uv add*",
+        "pip install*",
+        "pip3 install*",
+        "poetry add*",
+        "nix flake update*",
+        "nix flake lock*",
+    }
+)
+AGY_DEV_OPAQUE_HEADS = frozenset({"make", "gmake", "just", "task", "uvx", "npx", "bunx"})
+AGY_DEV_OPAQUE_SUBCOMMANDS = {
+    "mise": frozenset({"run", "r"}),
+    "npm": frozenset({"run", "run-script"}),
+    "pnpm": frozenset({"run", "dlx"}),
+    "yarn": frozenset({"run", "dlx"}),
+    "bun": frozenset({"run", "x"}),
+    "cargo": frozenset({"xtask"}),
+    "uv": frozenset({"run"}),
+}
+
+
+def is_local_dev_rule(rule: Rule | None) -> bool:
+    return (
+        rule is not None
+        and rule.decision == "ask"
+        and rule.layer == "default"
+        and rule.tool == "Bash"
+        and rule.agent is None
+        and rule.pattern in AGY_SESSION_ASK_PATTERNS
+    )
+
+
+def is_local_dev_opaque(plain: list[str], holes_free: bool) -> bool:
+    """True when an opaque runner is a local repeatable dev task/package runner without holes."""
+    if not plain or not holes_free:
+        return False
+    head = plain[0]
+    if head in AGY_DEV_OPAQUE_HEADS:
+        return True
+    verb = canonical_package_manager(strip_global_options(plain)) if head in OPAQUE_SUBCOMMANDS else plain
+    sub = verb[1] if len(verb) > 1 else ""
+    if head in AGY_DEV_OPAQUE_SUBCOMMANDS and sub in AGY_DEV_OPAQUE_SUBCOMMANDS[head]:
+        return True
+    return head == "npm" and sub in NPM_SCRIPT_ALIASES
+
+
+def verdict_is_session_ask(verdict: Verdict) -> bool:
+    if verdict.decision != ASK:
+        return False
+    if verdict.session_ask is not None:
+        return verdict.session_ask
+    return is_local_dev_rule(verdict.rule)
+
+
 def scoped(verdict: Verdict) -> bool:
     return verdict.rule is not None and verdict.rule.agent is not None
 
@@ -3754,7 +3823,8 @@ def named_asks(best: Verdict, asks: list[Verdict], agent: str | None) -> Verdict
         named.setdefault(ask_key(verdict), ask_label(verdict))
         for label in verdict.also:
             named.setdefault(label, label)
-    return replace(best, also=tuple(label for label in named.values() if label))
+    session_ok = all(verdict_is_session_ask(verdict) for verdict in (best, *asks))
+    return replace(best, also=tuple(label for label in named.values() if label), session_ask=session_ok)
 
 
 def ask_key(verdict: Verdict) -> tuple:
@@ -3980,9 +4050,16 @@ def judge_words(
         verdict = never_through_option_value(verdict, matched, segment, forms)
     if refused and agent_allow and verdict.decision == ASK:
         verdict = Verdict(ASK, None, refused)
-    if is_opaque(strip_wrappers(segment)) and verdict.decision != DENY:
+    plain = strip_wrappers(segment)
+    if is_opaque(plain) and verdict.decision != DENY:
         allowed = any(allow_counts(r) for r in matched)
-        verdict = verdict if allowed else Verdict(ASK, None, f"opaque command '{show(forms[0], holes)[:60]}'")
+        prior_ok = verdict.decision is None or is_local_dev_rule(verdict.rule)
+        local_ok = prior_ok and is_local_dev_opaque(plain, agent_allows and not hole_keys(plain))
+        verdict = (
+            verdict
+            if allowed
+            else Verdict(ASK, None, f"opaque command '{show(forms[0], holes)[:60]}'", session_ask=local_ok)
+        )
     return verdict, matched
 
 
@@ -5020,6 +5097,13 @@ def agy_output(decision: str | None, reason: str) -> str:
     return json.dumps({"decision": AGY_DECISION[decision], "reason": reason[:REASON_LIMIT]})
 
 
+def agy_verdict_decision(verdict: Verdict) -> str:
+    """Session-cacheable ``ask`` for local repeatable dev asks; ``force_ask`` for everything else."""
+    if verdict.decision == ASK:
+        return "ask" if verdict_is_session_ask(verdict) else "force_ask"
+    return AGY_DECISION[verdict.decision]
+
+
 def rules_committed(workspaces: list[str]) -> bool:
     """Every workspace is in git, its .agent is a real folder, and its .agent/cobot.rules, when
     present, is tracked with no change: an ignored file (cobot's foreign mode excludes .agent) is
@@ -5105,13 +5189,13 @@ def gate_agy(stdin: str) -> str:
         reason = verdict.reason(REASON_LIMIT - len(suffix)) + suffix
     except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
         return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
-    return agy_output(verdict.decision, reason)
+    return json.dumps({"decision": agy_verdict_decision(verdict), "reason": reason[:REASON_LIMIT]})
 
 
 VALUE_OPTIONS = {
     "check": {"tool", "agent"},
     "explain": {"tool", "agent"},
-    "sync": {"settings"},
+    "sync": {"settings", "runtime"},
     "gate": {"runtime"},
 }
 SWITCHES: dict[str, set[str]] = {}
@@ -5183,25 +5267,65 @@ def permission_patterns(rule: Rule) -> list[str]:
     return [f"Bash({prefix}{suffix})", f"Bash(rtk {prefix}{suffix})"]
 
 
-def cmd_sync(options: dict[str, str]) -> str:
-    rules, _, _ = load_rules(None)
-    deny = sorted({p for r in rules if r.decision == "never" and not r.agent for p in permission_patterns(r)})
+def agy_permission_patterns(rule: Rule) -> list[str]:
+    """Antigravity settings.json permission syntax: command(...), write_file(...), mcp(srv/tool)."""
+    if rule.tool == "mcp":
+        parts = rule.pattern.split("__", 2)
+        if len(parts) != 3 or parts[0] != "mcp":
+            return []
+        srv, tool = parts[1], parts[2]
+        if "*" in srv or ("*" in tool and tool != "*"):
+            return []
+        return [f"mcp({srv}/{tool})"]
+    if rule.tool in FILE_TOOLS:
+        if "*" in rule.pattern[:-1]:
+            return []
+        prefix = rule.pattern.removesuffix("*")
+        return [f"write_file({prefix})"] if prefix else []
+    if rule.tool == "Bash":
+        if "*" in rule.pattern[:-1]:
+            return []
+        prefix = rule.pattern.removesuffix("*").rstrip()
+        return [f"command({prefix})"] if prefix else []
+    return []
+
+
+def sync_fragment(rules: list[Rule], runtime: str) -> tuple[dict[str, dict[str, list[str]]], list[str]]:
+    render = agy_permission_patterns if runtime == "agy" else permission_patterns
+    deny = sorted({p for r in rules if r.decision == "never" and not r.agent for p in render(r)})
     allow = sorted(
+        {p for r in rules if r.decision == "allow" and r.layer == "owner" and not r.agent for p in render(r)}
+    )
+    skipped = [r.text() for r in rules if r.decision == "never" and not render(r)]
+    if runtime != "agy":
+        return {"permissions": {"deny": deny, "allow": allow}}, skipped
+    ask = sorted(
         {
             p
             for r in rules
-            if r.decision == "allow" and r.layer == "owner" and not r.agent
-            for p in permission_patterns(r)
+            if not r.agent and (is_local_dev_rule(r) or (r.decision == "ask" and r.layer != "default"))
+            for p in render(r)
         }
     )
-    skipped = [r.text() for r in rules if r.decision == "never" and not permission_patterns(r)]
-    fragment = {"permissions": {"deny": deny, "allow": allow}}
-    settings_path = Path(options.get("settings") or config_dir() / "settings.json")
+    return {"permissions": {"deny": deny, "ask": ask, "allow": allow}}, skipped
+
+
+def default_settings_path(runtime: str) -> Path:
+    if runtime == "agy":
+        return Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+    return config_dir() / "settings.json"
+
+
+def cmd_sync(options: dict[str, str]) -> str:
+    runtime = options.get("runtime", "claude")
+    rules, _, _ = load_rules(None)
+    fragment, skipped = sync_fragment(rules, runtime)
+    settings_path = Path(options.get("settings") or default_settings_path(runtime))
     current = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
     merged = json.loads(json.dumps(current))
     perms = merged.setdefault("permissions", {})
-    for key in ("deny", "allow"):
-        perms[key] = sorted(set(perms.get(key, [])) | set(fragment["permissions"][key]))
+    for key, entries in fragment["permissions"].items():
+        perms[key] = sorted(set(perms.get(key, [])) | set(entries))
     diff = difflib.unified_diff(
         json.dumps(current, indent=2).splitlines(),
         json.dumps(merged, indent=2).splitlines(),
@@ -5225,12 +5349,13 @@ def main(argv: list[str]) -> int:
         print(f"cobot-rules: {error}\n\n{__doc__.strip()}", file=sys.stderr)
         return 2
     command = positional[0] if positional else ""
-    if command == "gate":
+    if command in ("gate", "sync"):
         runtime = options.get("runtime", "claude")
         if runtime not in RUNTIMES:
             print(f"cobot-rules: unknown runtime {runtime!r} (claude or agy)", file=sys.stderr)
             return 2
-        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read())
+    if command == "gate":
+        output = gate_agy(sys.stdin.read()) if options.get("runtime") == "agy" else gate(sys.stdin.read())
         if output:
             print(output)
         return 0

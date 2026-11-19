@@ -5646,3 +5646,20 @@ def test_gate_ownerCobotConfigFiles_deniedForEditWriteAndProtectedInBash(rules, 
     assert rules.judge_file("Edit", expanded, None, loaded, None).decision == "deny"
     assert rules.judge_file("Write", expanded, None, loaded, None).decision == "deny"
     assert decide(rules, f"rm {path}")[0].decision in ("ask", "deny")
+
+
+def test_sync_runtimeAgy_rendersAgyPermissionsWithoutWriting(rules, capsys, tmp_path, layers):
+    owner, _ = layers
+    owner.write_text("allow Bash(pytest*)\nnever mcp__vault__*\nnever mcp__x__get_secret\n")
+    settings = tmp_path / "settings.json"
+    code, out = cli(rules, ["sync", "--runtime", "agy", "--settings", str(settings)], capsys)
+    assert code == 0
+    assert not settings.exists()
+    fragment = json.loads(out.out.split("# diff")[0].replace("# fragment", ""))
+    perms = fragment["permissions"]
+    assert "command(pytest)" in perms["allow"]
+    assert "command(git push --force)" in perms["deny"]
+    assert {"mcp(vault/*)", "mcp(x/get_secret)"} <= set(perms["deny"])
+    assert any(entry.startswith("write_file(") for entry in perms["deny"])
+    assert "command(git commit)" in perms["ask"]
+    assert cli(rules, ["sync", "--runtime", "bogus"], capsys)[0] == 2

@@ -14,7 +14,7 @@ import pytest
 from conftest import PLUGIN
 
 SHIM = PLUGIN / "hooks" / "gate-agy.sh"
-DECISIONS = {"allow", "force_ask", "deny"}
+DECISIONS = {"allow", "ask", "force_ask", "deny"}
 CORPUS: list[str] = []  # every answer of this module, for the auto_approve scan
 
 
@@ -745,3 +745,43 @@ def test_runCommand_projectWarning_keepsItsTextOffStderr(rules, workspace, capsy
     decide(rules, "run_command", {"CommandLine": "ls"}, [workspace])
     err = capsys.readouterr().err
     assert "unreadable rule ignored" in err and "approve" not in err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit -m 'feat: add adapter'",
+        "git rebase main",
+        "git init",
+        "docker run --rm alpine echo ok",
+        "podman run --rm alpine echo ok",
+        "uv add pydantic",
+        "cargo add serde",
+        "npm add zod",
+        "uvx ruff@0.17.4 check .",
+        "npx --yes markdownlint-cli2@0.24.0 '**/*.md'",
+        "make lint",
+    ],
+)
+def test_runCommand_localRepeatableDevWorkflow_emitsSessionCacheableAsk(rules, workspace, command):
+    assert decide(rules, "run_command", {"CommandLine": command}, [workspace], cwd=workspace) == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push origin feat/x",
+        "rm -rf dist",
+        "git reset --hard HEAD~1",
+        "git clean -fd",
+        "sh script.sh",
+        "eval 'echo ok'",
+        "sudo ls",
+        "ssh prod uname -a",
+        "kubectl exec pod -- ls",
+        "git commit -m 'feat: x' && git push origin feat/x",
+        "uvx ruff check . && rm -rf dist",
+    ],
+)
+def test_runCommand_outwardDestructiveOrMixedCommands_stayForceAsk(rules, workspace, command):
+    assert decide(rules, "run_command", {"CommandLine": command}, [workspace], cwd=workspace) == "force_ask"

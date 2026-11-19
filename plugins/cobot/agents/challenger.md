@@ -23,7 +23,11 @@ Method:
 2. For every decision, ask: what input, state or sequence makes this fail? What does the author
    assume about the platform, the data or the owner that is not written down? What is the cheapest
    alternative that avoids the risk?
-3. Keep only objections that are concrete and falsifiable: a scenario with inputs and the wrong
+3. Read the spec's *Trust boundaries*. From the stories and the lines the change touches, find
+   each boundary it creates or alters: one the section misses, one without a guard, or one
+   without a story whose acceptance is a negative test is MAJOR, and so is a `none:` the stories
+   contradict. A boundary the change does not touch is not an objection.
+4. Keep only objections that are concrete and falsifiable: a scenario with inputs and the wrong
    outcome. Drop taste, style and anything the spec already handles.
 
 Output, under 600 words:

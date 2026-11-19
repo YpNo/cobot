@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from conftest import PLUGIN
 
 SPEC = PLUGIN / "skills" / "spec"
@@ -56,3 +57,21 @@ def test_specSkill_coldReadNotesSites_draftFillsBoundaries():
         "`none:` carries a reason the challenger can check",
     ):
         assert phrase in draft.split("4. **Clarify.**")[0], phrase
+
+
+@pytest.mark.parametrize("folder", ["claude-agents", "agents"])
+def test_challenger_attacksBoundariesTheChangeTouches_notOthers(folder):
+    body = (PLUGIN / folder / "challenger.md").read_text(encoding="utf-8")
+    method = body.split("Method:")[1].split("Output,")[0]
+    steps = re.split(r"\n(?=\d\. )", method)
+    step = next((s for s in steps if "*Trust boundaries*" in s), "")
+    flat = " ".join(step.split())
+    for phrase in (
+        "boundary it creates or alters",
+        "misses",
+        "without a guard",
+        "negative test is MAJOR",
+        "a `none:` the stories contradict",
+        "A boundary the change does not touch is not an objection.",
+    ):
+        assert phrase in flat, phrase

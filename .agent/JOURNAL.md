@@ -409,3 +409,11 @@ Proof: tests first (two failing for the right reason); full suite 3509 passed, 9
 Open: none.
 Next: T04, the eval graders.
 verified: tree 6ce92470e62f790d55b1cb1e9b4166b4107586c0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-19 — T04 trust-boundaries: an eval shows an agent writes the section
+Changed: evals/medium-spec-then-challenge prompt names the spec's path, .agent/specs/config-loader.md; two file graders on it: boundary-section (a regex scoped to the section, wanting env, environment or config file; flags: i, which the spec did not name, so a capitalised table cell counts) and boundary-not-none (not_contains a none: line under the heading). tests/test_eval_graders.py: matches() on a row (passes) and on a none: line, the word only in another section, and no section (each fails a grader); a test that the prompt and both graders name the same path.
+Why: F-49, spec trust-boundaries story 5.
+Proof: tests first (five failing for the right reason); full suite 3514 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate; one local eval run (--runs 1, sonnet-5-5, judge haiku-5-5): score 1, all nine graders passed, the seven old ones unchanged. CI runs the case's three.
+Open: none.
+Next: T05, decision 33, design rows, CHANGELOG, F-49 closed.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, local eval medium-spec-then-challenge 9/9

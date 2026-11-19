@@ -16,21 +16,23 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `./install.sh --check` | reports Claude Code, the marketplace, installed scopes, the legacy scaffold, name overlaps and, when `agy` is on PATH, agy's version and whether cobot is installed there |
 | `./install.sh --uninstall [SCOPE]` | reverses an install (`project`, `local` or `user`) |
 | `./install.sh --user` | user scope, reserved for the switch ([03-switch-plan.md](03-switch-plan.md)) |
-| `./install.sh --agy` | Antigravity: a staged copy of the plugin whose hook group is named `cobot-<16 random hex>` (agy merges groups by name, so a repository could switch off a known one), then `agy plugin validate` and `agy plugin install` of it at user scope; the same command refreshes, with a new name, and never uninstalls first. A modifier: beside `--project`, `--local`, `--user` or `--refresh` it runs that action, then the agy install |
+| `./install.sh --agy` | Antigravity: uses `scripts/package-plugin.py --host agy` to stage a pure agy bundle (no Claude-only manifests/agents/hooks, `policy/default.rules` outside `rules/`) with randomized hook group `cobot-<16 random hex>` and optional user `models.json` overrides baked in, then `agy plugin validate --strict` and `agy plugin install` at user scope. Same command refreshes, and works beside `--project`, `--local`, `--user` or `--refresh` |
 
 ## Files and environment
 
 | Setting | Type | Default | Effect |
 |---|---|---|---|
-| `~/.claude/cobot.rules` | rule file | absent | owner layer: `allow` lines silence a default `ask`; `never` and `ask` tighten |
+| `~/.config/cobot/cobot.rules` (or `~/.claude/cobot.rules`) | rule file | absent | owner layer: `allow` lines silence a default `ask`; `never` and `ask` tighten |
 | `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
-| `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
-| `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
-| `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
+| `~/.config/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted (`~/.claude/cobot/` if already present) |
+| `~/.config/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
+| `~/.config/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
+| `~/.config/cobot/models.json`, `.agent/models.json` | JSON `{"agy": {...}, "claude": {...}}` | absent | per-agent model overrides (`.agent/models.json` only in trusted repos < owner `models.json` < `--models` < `COBOT_AGENT_MODELS`) |
+| `COBOT_AGENT_MODELS` | `agent=tier,...` or global `tier` | unset | runtime model override, e.g. `consultant=pro,builder=pro` or `pro` |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
-| `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
+| `COBOT_CONFIG_DIR`, `XDG_CONFIG_HOME`, `CLAUDE_CONFIG_DIR` | path | `~/.config/cobot` (fallback `~/.claude/cobot` if present) | where owner config files above live (`COBOT_CONFIG_DIR` > `CLAUDE_CONFIG_DIR/cobot` > existing `~/.claude/cobot` > `$XDG_CONFIG_HOME/cobot`); Claude's sandbox keeps it read-only to Bash (`trust not recorded:` / `answer not recorded:` exit 1) |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>`; the gate's per-session ask counts under `cobot/asks/` (rule texts and counts, a week kept); the report check's per-session state under `cobot/reports/` (refused builder ids, and an id with the sha256 of each report let through, never the report text; a week kept) |
-| `.agent/noticed.md` | Markdown, one dated line per item | absent | builders' `Noticed:` items the report hook parked; `/cobot:wrap` files or drops each, and `cobot-memory noticed list` and `noticed clear` read and empty it |
+| `.agent/noticed.md` | Markdown, one dated line per item | absent | builders' `Noticed:` items the report hook (or the orchestrator under `agy`) parked; `/cobot:wrap` files or drops each, and `cobot-memory noticed list` and `noticed clear` read and empty it |
 | `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the mise and asdf shims folders (a hit there is a shim, not trusted in foreign mode; decision 29), the distrobox it runs in |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
 | `COBOT_GATE_LOG` | path | unset | append one JSON line per judged call: tool, decision, first 120 chars |
@@ -246,11 +248,13 @@ Precedence: `never` in any layer wins; an `allow` from the owner layer (or an ag
 from the default layer) silences the gate; `ask` prompts; otherwise the host's own
 permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's
 UI tools, which are otherwise silent. Under Claude Code the gate never emits `allow`; under agy
-it answers `allow` meaning no opinion, `force_ask` for an ask, and never `auto_approve`.
+it answers `allow` meaning no opinion, `ask` (session-cacheable via *Always Allow*) for local
+repeatable dev actions, `force_ask` for all other asks, `deny` for hard `never` rules, and never
+`auto_approve`.
 
 `/cobot:rules check "<command>"` dry-runs the gate, `explain` names every matching rule, and
-`sync` renders the hard wall (a `permissions.deny` block and the owner's `allow` lines, in plain
-and `rtk` forms) for you to apply to `settings.json` yourself.
+`sync [--runtime claude|agy]` renders the hard wall (`permissions.deny`, agy `ask` dev commands,
+and owner `allow` lines) for you to apply to `settings.json` yourself.
 
 ## MCP servers you register
 

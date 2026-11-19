@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Host-agnostic core, pure per-host packaging, explicit Gemini tiers, and `agy` mode alignment
+  (ADR-0008, decision 33).**
+  - Moved `plugins/cobot/rules/default.rules` → `plugins/cobot/policy/default.rules` so Antigravity
+    never ingests gate policy lines as prompt instructions (`rules: 0` under `agy plugin list`),
+    enforced by `scripts/check-plugin.py`.
+  - Added `scripts/package-plugin.py` (`--host agy|claude`, optional `--zip`, `--models`) used by
+    `install.sh --agy` and `release.yml` (`cobot-agy.zip`, `cobot-claude.zip`) so each host
+    installs a pure bundle (`agy plugin validate --strict` passes with 0 warnings).
+  - Resolved owner state (`identities`, `trusted`, `machine.md`, `cobot.rules`, `models.json`)
+    host-agnostically via `~/.config/cobot/` (`$COBOT_CONFIG_DIR` / `$XDG_CONFIG_HOME/cobot`)
+    when no existing `~/.claude/cobot*` is present, with automatic legacy fallback and `never`
+    self-protection rules for both locations.
+  - Added canonical host-neutral agent definitions (`plugins/cobot/agent-defs/*.md`) compiled by
+    `scripts/sync-agents.py` to `claude-agents/` and `agents/` with explicit task-matched Gemini
+    tiers (`pro` for design/auditor/learner/language builders, `flash` for `consultant` and
+    `builder` — never `inherit`), multi-level per-agent overrides (`.agent/models.json` <
+    `~/.config/cobot/models.json` < `--models` < `COBOT_AGENT_MODELS`), concrete Gemini 4 `swarm`
+    role mapping (`Carbon` / `Hydrogen` / `Argon` / `Flash`), and active override reporting in
+    `cobot-session`.
+  - Split Antigravity gate asks into session-cacheable `ask` for local repeatable dev commands
+    (`git commit/rebase/init`, `docker/podman run`, dependency adds, `make`, `just`, `uvx`, `npx`,
+    `npm run`) vs `force_ask` for outward/destructive/privilege/`swarm add`/`swarm model` calls,
+    added `cobot-rules sync --runtime agy`, and added `1.5.11` native `swarm` and
+    `list_resources`/`read_resource` governance in `_cobot_agy.py`.
 - **Builder reports are checked in the desktop app (decision 32, F-35).** There every `Agent`
   call runs in the background, so no report reached the check. A new `PreToolUse` hook on
   `SubagentHandback` reads the report the builder hands back. A report without a command and an

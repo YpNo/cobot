@@ -7,7 +7,7 @@
   <a href="https://github.com/YpNo/cobot/releases"><img src="https://img.shields.io/github/v/release/YpNo/cobot?sort=semver" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.285-d97757" alt="Claude Code 2.1.285 or newer"></a>
-  <a href="docs/harnesses.md"><img src="https://img.shields.io/badge/Antigravity%20CLI-%E2%89%A5%201.5.9-4285f4" alt="Antigravity CLI 1.5.9 or newer"></a>
+  <a href="docs/harnesses.md"><img src="https://img.shields.io/badge/Antigravity%20CLI-%E2%89%A5%201.5.11-4285f4" alt="Antigravity CLI 1.5.11 or newer"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.12%2B-3776ab" alt="Python 3.12 or newer"></a>
   <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage%20gate-85%25-brightgreen" alt="Coverage gate 85 %"></a>
 </p>
@@ -39,8 +39,8 @@ cobot is a plugin. It runs inside one of two supported hosts, from the same chec
 
 | Host | Version | You type a command as | Status |
 |---|---|---|---|
-| Claude Code | 2.1.285 or newer | `/cobot:onboard` | the reference host: every feature |
-| Antigravity CLI (`agy`) | 1.5.9 or newer | `/onboard` | gate, brief, skills and agents; [the gaps](#differences-under-antigravity) are named |
+| Claude Code | 2.1.285 or newer | `/cobot:onboard` | reference host |
+| Antigravity CLI (`agy`) | 1.5.11 or newer | `/onboard` | pure staged bundle, mode-aware gate, explicit Gemini tiers; [gaps](#differences-under-antigravity) named |
 
 What was run on which version is recorded in [docs/harnesses.md](docs/harnesses.md).
 
@@ -83,7 +83,7 @@ Read further:
 
 ## Prerequisites
 
-- One host: Claude Code 2.1.285 or newer, or the Antigravity CLI 1.5.9 or newer (or both).
+- One host: Claude Code 2.1.285 or newer, or the Antigravity CLI 1.5.11 or newer (or both).
 - Python 3.12 or newer on `PATH` as `python3`; cobot's tools use the standard library only.
 - POSIX `sh` and `git`.
 
@@ -125,13 +125,15 @@ cobot works without configuration. What you can set, all optional:
 
 | File | What it holds |
 |---|---|
-| `~/.claude/cobot.rules` | your rule layer, read under both hosts: `allow` lines quiet a default `ask`, `never` and `ask` lines tighten |
+| `~/.config/cobot/cobot.rules` (or `~/.claude/cobot.rules`) | your rule layer, read under both hosts: `allow` lines quiet a default `ask`, `never` and `ask` lines tighten |
 | `.agent/cobot.rules` | the repository's rule layer, committed: `never` and `ask` only |
-| `~/.claude/cobot/identities`, `~/.claude/cobot/trusted` | the repositories you trust, by owner or by root commit; onboarding writes them |
-| `~/.claude/cobot/machine.md` | your answers about this machine: install route, helpers you declined |
+| `~/.config/cobot/identities`, `~/.config/cobot/trusted` | the repositories you trust, by owner or by root commit; onboarding writes them (`~/.claude/cobot/` if already present) |
+| `~/.config/cobot/machine.md` | your answers about this machine: install route, helpers you declined |
+| `~/.config/cobot/models.json`, `.agent/models.json` | optional per-agent model overrides (e.g. switch `consultant` or `builder` to `pro`); `COBOT_AGENT_MODELS` overrides at runtime |
 
 A rule is one line, for example `allow Bash(cargo test*)`, `ask Bash(git push*)` or
-`allow mcp__claude-in-chrome__*`. `CLAUDE_CONFIG_DIR` moves the `~/.claude` folder above.
+`allow mcp__claude-in-chrome__*`. `COBOT_CONFIG_DIR` or `CLAUDE_CONFIG_DIR` moves the owner
+config folder above (`~/.config/cobot` is the default when no `~/.claude/cobot*` exists).
 cobot ships no MCP server and no credentials: register the servers you want yourself, and the
 gate judges their tools. The rule syntax, every file and variable, and the MCP setup for Google
 Stitch and Google Cloud: [docs/configuration.md](docs/configuration.md).
@@ -183,9 +185,17 @@ The gate, the session brief, the skills and the ten agents come along. What agy 
   whatever agy does with a failing hook. A machine without `sh` would still fail open.
 - **A repository's own agy hooks run beside the gate.** The brief warns when a workspace holds
   hooks or plugins: read them before you let the session run.
+- **The gate respects `agy` execution modes.** Local repeatable dev commands (`git commit`, `uv add`,
+  `make`, `uvx`, `npx`) emit `ask` (honoring *Always Allow* per session), while outward,
+  destructive, credential, `swarm add`, and shell-wrapper calls emit `force_ask`, and `never` rows
+  emit `deny`. `/rules sync --runtime agy` renders `~/.gemini/antigravity-cli/settings.json`
+  permissions without writing to it.
+- **Explicit Gemini agent tiers + overrides.** Agents default to `pro` for adversarial/security/language
+  roles and `flash` for parallel `consultant` checklists and lightweight `builder` tasks (never
+  `inherit`), overridable via `~/.config/cobot/models.json`, `.agent/models.json`, or `COBOT_AGENT_MODELS`.
 - **Every `agy` command asks**, because `agy plugin install` replaces plugins and a nested
   `agy -p` runs outside the gate. To quiet the read-only form, add
-  `allow Bash(agy plugin validate*)` to `~/.claude/cobot.rules`.
+  `allow Bash(agy plugin validate*)` to `~/.config/cobot/cobot.rules` (or `~/.claude/cobot.rules`).
 
 The evidence for each line: [docs/harnesses.md](docs/harnesses.md) and
 [docs/reference/antigravity-mechanics.md](docs/reference/antigravity-mechanics.md).

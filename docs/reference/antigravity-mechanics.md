@@ -1,4 +1,4 @@
-# Antigravity CLI mechanics that shape cobot (verified 2026-11-15, agy 1.5.9)
+# Antigravity CLI mechanics that shape cobot (verified 2026-11-19, agy 1.5.11)
 
 What cobot relies on under the Antigravity CLI (`agy`), each with its source. Re-read when agy's
 version moves; the design input (`docs/design-inputs/antigravity-0.3.0.md`) keeps the 1.5.3
@@ -15,12 +15,20 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
 ## Plugin layout
 
 - Manifest: `.antigravity-plugin/plugin.json` wins over `plugin.json` and `.claude-plugin/`
-  (probe). cobot keeps both manifests with the same name, version, description, license and
-  repository; `check-plugin` and `release.yml` hold them equal.
-- Agents: `agents/<n>.md`; `tools` must be a YAML list (a string skips the agent); `model` is
-  `inherit`, `flash_lite`, `flash` or `pro`, and a model name or `sonnet` skips the agent;
-  `effort` is ignored; an unknown tool name passes validate silently (probe). Also
-  `mainAgent`, `commandExecutionPolicy` (`off`, `auto`, `eager`, `sandbox`).
+  (probe). cobot keeps both canonical manifests equal (`check-plugin`, `release.yml`) and stages
+  pure host bundles with `scripts/package-plugin.py` (`--host agy|claude`) so each install holds
+  only its host's manifest, agents, and hook file (`agy plugin validate --strict` exits 0 with
+  0 warnings).
+- Rules: any file under `rules/` is ingested into the session prompt (`agy plugin list --json`
+  reports `rules: N`), so gate policy files must not live under `rules/` (cobot uses
+  `policy/default.rules`).
+- Agents: `agents/<n>.md` (synced from `agent-defs/<n>.md`); `tools` must be a YAML list (a string
+  skips the agent); `model` is strictly the tier enum `inherit`, `flash_lite`, `flash` or `pro`
+  (probe 1.5.11: concrete IDs such as `gemini-4-carbon-high` fail `Invalid model tier` and skip the
+  agent); `effort` is ignored; an unknown tool name passes validate silently (probe). Also
+  `mainAgent`, `commandExecutionPolicy` (`off`, `auto`, `eager`, `sandbox`). Concrete Gemini 4
+  model IDs (`gemini-4-carbon-{low,medium,high}`, `gemini-4-hydrogen-*`, `gemini-4-argon-*`,
+  `gemini-3.8-flash-*`, `gemini-pro-orchestrator`) apply to `swarm(action="add", model=...)`.
 - Skills: the Claude Code format; Claude-only keys pass; each skill is also a `/name` command;
   a body over 24 000 bytes is a problem (probe; EGM). Skill text is not expanded:
   `${CLAUDE_PLUGIN_ROOT}` stays literal.
@@ -72,13 +80,15 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
   available when listed: changelog), `read_url_content`, `search_web`, `view_code_item`.
 - Orchestration: `invoke_subagent` (`Workspace` = `inherit`, `branch` or `share`, flat or in a
   `Subagents` array), `manage_subagents`, `define_subagent`, `run_workflow` (`Script` or
-  `ScriptPath`, Python; new in 1.5.9), `schedule` (`TimerCondition` runs a command),
+  `ScriptPath`, Python; 1.5.9+), `schedule` (`TimerCondition` runs a command), `swarm` (`status`,
+  `models`, `add`, `model`, `kill`, `title`), `post_message`, `read_board`, `swarm_wait`,
   `ask_question`, `send_message`, `list_permissions`, `ask_permission`, `finish`,
-  `skill_search` (live; docs; changelog).
-- MCP: lazy `call_mcp_tool` (`ServerName`, `ToolName`, `Arguments`) or eager
-  `mcp_<server>_<tool>`; a plugin's servers are named `<plugin>_<server>` (changelog 1.2.2).
+  `skill_search` (live 1.5.11; docs; changelog).
+- MCP: lazy `call_mcp_tool` (`ServerName`, `ToolName`, `Arguments`), resource tools
+  `list_resources` / `read_resource` (`ServerName`), or eager `mcp_<server>_<tool>`; a plugin's
+  servers are named `<plugin>_<server>` (changelog 1.2.2; observed live on `dak_bigquery`).
   Configuration: `~/.gemini/config/mcp_config.json` and each installed plugin's
-  `~/.gemini/config/plugins/<p>/mcp_config.json` or `mcp.json`. *smoke*: the name form seen.
+  `~/.gemini/config/plugins/<p>/mcp_config.json` or `mcp.json`.
 - The cobot tables: `plugins/cobot/bin/_cobot_agy.py`.
 
 ## Install and settings
@@ -87,6 +97,8 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
   installed copy in place and restores it on failure (changelog 1.4.8, 1.5.6); `agy plugins`
   is an alias of `agy plugin`; `link <mp> <target>` links a marketplace (`agy plugin --help`).
 - Settings: `~/.gemini/antigravity-cli/settings.json` `permissions.{allow,ask,deny}` with
-  `command(prefix)`, `command(regex:…)`, `mcp(srv/tool)`; deny > ask > allow (live). cobot
-  writes none of it.
+  `command(prefix)`, `command(regex:…)`, `write_file(path)`, `mcp(srv/tool)`; deny > ask > allow
+  (live docs). cobot writes none of it (`cobot-rules sync --runtime agy` renders a diff only).
+- Execution modes: `auto`, `accept-edits`, `plan`, and `default` respect `PreToolUse` `deny`,
+  `force_ask` (prompts every call), and `ask` (honors session *Always Allow* cache).
 - Command sidecars and access grants live under `~/.gemini/jetski/` (report; spec pass 3).

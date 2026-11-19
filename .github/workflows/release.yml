@@ -36,8 +36,15 @@ jobs:
           v="${TAG#v}"
           awk -v v="$v" '/^## \[/{p = index($0, "[" v "]") > 0} p' CHANGELOG.md > notes.md
           test -s notes.md
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Package host bundles
+        run: |
+          python3 scripts/package-plugin.py --host agy --out dist/agy --zip dist/cobot-agy.zip --no-user-models --fixed-group
+          python3 scripts/package-plugin.py --host claude --out dist/claude --zip dist/cobot-claude.zip --no-user-models
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag
+        run: gh release create "$TAG" dist/cobot-agy.zip dist/cobot-claude.zip --title "$TAG" --notes-file notes.md --verify-tag

@@ -417,3 +417,11 @@ Proof: tests first (five failing for the right reason); full suite 3514 passed, 
 Open: none.
 Next: T05, decision 33, design rows, CHANGELOG, F-49 closed.
 verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, local eval medium-spec-then-challenge 9/9
+
+## 2026-11-19 — T05 trust-boundaries: decision 33, design rows, F-49 closed
+Changed: docs/01-decisions.md decision 33 (a spec names its trust boundaries; the challenger attacks a missed or unproven one; the sweep checks declared guards from trusted memory only, as inventory lines); docs/02-design.md the medium path row names the section and the medium-spec-then-challenge eval row its two graders; CHANGELOG Added entry; FINDINGS F-49 closed; the spec's Built note, with the two additions (declared: report lines, the case-insensitive grader).
+Why: F-49, spec trust-boundaries story 6.
+Proof: full suite 3514 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate; cobot-memory check: 1 open finding of 49 (F-39), brief 5818 of 6000 chars.
+Open: cobot-memory check warns JOURNAL.md is over 400 lines (compact is the owner's call).
+Next: the owner pushes feat/trust-boundaries and opens its PR.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, cobot-memory check

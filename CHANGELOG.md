@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A spec names its trust boundaries (decision 33, F-49).** The spec template has a *Trust
+  boundaries* section: each boundary the change creates or alters, with its guard and a story
+  whose acceptance is a negative test, or one `none:` line with a reason. The challenger raises a
+  missed or unproven boundary as MAJOR. The security sweep checks the declared guards at their
+  sites, and reads specs only when `cobot-memory trust` says the memory is trusted. Its inventory
+  now lists privilege lines, and its reports carry a `declared:` line.
 - **Builder reports are checked in the desktop app (decision 32, F-35).** There every `Agent`
   call runs in the background, so no report reached the check. A new `PreToolUse` hook on
   `SubagentHandback` reads the report the builder hands back. A report without a command and an

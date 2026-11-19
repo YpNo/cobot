@@ -179,6 +179,11 @@ Checked clear: `none:` costs one line and specs are medium or large only; the ch
 suffice and its 600 words hold; sync-agents copies the body; the prompt path keeps the existing
 graders; decision 30's steps, fan-out and ranking hold.
 
+**Built, 2026-11-19:** T01 (`faecde6`), T02 (`0e551d2`), T03 (`2e3db36`), T04 (`43a3c15`) and
+T05 done. Two additions: both sweep report templates carry a `declared:` line (T03, else the
+inventory lines reach no report), and `boundary-section` matches case-insensitively (T04). One
+local eval run passed all nine graders.
+
 ## Converge
 
 pending

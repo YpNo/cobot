@@ -377,3 +377,11 @@ Proof: markdownlint clean (one MD038 fixed); full suite 3502 passed, 98.46 %; ru
 Open: none for the spec; F-39, F-49 remain open findings.
 Next: the owner reviews the branch, pushes feat/builder-proof-hosts and opens its PR; then remove the /probe/ line from .git/info/exclude with the worktree.
 verified: tree b878647bebb1cd48f5e41d3e1a34106ae1a5e4d3 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-19 — host-agnostic core, pure packaging, explicit Gemini tiers, and agy 1.5.11 support
+Changed: cb3d187 pure packaging (scripts/package-plugin.py, policy/default.rules, install.sh --agy); 9524e65 XDG ~/.config/cobot/ owner config with ~/.claude/cobot* fallback and self-protection; eb729d8 canonical agent-defs/*.md with explicit task-matched Gemini tiers (pro/flash) and multi-level overrides; d41c6b2 agy mode alignment (ask vs force_ask) and cobot-rules sync --runtime agy; ade5185 agy 1.5.11 swarm/board/resource governance; 715b43f host-agnostic protocol/skills/cobot-session; 7df290d ADR-0008, release.yml, docs, CHANGELOG; scripts/spikes/smoke-agy.sh and docs/harnesses.md (Antigravity CLI 1.5.11 validate/install ok).
+Why: make cobot cleanly host-agnostic across Claude Code and Antigravity CLI 1.5.11 with pure per-host bundles, explicit model routing, and execution-mode-aware gating.
+Proof: 7df290d + T08 checks: ruff (check + format), shellcheck, check-plugin (30 skills, 10 agents, 565 listing tokens, 2976 protocol chars), sync-agents --check, markdownlint-cli2 (145 files, 0 issues), cobot-memory check, throwaway-HOME ./install.sh --agy + agy plugin validate --strict + agy plugin list --json; full pytest --cov=plugins/cobot/bin 98.25% with 4 pre-existing macOS-only failures in test_cobot_rules.py (lines 694, 3841, 3913).
+Open: live signed-in smoke-agy.sh and live agy swarm/subagent runs remain not run inside the sandboxed HOME; brief remains at 6000/6000 chars.
+Next: owner pushes feat/agy-agnostic and runs ./install.sh --agy && sh scripts/spikes/smoke-agy.sh in a signed-in terminal.
+verified: 7df290d · pytest+cov (98.25%, 4 pre-existing macOS failures), ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, agy plugin validate --strict

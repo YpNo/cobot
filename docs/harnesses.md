@@ -6,6 +6,7 @@ is `not run`, never clean. Daily use is not a run: a cell turns `ok` from a run 
 
 | Runtime | Version | Validate | Install | Gate | Gate in a subagent | Brief | Agents | Run |
 |---|---|---|---|---|---|---|---|---|
+| Antigravity CLI | 1.5.11 | ok | ok | not run | not run | not run | not run | `HOME=$(mktemp -d) ./install.sh --agy` + `agy plugin validate --strict` + `agy plugin list --json` (2026-11-19: 30 skills, 10 agents, 0 rules, 1 hook group, zero errors); live signed-in `smoke-agy.sh` left for owner terminal |
 | Claude Code | 2.1.322 | not run | not run | not run | not run | not run | ok | eval run 43584857035 (2026-11-13): consultant fan-out, 16 of 17 passed |
 | Claude Code | 2.1.311 | ok | not run | not run | not run | not run | not run | `claude plugin validate --strict`, plugin and marketplace, on 0.3.0 (2026-11-15) |
 | Claude Code | as of 2026-11-06 | not run | not run | ok | not run | not run | ok | `spike-coexistence.sh` A (agent listing), B and C (push asks, force push denied); `spike-r1.sh` |

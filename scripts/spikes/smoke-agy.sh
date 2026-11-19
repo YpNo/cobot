@@ -24,6 +24,12 @@ fi
 echo "agy $(agy --version) · cobot $want from $repo · scratch $scratch"
 grep -qE '^  "cobot-[0-9a-f]{16}": \{$' "$installed" || { echo "smoke: $installed has no renamed hook group" >&2; exit 1; }
 echo "hook group: cobot-<random> (not printed: keep it out of records)"
+plugin_dir="${HOME}/.gemini/config/plugins/cobot"
+if [ -d "$plugin_dir/rules" ] || [ -d "$plugin_dir/.claude-plugin" ] || [ -d "$plugin_dir/claude-agents" ]; then
+  echo "smoke: $plugin_dir is not a pure agy bundle (found rules/, .claude-plugin/, or claude-agents/)" >&2
+  exit 1
+fi
+agy plugin validate --strict "$plugin_dir" >/dev/null || { echo "smoke: agy plugin validate --strict failed on $plugin_dir" >&2; exit 1; }
 
 mkdir -p "$scratch"
 cd "$scratch"
@@ -140,6 +146,23 @@ if [ "$(logged 'bin/cobot-memory check')" -gt 0 ]; then
   report o1 ok "onboard reached cobot-memory check through the brief's absolute path"
 else
   report o1 fails "no cobot-memory check call in the gate log (re-read $scratch/o1.json)"
+fi
+
+gate_bin="${plugin_dir}/bin/cobot-rules"
+gate_mode_check() {
+  tool=$1 args=$2 want_dec=$3
+  got=$(printf '{"toolCall":{"name":"%s","args":%s},"workspacePaths":["%s"]}' "$tool" "$args" "$scratch/work" \
+    | python3 -I "$gate_bin" gate --runtime agy | sed -n 's/.*"decision": *"\([^"]*\)".*/\1/p')
+  [ "$got" = "$want_dec" ]
+}
+if gate_mode_check run_command '{"CommandLine":"git commit -m smoke"}' ask \
+  && gate_mode_check run_command '{"CommandLine":"git push origin main"}' force_ask \
+  && gate_mode_check run_command '{"CommandLine":"git push --force origin main"}' deny \
+  && gate_mode_check swarm '{"action":"add","name":"worker","model":"gemini-4-hydrogen-high","brief":"x"}' force_ask \
+  && gate_mode_check list_resources '{"ServerName":"dak_bigquery"}' allow; then
+  report d1 ok "mode alignment & 1.5.11 tools: ask(commit), force_ask(push/swarm add), deny(force push), allow(list_resources)"
+else
+  report d1 fails "mode alignment or 1.5.11 tool gate check failed"
 fi
 
 report S4 "not run" "agy plugin import claude writes the real ~/.gemini; run it only on purpose"

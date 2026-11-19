@@ -1,12 +1,15 @@
 # Development
 
 For contributors, agents and architects working on cobot itself. The verified commands, with the
-date each last ran, are in [`.agent/CONTEXT.md`](../.agent/CONTEXT.md).
+date each last ran, are in [`.agent/CONTEXT.md`](../.agent/CONTEXT.md). Architectural context,
+the host-agnostic evolution plan and owner decisions live in
+[docs/01-decisions.md](01-decisions.md), [docs/adr/0008-host-agnostic-core-and-agy-modes.md](adr/0008-host-agnostic-core-and-agy-modes.md)
+and [`.agent/specs/agy-agnostic.md`](../.agent/specs/agy-agnostic.md).
 
 ## Prerequisites
 
 - Claude Code 2.1.285 or newer (`claude --version`): `claude plugin validate` is one of the
-  checks. The Antigravity CLI 1.5.9 or newer (`agy --version`) only to validate or smoke the agy
+  checks. The Antigravity CLI 1.5.11 or newer (`agy --version`) only to validate or smoke the agy
   side.
 - Python 3.12 or newer on `PATH` as `python3`; the plugin's scripts use the standard library only.
 - POSIX `sh` and `git`. For development: `uv` (runs pinned `ruff`, `pytest`, `shellcheck`) and
@@ -34,20 +37,28 @@ npx --yes markdownlint-cli2@0.24.0 "**/*.md"
 claude plugin validate plugins/cobot --strict && claude plugin validate . --strict && python3 scripts/check-plugin.py
 ```
 
-The Antigravity agents in `plugins/cobot/agents/` are written from `claude-agents/`: edit the
-Claude Code agent, then run `python3 scripts/sync-agents.py`. The check (also a test) and agy's
-own validation, in a throwaway HOME so nothing touches `~/.gemini`:
+Canonical host-neutral agent definitions live in `plugins/cobot/agent-defs/*.md`: edit those
+sources (never `claude-agents/` or `agents/` directly), then run `python3 scripts/sync-agents.py`
+to render both Claude Code (`plugins/cobot/claude-agents/`) and Antigravity (`plugins/cobot/agents/`)
+with explicit task-matched Gemini tiers (`pro`/`flash`) and `read_file`/`view_file` parity.
+
+`scripts/package-plugin.py --host agy|claude --out <dir>` stages pure host-specific bundles
+from that single canonical tree (removing foreign manifests, `evals*`, and non-host agent folders,
+and randomizing the `agy` hook group name). The check (`sync-agents.py --check`) and strict `agy`
+validation on a staged install in a throwaway HOME (zero warnings, `rules: 0`, without touching
+`~/.gemini`):
 
 ```bash
 python3 scripts/sync-agents.py --check
 ```
 
 ```bash
-HOME=$(mktemp -d) agy plugin validate plugins/cobot
+tmp_home=$(mktemp -d) && HOME="$tmp_home" ./install.sh --agy && HOME="$tmp_home" agy plugin validate --strict "$tmp_home/.gemini/config/plugins/cobot" && rm -rf "$tmp_home"
 ```
 
-agy warns once that `hooks/hooks.json` is never loaded: that file is Claude Code's, and the
-warning is expected.
+Validating the raw mono-tree `plugins/cobot` directly with `agy plugin validate` still emits the
+expected warning that `hooks/hooks.json` is never loaded; staged bundles and release artifacts
+(`cobot-agy.zip`) strip it cleanly.
 
 ## Evals
 
@@ -97,8 +108,9 @@ and a second `--case` replaces the first). Two artifacts come back,
 pass or fail: `eval-result` (the JSON result and the HTML report) and `eval-traces` (each run's
 `trace.jsonl`; `tracePath` in the result says which run it is), kept 14 days.
 
-`release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `marketplace.json` and the
-changelog agree, then creates the GitHub release from the changelog section. Every action is
+`release.yml` runs on a `vX.Y.Z` tag: it checks that `plugin.json`, `.antigravity-plugin/plugin.json`, `marketplace.json` and the
+changelog agree, builds pure `cobot-claude.zip` and `cobot-agy.zip` archives through
+`scripts/package-plugin.py`, and attaches them to the GitHub release created from the changelog section. Every action is
 pinned to a commit SHA and tokens are read-only except the release job.
 
 `knowledge-refresh.yml` runs weekly (and on dispatch): it picks the two stalest knowledge skills

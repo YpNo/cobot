@@ -62,11 +62,14 @@ flowchart LR
 - **The gate.** A hook judges every tool call before it runs, from three rule layers: cobot's
   defaults, yours, and the repository's (which can only tighten).
 - **Skills and agents.** Workflow skills (onboard, spec, build, wrap, ship, …), knowledge skills
-  per language and domain, and ten agents: a challenger, a read-only consultant, learner and
-  security auditor, and six builders.
-- **The tools behind them.** `cobot-memory`, `cobot-rules`, `cobot-env`, `cobot-deps` and
-  `cobot-session` in `plugins/cobot/bin/`: Python standard library only, tested, called by the
-  hooks and skills.
+  per language and domain, and ten canonical agents defined in `plugins/cobot/agent-defs/` and
+  rendered per host (`claude-agents/` and `agents/` via `scripts/sync-agents.py`): a challenger,
+  a read-only consultant, learner and security auditor, and six builders.
+- **The tools behind them.** `cobot-memory`, `cobot-rules` (reading `policy/default.rules`),
+  `cobot-env`, `cobot-deps` and `cobot-session` in `plugins/cobot/bin/`: Python standard library
+  only, tested, called by the hooks and skills. `scripts/package-plugin.py` stages pure
+  host-specific bundles (`install.sh --agy` and the release archives `cobot-claude.zip` /
+  `cobot-agy.zip`) from this single canonical tree.
 
 Small requests are done directly. Bigger ones go spec → build → wrap, one pull request each.
 
@@ -78,7 +81,8 @@ Read further:
 | install options, rule syntax, files, environment, MCP servers | [docs/configuration.md](docs/configuration.md) |
 | checks, evals, CI/CD, releasing, contributing | [docs/development.md](docs/development.md) |
 | what ran on which host and version | [docs/harnesses.md](docs/harnesses.md) |
-| the design and its decisions | [docs/02-design.md](docs/02-design.md), [docs/01-decisions.md](docs/01-decisions.md), [docs/adr/](docs/adr/) |
+| the design and its decisions | [docs/02-design.md](docs/02-design.md), [docs/01-decisions.md](docs/01-decisions.md), [docs/adr/](docs/adr/) (notably [ADR-0008](docs/adr/0008-host-agnostic-core-and-agy-modes.md)) |
+| the host-agnostic & `agy` implementation plan | [`.agent/specs/agy-agnostic.md`](.agent/specs/agy-agnostic.md) |
 | this repository's own working context | [`.agent/CONTEXT.md`](.agent/CONTEXT.md) |
 
 ## Prerequisites
@@ -224,8 +228,8 @@ the stalest knowledge. Details: [docs/development.md](docs/development.md#cicd).
 - The gate asks before anything outward or hard to undo, and some things it never allows. It
   never approves a call on its own: the host's own permissions still decide what the gate lets
   through.
-- cobot never edits your host's settings. `/cobot:rules sync` prints the Claude Code
-  settings block for you to apply.
+- cobot never edits your host's settings. `/cobot:rules sync` (`/rules sync --runtime agy` under
+  agy) prints the settings block for you to apply.
 - The memory of a repository you don't trust is never loaded into the session.
 - The gate matches commands and patterns: it stops honest and careless mistakes, not a
   determined attacker. Its model and limits: [docs/architecture.md](docs/architecture.md#security-model).

@@ -1,7 +1,7 @@
 # cobot — context
 
 profile: library
-goal: a Claude Code plugin marketplace that makes the main thread a governed orchestrator
+goal: a host-agnostic plugin (Claude Code & Antigravity CLI) that makes the main thread a governed orchestrator
 forge: github                  # YpNo/cobot; ci.yml, release.yml, knowledge-refresh.yml
 owner: YpNo (Michael Lopez) · public since 0.2.0 (2026-11-14) · MIT
 governance: docs/01-decisions.md   # the owner's decisions are this repository's principles
@@ -13,7 +13,7 @@ runs: host                     # podman and distrobox present, nothing here need
 - pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor; `claude plugin validate --strict`
 
 ## Environment
-- Claude Code 2.1.311 locally, CI pins 2.1.322 (npm latest 2.1.325, 2026-11-14); hooks run as the user
+- Claude Code 2.1.311 locally, CI pins 2.1.322; Antigravity CLI (`agy`) 1.5.11 locally; hooks run as the user
 - the directory marketplace serves this checkout to every dogfood repository: keep it on `main`, branch in worktrees
 - owner's git: `safe.bareRepository = explicit`; rtk PreToolUse hook rewrites Bash to `rtk <cmd>`
 
@@ -28,14 +28,13 @@ runs: host                     # podman and distrobox present, nothing here need
 | gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-15 |
 | plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-15 |
 | memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-15 |
-| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 (in sync: all) | 2026-11-15 |
-| agy validation (throwaway HOME) | `HOME=$(mktemp -d) agy plugin validate plugins/cobot` | passed, the one hooks/hooks.json warning | 2026-11-15 |
-| agy staged install (throwaway HOME) | `HOME=$(mktemp -d) ./install.sh --agy` | exit 0, group cobot-<random> | 2026-11-15 |
+| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 (in sync: all) | 2026-11-19 |
+| agy staged install & validate (throwaway HOME) | `tmp_home=$(mktemp -d) && HOME="$tmp_home" ./install.sh --agy && HOME="$tmp_home" agy plugin validate --strict "$tmp_home/.gemini/config/plugins/cobot" && rm -rf "$tmp_home"` | exit 0 (0 warnings, rules 0, group cobot-<random>) | 2026-11-19 |
 | evals (paid, CI) | `gh workflow run ci.yml -f evals=true [-f cases=<case>]` | 16 of 17 (run 43584857035) | 2026-11-14 |
 
 ## Constraints
 - nothing writes to `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills`, `~/.claude/settings.json` (ADR-0003)
-- the Claude Code gate never emits `allow`; any failure blocks (exit 2 in the shim). Under agy it answers `allow` (no opinion), `force_ask` or `deny`, never `auto_approve`, and every failure prints a deny (exit 0)
+- the Claude Code gate never emits `allow`; any failure blocks (exit 2 in the shim). Under agy it answers `allow` (no opinion), `ask` (local repeatable dev), `force_ask` or `deny`, never `auto_approve`, and every failure prints a deny (exit 0)
 - agents never write `.agent/`; only the orchestrator and wrap do
 - commits: Conventional Commits, no Co-Authored-By; PR bodies never mention Claude Code
 - coverage floor 85 % on `bin/`; check-plugin holds the size caps
@@ -56,10 +55,10 @@ Carried over, not re-run; the brief leaves them out.
 | agy smoke (owner's terminal, signed in, real HOME) | `./install.sh --agy && sh scripts/spikes/smoke-agy.sh` | second run: every runnable check ok; w1, m1, S4 not run | 2026-11-15 |
 
 ## Shape
-- `plugins/cobot/` is the only plugin for now; domain plugins come later
-- `bin/cobot-rules` (gate, `_cobot_make`), `bin/cobot-memory` (brief, learn and promote, knowledge, check, init, journal, findings; `_cobot_knowledge`), `bin/cobot-deps` (currency, `_cobot_deps`), `bin/cobot-session` (SessionStart payload)
+- `plugins/cobot/` is the canonical host-agnostic core; `scripts/package-plugin.py` builds pure per-host bundles (`install.sh --agy`, `release.yml` zips); `policy/default.rules` holds the gate defaults (`rules/` is forbidden)
+- `bin/cobot-rules` (gate, `_cobot_make`, `_cobot_agy`), `bin/cobot-memory` (brief, learn and promote, knowledge, check, init, journal, findings; `_cobot_knowledge`), `bin/cobot-deps` (currency, `_cobot_deps`), `bin/cobot-session` (SessionStart + agy host adapter)
 - `hooks/` are thin shims around `bin/`; all logic is tested Python
-- skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute; onboard, rules, security-sweep user-only), knowledge (lang-*, fw-*, expert-*), the consult router (domains under `skills/consult/domains/`), security-sweep (forked)
-- agents: challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder; Claude Code's in `claude-agents/`, agy's in `agents/` (written by `scripts/sync-agents.py`; edit the Claude one)
-- people read `README.md`; agents and architects read `docs/architecture.md`, `docs/configuration.md`, `docs/development.md`
-- design: `docs/02-design.md`; decisions: `docs/01-decisions.md`, `docs/adr/`; platform facts: `docs/reference/claude-code-mechanics.md`; open inputs: `docs/design-inputs/`; decided ones: `docs/history/`
+- skills: workflow (onboard, spec, build, wrap, rules, learn, ship, contribute; onboard, rules, security-sweep user-only), knowledge (lang-*, fw-*, expert-*), the consult router (domains under `skills/consult/domains/`), security-sweep (router in main thread)
+- agents (10): auditor, challenger, consultant, learner, builder, rust-builder, go-builder, python-builder, typescript-builder, terraform-builder; edit `agent-defs/*.md`, then `scripts/sync-agents.py` writes `claude-agents/` and `agents/` (explicit Gemini `pro`/`flash` tiers + `models.json`/`COBOT_AGENT_MODELS` overrides)
+- people read `README.md`; developers/agents read `docs/development.md`, `docs/architecture.md`, `docs/configuration.md`
+- design & decisions: `docs/02-design.md`, `docs/01-decisions.md` (#31), `docs/adr/0008-*`, `.agent/specs/agy-agnostic.md`; open inputs: `docs/design-inputs/`; decided: `docs/history/`

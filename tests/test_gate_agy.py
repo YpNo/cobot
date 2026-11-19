@@ -785,3 +785,53 @@ def test_runCommand_localRepeatableDevWorkflow_emitsSessionCacheableAsk(rules, w
 )
 def test_runCommand_outwardDestructiveOrMixedCommands_stayForceAsk(rules, workspace, command):
     assert decide(rules, "run_command", {"CommandLine": command}, [workspace], cwd=workspace) == "force_ask"
+
+
+# ---------------------------------------------- agy 1.5.11 native swarm and MCP resources (T05)
+
+
+@pytest.mark.parametrize("tool", ["post_message", "read_board", "swarm_wait"])
+def test_swarmBoardTools_allowAndListedInAgyTools(rules, workspace, tool):
+    assert tool in agy_module().AGY_TOOLS
+    assert decide(rules, tool, {"message": "hi"}, [workspace]) == "allow"
+
+
+@pytest.mark.parametrize("action", ["status", "models", "title", "kill"])
+def test_swarm_safeActions_allow(rules, workspace, action):
+    assert "swarm" in agy_module().AGY_TOOLS
+    assert decide(rules, "swarm", {"action": action}, [workspace]) == "allow"
+
+
+def test_swarm_modelSwitchAndUnknownActions_forceAsk(rules, workspace):
+    out = answer(rules, payload("swarm", {"action": "model", "name": "parser", "model": "pro"}, [workspace]))
+    assert out["decision"] == "force_ask"
+    assert "parser" in out["reason"] and "pro" in out["reason"]
+    assert decide(rules, "swarm", {"action": "pause"}, [workspace]) == "force_ask"
+    assert decide(rules, "swarm", {}, [workspace]) == "force_ask"
+
+
+def test_swarm_add_alwaysForceAsksAndChecksCommittedRulesForNewWorkspace(rules, git_workspace):
+    inherit_call = {"action": "add", "name": "parser", "model": "gemini-4-hydrogen-high", "brief": "x"}
+    out = answer(rules, payload("swarm", inherit_call, [git_workspace]))
+    assert out["decision"] == "force_ask"
+    assert "parser" in out["reason"] and "gemini-4-hydrogen-high" in out["reason"]
+    share_call = {**inherit_call, "workspace": "share"}
+    clean_share = answer(rules, payload("swarm", share_call, [git_workspace]))
+    assert clean_share["decision"] == "force_ask"
+    assert "uncommitted" not in clean_share["reason"]
+    (git_workspace / ".agent" / "cobot.rules").write_text("never Bash(make deploy*)\n")
+    dirty_share = answer(rules, payload("swarm", share_call, [git_workspace]))
+    assert dirty_share["decision"] == "force_ask"
+    assert "uncommitted" in dirty_share["reason"]
+    bad_ws = {**inherit_call, "workspace": "/tmp/escape"}  # noqa: S108 - testing rejected workspace value
+    assert "not a known mode" in answer(rules, payload("swarm", bad_ws, [git_workspace]))["reason"]
+
+
+@pytest.mark.parametrize("tool", ["list_resources", "read_resource"])
+def test_mcpResourceTools_governedByServerRules(rules, workspace, tool):
+    assert tool in agy_module().AGY_TOOLS
+    assert decide(rules, tool, {"ServerName": "dak_bigquery"}, [workspace]) == "allow"
+    assert decide(rules, tool, {}, [workspace]) == "force_ask"
+    (workspace / ".agent" / "cobot.rules").write_text("never mcp__secret_srv__*\nask mcp__gated_srv__*\n")
+    assert decide(rules, tool, {"ServerName": "secret_srv"}, [workspace]) == "deny"
+    assert decide(rules, tool, {"ServerName": "gated_srv"}, [workspace]) == "force_ask"

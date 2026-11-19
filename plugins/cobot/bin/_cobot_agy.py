@@ -40,8 +40,12 @@ FILE_TOOLS = frozenset(CLAUDE_TO_AGY["Edit"] + CLAUDE_TO_AGY["Write"])
 ORCHESTRATION_TOOLS = frozenset(
     {"ask_question", "send_message", "list_permissions", "ask_permission", "finish", "skill_search"}
     | {"schedule", "manage_task", "manage_subagents", "invoke_subagent", "define_subagent", "run_workflow"}
+    | {"swarm", "post_message", "read_board", "swarm_wait"}
 )
-AGY_TOOLS = READ_TOOLS | FILE_TOOLS | ORCHESTRATION_TOOLS | {"run_command", "call_mcp_tool"}
+MCP_RESOURCE_TOOLS = frozenset({"list_resources", "read_resource"})
+AGY_TOOLS = (
+    READ_TOOLS | FILE_TOOLS | ORCHESTRATION_TOOLS | MCP_RESOURCE_TOOLS | {"run_command", "call_mcp_tool"}
+)
 
 # Explicit task-matched tiers under Antigravity (never inherit by default):
 # - pro (Gemini 4 Pro family): adversarial design, security auditing, primary research, language builders
@@ -129,9 +133,10 @@ NO_OPINION, ASK, DENY = "no opinion", "ask", "deny"
 TARGET_FILE_TOOLS = frozenset({"write_to_file", "replace_file_content", "multi_replace_file_content"})
 WRITE_TOOLS = frozenset(CLAUDE_TO_AGY["Write"])
 NO_OPINION_TOOLS = READ_TOOLS | {"ask_question", "send_message", "list_permissions", "ask_permission"}
-NO_OPINION_TOOLS |= {"finish", "skill_search"}
+NO_OPINION_TOOLS |= {"finish", "skill_search", "post_message", "read_board", "swarm_wait"}
 TASK_ACTIONS = frozenset({"list", "status", "kill"})  # manage_task without input to a running task
 SUBAGENT_ACTIONS = frozenset({"list", "kill", "kill_all"})
+SWARM_SAFE_ACTIONS = frozenset({"status", "models", "title", "kill"})
 WORKSPACE_MODES = frozenset({"inherit", "branch", "share"})
 NEW_WORKSPACE_MODES = frozenset({"branch", "share"})  # a new checkout reads the committed rules
 MCP_EAGER_PREFIX = "mcp_"
@@ -193,6 +198,9 @@ def file_plan(name: str, args: dict) -> Plan:
 def mcp_names(name: str, args: dict, servers: frozenset[str]) -> list[str] | None:
     """The Claude Code names (``mcp__<server>__<tool>``) an agy MCP call may stand for. An eager
     ``mcp_<server>_<tool>`` splits at a known server, else at every ``_``; None when unknown."""
+    if name in MCP_RESOURCE_TOOLS:
+        server = args.get("ServerName")
+        return [f"mcp__{server}__{name}"] if isinstance(server, str) and server else None
     if name == "call_mcp_tool":
         server, tool = args.get("ServerName"), args.get("ToolName")
         ok = isinstance(server, str) and isinstance(tool, str) and server and tool
@@ -204,6 +212,28 @@ def mcp_names(name: str, args: dict, servers: frozenset[str]) -> list[str] | Non
         return [f"mcp__{server}__{rest[len(server) + 1 :]}"]
     cuts = [i for i, char in enumerate(rest) if char == "_" and 0 < i < len(rest) - 1]
     return [f"mcp__{rest[:i]}__{rest[i + 1 :]}" for i in cuts] or None
+
+
+def swarm_plan(args: dict) -> Plan:
+    """Native agy swarm control: board/status/kill pass; model switches and adds force_ask."""
+    action = args.get("action")
+    if action in SWARM_SAFE_ACTIONS:
+        return Plan(decision=NO_OPINION, note=f"swarm {action}")
+    if action == "model":
+        target = str(args.get("name") or "self")[:40]
+        model = str(args.get("model") or "?")[:40]
+        return asks(f"swarm model: switch {target} to {model}")
+    if action == "add":
+        ws = args.get("workspace") or "inherit"
+        if ws not in WORKSPACE_MODES:
+            return asks(f"swarm add: workspace {str(ws)[:60]!r} is not a known mode")
+        worker = str(args.get("name") or "<unnamed>")[:40]
+        model = str(args.get("model") or "inherit")[:40]
+        note = f"swarm add {worker} (model={model}, workspace={ws})"
+        if ws in NEW_WORKSPACE_MODES:
+            return Plan(note=note, at_least_ask=True, needs_committed_rules=True)
+        return asks(note)
+    return asks(f"swarm {action!r}")
 
 
 def subagent_plan(args: dict) -> Plan:
@@ -269,11 +299,13 @@ def translate(name: str, args: dict, servers: frozenset[str]) -> Plan:
         )
     if name == "invoke_subagent":
         return subagent_plan(args)
+    if name == "swarm":
+        return swarm_plan(args)
     if name == "run_workflow":
         return workflow_plan(args)
     if name == "define_subagent":
         return Plan(decision=DENY, note="define_subagent: a child that may run without cobot")
-    if name == "call_mcp_tool" or name.startswith(MCP_EAGER_PREFIX):
+    if name in MCP_RESOURCE_TOOLS or name == "call_mcp_tool" or name.startswith(MCP_EAGER_PREFIX):
         names = mcp_names(name, args, servers)
         return Plan(calls=tuple((n, {}) for n in names)) if names else asks(f"{name}: unknown MCP call")
     return asks(f"{name[:60]}: a tool cobot does not know")

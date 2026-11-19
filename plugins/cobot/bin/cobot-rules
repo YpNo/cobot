@@ -5129,11 +5129,9 @@ def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdic
     if not workspaces:
         return Verdict(ASK, None, NO_WORKSPACE)
     if plan.needs_committed_rules:
-        return (
-            Verdict(None, None, plan.note)
-            if rules_committed(workspaces)
-            else Verdict(ASK, None, UNCOMMITTED_RULES)
-        )
+        if not rules_committed(workspaces):
+            return Verdict(ASK, None, UNCOMMITTED_RULES)
+        return Verdict(ASK if plan.at_least_ask else None, None, plan.note)
     rules, warnings = load_rules_agy(workspaces)
     for warning in warnings:
         print(f"cobot gate: {warning}", file=sys.stderr)

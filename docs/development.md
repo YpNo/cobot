@@ -19,7 +19,7 @@ uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 
 ```
 
 ```bash
-uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .
+uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .
 ```
 
 ```bash
@@ -27,7 +27,7 @@ uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/
 ```
 
 ```bash
-npx --yes markdownlint-cli2@0.24.0 "**/*.md"
+npx --yes markdownlint-cli2@0.24.2 "**/*.md"
 ```
 
 ```bash

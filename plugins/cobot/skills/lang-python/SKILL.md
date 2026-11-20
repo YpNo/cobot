@@ -25,7 +25,7 @@ effect — report the gap.
 ## Toolchain and commands
 
 - [verified 2026-11-07 · src: https://endoflife.date/api/python.json] 3.15.2 and 3.14.10 are the bugfix lines; 3.13, 3.12 and 3.11 are security-only; 3.10 is end of life.
-- [verified 2026-11-07 · src: https://api.github.com/repos/astral-sh/uv/releases/latest] uv 0.13.7 is current; ruff 0.17.4 (its own release page).
+- [verified 2026-11-20 · src: https://api.github.com/repos/astral-sh/uv/releases/latest] uv 0.13.9 is current; ruff 0.17.6 (its own release page).
 - Repo pins win: `requires-python` in `pyproject.toml` and `.python-version` decide the interpreter.
 
 | step | command |
@@ -48,7 +48,7 @@ effect — report the gap.
   a `requirements-dev.txt`. Project metadata in `[project]` (PEP 621).
 - `uv init` chooses `uv_build` as the backend; `hatchling` is the alternative for plugins or
   dynamic metadata. No `setup.py` in new code.
-- One-off tools: `uvx ruff@0.17.4 check .` pins the version; `uvx <tool>` without a pin floats.
+- One-off tools: `uvx ruff@0.17.6 check .` pins the version; `uvx <tool>` without a pin floats.
 
 ## Idiom
 

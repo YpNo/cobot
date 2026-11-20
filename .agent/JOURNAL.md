@@ -117,3 +117,11 @@ Proof: tests/test_investigator.py 47 passed (reads silent, mutations ask, cloud 
 Open: forge credential printers ask rather than deny for the investigator, as for the consultant; the report shape is not checked until T03.
 Next: T03, check_probe_report.
 verified: tree f15e6a0ee1e775f984fc68c2c40850db939d8291 · focused suites
+
+## 2026-11-20 — debug-path T03: a probe's report is proof, checked by its own rule
+Changed: check_probe_report (a Verdict: and a command with an exit marker under Checks:, or Checks: none with Verdict: inconclusive and a non-empty Needs:); probe-worded block reason and UNPROVEN context; ReportKind picked by agent type in report() and handback(); the investigator parks nothing; checks_block takes the section pattern that ends the block.
+Why: spec debug-path story 3 (challenger 1, 2): the builders' check would have refused every probe report.
+Proof: tests/test_probe_report.py 19 passed (both paths: one refusal then marked, both passing forms, builder judged as today, look-alike names ignored); rules, agy, investigator suites 2548 passed with it; ruff clean; check-plugin ok.
+Open: hooks.json's description still says builder report check (T09 docs).
+Next: T04, the debug skill.
+verified: tree be8be74051fc110aeafd275b59b881250251c415 · focused suites

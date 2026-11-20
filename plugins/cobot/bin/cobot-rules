@@ -4782,8 +4782,9 @@ REPORT_BLOCK_REASON = (
 )
 
 
-def checks_block(report: str) -> tuple[str, list[str]] | None:
-    """The text after the Checks: header and the lines of its block, or None when absent."""
+def checks_block(report: str, sections: re.Pattern = REPORT_SECTION_RE) -> tuple[str, list[str]] | None:
+    """The text after the Checks: header and the lines of its block up to the next of ``sections``,
+    or None when absent."""
     lines = report.splitlines()
     for index, line in enumerate(lines):
         match = CHECKS_HEADER_RE.match(line)
@@ -4791,7 +4792,7 @@ def checks_block(report: str) -> tuple[str, list[str]] | None:
             continue
         block: list[str] = []
         for following in lines[index + 1 :]:
-            if REPORT_SECTION_RE.match(following):
+            if sections.match(following):
                 break
             block.append(following)
         return match.group(1).strip(), block
@@ -4810,6 +4811,79 @@ def check_report(report: str) -> tuple[bool, str]:
     if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
         return True, "command and exit code present"
     return False, "Checks: without a `command` and an exit marker"
+
+
+# a probe's report (spec debug-path, story 3): its own sections, its own proof
+PROBE_TYPE = "cobot:investigator"  # the hook's namespaced name only, as for the gate's alias
+PROBE_SECTION_RE = re.compile(r"^\s*[-*]?\s*`?(Hypothesis|Prediction|Verdict|Needs|Not checked)`?:")
+VERDICT_RE = re.compile(r"(?im)^\s*[-*]?\s*`?Verdict`?:\s*(confirmed|refuted|inconclusive)\b")
+NEEDS_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Needs`?:\s*(.*)$")
+PROBE_BLOCK_REASON = (
+    "probe report lacks proof; re-run the probe and require each read under Checks: as `<command>` → "
+    "exit <n> with an excerpt and a Verdict:, or `Checks: none — <reason>` with `Verdict: inconclusive` "
+    "and the reads the lead must run under Needs:"
+)
+PROBE_UNPROVEN_CONTEXT = "UNPROVEN: the probe's report has no command and exit code; do not count its verdict"
+
+
+def needs_items(report: str) -> list[str]:
+    """What a probe asks the lead to run: the text on the ``Needs:`` line and the lines below it,
+    up to the next section; ``none`` is nothing."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = NEEDS_HEADER_RE.match(line)
+        if not match:
+            continue
+        items = [match.group(1).strip()]
+        for following in lines[index + 1 :]:
+            if PROBE_SECTION_RE.match(following) or CHECKS_HEADER_RE.match(following):
+                break
+            items.append(following.strip().lstrip("-* ").strip())
+        return [item for item in items if item and not NO_NOTICE_RE.match(item)]
+    return []
+
+
+def check_probe_report(report: str) -> tuple[bool, str]:
+    """A probe's report passes with a ``Verdict:`` and a command carrying an exit marker under
+    ``Checks:``, or with ``Checks: none — <reason>``, ``Verdict: inconclusive`` and a ``Needs:``
+    that names what the lead must run."""
+    verdict = VERDICT_RE.search(report)
+    if not verdict:
+        return False, "no Verdict: confirmed, refuted or inconclusive"
+    found = checks_block(report, PROBE_SECTION_RE)
+    if found is None:
+        return False, "no Checks: section"
+    head, block = found
+    if CHECKS_NONE_RE.match(head):
+        if verdict.group(1).lower() != "inconclusive":
+            return False, "Checks: none with a verdict other than inconclusive"
+        if not needs_items(report):
+            return False, "Checks: none without what the lead must run under Needs:"
+        return True, "checks: none, inconclusive, needs named"
+    text = "\n".join([head, *block])
+    if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
+        return True, "command and exit code present"
+    return False, "Checks: without a `command` and an exit marker"
+
+
+@dataclass(frozen=True)
+class ReportKind:
+    """How one kind of subagent's report is judged: its check, its words, whether notices park."""
+
+    check: object  # Callable[[str], tuple[bool, str]]
+    block_reason: str
+    unproven_context: str
+    parks: bool
+
+
+def report_kind(agent_type: str) -> ReportKind | None:
+    """Builders keep their check and park their notices; the investigator has its own and parks
+    nothing; any other agent's report is not judged."""
+    if BUILDER_TYPE_RE.match(agent_type):
+        return ReportKind(check_report, REPORT_BLOCK_REASON, UNPROVEN_CONTEXT, parks=True)
+    if agent_type == PROBE_TYPE:
+        return ReportKind(check_probe_report, PROBE_BLOCK_REASON, PROBE_UNPROVEN_CONTEXT, parks=False)
+    return None
 
 
 def response_text(response: object) -> str:
@@ -4913,11 +4987,14 @@ def save_report_state(path: Path, state: dict) -> None:
 
 
 def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple[str, list[str]]:
-    """``allow``, ``deny`` or ``unproven`` for one builder report, wherever it was delivered, and the
-    notices to park. ``key`` names the builder (its agent id, or the call's tool_use_id). The state
+    """``allow``, ``deny`` or ``unproven`` for one report, wherever it was delivered, judged by its
+    kind's check, and the notices to park (a builder's only). ``key`` names the subagent (its agent
+    id, or the call's tool_use_id). The state
     is read, decided and written under one lock, so parallel builders keep each other's records. A
     report this builder already had let through is not judged again; a first failure is refused
     once; a second failure, or one whose refusal cannot be recorded, goes through marked unproven."""
+    kind = report_kind(agent_type) or report_kind("cobot:builder")
+    check = kind.check
     digest = hashlib.sha256(text.removeprefix(UNPROVEN).encode()).hexdigest()
     path = report_state_path(session) if isinstance(session, str) and SESSION_RE.match(session) else None
     try:
@@ -4929,7 +5006,7 @@ def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple
             state = load_report_state(path)
             if f"{key}:{digest}" in state["allowed"]:
                 return "allow", []
-            ok, why = check_report(text)
+            ok, why = check(text)
             verdict = "allow" if ok else "unproven" if key in state["refused"] else "deny"
             if verdict == "deny":
                 state["refused"].append(key)
@@ -4937,9 +5014,11 @@ def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple
                 state["allowed"].append(f"{key}:{digest}")
             save_report_state(path, state)
     except OSError:
-        ok, why = check_report(text)
+        ok, why = check(text)
         verdict = "allow" if ok else "unproven"  # a refusal that cannot be recorded is never made
     log_event({"tool": "report", "head": agent_type, "decision": verdict, "reason": why})
+    if not kind.parks:
+        return verdict, []
     items = noticed_items(text) if verdict != "deny" else []
     if verdict == "unproven":
         first = next((line.strip() for line in text.splitlines() if line.strip()), "")[:120]
@@ -4954,7 +5033,8 @@ def handback(stdin: str, wait: bool = True) -> str | None:
     try:
         payload = json.loads(stdin)
         agent_type = str(payload.get("agent_type", ""))
-        if payload.get("tool_name") != "SubagentHandback" or not BUILDER_TYPE_RE.match(agent_type):
+        kind = report_kind(agent_type)
+        if payload.get("tool_name") != "SubagentHandback" or kind is None:
             return None
         tool_input = payload.get("tool_input")
         if not isinstance(tool_input, dict) or not isinstance(tool_input.get("message"), str):
@@ -4967,7 +5047,7 @@ def handback(stdin: str, wait: bool = True) -> str | None:
         print(f"cobot report: unreadable hand-back ({type(error).__name__}); allowing", file=sys.stderr)
         return None
     if verdict == "deny":
-        decision = {"permissionDecision": "deny", "permissionDecisionReason": REPORT_BLOCK_REASON}
+        decision = {"permissionDecision": "deny", "permissionDecisionReason": kind.block_reason}
     elif verdict == "unproven":
         marked = {**tool_input, "message": UNPROVEN + tool_input["message"]}
         decision = {"permissionDecision": "allow", "updatedInput": marked}
@@ -4985,7 +5065,8 @@ def report(stdin: str, wait: bool = True) -> str | None:
         if payload.get("tool_name") != "Agent":
             return None
         subagent = str((payload.get("tool_input") or {}).get("subagent_type", ""))
-        if not BUILDER_TYPE_RE.match(subagent):
+        kind = report_kind(subagent)
+        if kind is None:
             return None
         response = payload.get("tool_response")
         if isinstance(response, dict) and response.get("status") == "async_launched":
@@ -4999,9 +5080,9 @@ def report(stdin: str, wait: bool = True) -> str | None:
         print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
         return None
     if verdict == "deny":
-        return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+        return json.dumps({"decision": "block", "reason": kind.block_reason})
     if verdict == "unproven":
-        context = {"hookEventName": "PostToolUse", "additionalContext": UNPROVEN_CONTEXT}
+        context = {"hookEventName": "PostToolUse", "additionalContext": kind.unproven_context}
         return json.dumps({"hookSpecificOutput": context})
     return None
 

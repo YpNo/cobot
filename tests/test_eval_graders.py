@@ -76,6 +76,34 @@ def test_actionsPinning_sourceOrReresolve_acceptsUpstreamNotMemory():
     assert not matches(grader, "git ls-remote failed, so I used the SHA from memory for actions/checkout.")
 
 
+SPEC_STORIES = "## Stories and acceptance\n\n1. As a user, the loader reads the config file.\n\n"
+SPEC_ROW = "| entry | guard | story |\n|---|---|---|\n| env var override | allow-list of keys | story 3 |\n"
+
+
+@pytest.mark.parametrize(
+    ("spec", "section", "not_none"),
+    [
+        (SPEC_STORIES + "## Trust boundaries\n\n" + SPEC_ROW, True, True),
+        (SPEC_STORIES + "## Trust boundaries\n\nnone: the loader reads a local env file only\n", True, False),
+        (SPEC_STORIES + "## Trust boundaries\n\nTBD\n\n## Plan\n\nRead the environment.\n", False, True),
+        (SPEC_STORIES + "## Plan\n\nRead the environment.\n", False, True),
+    ],
+    ids=["row", "none-line", "word-in-another-section", "no-section"],
+)
+def test_mediumSpec_boundaryGraders_wantARowNotNone(spec, section, not_none):
+    found = graders("medium-spec-then-challenge")
+    assert matches(found["boundary-section"], spec) is section
+    assert matches(found["boundary-not-none"], spec) is not_none
+
+
+def test_mediumSpec_promptNamesTheSpecPath_gradersReadIt():
+    prompt = (EVALS / "medium-spec-then-challenge" / "prompt.md").read_text(encoding="utf-8")
+    assert "`.agent/specs/config-loader.md`" in prompt
+    for name in ("boundary-section", "boundary-not-none"):
+        text = (EVALS / "medium-spec-then-challenge" / "graders" / f"{name}.md").read_text(encoding="utf-8")
+        assert "source: file\n  path: .agent/specs/config-loader.md\n" in text, name
+
+
 def test_builderRouting_noMainThreadEdit_ignoresTheBuildersOwnEdits():
     grader = graders("builder-routing")["no-main-thread-edit"]
     assert grader["target"] == "trace" and grader["match"] == "not_contains"

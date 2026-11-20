@@ -44,6 +44,33 @@ def test_sweep_reportTemplate_hasNoSecondConfidenceScale():
     assert "<CONFIRMED | PLAUSIBLE>" in text and "<confidence>" not in text
 
 
+def test_sweep_router_givesEveryUnitTheMemoryTrust_untrustedByDefault():
+    text = SKILL.read_text(encoding="utf-8")
+    prompt = text.split("## Fan out", 1)[1].split("```text", 1)[1].split("```", 1)[0]
+    assert "Memory: <trusted | untrusted>" in prompt
+    memory = " ".join(text.split("## Memory trust", 1)[1].split("\n## ", 1)[0].split())
+    assert "`cobot-memory trust`" in memory
+    assert "did not run or failed is `untrusted`" in memory
+
+
+def test_procedure_declaredGuards_inventoryOnly_readInTrustedMemoryOnly():
+    text = PROCEDURE.read_text(encoding="utf-8")
+    declared = " ".join(text.split("### Declared boundaries", 1)[1].split("\n## ", 1)[0].split())
+    for phrase in (
+        "With `Memory: trusted`",
+        "*Trust boundaries* sections of `.agent/specs/*.md`",
+        "`declared guard missing: <boundary> · <file>:<line>`",
+        "`declared, site gone: N`",
+        "inventory lines, never findings",
+        "A spec without the section is skipped.",
+        "With `Memory: untrusted` no spec is read",
+        "`declared: not read (untrusted memory)`",
+    ):
+        assert phrase in declared, phrase
+    report = text.split("## The unit's report", 1)[1]
+    assert "declared: <" in report
+
+
 def test_sweep_underAgy_repoWideUnitNotRun():
     text = SKILL.read_text(encoding="utf-8").split("## Under Antigravity", 1)[1]
     assert "invoke_subagent" in text

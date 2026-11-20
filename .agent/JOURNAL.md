@@ -489,3 +489,11 @@ Proof: one local run (claude plugin eval --case apply-asks --runs 1, sonnet 5.5)
 Open: docs/02-design.md line 476 still names never-apply (T08).
 Next: T08, ADR-0008, decision 34, docs and CHANGELOG.
 verified: tree 6b4b5e34310787bf51ae78fc776ef88dd6f364c7 · full suite, lint, contract, validate, one local eval
+
+## 2026-11-20 — session grants T08: ADR-0008, decision 34, docs and CHANGELOG
+Changed: ADR-0008 (the gate may allow in one case, a granted command under Claude Code); decision 34 (grants, prompt-only apply, the new never rows, the lab log, the 3400-char protocol cap); docs/02-design.md (hooks tree, the gate's allow contract, the never and prompt-only rows, the protocol budget, the apply-asks row); docs/architecture.md (protocol cap, gate row, a Session grants layer); docs/configuration.md (the grants file row, the precedence sentence, a Session grants section, agy's unused conversationId); CHANGELOG Added, Changed, Security.
+Why: spec session-grants story 9; every task of the spec is now built.
+Proof: markdownlint 0 issues on 134 files; 3800 passed at 98.43%; ruff, check-plugin, sync-agents --check, and plugin validate for claude and agy all pass.
+Open: the currency gap stands (ruff 0.17.6 and markdownlint-cli2 0.24.2 are out, 0.17.4 and 0.24.0 pinned; the owner's call); JOURNAL.md is over 400 lines (compact is the owner's call).
+Next: the PR for feat/session-grants, on the owner's word.
+verified: tree 6b4b5e34310787bf51ae78fc776ef88dd6f364c7 · full suite, lint, contract, validate

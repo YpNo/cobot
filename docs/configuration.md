@@ -26,6 +26,7 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `.agent/cobot.rules` | rule file | absent | project layer: `never` and `ask` only |
 | `~/.claude/cobot/identities` | `host/owner` per line | absent | repositories whose every remote belongs to one of these owners are trusted |
 | `~/.claude/cobot/trusted` | `<root commit> <name>` per line | absent | repositories trusted by root commit (no remote, or a fork with foreign remotes) |
+| `~/.claude/cobot/grants/<session>.json` | JSON, written by cobot's gate and hooks only | absent | the session's grants (`kind`, `target`, `granted`, `expires`), pending requests, and the commands run under a grant (at most 200, 200 characters each); Edit, Write and shell writes to it are denied; removed at SessionEnd, files older than a week pruned |
 | `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
 | `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
@@ -61,7 +62,8 @@ session, the reason ends once with the line that would stop it:
 you add it to your owner layer if you want. Only these two rows of local, undoable work are ever
 offered, never an outward, install, credential, agent-scoped or owner-written row. The gate counts
 asks per session in `~/.local/share/cobot/asks/` (rule texts and counts, no command text; files
-older than a week are removed). agy sends no session id, so it is never offered there.
+older than a week are removed). agy's payload carries a `conversationId`, which cobot does not
+use, so it is never offered there.
 
 A `never` Edit or Write row for a whole folder (`~/.gemini/config/*`) makes shell access to a
 path inside it ask too. With a command substitution in the path, it asks only where the path
@@ -242,11 +244,37 @@ hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a
 value. A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo
 $"publish"` is denied.
 
-Precedence: `never` in any layer wins; an `allow` from the owner layer (or an agent-scoped one
-from the default layer) silences the gate; `ask` prompts; otherwise the host's own
-permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the host's
-UI tools, which are otherwise silent. Under Claude Code the gate never emits `allow`; under agy
-it answers `allow` meaning no opinion, `force_ask` for an ask, and never `auto_approve`.
+Precedence: `never` in any layer wins; a prompt-only ask (`terraform`, `tofu` and `terragrunt`
+`apply` and `destroy`) asks whatever else matches; an `allow` from the owner layer (or an
+agent-scoped one from the default layer) silences the gate; `ask` prompts; otherwise the host's
+own permissions decide. For MCP tools, an owner or project `ask` also outranks a read and the
+host's UI tools, which are otherwise silent. Under Claude Code the gate emits `allow` only for a
+command a session grant covers (below); under agy it answers `allow` meaning no opinion,
+`force_ask` for an ask, and never `auto_approve`.
+
+### Session grants
+
+For a lab or a demo, you can let the main thread run one kind of write on one named target for
+the rest of a Claude Code session, without a prompt for each. Kinds: `gcloud` and
+`gcloud-delete` (target: a project id), `kubectl`, `kubectl-delete`, `helm` and
+`helm-uninstall` (target: a context name).
+
+- The model asks you once with three answers: this command only, every `<kind>` on `<target>`
+  this session, or no. On the second it runs `cobot-rules grant <kind> --target <t>`; the gate
+  asks you about that command, and your approval is the grant. A rule cannot lift that ask, and
+  a subagent or an agy session is denied. The grant is recorded only where Claude Code sets
+  `CLAUDE_CODE_SESSION_ATTENDED=1` (the interactive CLI and the desktop app), so a headless
+  session never holds one.
+- A covered command is a plain one (no pipe, `&&`, substitution or assignment) in the groups,
+  verbs and options `expert-gcp` and `expert-kubernetes` list, naming its target flag once. Its
+  reason reads `cobot grant: <kind> on <target> (cobot-rules grant --revoke)`. Anything else
+  asks as before; a `never` row stays denied.
+- Your settings still win: a `permissions.ask` or `deny` line in `settings.json` that matches
+  the command keeps asking or denying under a grant.
+- `cobot-rules grant --list` shows the session's grants and the commands run under them;
+  `--revoke [<kind> --target <t>]` ends one or all. A grant expires after 12 hours, and the
+  file is removed when the session ends.
+- Terraform is never granted: each `apply` and `destroy` asks, and no `allow` line silences it.
 
 `/cobot:rules check "<command>"` dry-runs the gate, `explain` names every matching rule, and
 `sync` renders the hard wall (a `permissions.deny` block and the owner's `allow` lines, in plain

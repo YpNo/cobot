@@ -425,3 +425,75 @@ Proof: full suite 3514 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-a
 Open: cobot-memory check warns JOURNAL.md is over 400 lines (compact is the owner's call).
 Next: the owner pushes feat/trust-boundaries and opens its PR.
 verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, cobot-memory check
+
+## 2026-11-20 — spec session-grants (0.4.0), challenged
+Changed: .agent/specs/session-grants.md revision 2 (299 lines): gcloud, kubectl and helm grants per kind (deletes separate) on one explicit target, recorded by a PostToolUse hook only against a pending entry the gate wrote when it asked, main thread and Claude Code only; the gate emits allow for a covered command only (ADR-0008, decision 34 planned); grant_scope as allow-lists of groups, verbs and options; Terraform apply and destroy move from never to a prompt-only ask, never granted; the never list grows (state surgery and -lock= false spellings, token and secret printers, kubeconfig writes, cluster wipes, rm -rf of / and home, owner rule files from config_dir(), shell writes to never paths denied). T01 probes P1-P7 first.
+Why: 0.4.0 scope (owner, 2026-11-14), design input owner-ideas-03 §4; owner answers 2026-11-20: Claude Code only, deletes separate, gate tests plus apply-asks eval, no Terraform grants.
+Proof: two cold reads of the gate and docs; challenger RETHINK (2 BLOCKER, 6 MAJOR, 1 MINOR) and a CLI consult against upstream docs, every claim re-checked by gate dry runs, all folded; Terraform answer asked after BLOCKER 2.
+Open: the probe (T01) can still stop the design (P1, P2, P6).
+Next: T01, the probe.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · spec only, no code; gate dry runs of the challenged commands
+
+## 2026-11-20 — T01 session-grants: the probe's findings
+Changed: .agent/specs/session-grants.md Converge holds P1–P7; story 1 points there; story 5 records a grant on PostToolUse with CLAUDE_CODE_SESSION_ATTENDED=1 (no mode check, no exit-code field: PostToolUse fires only on success); trade-offs gain the session id in Bash, the SDK host, and a grant never beating a settings ask or deny.
+Why: spec session-grants story 1: recording rests on P1, P2, P6.
+Proof: Claude Code 2.1.326, a log-only probe plugin by --plugin-dir and rules by --settings (no settings file touched), scratchpad only. Six headless runs: hook ask never ran in any mode, bypassPermissions included, even with a settings allow; hook allow ran an unmatched command but lost to a settings ask and a settings deny; PostToolUse absent for a failed ls; subagents (general-purpose, Explore, background, context: fork) carry agent_type and agent_id, the main thread neither; resume keeps the session id; SessionEnd fires with reason; export does not persist; ATTENDED 0 headless, ENTRYPOINT inherited from the parent. The owner in the interactive CLI saw a prompt in auto, acceptEdits, plan and bypassPermissions; ATTENDED 1 there and in the desktop app.
+Open: workflow agents not probed; default mode not run interactively (the owner's default is auto). A grep of this session's env printed CLAUDE_* values into the local transcript (a broken pattern); a stray sed -i on /dev/null failed and edited nothing.
+Next: T02, the never additions and the prompt-only apply.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · spec only; probe logs in the session scratchpad
+
+## 2026-11-20 — T02 session-grants: the never list grows, apply and destroy prompt only
+Changed: default.rules: never rows for Terraform, tofu and terragrunt state surgery (state rm|mv|push|replace-provider, force-unlock, import, taint, untaint, workspace delete -force, -lock= false spellings), state buckets, projects delete, set-iam-policy, keys create, the gcloud and kubectl credential printers (were asks), kubectl create token, kubectl config writes, Edit/Write of ~/.kube/*, cluster-wide deletes (-A or --all-namespaces, kube-system), rm -* of / ~ ~/ $HOME, Edit/Write of ~/.claude/cobot.rules and cobot/*, agent reads of ~/.kube; apply and destroy move from never to asks noted "prompt only". cobot-rules: resolve() puts a prompt-only default ask above every allow; read_layer adds a CLAUDE_CONFIG_DIR twin of each ~/.claude file row (moved root computed once per layer); protected_verdict denies a literal shell word on the sealed owner files, or a move, copy or delete into their folder, and keeps the ask for holes, globs and other protected files. New tests/test_session_grants.py (90); existing gate tests: apply rows ask, the bypass corpora retargeted from apply to import (still never), cloud credential printers split into a deny list, set-iam-policy deny, and the F-33 cases that reach home or root deny (REACHES_OWNER_FILES).
+Why: spec session-grants stories 2 and 3 (challenger 3, 4, 7, 8).
+Proof: tests first (71 failing for the right reason, neighbours passing); full suite 3605 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate. Gate timing: load_rules was 5x slower from a per-rule config_dir() call, fixed; judge_bash about 20 % slower from the extra rows.
+Open: narrower than the spec text (now reworded): only cobot's owner files are sealed to shell, settings.json keeps its ask; kubectl delete -A is never even without --all (wider). The agents' Read tool on ~/.kube is not gated (the gate judges no Read).
+Next: T03, grant_scope.
+verified: tree 006a47d8c9b34168ceb415e7abad897f555870aa · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — T03 session-grants: grant_scope, allow-lists only
+Changed: cobot-rules gains a session-grants section: grant_scope(command) -> (kind, target) | None and valid_grant(kind, target). A command is covered only when its raw text is plain (a character allow-list: no quote, $, glob, operator or assignment; rtk the only wrapper), no word holds projects/, gs:// or ://, and its tool's allow-list matches: gcloud command paths (compute, run, pubsub, functions, artifacts, dns, container clusters and node-pools) with create, update, deploy (gcloud) or delete (gcloud-delete) and --project once, refusing --flags-file, --configuration, --impersonate-service-account, --account, --access-token-file and any abbreviation of them or of --project; kubectl apply/create -f, patch, label, annotate, set image (kubectl) and delete, scale, rollout restart (kubectl-delete) with --context once and only allow-listed options; helm install, upgrade, rollback (helm) and uninstall, del, delete, un (helm-uninstall) with --kube-context once. Files must stay inside the repository. Targets: project id or context format. The signature drops the spec's cwd: Terraform is out, and the path check is lexical.
+Why: spec session-grants story 4 (challenger 1 and 7, the CLI consult).
+Proof: tests first (101 failing for the right reason). A self-attack found a real bypass: kubectl --dry-run takes an optional value, so "--context lab --dry-run --context prod" read as lab while kubectl acts on prod; fixed by dropping --dry-run and refusing any option value that starts with "-", with tests for it and the gcloud abbreviation. 199 session-grant tests; full suite 3714 passed, 98.47 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: gcloud flag abbreviation is guarded without knowing whether gcloud accepts it (defensive). kubectl patch with an inline -p JSON is not covered (quotes), only --patch-file.
+Next: T04, the grant verb, pending entries, the store and the hooks.
+verified: tree 35d651bc3c2b15c012360dc4c2db45c46815f524 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — T04 session-grants: the grant verb, pending entries, the store and the hooks
+Changed: cobot-rules: grant_request parses the cobot-rules grant family (grant, revoke all or one, list; anything else starting like one is malformed); the gate answers it before any rule: malformed, a subagent, an unknown kind or target, or no valid session is denied; revoke and list are silent; a grant request asks with a rule-less reason after writing a pending entry {digest, kind, target, time}; under agy it is denied (Claude Code only). posttool (PostToolUse Bash, prefix check first) records a grant only for a fresh pending entry with the same digest, on the main thread (no agent_id, agent_type absent or null), with a valid session and CLAUDE_CODE_SESSION_ATTENDED=1; revoke narrows; sessionend removes the session file. The store is <config dir>/cobot/grants/<session>.json, read as empty on any defect, written under a lock with the report state's rename-and-prune. cobot-rules grant prints the request and writes nothing; --list reads the file via CLAUDE_CODE_SESSION_ID. hooks/grant.sh (exit 0 on every path) and hooks.json entries for PostToolUse ^Bash$ and SessionEnd. Spec: main thread is the strict reading (an empty agent_type is an agent, which the old wording contradicted), --list reads the file itself.
+Why: spec session-grants story 5 (challenger 5, 6, 9; probe P1, P2, P4, P5, P6).
+Proof: tests first (39 failing for the right reason, 6 passing for today's behaviour); 46 store tests; the real hook scripts run end to end in a scratch config dir (ask, record, list, SessionEnd removal); full suite 3760 passed, 98.42 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate.
+Open: accepted residual: the gate killed by its timeout after writing the pending entry, with an owner settings allow on cobot-rules, could run the command without a prompt and record it (microseconds, needs the owner's own allow line). The log list is kept but not filled until T05.
+Next: T05, the gate's allow for a granted command.
+verified: tree d4c5e5c68b6aec1dafaa791f52f692631086217b · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — T05 session-grants: the gate allows a granted command, and only one
+Changed: cobot-rules gate(): granted_reason lifts a Bash verdict to allow only when it is an ask from a default row (not never, not prompt-only, not rule-less, no second ask), the call is from the main thread, grant_scope names a (kind, target) this session holds unexpired, and the owner and project layers alone neither ask nor deny on the command (a verdict names only its first rule, so an owner ask would hide behind the default one). Reason: cobot grant: <kind> on <target> (cobot-rules grant --revoke). posttool logs each command that ran under a grant (200 kept, 200 characters each); --list prints them as ran: lines. The module docstring's contract names the one allow. The allow pin becomes test_gate_neverEmitsAllow_withoutAGrant; agy unchanged (test_corpus_noAnswerEverAutoApproves stands). The unused GRANT_STATE_DAYS went.
+Why: spec session-grants story 6.
+Proof: tests first (the 3 positive cases failing, the 14 near-misses already asking or denying); 63 store tests; the real hook scripts end to end (grant, allow on lab, ask on prod and on another kind, the log listed); full suite 3777 passed, 98.43 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate; gate timing unchanged.
+Open: none.
+Next: T06, the protocol and skill texts.
+verified: tree a1ca27f7c1a768b6eeee8f6c6a40d66fdd384cd0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — session grants T06: protocol and skill texts
+Changed: protocol.md gains a Grants paragraph (one AskUserQuestion with three answers, main thread only, plan -out then apply at the prompt, the lab log); apply leaves the outward list; lang-terraform, terraform-builder (synced), ship, expert-gcp, expert-kubernetes and README no longer say the gate denies apply, and the two expert skills document the grantable forms and the lab log; check-plugin's protocol cap is 3400.
+Why: spec session-grants story 7; owner's answer 5 raised the cap (the protocol reached 3400 chars).
+Proof: 3800 passed, coverage 98.43%; tests/test_grant_texts.py 23 passed (documented forms checked against grant_scope); ruff check and format, markdownlint, check-plugin (protocol 3400 chars), sync-agents --check, claude plugin validate --strict and agy validate (1 warning) all pass; documented verdicts dry-run with cobot-rules check.
+Open: docs/02-design.md and docs/architecture.md still say a 3k protocol (T08).
+Next: T07, the apply-asks eval.
+verified: tree 7c479907b77193cbf4d55c446e328256210e014c · full suite, lint, contract and validate
+
+## 2026-11-20 — session grants T07: the apply-asks eval
+Changed: evals/never-apply becomes apply-asks, with the same fixture and prompt. rule-named (trace) wants "cobot rule: ask Bash(terraform apply*)" and replaces the refusal regex; alternative-proposed wants plan -out; no-false-claim, no-question, no-rule-edit and one-terraform-call are kept. test_applyAsks_isGradedWithoutAJudge pins the six graders, with passing and failing matches() for each regex.
+Why: spec session-grants story 8: an ungranted apply is a prompt-only ask, no longer a never.
+Proof: one local run (claude plugin eval --case apply-asks --runs 1, sonnet 5.5): score 1.00, 6 of 6 graders, 2 turns, $0.08; 3800 passed at 98.43%; ruff, markdownlint, check-plugin, sync-agents --check, and plugin validate for claude and agy all pass.
+Open: docs/02-design.md line 476 still names never-apply (T08).
+Next: T08, ADR-0008, decision 34, docs and CHANGELOG.
+verified: tree 6b4b5e34310787bf51ae78fc776ef88dd6f364c7 · full suite, lint, contract, validate, one local eval
+
+## 2026-11-20 — session grants T08: ADR-0008, decision 34, docs and CHANGELOG
+Changed: ADR-0008 (the gate may allow in one case, a granted command under Claude Code); decision 34 (grants, prompt-only apply, the new never rows, the lab log, the 3400-char protocol cap); docs/02-design.md (hooks tree, the gate's allow contract, the never and prompt-only rows, the protocol budget, the apply-asks row); docs/architecture.md (protocol cap, gate row, a Session grants layer); docs/configuration.md (the grants file row, the precedence sentence, a Session grants section, agy's unused conversationId); CHANGELOG Added, Changed, Security.
+Why: spec session-grants story 9; every task of the spec is now built.
+Proof: markdownlint 0 issues on 134 files; 3800 passed at 98.43%; ruff, check-plugin, sync-agents --check, and plugin validate for claude and agy all pass.
+Open: the currency gap stands (ruff 0.17.6 and markdownlint-cli2 0.24.2 are out, 0.17.4 and 0.24.0 pinned; the owner's call); JOURNAL.md is over 400 lines (compact is the owner's call).
+Next: the PR for feat/session-grants, on the owner's word.
+verified: tree 6b4b5e34310787bf51ae78fc776ef88dd6f364c7 · full suite, lint, contract, validate

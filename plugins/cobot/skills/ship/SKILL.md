@@ -54,7 +54,7 @@ reality and fails where nobody can reproduce it. Nothing here pushes, tags or pu
    |---|---|
    | `library`, `cli` | lint, type check, tests with the coverage gate the repo holds today, audit; release on tag; `cli` adds the platform matrix and artifacts |
    | `service` | the above plus the image workflow (`expert-containers`) and a deploy only when CONTEXT.md names the target and its rollback |
-   | `infra` | fmt, validate, tflint or equivalent, security scan, `plan` on PR as a comment artifact; `apply` is never automatic (the gate denies it) |
+   | `infra` | fmt, validate, tflint or equivalent, security scan, `plan` on PR as a comment artifact; `apply` is never automatic (the gate asks the owner on each one) |
    | `spike`, `script` | lint and the one test command, or nothing; say so |
 
 3. **Trigger matrix** (decision 17, the table in `expert-gha`): PR runs lint, format, type

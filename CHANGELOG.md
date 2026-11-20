@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Session grants (decision 34, ADR-0008).** For a lab or a demo, you can let the main thread
+  run one kind of write on one named target for the rest of a Claude Code session: `gcloud` or
+  `gcloud-delete` on a project, `kubectl`, `kubectl-delete`, `helm` or `helm-uninstall` on a
+  context. The model asks once, with three answers; on "every … this session" it runs
+  `cobot-rules grant <kind> --target <t>`, and your approval of that prompt is the grant. The
+  gate then answers `allow` for a covered command, the first time cobot widens anything. A
+  covered command is a plain one on the allow-lists `expert-gcp` and `expert-kubernetes` give,
+  naming its target once. Subagents, agy and headless sessions never hold a grant; `--list` and
+  `--revoke` show and end them, a grant lasts 12 hours at most, and it is gone at session end.
+- **A lab log.** A lab keeps `.agent/labs/<slug>.md`: each command with its exit code and its
+  inverse, then the teardown, and the model proposes a budget alert on the project.
 - **A spec names its trust boundaries (decision 33, F-49).** The spec template has a *Trust
   boundaries* section: each boundary the change creates or alters, with its guard and a story
   whose acceptance is a negative test, or one `none:` line with a reason. The challenger raises a
@@ -73,6 +84,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`terraform apply` and `destroy` ask instead of being denied** (also `tofu` and
+  `terragrunt`). Each one is your answer at the prompt: no `allow` line and no grant silences
+  it. The protocol and `lang-terraform` apply only a saved plan made inside the folder, on the
+  main thread; builders still never apply. The `never-apply` eval is now `apply-asks`.
+- **The protocol may be 3400 characters** (was 3000), to carry the grant rules.
 - **`learn --promote` is linted.** It refuses a line with a CI run id, a user's home path, a
   "latest release is" snapshot, a secret, one of your own `owner/repo` slugs, or a `reported`
   status unless `--allow-reported`, and names each refused line; both promotion paths pass the
@@ -147,6 +163,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **New `never` rows no grant and no prompt reaches:** Terraform state surgery (`state
+  rm|mv|push|replace-provider`, `force-unlock`, CLI `import`, `taint`, `untaint`, `workspace
+  delete -force`, any false `-lock=`); a delete of a `*tfstate*` object or bucket; `gcloud
+  projects delete`, `set-iam-policy` and `iam service-accounts keys create`; `kubectl delete`
+  across namespaces or on `kube-system`; `kubectl config` writes and Edit or Write under
+  `~/.kube/`; `rm -r` of `/`, `~` or `$HOME`; and Edit, Write or shell writes to
+  `cobot.rules` and `cobot/`, also under `CLAUDE_CONFIG_DIR`. Credential printers (`gcloud auth
+  print-*-token`, `config-helper`, `secrets versions access`, `kubectl config view --raw`,
+  `get secret` values, `create token`) move from ask to `never`, on the main thread too. The
+  consultant and the learner cannot read `~/.kube/` through `cat`, `head` or `tail`.
 - Gate rows now reach commands that skipped them in 0.3.0:
   - **Options before a `gh` or `glab` group or verb are read as cobra reads them.** `gh release
     -R o/r create v1`, `gh release --title x create v1` and `glab -R o/r release create v1` were

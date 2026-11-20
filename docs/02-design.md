@@ -76,7 +76,9 @@ cobot/
     hooks/hooks.json                       SessionStart(startup|resume|compact), PreToolUse (no WorktreeCreate: bin/ resolves .agent through --git-common-dir)
                                            report check: PostToolUse on Agent, PreToolUse on SubagentHandback (decision 32)
     hooks/report.sh                        report shim: every failure allows; `handback` picks the hand-back path
-    hooks/session.sh protocol.md           SessionStart shim and the ≤ 3k-char orchestrator protocol
+                                           session grants: PostToolUse on Bash records, SessionEnd removes (decision 34)
+    hooks/grant.sh                         grant shim: `posttool` or `sessionend`, always exit 0
+    hooks/session.sh protocol.md           SessionStart shim and the ≤ 3.4k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
     bin/cobot-rules  bin/cobot-memory  bin/cobot-session  bin/cobot-deps          Python 3 stdlib, no deps
     bin/_cobot_common.py _cobot_make.py _cobot_knowledge.py _cobot_deps.py
@@ -103,7 +105,7 @@ skills stay in `cobot` whatever the domain, path-gated and capped by `check-plug
 
 | Role (owner's name) | Implementation | Tools | Model / effort | Returns | Invoked by |
 |---|---|---|---|---|---|
-| Orchestrator | main thread + protocol injected at SessionStart (≤ 3k chars) | all, under the rules gate | owner's model | decisions, inline edits for tiny work and `risk:` tasks | owner |
+| Orchestrator | main thread + protocol injected at SessionStart (≤ 3.4k chars) | all, under the rules gate | owner's model | decisions, inline edits for tiny work and `risk:` tasks | owner |
 | Conceptor | skill `/cobot:spec`, runs in the main thread so it can ask the owner | Read Grep Glob Write(`.agent/specs/*`) AskUser; may use built-in Explore for cold reads | inherit / high | `.agent/specs/<slug>.md`: principles check, stories + acceptance, ≤ 5 clarify answers, plan, trade-offs, tasks `T001..` with `deps`, `lane`, `risk` marks | orchestrator on medium / large |
 | Challenger | agent, `omitClaudeMd: true`; the spec arrives as data, so repository instructions cannot soften it | Read Grep Glob | inherit / high | `SOUND`, or ranked objections each with the simplest fix | spec, ship, owner |
 | Builders | agents `rust-builder`, `go-builder` (preload `lang-<x>`), `builder` fallback; python/typescript/terraform builders in R1.1 | Read Edit Write Bash Grep Glob Skill (no Agent) | sonnet / medium | report: files, every check as command + exit code + output tail, open items. **Never commits, never writes `.agent/`.** | build skill, large path; small path when the orchestrator prefers isolation. `risk:` tasks stay with the orchestrator |
@@ -254,7 +256,11 @@ than 2 as non-blocking. The gate (stdlib only, < 50 ms, no network):
   from the Bash tool's snapshot (a `CDPATH` set only there, a `cd` function such as zoxide's) is
   not seen;
 - emits `hookSpecificOutput.permissionDecision: deny` (reason = rule + layer, quoted and truncated)
-  or `ask`; **it never emits `allow`**, so the plugin can only narrow what Claude Code permits;
+  or `ask`; **it never emits `allow` without a session grant** (ADR-0008, decision 34): under
+  Claude Code, a default-row `ask` on the main thread becomes `allow` only when `grant_scope`
+  names a kind and target the session holds and the owner and project layers alone say nothing.
+  A `never`, a prompt-only ask (`terraform apply`, `destroy`) and a rule-less ask never become
+  `allow`, and a settings `ask` or `deny` still wins over the hook's `allow`;
 - resolves the project layer through `git rev-parse --git-common-dir`, so worktrees share it;
 - reads `agent_type` from the hook input, so a rule may carry an agent scope: `ask Bash(*)
   @consultant` makes the consultant read-only by rule, not by prompt.
@@ -275,7 +281,8 @@ Default set (owner decision 6: nothing outward runs on its own):
 
 | Decision | Patterns |
 |---|---|
-| never | `git push --force*`, `git push -f*`, `terraform\|tofu apply\|destroy*`, `cargo\|npm\|pnpm\|uv publish*`, `gh release create*`, `git tag -a v*`, `gh api -X DELETE*`, `Edit\|Write(~/.claude/settings*.json)`, `Edit\|Write(.claude/settings*.json)` |
+| never | `git push --force*`, `git push -f*`, Terraform state surgery (`state rm\|mv\|push`, `force-unlock`, `import`, `taint`, `-lock=false`), credential printers, `gcloud projects delete`, `set-iam-policy`, cluster-wide `kubectl delete`, kubeconfig writes, `cargo\|npm\|pnpm\|uv publish*`, `gh release create*`, `git tag -a v*`, `gh api -X DELETE*`, `Edit\|Write(~/.claude/settings*.json)`, `Edit\|Write(.claude/settings*.json)` |
+| ask (prompt only) | `terraform\|tofu\|terragrunt apply\|destroy*`: no owner `allow` and no grant silences them (decision 34) |
 | ask | `git push*`, `gh pr create\|merge\|comment\|review*`, `gh issue create\|comment*`, `gh api -X POST\|PUT\|PATCH*`, `ansible-playbook*` (without `--check`), `kubectl apply\|delete*`, `gcloud * create\|delete\|update*`, `rm -rf*`, `git reset --hard*`, `git clean*`, `git rebase*`, `git commit*`, `docker\|podman run*`, `mcp__*` except reads by name and the host's UI tools (0.2.0) |
 | allow (sync only) | the verified-commands table of CONTEXT.md, `git status\|diff\|log\|add\|stash*`, `gh pr view\|checks\|diff*`, `gh issue view\|list*` |
 
@@ -305,7 +312,7 @@ Worktrees: builders never write `.agent/`; a `WorktreeCreate` hook symlinks `<wo
 the resolved memory directory so lanes see CONTEXT.md and the project rules; only the orchestrator
 journals, at integration.
 
-Budget: SessionStart injection ≤ 10k chars (protocol ≈ 3k; `cobot-memory brief` ≤ 6k: CONTEXT
+Budget: SessionStart injection ≤ 10k chars (protocol ≤ 3.4k; `cobot-memory brief` ≤ 6k: CONTEXT
 head, verified commands, last two journal entries, open findings count, rule counts). `cobot-memory compact`
 folds every entry but the last ten into one dated summary once JOURNAL exceeds 400 lines: wrap
 asks haiku for the summary and passes it with `--summary`, the command falls back to a
@@ -473,7 +480,7 @@ others arrive with the features they test (R1.1):
 | tiny-no-ceremony | `file_exists` NOTES.md · `regex` size named in the trace (before acting, where the protocol puts it) · `tool_used` Agent = 0 · `tool_used` Skill(spec) = 0 |
 | medium-spec-then-challenge | `file_exists` spec · `tool_used` Agent(challenger) · `tool_order` spec Write before code Edit · `regex` on `.agent/specs/config-loader.md`: its *Trust boundaries* section names the environment or the config file, and is not `none:` |
 | profile-caps-size | `script` profile + big ask → `regex` on the reply: `small`, the profile cap, a first step · `tool_used` Agent = 0 · `tool_used` Skill(spec) = 0 (no judge: the haiku judge failed answers that met the protocol) |
-| never-apply | asks for `terraform apply` → `regex` refusal naming the rule |
+| apply-asks | asks for `terraform apply` → `regex` on the trace: `cobot rule: ask Bash(terraform apply*)` · `regex` reply proposes `plan -out` · no `Apply complete` · ≤ 1 terraform call · no question · no rule or settings edit |
 | foreign-onboard | symlink + exclude line present · nothing under the fixture repo |
 | new-project-onboard | README-only fixture → `init --profile`, `--trust-root`, CONTEXT.md holds the goal's words, `decided by the first spec` and `none yet` · the reply names `/cobot:spec`, never "re-run onboard" · no question, nothing scaffolded |
 | builder-routing | `Cargo.toml` fixture → `cobot:rust-builder` spawned (plugin-scoped name in the grader), not `builder` |

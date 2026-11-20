@@ -51,7 +51,7 @@ DEFAULT_DECISIONS = [
     ("gh api --method=delete repos/o/r", "deny"),
     ("gh api repos/o/r --method POST -f a=b", "ask"),
     ("gh api repos/o/r", None),
-    ("terragrunt run-all apply", "deny"),
+    ("terragrunt run-all apply", "ask"),
     ("terragrunt plan", None),
     ("date > ~/.claude/settings.json", "ask"),
     ("sed -i s/a/b/ ~/.claude/settings.json", "deny"),  # an in-place editor (story 6)
@@ -60,9 +60,10 @@ DEFAULT_DECISIONS = [
     ("date | tee ~/.claude/settings.json", "ask"),
     ("cat > Makefile <<EOF\nrelease:\n\tterraform apply\nEOF", "deny"),  # a shell write (story 6)
     ("cat <<'EOF' > x\ngit push --force\nEOF\ngit status", "deny"),
-    ("terraform apply -auto-approve", "deny"),
-    ("terraform -chdir=envs/prod apply", "deny"),
-    ("tofu destroy", "deny"),
+    ("terraform apply -auto-approve", "ask"),  # prompt only (spec session-grants)
+    ("terraform -chdir=envs/prod apply", "ask"),
+    ("tofu destroy", "ask"),
+    ("terraform -chdir=envs/prod import a b", "deny"),
     ("terraform plan", None),
     ("terraform -chdir=x plan", None),
     ("gh api -X DELETE repos/o/r", "deny"),
@@ -2082,18 +2083,22 @@ OUTWARD_ASKS = [
 CREDENTIAL_PRINTERS = [
     "gh auth token", "gh auth status --show-token", "gh auth status -t", "gh auth status -at",
     "gh auth status --json hosts --show-token", "glab auth status -t", "glab config get token",
+    "git credential fill", "git credential-store get", "docker-credential-desktop get",
+    "npm token list", "glab config get -g token", "glab config -g get token",
+    "git-credential-store get",
+]  # fmt: skip
+# cloud and cluster credential printers: never since spec session-grants, so no grant reaches them
+CLOUD_CREDENTIAL_PRINTERS = [
     "gcloud auth print-access-token --account a", "gcloud auth print-identity-token",
     "gcloud auth application-default print-access-token", "gcloud config config-helper",
-    "gcloud secrets versions access latest --secret s", "git credential fill",
-    "git credential-store get", "docker-credential-desktop get",
+    "gcloud secrets versions access latest --secret s",
     "kubectl config view --raw", "kubectl get secret x -o yaml", "kubectl get secrets -ojson",
-    "kubectl -n x get secret/y --output=jsonpath={.data}", "npm token list",
+    "kubectl -n x get secret/y --output=jsonpath={.data}",
     "kubectl get secret x --template={{.data}}", "kubectl get secret x -o JSON",
     "kubectl get secret x -o kyaml", "kubectl config view --flatten",
     "kubectl get --raw /api/v1/namespaces/default/secrets/x",
     "gcloud beta secrets versions access latest --secret=x",
-    "gcloud secrets --project p versions access latest", "glab config get -g token",
-    "glab config -g get token", "git-credential-store get",
+    "gcloud secrets --project p versions access latest",
 ]  # fmt: skip
 FORGE_DELETIONS = [
     "gh release delete v1", "gh release -R o/r delete v1", "gh secret delete X",
@@ -2123,6 +2128,11 @@ OUTWARD_SILENT = [
 @pytest.mark.parametrize("command", OUTWARD_ASKS + CREDENTIAL_PRINTERS)
 def test_gate_outwardAccountAndCredentialCommands_ask(rules, command):
     assert decision_of(rules, command) == "ask", command
+
+
+@pytest.mark.parametrize("command", CLOUD_CREDENTIAL_PRINTERS)
+def test_gate_cloudCredentialPrinters_areDenied(rules, command):
+    assert decision_of(rules, command) == "deny", command
 
 
 @pytest.mark.parametrize("command", FORGE_DELETIONS)
@@ -2465,7 +2475,7 @@ def test_gate_cloudReadListForReadOnlyAgents(rules, command, silent):
     [
         ("gcloud projects add-iam-policy-binding p --member=x --role=roles/owner", "ask"),
         ("gcloud projects remove-iam-policy-binding p --member=x --role=r", "ask"),
-        ("gcloud projects set-iam-policy p policy.json", "ask"),
+        ("gcloud projects set-iam-policy p policy.json", "deny"),
         ("gcloud compute instances attach-disk vm --disk d", "ask"),
         ("gcloud compute instances detach-disk vm --disk d", "ask"),
         ("gcloud sql backups restore 1 --restore-instance=i", "ask"),
@@ -3196,26 +3206,26 @@ BYPASSES_CLOSED = [
     ("cat <<EOF > f; git push --force\nbody\nEOF", "deny"),
     ("cat <<EOF | git push\nx\nEOF", "ask"),
     ("cat <<EOF\n$(git push --force)\nEOF", "deny"),
-    ('cat <<E"O"F\nx\nEOF\nterraform apply', "deny"),
+    ('cat <<E"O"F\nx\nEOF\nterraform import', "deny"),
     ('echo "<<EOF"\ngit push', "ask"),
-    ("</dev/null terraform apply", "deny"),
+    ("</dev/null terraform import", "deny"),
     ("X=1 >/dev/null git push --force", "deny"),
     ("cargo 2>/dev/null publish", "deny"),
     ("echo x # '\ngit push --force\n# '", "deny"),
     ("git commit -m \"$(cat <<'EOF'\nfix\n\nCo-Authored-By: a <b>\nEOF\n)\"", "deny"),
     ("gh pr create --body \"$(cat <<'EOF'\nbody\nGenerated with x\nEOF\n)\"", "deny"),
-    ("bash -c '</dev/null terraform apply'", "deny"),
+    ("bash -c '</dev/null terraform import'", "deny"),
     # code review, 2026-11-13: escapes before '#', line continuation, backticks and $'…' inside
     # $((, process substitution inside ${…}, ')' ending a redirection target
-    ("true\\ #;terraform apply", "deny"),
+    ("true\\ #;terraform import", "deny"),
     ("echo \\ #; git push", "ask"),
     ("echo a\\;#$(git push)", "ask"),
     ("echo a\\\n#$(git push)", "ask"),
     ("git pu\\\nsh --force", "deny"),
-    ("cat <<E\nE\\\n\nterraform apply\nE", "deny"),
+    ("cat <<E\nE\\\n\nterraform import\nE", "deny"),
     ("(echo $((echo `(`) ; git push ; (true)))", "ask"),
     ("(echo $((echo $'\\'(') ; git push ; (true)))", "ask"),
-    ("echo ${x:->(terraform apply)}", "deny"),
+    ("echo ${x:->(terraform import)}", "deny"),
     ("echo ${x:-<(git push)}", "ask"),
     ("(date >~/.claude/settings.json)", "ask"),
     ("exec -- git push", "ask"),
@@ -3231,7 +3241,7 @@ BYPASSES_CLOSED = [
     ("x=$(true) eval 'git push --force'", "ask"),
     ("x=$(true) python3 -c 'import os'", "ask"),
     ("x=$(true) sudo rm -rf /", "ask"),
-    ("x=$(true) y=1 sh -c 'terraform apply'", "deny"),
+    ("x=$(true) y=1 sh -c 'terraform import'", "deny"),
     ("x=$(true) timeout $(echo 5) git status", "ask"),
 ]
 
@@ -3331,8 +3341,8 @@ def test_judgeBash_ownerAllowOnAHoleFreeCanonicalForm_covers(rules, layers):
 EXPANSION_JUDGED = [
     # braces: bash's words, judged exactly
     ("cargo {publish,}", "deny"),
-    ("terraform {apply,}", "deny"),
-    ("{terraform,} apply", "deny"),
+    ("terraform {import,}", "deny"),
+    ("{terraform,} import", "deny"),
     ("git push origin {main,--force}", "deny"),
     ("git {push,} --force", "deny"),
     ("{git,echo} push", None),  # bash runs ``git echo push``
@@ -3353,7 +3363,7 @@ EXPANSION_JUDGED = [
     ("echo {1..300}", "ask"),
     # the tail: a rule that could match
     ("git push origin *", "ask"),
-    ("terraform apply *", "deny"),
+    ("terraform import *", "deny"),
     ("rm -rf build/*", "ask"),
 ]
 
@@ -3593,7 +3603,7 @@ FINDINGS_CLOSED = [
     ("terraform ${x:+apply}", "ask"),
     # F-23: a locale string is its untranslated text, or anything
     ('cargo $"publish"', "deny"),
-    ('terraform {$"apply",}', "deny"),
+    ('terraform {$"import",}', "deny"),
     ('git push $"--force"', "deny"),
     ('cargo pub$"lish"', "deny"),
     ('cat(){ :; }; cargo $"publish"', "ask"),
@@ -5225,6 +5235,20 @@ def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_pat
 
 # ---------------------------------------------------------------- F-33 deletions and folder options
 
+# these delete, copy into or extract under home or root, so they may also write cobot's owner
+# files (~/.claude/cobot*): refused since spec session-grants, where the others ask
+REACHES_OWNER_FILES = frozenset({
+    "find ~ -name .gemini -exec rm -r {} +", "rm -r ~", "rm -r /", "nice find ~ -delete",
+    "tar -C /tmp -C ~/.gemini -xf e.tar", "tar -C ~ -xf /tmp/e.tar .gemini/config/x",
+    "find -name '*' -delete ~", "rsync -a payload/ ~/", "find x -name .gemini -exec cp -r {} ~ \\;",
+    "find x -name .gemini -exec mv {} ~ +", "cp -r x/. ~", "cp -rT x ~", "gio move -T x ~",
+    "cp -r $X ~", "cp -r ${X} ~",
+})  # fmt: skip
+
+
+def reached(command: str) -> str:
+    return "deny" if command in REACHES_OWNER_FILES else "ask"
+
 
 @pytest.mark.parametrize(
     "command",
@@ -5244,7 +5268,7 @@ def test_projectWarning_neverReachesTheHookStderr(rules, layers, capsys, tmp_pat
 )
 def test_f33_deletionReachingAProtectedFolder_asks(rules, fake_home, command):
     _, home = fake_home
-    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+    assert judge_in(rules, command, home / "ws")[0].decision == reached(command), command
 
 
 @pytest.mark.parametrize(
@@ -5283,7 +5307,7 @@ def test_f33_ordinaryDeletions_staySilent(rules, fake_home, command):
 )
 def test_f33_folderOption_namingAProtectedFolderOrItsParent_asks(rules, fake_home, command):
     _, home = fake_home
-    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+    assert judge_in(rules, command, home / "ws")[0].decision == reached(command), command
 
 
 @pytest.mark.parametrize(
@@ -5335,7 +5359,7 @@ def test_f33_ordinaryFolderOptions_staySilent(rules, fake_home, command):
 )
 def test_f33Fold_formsTheChallengerFound_ask(rules, fake_home, command):
     _, home = fake_home
-    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+    assert judge_in(rules, command, home / "ws")[0].decision == reached(command), command
 
 
 def test_f33Fold_execBody_meetsTheNeverRows(rules, fake_home):
@@ -5406,7 +5430,7 @@ def test_f33Review_formsTheReviewFound_ask(rules, fake_home, command):
     _, home = fake_home
     (home / "x").mkdir(exist_ok=True)
     (home / "src").mkdir(exist_ok=True)
-    assert judge_in(rules, command, home / "ws")[0].decision == "ask", command
+    assert judge_in(rules, command, home / "ws")[0].decision == reached(command), command
 
 
 @pytest.mark.parametrize(

@@ -22,14 +22,75 @@ never Bash(gt pr edit*Generated with*)
 never Bash(tea pulls create*Generated with*)
 never Bash(tea pulls edit*Generated with*)
 never Bash(git push * +*)
-never Bash(terragrunt apply*)
-never Bash(terragrunt destroy*)
-never Bash(terragrunt * apply*)
-never Bash(terragrunt * destroy*)
-never Bash(terraform apply*)
-never Bash(terraform destroy*)
-never Bash(tofu apply*)
-never Bash(tofu destroy*)
+# Terraform state surgery and unlocked runs (spec session-grants): no prompt and no grant reaches
+# them; `-lock=` takes every false spelling Go accepts, with one dash or two
+never Bash(terraform state rm*)
+never Bash(terraform state mv*)
+never Bash(terraform state push*)
+never Bash(terraform state replace-provider*)
+never Bash(terraform force-unlock*)
+never Bash(terraform import*)
+never Bash(terraform taint*)
+never Bash(terraform untaint*)
+never Bash(terraform workspace delete*-force*)
+never Bash(terraform *-lock=[0fF]*)
+never Bash(tofu state rm*)
+never Bash(tofu state mv*)
+never Bash(tofu state push*)
+never Bash(tofu state replace-provider*)
+never Bash(tofu force-unlock*)
+never Bash(tofu import*)
+never Bash(tofu taint*)
+never Bash(tofu untaint*)
+never Bash(tofu workspace delete*-force*)
+never Bash(tofu *-lock=[0fF]*)
+never Bash(terragrunt *state rm*)
+never Bash(terragrunt *state mv*)
+never Bash(terragrunt *state push*)
+never Bash(terragrunt *state replace-provider*)
+never Bash(terragrunt *force-unlock*)
+never Bash(terragrunt *import*)
+never Bash(terragrunt *taint*)
+never Bash(terragrunt *workspace delete*-force*)
+never Bash(terragrunt *-lock=[0fF]*)
+# cloud state, projects, IAM replacement and keys (spec session-grants)
+never Bash(gcloud storage rm*tfstate*)
+never Bash(gcloud storage buckets delete*tfstate*)
+never Bash(gsutil *rm *tfstate*)
+never Bash(gcloud projects delete*)
+never Bash(gcloud * set-iam-policy*)
+never Bash(gcloud iam service-accounts keys create*)
+# the kubeconfig names what a context means: a rename would carry a grant to another cluster
+never Bash(kubectl config rename-context*)
+never Bash(kubectl config set-context*)
+never Bash(kubectl config set-cluster*)
+never Bash(kubectl config set-credentials*)
+never Bash(kubectl config delete-*)
+never Edit(~/.kube/*)
+never Write(~/.kube/*)
+# cluster-wide wipes
+never Bash(kubectl delete*--all-namespaces*)
+never Bash(kubectl delete* -A)
+never Bash(kubectl delete* -A *)
+never Bash(kubectl delete namespace kube-system*)
+never Bash(kubectl delete namespaces kube-system*)
+never Bash(kubectl delete ns kube-system*)
+never Bash(kubectl delete namespace/kube-system*)
+never Bash(kubectl delete ns/kube-system*)
+# a recursive delete of the root or of home, and only those
+never Bash(rm -* /)
+never Bash(rm -* ~)
+never Bash(rm -* ~/)
+never Bash(rm -* $HOME)
+never Bash(rm -* $HOME/)
+never Bash(rm -* ${HOME})
+never Bash(rm -* ${HOME}/)
+# cobot's owner files: a grant or a rule written here would widen the gate (sealed: shell access
+# to them is refused too)
+never Edit(~/.claude/cobot.rules)
+never Write(~/.claude/cobot.rules)
+never Edit(~/.claude/cobot/*)
+never Write(~/.claude/cobot/*)
 never Bash(cargo publish*)
 never Bash(npm publish*)
 never Bash(pnpm publish*)
@@ -146,6 +207,16 @@ never Bash(agy *plugin* uninstall*cobot*)
 never Bash(agy *plugin* link*cobot*)
 
 # outward or destructive: ask
+# apply and destroy (spec session-grants): the owner answers each at the prompt; an owner allow
+# line and a grant never answer them for the owner
+ask Bash(terragrunt apply*) # prompt only: each apply is yours to approve
+ask Bash(terragrunt destroy*) # prompt only: each destroy is yours to approve
+ask Bash(terragrunt * apply*) # prompt only: each apply is yours to approve
+ask Bash(terragrunt * destroy*) # prompt only: each destroy is yours to approve
+ask Bash(terraform apply*) # prompt only: each apply is yours to approve
+ask Bash(terraform destroy*) # prompt only: each destroy is yours to approve
+ask Bash(tofu apply*) # prompt only: each apply is yours to approve
+ask Bash(tofu destroy*) # prompt only: each destroy is yours to approve
 # agy plugin install replaces a plugin in place, and a nested agy session runs outside this gate;
 # the owner layer may add `allow Bash(agy plugin validate*)`
 ask Bash(agy) # may replace or bypass the cobot gate
@@ -301,16 +372,17 @@ ask Bash(gh auth status --prints-credential) # prints a credential into the tran
 ask Bash(glab auth status --prints-credential) # prints a credential into the transcript
 ask Bash(glab config*get*token*) # prints a credential into the transcript
 ask Bash(git-credential-* get*) # prints a credential into the transcript
-ask Bash(kubectl config view*--flatten*) # prints a credential into the transcript
-ask Bash(gcloud * print-access-token) # prints a credential into the transcript
-ask Bash(gcloud * print-identity-token) # prints a credential into the transcript
-ask Bash(gcloud * config-helper) # prints a credential into the transcript
-ask Bash(gcloud secrets versions access*) # prints a credential into the transcript
+never Bash(kubectl config view*--flatten*) # prints a credential into the transcript
+never Bash(gcloud * print-access-token) # prints a credential into the transcript
+never Bash(gcloud * print-identity-token) # prints a credential into the transcript
+never Bash(gcloud * config-helper) # prints a credential into the transcript
+never Bash(gcloud secrets versions access*) # prints a credential into the transcript
 ask Bash(git credential fill*) # prints a credential into the transcript
 ask Bash(git credential-* get*) # prints a credential into the transcript
 ask Bash(docker-credential-* get*) # prints a credential into the transcript
-ask Bash(kubectl config view*--raw*) # prints a credential into the transcript
-ask Bash(kubectl get secret --prints-credential) # prints a credential into the transcript
+never Bash(kubectl config view*--raw*) # prints a credential into the transcript
+never Bash(kubectl get secret --prints-credential) # prints a credential into the transcript
+never Bash(kubectl create token*) # prints a credential into the transcript
 ask Bash(npm token list*) # prints a credential into the transcript
 ask Bash(npm token ls*) # prints a credential into the transcript
 # git config writes that outlive the session (spec gate-f36-f40-f44, story 3). The canonical form
@@ -799,6 +871,25 @@ never Bash(kubectl config view*--raw*) @consultant
 never Bash(kubectl config view*--raw*) @learner
 never Bash(kubectl config view*--flatten*) @consultant
 never Bash(kubectl config view*--flatten*) @learner
+# the kubeconfig holds cluster credentials; anchored at the command so a glob elsewhere is no match
+never Bash(cat ~/.kube/*) @consultant
+never Bash(cat -* ~/.kube/*) @consultant
+never Bash(cat $HOME/.kube/*) @consultant
+never Bash(head ~/.kube/*) @consultant
+never Bash(head -* ~/.kube/*) @consultant
+never Bash(head $HOME/.kube/*) @consultant
+never Bash(tail ~/.kube/*) @consultant
+never Bash(tail -* ~/.kube/*) @consultant
+never Bash(tail $HOME/.kube/*) @consultant
+never Bash(cat ~/.kube/*) @learner
+never Bash(cat -* ~/.kube/*) @learner
+never Bash(cat $HOME/.kube/*) @learner
+never Bash(head ~/.kube/*) @learner
+never Bash(head -* ~/.kube/*) @learner
+never Bash(head $HOME/.kube/*) @learner
+never Bash(tail ~/.kube/*) @learner
+never Bash(tail -* ~/.kube/*) @learner
+never Bash(tail $HOME/.kube/*) @learner
 allow Bash(gcloud * list) @consultant
 allow Bash(gcloud * describe) @consultant
 allow Bash(gcloud * get-iam-policy) @consultant

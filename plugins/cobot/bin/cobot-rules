@@ -355,6 +355,9 @@ LAYERS = ("default", "owner", "project")
 # a rule's trailing ``# comment`` joins its reason, except from the project layer: repository text
 # must not speak to the owner in a permission prompt
 NOTE_LAYERS = frozenset({"default", "owner"})
+PROMPT_ONLY_NOTE = "prompt only"  # a default row's note that keeps every allow line off it
+HOME_CONFIG = "~/.claude"  # the literal config dir file rows name; CLAUDE_CONFIG_DIR may move it
+SEALED = ("cobot.rules", "cobot/*")  # cobot's owner files under the config dir: no shell access
 RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
 SHOWN_TOOLS = FILE_TOOLS | {"Bash", "mcp"}  # a project row's tool a reason may name
 
@@ -473,10 +476,36 @@ def parse_rule(line: str, layer: str, number: int, warnings: list[str]) -> Rule 
 def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -> None:
     if not path.is_file():
         return
+    moved = moved_config()
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         rule = parse_rule(line, layer, number, warnings)
         if rule:
             rules.append(rule)
+            twin = moved and config_twin(rule, moved)
+            if twin:
+                rules.append(twin)
+
+
+def moved_config() -> str | None:
+    """The config dir when ``CLAUDE_CONFIG_DIR`` moves it away from ``~/.claude``, else None."""
+    moved = str(config_dir())
+    return None if moved == os.path.expanduser(HOME_CONFIG) else moved
+
+
+def config_twin(rule: Rule, moved: str) -> Rule | None:
+    """A file row under ``~/.claude``, also under the moved config dir: the owner files live
+    there, and a row written as ``~/.claude`` alone would miss them."""
+    if rule.tool not in FILE_TOOLS:
+        return None
+    if rule.pattern != HOME_CONFIG and not rule.pattern.startswith(HOME_CONFIG + "/"):
+        return None
+    return replace(rule, pattern=moved + rule.pattern[len(HOME_CONFIG) :])
+
+
+def sealed(rule: Rule) -> bool:
+    """A never file row on cobot's owner files, in either config dir form."""
+    paths = {f"{root}/{name}" for root in (HOME_CONFIG, str(config_dir())) for name in SEALED}
+    return rule.decision == "never" and rule.pattern in paths
 
 
 def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
@@ -2996,11 +3025,20 @@ def allow_counts(rule: Rule) -> bool:
     )
 
 
+def prompt_only(rule: Rule) -> bool:
+    """A default ask no allow line answers: the owner approves each one at the prompt."""
+    return rule.decision == "ask" and rule.layer == "default" and rule.note.startswith(PROMPT_ONLY_NOTE)
+
+
 def resolve(matched: list[Rule], note: str = "") -> Verdict:
-    """Apply the precedence: never > allow (owner, or default with an agent scope) > ask > silence."""
+    """Apply the precedence: never > prompt-only ask > allow (owner, or default with an agent
+    scope) > ask > silence."""
     nevers = [r for r in matched if r.decision == "never"]
     if nevers:
         return Verdict(DENY, nevers[0])
+    prompted = [r for r in matched if prompt_only(r)]
+    if prompted:
+        return Verdict(ASK, prompted[0])
     if any(allow_counts(r) for r in matched):
         return Verdict(None, None, "allow rule")
     asks = [r for r in matched if r.decision == "ask"]
@@ -4447,6 +4485,27 @@ def runner_writes(plain: list[str]) -> bool:
     )
 
 
+def protected_verdict(
+    touched: str,
+    holes: dict[str, shell.Hole],
+    placed: list[tuple[list[str], Dirs]],
+    cwd: str | None,
+    rules: list[Rule],
+    reached: Reached,
+) -> Verdict:
+    """A shell word on a protected file asks; a literal word on cobot's owner files (``sealed``),
+    or one that moves, copies or deletes a folder holding them, is refused: a grant or an allow
+    line written there by a script would widen the gate. A word with a hole or a glob keeps the
+    ask, since it only might name them."""
+    owner_rows = [r for r in rules if sealed(r)]
+    hit = owner_rows and protected_file_touched(placed, cwd, owner_rows, reached.paths, reached.visited)
+    literal = hit and not shell.has_sentinel(hit) and not any(c in hit for c in GLOB_CHARS)
+    # a customization root (``.agents``) is flagged with no rule at all: not an owner-file hit
+    if literal and not protected_file_touched(placed, cwd, [], reached.paths, reached.visited):
+        return Verdict(DENY, None, f"shell access to cobot's owner files '{show(hit, holes)[:60]}'")
+    return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
@@ -4471,7 +4530,7 @@ def judge_bash(
     if in_protected:
         best = in_protected
     elif touched:
-        best = Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
+        best = protected_verdict(touched, holes, placed, cwd, rules, reached)
     asks = [best] if best.decision == ASK else []
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)

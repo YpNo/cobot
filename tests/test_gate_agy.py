@@ -737,7 +737,8 @@ def test_runCommand_pwdTilde_inHome_forceAsks(rules, workspace, agy_home):
 )
 def test_runCommand_f33Rows_forceAsk(rules, workspace, command):
     args = {"CommandLine": command, "Cwd": str(workspace)}
-    assert decide(rules, "run_command", args, [workspace]) == "force_ask", command
+    expected = "deny" if command == "rm -r ~" else "force_ask"  # cobot's owner files (session-grants)
+    assert decide(rules, "run_command", args, [workspace]) == expected, command
 
 
 def test_runCommand_projectWarning_keepsItsTextOffStderr(rules, workspace, capsys):

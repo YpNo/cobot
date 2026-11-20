@@ -75,7 +75,7 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
        `kubectl create token`, and `kubectl config view --raw|--flatten`, on the main thread
        too;
      - `kubectl config rename-context|set-context|set-cluster|set-credentials|delete-*`;
-     - `kubectl delete` with `--all` and `--all-namespaces` or `-A`, and
+     - `kubectl delete` with `--all-namespaces` or `-A` (with or without `--all`), and
        `kubectl delete namespace|ns kube-system`;
      - `rm -rf` of exactly `/`, `~`, `~/` or `$HOME`, in the flag orders `rm` accepts, and
        nothing else;
@@ -83,8 +83,8 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
    - File rows: Edit and Write of `<config dir>/cobot.rules`, `<config dir>/cobot/**` and
      `~/.kube/**`. The config dir is built from `config_dir()`, so `CLAUDE_CONFIG_DIR` is
      covered.
-   - Code (T02): a shell write to a path a `never` Edit/Write row names becomes `deny`, not the
-     protected-file `ask`.
+   - Code (T02): a literal shell word on cobot's owner files, or a move, copy or delete into
+     their folder, is `deny`; other protected files keep their ask (built 2026-11-20).
    - Accept: a `DEFAULT_DECISIONS` row per item (deny), the `CLAUDE_CONFIG_DIR` and shell-write
      cases, and negatives that keep today's verdict (`terraform state list` silent,
      `rm -rf build/` asks, `gcloud storage rm gs://b/x` asks, `kubectl delete pod x` asks,

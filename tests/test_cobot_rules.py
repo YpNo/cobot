@@ -475,9 +475,10 @@ def test_gate_unbalancedQuote_emitsAsk(rules):
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
 
 
-def test_gate_neverEmitsAllow(rules):
+def test_gate_neverEmitsAllow_withoutAGrant(rules):
+    """The gate's one allow is a command a session grant covers (spec session-grants)."""
     for command, _ in DEFAULT_DECISIONS:
-        out = rules.gate(payload(command))
+        out = rules.gate(payload(command, session_id="0b3c5d7e-1f2a-4b6c-8d9e-0a1b2c3d4e5f"))
         assert out is None or '"allow"' not in out
 
 

@@ -240,6 +240,92 @@ def test_cli_list_noSession_saysSo(rules, config, monkeypatch, capsys):
     assert "no grant" in capsys.readouterr().out
 
 
+# ---------------------------------------------------------------- the gate honours a grant (T05)
+
+COVERED = "gcloud pubsub topics create t1 --project ypno-lab"
+
+
+def test_grantedCommand_isAllowed_namingTheGrant(rules, config):
+    granted(rules)
+    out = decision(rules, COVERED)
+    assert out["permissionDecision"] == "allow"
+    assert out["permissionDecisionReason"].startswith("cobot grant: gcloud on ypno-lab")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gcloud pubsub topics create t1 --project ypno-family",  # another target
+        "gcloud pubsub topics create t1",  # no target
+        "gcloud pubsub topics delete t1 --project ypno-lab",  # another kind
+        "gcloud pubsub topics create t1 --project ypno-lab && echo ok",  # compound
+        "gcloud storage rm gs://b/x --project ypno-lab",  # not coverable
+        "gcloud projects set-iam-policy ypno-lab p.json --project ypno-lab",  # a never row
+    ],
+)
+def test_nearMiss_underAGrant_isNotAllowed(rules, config, command):
+    granted(rules)
+    assert decision(rules, command)["permissionDecision"] in ("ask", "deny")
+
+
+def test_neverRow_insideAGrantedKind_staysDenied(rules, config):
+    granted(rules, "cobot-rules grant kubectl-delete --target lab")
+    assert decision(rules, "kubectl delete ns kube-system --context lab")["permissionDecision"] == "deny"
+    assert decision(rules, "kubectl delete pod p --context lab")["permissionDecision"] == "allow"
+
+
+@pytest.mark.parametrize("extra", SUBAGENTS)
+def test_subagent_underTheSessionsGrant_stillAsks(rules, config, extra):
+    granted(rules)
+    assert decision(rules, COVERED, **extra)["permissionDecision"] == "ask"
+
+
+def test_expiredOrRevokedGrant_asksAgain(rules, config):
+    granted(rules)
+    rules.posttool(payload("cobot-rules grant --revoke", event="PostToolUse"))
+    assert decision(rules, COVERED)["permissionDecision"] == "ask"
+    granted(rules)
+    path = rules.grants_path(SESSION)
+    state = json.loads(path.read_text())
+    state["grants"][0]["expires"] = time.time() - 1
+    path.write_text(json.dumps(state))
+    assert decision(rules, COVERED)["permissionDecision"] == "ask"
+
+
+def test_ownerAskRow_isNotLiftedByAGrant(rules, config, tmp_path, monkeypatch):
+    owner = tmp_path / "owner.rules"
+    owner.write_text("ask Bash(gcloud pubsub*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    granted(rules)
+    assert decision(rules, COVERED)["permissionDecision"] == "ask"
+
+
+def test_anotherSessionsGrant_doesNotCover(rules, config):
+    granted(rules)
+    other = "1b3c5d7e-1f2a-4b6c-8d9e-0a1b2c3d4e5f"
+    assert decision(rules, COVERED, session=other)["permissionDecision"] == "ask"
+
+
+def test_noGrant_gateNeverAllows(rules, config):
+    from test_session_grants import GRANT_COVERED
+
+    for command, _, _ in GRANT_COVERED:
+        out = rules.gate(payload(command))
+        assert out is None or '"allow"' not in out, command
+
+
+def test_grantedCommand_isLogged_andListed(rules, config, monkeypatch, capsys):
+    granted(rules)
+    decision(rules, COVERED)
+    rules.posttool(payload(COVERED, event="PostToolUse"))
+    rules.posttool(payload("gcloud pubsub topics create t2 --project ypno-family", event="PostToolUse"))
+    log = rules.load_grants(rules.grants_path(SESSION))["log"]
+    assert [entry["command"] for entry in log] == [COVERED]
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    rules.main(["grant", "--list"])
+    assert f"ran: {COVERED}" in capsys.readouterr().out
+
+
 def test_hooks_wirePostToolUseBashAndSessionEnd():
     from conftest import PLUGIN
 

@@ -8,9 +8,13 @@ Commands
   explain "<cmd>" [--tool T] [--agent A]  every matching rule, per segment and layer
   show                       the merged rule set with provenance
   sync   [--settings PATH]   permissions fragment and diff against settings.json; writes nothing
+  grant <kind> --target <t>  ask the owner for a session grant (the gate asks; a hook records it)
+  grant --revoke [<kind> --target <t>] | --list   end grants, or list them and what ran under them
+  posttool | sessionend      hooks: record an approved grant; remove the session's grants
   -h/--help prints this usage and runs nothing; an unknown option ends with exit 2
 
-Contract: the gate never emits ``allow``; any internal error ends in ``ask``;
+Contract: the gate emits ``allow`` in one case only, a Bash command a session grant of this
+session covers (ADR-0008, Claude Code only); any internal error ends in ``ask``;
 silence means "no opinion" and Claude Code's own permission system decides.
 Precedence: ``never`` in any layer wins; else an ``allow`` silences the gate
 when it comes from the owner layer, or from the default layer with an agent
@@ -4985,8 +4989,13 @@ def gate(stdin: str) -> str | None:
                 "agent": agent,
             }
         )
+        granted = granted_reason(verdict, command, payload, rules) if tool == "Bash" else None
+        if granted:
+            log_event({"tool": "grant", "head": command[:120], "decision": "allow", "reason": granted})
     except Exception as error:  # noqa: BLE001 - any failure must end in "ask"
         return hook_output(ASK, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
+    if granted:
+        return hook_output("allow", granted)  # the gate's one allow (ADR-0008)
     if verdict.decision is None:
         return None
     suffix = stamp_suffix(cwd) if tool == "Bash" and verdict.decision == ASK and PUSH_RE.search(head) else ""
@@ -5234,7 +5243,8 @@ def helm_scope(words: list[str]) -> tuple[str, str] | None:
 
 GRANT_HOURS = 12  # a ceiling for a session that never ends cleanly; SessionEnd removes the file first
 PENDING_SECONDS = 600  # how long the gate's ask stays answerable by the hook
-GRANT_STATE_DAYS = 7
+GRANT_LOG_MAX = 200  # commands kept per session; the oldest go first
+GRANT_LOG_COMMAND = 200  # characters of a logged command
 ATTENDED_ENV = "CLAUDE_CODE_SESSION_ATTENDED"  # "1" where a person answers the prompts (probe P1, P6)
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"  # the session id Bash sees (probe P6)
 GRANT_COMMAND = ("cobot-rules", "grant")
@@ -5354,6 +5364,25 @@ def grant_gate(request: tuple[str, str, str], payload: dict) -> tuple[str | None
     )
 
 
+def granted_reason(verdict: Verdict, command: str, payload: dict, rules: list[Rule]) -> str | None:
+    """The reason for ``allow`` when an active grant of this session covers the command, else None.
+    Only a default-layer ask is lifted: never a ``never``, a prompt-only ask, a rule-less ask
+    (protected file, quoted code), a second ask in the command, or an owner or project row."""
+    rule = verdict.rule
+    if verdict.decision != ASK or not rule or rule.layer != "default" or prompt_only(rule) or verdict.also:
+        return None
+    if not main_thread(payload):
+        return None
+    scope = grant_scope(command)
+    if not scope or scope not in active_grants(payload.get("session_id")):
+        return None
+    local = [r for r in rules if r.layer != "default"]  # an owner or project ask or never still holds
+    if local and judge("Bash", {"command": command}, payload.get("cwd"), local, None).decision:
+        return None
+    kind, target = scope
+    return f"cobot grant: {kind} on {target} (cobot-rules grant --revoke)"
+
+
 def command_digest(payload: dict) -> str:
     command = str((payload.get("tool_input") or {}).get("command") or "")
     return hashlib.sha256(command.encode()).hexdigest()
@@ -5365,16 +5394,33 @@ def posttool(stdin: str) -> None:
     person attends; a revoke narrows. Anything else records nothing."""
     payload = json.loads(stdin)
     command = str((payload.get("tool_input") or {}).get("command") or "")
-    if "cobot-rules grant" not in command:
-        return  # every other Bash call: out before any parse
-    request = grant_request(command)
     session = payload.get("session_id")
+    if "cobot-rules grant" not in command:
+        log_granted(command, session, payload)
+        return
+    request = grant_request(command)
     if not request or request[0] not in ("grant", "revoke") or not main_thread(payload):
         return
     if not isinstance(session, str) or not SESSION_RE.match(session) or os.environ.get(ATTENDED_ENV) != "1":
         return
     update_grants(session, lambda state, now: record_grant(state, now, request, command_digest(payload)))
     log_event({"tool": "grant", "head": command[:120], "decision": request[0], "reason": "recorded"})
+
+
+def log_granted(command: str, session: object, payload: dict) -> None:
+    """A command that ran under a grant joins the session's log (PostToolUse fires only on
+    success). A session with no grant file is out before any parse."""
+    if not isinstance(session, str) or not SESSION_RE.match(session) or not grants_path(session).exists():
+        return
+    scope = grant_scope(command)
+    if not scope or not main_thread(payload) or scope not in active_grants(session):
+        return
+    entry = {"command": command[:GRANT_LOG_COMMAND], "kind": scope[0], "target": scope[1]}
+
+    def append(state: dict, now: float) -> None:
+        state["log"] = [*state["log"], {**entry, "at": now}][-GRANT_LOG_MAX:]
+
+    update_grants(session, append)
 
 
 def record_grant(state: dict, now: float, request: tuple[str, str, str], digest: str) -> None:
@@ -5420,10 +5466,13 @@ def cmd_grant(positional: list[str], options: dict[str, str], flags: set[str]) -
 
 
 def list_grants(session: str | None) -> str:
+    """The session's active grants, then each command that ran under one."""
     grants = active_grants(session)
     if not grants:
         return "no grant in this session"
-    return "\n".join(f"granted: {kind} on {target}" for kind, target in grants)
+    log = load_grants(grants_path(str(session)))["log"]
+    lines = [f"granted: {kind} on {target}" for kind, target in grants]
+    return "\n".join(lines + [f"ran: {entry.get('command', '')}" for entry in log])
 
 
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)

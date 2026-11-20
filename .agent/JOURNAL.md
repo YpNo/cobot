@@ -465,3 +465,11 @@ Proof: tests first (39 failing for the right reason, 6 passing for today's behav
 Open: accepted residual: the gate killed by its timeout after writing the pending entry, with an owner settings allow on cobot-rules, could run the command without a prompt and record it (microseconds, needs the owner's own allow line). The log list is kept but not filled until T05.
 Next: T05, the gate's allow for a granted command.
 verified: tree d4c5e5c68b6aec1dafaa791f52f692631086217b · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — T05 session-grants: the gate allows a granted command, and only one
+Changed: cobot-rules gate(): granted_reason lifts a Bash verdict to allow only when it is an ask from a default row (not never, not prompt-only, not rule-less, no second ask), the call is from the main thread, grant_scope names a (kind, target) this session holds unexpired, and the owner and project layers alone neither ask nor deny on the command (a verdict names only its first rule, so an owner ask would hide behind the default one). Reason: cobot grant: <kind> on <target> (cobot-rules grant --revoke). posttool logs each command that ran under a grant (200 kept, 200 characters each); --list prints them as ran: lines. The module docstring's contract names the one allow. The allow pin becomes test_gate_neverEmitsAllow_withoutAGrant; agy unchanged (test_corpus_noAnswerEverAutoApproves stands). The unused GRANT_STATE_DAYS went.
+Why: spec session-grants story 6.
+Proof: tests first (the 3 positive cases failing, the 14 near-misses already asking or denying); 63 store tests; the real hook scripts end to end (grant, allow on lab, ask on prod and on another kind, the log listed); full suite 3777 passed, 98.43 %; ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate; gate timing unchanged.
+Open: none.
+Next: T06, the protocol and skill texts.
+verified: tree a1ca27f7c1a768b6eeee8f6c6a40d66fdd384cd0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate

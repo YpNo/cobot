@@ -17,11 +17,11 @@ idiom after 90 (`cobot-memory knowledge --stale lang-python`).
 
 ## Tools
 
-- [verified 2026-11-07 · src: https://api.github.com/repos/astral-sh/uv/releases/latest] uv 0.13.7 (2026-11-03).
+- [verified 2026-11-20 · src: https://api.github.com/repos/astral-sh/uv/releases/latest] uv 0.13.9 (2026-11-17).
 - [verified 2026-11-07 · src: https://docs.astral.sh/uv/reference/cli/] `uv lock`, `uv sync --locked` (exits non-zero when `uv.lock` would change), `uv run`, `uv tree --outdated` and a top-level `uv audit` exist; the `uv audit` option list was not read.
 - [verified 2026-11-07 · src: https://docs.astral.sh/uv/concepts/projects/init/] `uv init` defaults to `build-backend = "uv_build"`; `--build-backend hatchling` is the alternative.
 - [verified 2026-11-07 · src: https://docs.astral.sh/uv/concepts/projects/dependencies/] uv uses the `[dependency-groups]` table (PEP 735) and includes the `dev` group by default in `uv run` and `uv sync`.
-- [verified 2026-11-07 · src: https://api.github.com/repos/astral-sh/ruff/releases/latest] ruff 0.17.4 (2026-11-05).
+- [verified 2026-11-20 · src: https://api.github.com/repos/astral-sh/ruff/releases/latest] ruff 0.17.6 (2026-11-19).
 - [verified 2026-11-07 · src: https://docs.astral.sh/ruff/rules/] ruff ships pyupgrade (UP), flake8-bugbear (B) and flake8-bandit (S); `lint.select` takes rule codes or prefixes.
 - [verified 2026-11-07 · src: https://pypi.org/pypi/pytest/json] pytest 9.2.0 (changelog 2026-10-27, requires Python >= 3.10); pytest-cov 7.1.0 (its PyPI page).
 - [verified 2026-11-07 · src: https://pytest-cov.readthedocs.io/en/latest/config.html] `--cov-fail-under=MIN` fails the run when total coverage is below MIN.

@@ -88,7 +88,7 @@ jobs:
       - name: Install Claude Code and the checks
         run: |
           npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
-          python -m pip install --quiet ruff==0.17.4
+          python -m pip install --quiet ruff==0.17.6
       - name: Run the learner (read-only, budget-capped)
         env:
           ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
@@ -129,7 +129,7 @@ jobs:
         run: |
           python3 scripts/check-plugin.py plugins/cobot
           claude plugin validate plugins/cobot --strict
-          npx --yes markdownlint-cli2@0.24.0 "plugins/cobot/skills/**/*.md"
+          npx --yes markdownlint-cli2@0.24.2 "plugins/cobot/skills/**/*.md"
       - name: Open the pull request
         if: steps.apply.outputs.changed == 'true'
         env:

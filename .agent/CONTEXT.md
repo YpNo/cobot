@@ -21,9 +21,9 @@ runs: host                     # podman and distrobox present, nothing here need
 | purpose | command | result | verified |
 |---|---|---|---|
 | tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.68 %, 2473 tests) | 2026-11-15 |
-| lint | `uvx ruff@0.17.4 check . && uvx ruff@0.17.4 format --check .` | exit 0 | 2026-11-15 |
+| lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` | exit 0 | 2026-11-20 |
 | shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-15 |
-| markdown lint | `npx --yes markdownlint-cli2@0.24.0 "**/*.md"` | exit 0 | 2026-11-15 |
+| markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` | exit 0 | 2026-11-20 |
 | plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-15 |
 | gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-15 |
 | plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-15 |

@@ -5064,6 +5064,165 @@ def with_offer(reason: str, verdict: Verdict, session: object, rules: list[Rule]
     return reason
 
 
+# ---------------------------------------------------------------- session grants (spec session-grants)
+# What a grant could cover: allow-lists only. A form outside them is never covered and asks as it
+# would without a grant; the lists grow by spec, never by inference.
+
+GRANT_KINDS = ("gcloud", "gcloud-delete", "kubectl", "kubectl-delete", "helm", "helm-uninstall")
+PLAIN_COMMAND_RE = re.compile(r"[A-Za-z0-9_./:=@,+-]+(?: [A-Za-z0-9_./:=@,+-]+)*")  # no quote, $, glob
+FOREIGN_TARGET_MARKS = ("projects/", "gs://", "://")  # a word naming a resource outside the target
+PROJECT_RE = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")
+CONTEXT_RE = re.compile(r"[A-Za-z0-9._@:/-]{1,253}")
+GCLOUD_GRANT_PATHS = frozenset({
+    ("compute", "instances"), ("compute", "disks"), ("compute", "networks"),
+    ("compute", "networks", "subnets"), ("compute", "firewall-rules"), ("compute", "addresses"),
+    ("compute", "routers"), ("compute", "instance-templates"), ("run",), ("run", "services"),
+    ("run", "jobs"), ("pubsub", "topics"), ("pubsub", "subscriptions"), ("functions",),
+    ("artifacts", "repositories"), ("dns", "managed-zones"), ("dns", "record-sets"),
+    ("container", "clusters"), ("container", "node-pools"),
+})  # fmt: skip
+GCLOUD_GRANT_VERBS = {"create": "gcloud", "update": "gcloud", "deploy": "gcloud", "delete": "gcloud-delete"}
+GCLOUD_GRANT_REFUSED = ("--flags-file", "--configuration", "--impersonate-service-account", "--account",
+                        "--access-token-file")  # fmt: skip
+KUBECTL_GRANT_VERBS = {
+    ("apply",): "kubectl", ("create",): "kubectl", ("patch",): "kubectl", ("label",): "kubectl",
+    ("annotate",): "kubectl", ("set", "image"): "kubectl", ("delete",): "kubectl-delete",
+    ("scale",): "kubectl-delete", ("rollout", "restart"): "kubectl-delete",
+}  # fmt: skip
+KUBECTL_GRANT_VALUES = {"--context": "--context", "-n": "--namespace", "--namespace": "--namespace",
+                        "-f": "--filename", "--filename": "--filename", "-l": "--selector",
+                        "--selector": "--selector", "--replicas": "--replicas",
+                        "--patch-file": "--patch-file"}  # fmt: skip
+# no flag with an optional value (``--dry-run``): the CLI may not read the next word as its value
+KUBECTL_GRANT_SWITCHES = frozenset({"--overwrite"})
+KUBECTL_GRANT_FILES = ("--filename", "--patch-file")
+HELM_GRANT_VERBS = {"install": "helm", "upgrade": "helm", "rollback": "helm", "uninstall": "helm-uninstall",
+                    "del": "helm-uninstall", "delete": "helm-uninstall", "un": "helm-uninstall"}  # fmt: skip
+HELM_GRANT_VALUES = {"--kube-context": "--kube-context", "-n": "--namespace", "--namespace": "--namespace",
+                     "-f": "--values", "--values": "--values", "--set": "--set", "--version": "--version",
+                     "--timeout": "--timeout"}  # fmt: skip
+HELM_GRANT_SWITCHES = frozenset({"--create-namespace", "--wait", "--install"})
+
+
+def valid_grant(kind: str, target: str) -> bool:
+    """A grant names a known kind and a target in its tool's format: a project id for gcloud, a
+    context name for kubectl and helm."""
+    if kind not in GRANT_KINDS:
+        return False
+    pattern = PROJECT_RE if kind.startswith("gcloud") else CONTEXT_RE
+    return bool(pattern.fullmatch(target))
+
+
+def grant_scope(command: str) -> tuple[str, str] | None:
+    """The (kind, target) a grant would need to cover ``command``, or None when no grant covers it:
+    a plain simple command (no quote, expansion, glob, operator or assignment), one target named in
+    argv, and a group, verb and options on the allow-lists."""
+    if not PLAIN_COMMAND_RE.fullmatch(command):
+        return None
+    words = command.split(" ")
+    words = words[1:] if words[0] == "rtk" else words
+    if not words or any(mark in word for word in words for mark in FOREIGN_TARGET_MARKS):
+        return None
+    scope = {"gcloud": gcloud_scope, "kubectl": kubectl_scope, "helm": helm_scope}.get(words[0])
+    found = scope(words[1:]) if scope else None
+    return found if found and valid_grant(*found) else None
+
+
+def gcloud_scope(words: list[str]) -> tuple[str, str] | None:
+    """``gcloud <allowed path> <verb> …`` with ``--project`` given once."""
+    projects, rest = [], []
+    i = 0
+    while i < len(words):
+        name, eq, value = words[i].partition("=")
+        if name == "--project":
+            value = value if eq else next_value(words, i)
+            if not value:
+                return None
+            projects.append(value)
+            i += 1 if eq else 2
+            continue
+        if any(flag.startswith(name) for flag in (*GCLOUD_GRANT_REFUSED, "--project") if len(name) > 2):
+            return None  # a refused flag, or one abbreviating it or ``--project``
+        rest.append(words[i])
+        i += 1
+    if len(projects) != 1:
+        return None
+    for depth in (3, 2, 1):
+        if tuple(rest[:depth]) in GCLOUD_GRANT_PATHS and rest[depth : depth + 1]:
+            kind = GCLOUD_GRANT_VERBS.get(rest[depth])
+            return (kind, projects[0]) if kind else None
+    return None
+
+
+def next_value(words: list[str], index: int) -> str:
+    """The word after an option as its value; empty when there is none or it is itself an option,
+    which the CLI might read differently."""
+    following = words[index + 1] if index + 1 < len(words) else ""
+    return "" if following.startswith("-") else following
+
+
+def grant_options(words: list[str], values: dict[str, str], switches: frozenset[str]):
+    """Split words into positionals and allow-listed options (``--x=v``, ``--x v``, a switch), with
+    aliases folded to one name; None when any other option appears or a value is missing."""
+    positionals: list[str] = []
+    options: dict[str, list[str]] = {}
+    i = 0
+    while i < len(words):
+        name, eq, value = words[i].partition("=")
+        if not name.startswith("-"):
+            positionals.append(words[i])
+        elif name in values:
+            value = value if eq else next_value(words, i)
+            if not value:
+                return None
+            options.setdefault(values[name], []).append(value)
+            i += 0 if eq else 1
+        elif name in switches and not eq:
+            options.setdefault(name, [])
+        else:
+            return None
+        i += 1
+    return positionals, options
+
+
+def inside_repository(path: str) -> bool:
+    """A relative path that cannot leave the working tree: no root, home, parent or stdin."""
+    return bool(path) and path != "-" and not path.startswith(("/", "~")) and ".." not in path.split("/")
+
+
+def kubectl_scope(words: list[str]) -> tuple[str, str] | None:
+    """``kubectl <verb>`` on the allow-list with ``--context`` given once; apply and create read
+    files inside the repository only."""
+    parsed = grant_options(words, KUBECTL_GRANT_VALUES, KUBECTL_GRANT_SWITCHES)
+    if not parsed:
+        return None
+    positionals, options = parsed
+    kind = KUBECTL_GRANT_VERBS.get(tuple(positionals[:2])) or KUBECTL_GRANT_VERBS.get(tuple(positionals[:1]))
+    contexts = options.get("--context", [])
+    files = [path for name in KUBECTL_GRANT_FILES for path in options.get(name, [])]
+    if not kind or len(contexts) != 1 or not all(inside_repository(path) for path in files):
+        return None
+    if positionals[0] in ("apply", "create") and not options.get("--filename"):
+        return None
+    return kind, contexts[0]
+
+
+def helm_scope(words: list[str]) -> tuple[str, str] | None:
+    """``helm <verb>`` on the allow-list with ``--kube-context`` given once; values files inside the
+    repository; ``--install`` only with upgrade."""
+    parsed = grant_options(words, HELM_GRANT_VALUES, HELM_GRANT_SWITCHES)
+    if not parsed:
+        return None
+    positionals, options = parsed
+    kind = HELM_GRANT_VERBS.get(positionals[0]) if positionals else None
+    contexts = options.get("--kube-context", [])
+    if not kind or len(contexts) != 1 or not all(inside_repository(p) for p in options.get("--values", [])):
+        return None
+    if "--install" in options and positionals[0] != "upgrade":
+        return None
+    return kind, contexts[0]
+
+
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)
 
 AGY_DECISION = {None: "allow", ASK: "force_ask", DENY: "deny"}  # allow defers; never auto_approve

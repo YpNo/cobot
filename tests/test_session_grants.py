@@ -81,6 +81,118 @@ APPLY_FORMS = [
 ]
 KUBE_READS = ["cat ~/.kube/config", "head -5 ~/.kube/config", "tail $HOME/.kube/config"]
 
+# story 4: what a grant could cover, as (command, kind, target)
+GKE_CONTEXT = "gke_ypno-lab_europe-west1_c1"
+GRANT_COVERED = [
+    ("gcloud compute instances create vm1 --zone=europe-west1-b --project ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud --project=ypno-lab run deploy api --image=europe-docker.pkg.dev/x/y/z:1", "gcloud", "ypno-lab"),
+    ("gcloud pubsub topics create t1 --project=ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud functions deploy f --runtime=python313 --project ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud artifacts repositories update r --location=eu --project ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud dns record-sets create a.lab. --zone=z --type=A --project ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud container clusters create c1 --region=europe-west1 --project ypno-lab", "gcloud", "ypno-lab"),
+    ("gcloud compute instances delete vm1 --zone=z --project ypno-lab", "gcloud-delete", "ypno-lab"),
+    ("rtk gcloud pubsub topics delete t1 --project ypno-lab", "gcloud-delete", "ypno-lab"),
+    ("kubectl apply -f k8s/app.yaml --context lab", "kubectl", "lab"),
+    ("kubectl --context=lab -n web create -f k8s/job.yaml", "kubectl", "lab"),
+    ("kubectl label pod p tier=web --context lab --overwrite", "kubectl", "lab"),
+    ("kubectl annotate deploy d note=x --context lab", "kubectl", "lab"),
+    ("kubectl set image deploy/api api=img:2 --context lab -n web", "kubectl", "lab"),
+    ("kubectl patch deploy d --patch-file k8s/p.yaml --context lab", "kubectl", "lab"),
+    (f"kubectl delete pod p --context {GKE_CONTEXT}", "kubectl-delete", GKE_CONTEXT),
+    ("kubectl scale deploy d --replicas=0 --context lab", "kubectl-delete", "lab"),
+    ("kubectl rollout restart deploy/d --context lab", "kubectl-delete", "lab"),
+    ("helm install web charts/web --kube-context lab -n web --create-namespace", "helm", "lab"),
+    ("helm upgrade --install web charts/web -f values/lab.yaml --set n=2 --kube-context lab", "helm", "lab"),
+    ("helm rollback web 3 --kube-context lab --wait --timeout 5m", "helm", "lab"),
+    ("helm uninstall web --kube-context lab -n web", "helm-uninstall", "lab"),
+    ("helm del web --kube-context=lab", "helm-uninstall", "lab"),
+]
+GRANT_NOT_COVERED = [
+    # not a plain simple command
+    "gcloud pubsub topics create t --project ypno-lab && echo ok",
+    "gcloud pubsub topics create t --project ypno-lab | tee x",
+    "gcloud pubsub topics create $T --project ypno-lab",
+    "gcloud pubsub topics create t --project ypno-lab > out",
+    "CLOUDSDK_CORE_PROJECT=other gcloud pubsub topics create t --project ypno-lab",
+    "env gcloud pubsub topics create t --project ypno-lab",
+    "gcloud pubsub topics create 't' --project ypno-lab",
+    "gcloud pubsub topics create t* --project ypno-lab",
+    "KUBECONFIG=x kubectl apply -f a.yaml --context lab",
+    # gcloud: no target, two targets, other groups, verbs, resource paths, identity flags
+    "gcloud pubsub topics create t",
+    "gcloud pubsub topics create t --project ypno-lab --project ypno-family",
+    "gcloud pubsub topics create t --project=ypno-lab --project ypno-family",
+    "gcloud storage rm gs://b/x --project ypno-lab",
+    "gcloud projects add-iam-policy-binding ypno-family --role=roles/owner --project ypno-lab",
+    "gcloud iam service-accounts create sa --project ypno-lab",
+    "gcloud container clusters get-credentials c1 --project ypno-lab",
+    "gcloud compute instances add-access-config vm1 --project ypno-lab",
+    "gcloud compute instances reset vm1 --project ypno-lab",
+    "gcloud compute ssh vm1 --project ypno-lab",
+    "gcloud beta run deploy api --project ypno-lab",
+    "gcloud pubsub topics delete projects/ypno-family/topics/t --project ypno-lab",
+    "gcloud run deploy api --source=gs://b/src.tgz --project ypno-lab",
+    "gcloud run deploy api --flags-file=f.yaml --project ypno-lab",
+    "gcloud run deploy api --configuration=family --project ypno-lab",
+    "gcloud run deploy api --impersonate-service-account=sa@x --project ypno-lab",
+    "gcloud run deploy api --account=a@b --project ypno-lab",
+    "gcloud run deploy api --access-token-file=t --project ypno-lab",
+    "gcloud compute --zone z instances create vm --project ypno-lab",
+    "gcloud pubsub topics create t --project Bad_Project",
+    # kubectl: no or two contexts, other verbs and options, paths
+    "kubectl apply -f a.yaml",
+    "kubectl apply -f a.yaml --context lab --context prod",
+    "kubectl apply -k overlays/lab --context lab",
+    "kubectl apply -f a.yaml --prune --context lab",
+    "kubectl apply -f a.yaml --force --context lab",
+    "kubectl apply -f https://x/a.yaml --context lab",
+    "kubectl apply -f /etc/a.yaml --context lab",
+    "kubectl apply -f ../a.yaml --context lab",
+    "kubectl apply -f - --context lab",
+    "kubectl create deployment d --image=x --context lab",
+    "kubectl create token sa --context lab",
+    "kubectl exec p --context lab",
+    "kubectl edit deploy d --context lab",
+    "kubectl drain node1 --context lab",
+    "kubectl apply -f a.yaml --context lab --kubeconfig other",
+    "kubectl apply -f a.yaml --context lab -s https://x",
+    "kubectl apply -f a.yaml --context lab --server=https://x",
+    "kubectl apply -f a.yaml --context lab --as=admin",
+    "kubectl apply -f a.yaml --context lab --token=x",
+    "kubectl apply -f a.yaml --context lab --insecure-skip-tls-verify",
+    "kubectl delete pod p --context lab --all",
+    "kubectl rollout undo deploy/d --context lab",
+    # an option's value read differently from the CLI: an optional-value flag, a value that is a flag
+    "kubectl delete pod p --context lab --dry-run --context prod",
+    "kubectl delete pod p --context lab --dry-run=client",
+    "kubectl delete pod p -n --context prod --context lab",
+    "kubectl delete pod p -nweb --context lab",
+    "helm uninstall web --namespace --kube-context prod --kube-context lab",
+    "gcloud pubsub topics create t --project ypno-lab --proj=ypno-family",
+    "gcloud pubsub topics create t --project --zone=z",
+    "gcloud run deploy api --impersonate=sa@x --project ypno-lab",
+    # helm: no context, other flags and verbs
+    "helm install web charts/web",
+    "helm install web charts/web --kube-context lab --kube-context prod",
+    "helm install web charts/web --kube-context lab --kubeconfig x",
+    "helm install web charts/web --kube-context lab --kube-apiserver=https://x",
+    "helm install web charts/web --kube-context lab --post-renderer ./r",
+    "helm upgrade web charts/web --kube-context lab --cleanup-on-fail",
+    "helm upgrade web charts/web --kube-context lab --force-replace",
+    "helm install web oci://registry/web --kube-context lab",
+    "helm install web charts/web -f ../x.yaml --kube-context lab",
+    "helm repo add x https://x --kube-context lab",
+    "helm plugin install x --kube-context lab",
+    # never grantable at all
+    "terraform apply lab.tfplan",
+    "terraform -chdir=envs/lab apply lab.tfplan",
+    "tofu apply lab.tfplan",
+    "terragrunt apply",
+    "cobot-rules grant gcloud --target ypno-lab",
+    "git push",
+]
+
 
 def judge(rules, command, agent=None):
     loaded, _, _ = rules.load_rules(None)
@@ -160,3 +272,36 @@ def test_configDir_unset_addsNoTwin(rules, monkeypatch):
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     loaded, _, _ = rules.load_rules(None)
     assert not [r for r in loaded if r.tool in rules.FILE_TOOLS and r.pattern.startswith(os.sep)]
+
+
+@pytest.mark.parametrize(("command", "kind", "target"), GRANT_COVERED)
+def test_grantScope_coveredForm_namesKindAndTarget(rules, command, kind, target):
+    assert rules.grant_scope(command) == (kind, target)
+
+
+@pytest.mark.parametrize("command", GRANT_NOT_COVERED)
+def test_grantScope_anyOtherForm_isNotCovered(rules, command):
+    assert rules.grant_scope(command) is None
+
+
+def test_grantScope_kinds_areTheSpecsSix(rules):
+    kinds = {"gcloud", "gcloud-delete", "kubectl", "kubectl-delete", "helm", "helm-uninstall"}
+    assert set(rules.GRANT_KINDS) == kinds
+
+
+@pytest.mark.parametrize(
+    ("kind", "target", "valid"),
+    [
+        ("gcloud", "ypno-lab", True),
+        ("gcloud", "Ypno-lab", False),
+        ("gcloud", "lab", False),
+        ("gcloud", "a" * 31, False),
+        ("kubectl", "gke_ypno-lab_europe-west1_c1", True),
+        ("kubectl", "arn:aws:eks:eu-west-1:1:cluster/c", True),
+        ("kubectl", "lab;rm", False),
+        ("helm", "", False),
+        ("terraform", "envs/lab", False),
+    ],
+)
+def test_grantTarget_formatPerKind(rules, kind, target, valid):
+    assert rules.valid_grant(kind, target) is valid

@@ -149,3 +149,11 @@ Proof: tests/test_debug_list.py 8 passed (list, --open, none, foreign mode's out
 Open: none.
 Next: T07, the protocol Paths line.
 verified: tree 1984ace2d54f5e6bbbdf1038f8c468ec578e4362 · focused suites
+
+## 2026-11-20 — debug-path T07: the protocol routes an unknown cause to /cobot:debug
+Changed: protocol.md Paths opens with "unknown cause → /cobot:debug."; paid for by "Name the size first:" and "reject a report without them" (now any report, a probe's included).
+Why: spec debug-path story 7; the cap is 3400.
+Proof: tests/test_protocol_paths.py 2 passed; grant texts, check_plugin, cli flags, session, workflow skills 131 passed; check-plugin ok (protocol 3399 chars); markdownlint and ruff clean.
+Open: none.
+Next: T08, the two evals.
+verified: tree ba5e56e3179ea6a349c78ded70a76adefb1f1677 · focused suites

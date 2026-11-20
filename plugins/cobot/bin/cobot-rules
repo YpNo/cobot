@@ -51,6 +51,7 @@ from _cobot_common import (  # noqa: E402
     HelpRequested,
     UsageError,
     checkout_root,
+    cobot_config_dir,
     config_dir,
     data_dir,
     git,
@@ -4961,6 +4962,12 @@ def gate(stdin: str) -> str | None:
         tool = str(payload.get("tool_name", ""))
         cwd = payload.get("cwd")
         agent = payload.get("agent_type") or payload.get("agent_name")
+        command = str((payload.get("tool_input") or {}).get("command") or "")
+        request = grant_request(command) if tool == "Bash" else None
+        if request:  # a grant command: its own answer, before any rule (spec session-grants)
+            decision, why = grant_gate(request, payload)
+            log_event({"tool": "grant", "head": request[0], "decision": decision, "reason": why})
+            return hook_output(decision, why) if decision else None
         rules, warnings, _ = load_rules(cwd)
         for warning in warnings:
             print(f"cobot gate: {warning}", file=sys.stderr)
@@ -5223,6 +5230,202 @@ def helm_scope(words: list[str]) -> tuple[str, str] | None:
     return kind, contexts[0]
 
 
+# ---------------------------------------------------------------- session grants: the store
+
+GRANT_HOURS = 12  # a ceiling for a session that never ends cleanly; SessionEnd removes the file first
+PENDING_SECONDS = 600  # how long the gate's ask stays answerable by the hook
+GRANT_STATE_DAYS = 7
+ATTENDED_ENV = "CLAUDE_CODE_SESSION_ATTENDED"  # "1" where a person answers the prompts (probe P1, P6)
+SESSION_ENV = "CLAUDE_CODE_SESSION_ID"  # the session id Bash sees (probe P6)
+GRANT_COMMAND = ("cobot-rules", "grant")
+GRANT_USAGE = "cobot-rules grant <kind> --target <t>, --revoke [<kind> --target <t>], or --list"
+
+
+def grant_request(command: str) -> tuple[str, str, str] | None:
+    """``(action, kind, target)`` for a ``cobot-rules grant`` command: ``grant``, ``revoke`` (kind
+    and target empty for all), ``list``, or ``malformed`` for anything else that starts like one.
+    None for any other command."""
+    words = command.strip().split()
+    words = words[1:] if words[:1] == ["rtk"] else words
+    if tuple(words[:2]) != GRANT_COMMAND:
+        return None
+    rest = words[2:]
+    if not PLAIN_COMMAND_RE.fullmatch(command.strip()):
+        return "malformed", "", ""
+    if rest == ["--list"]:
+        return "list", "", ""
+    if rest == ["--revoke"]:
+        return "revoke", "", ""
+    if len(rest) == 4 and rest[0] == "--revoke" and rest[2] == "--target":
+        return "revoke", rest[1], rest[3]
+    if len(rest) == 3 and rest[1] == "--target" and not rest[0].startswith("-"):
+        return "grant", rest[0], rest[2]
+    return "malformed", "", ""
+
+
+def main_thread(payload: dict) -> bool:
+    """The main thread sends no agent identity (probe P5); an empty ``agent_type`` is an internal
+    agent's, never the main thread's."""
+    return "agent_id" not in payload and all(payload.get(k) is None for k in ("agent_type", "agent_name"))
+
+
+def grants_path(session: str) -> Path:
+    """Under the config dir, which sandboxed Bash cannot write and the never rows seal."""
+    return cobot_config_dir() / "grants" / f"{session}.json"
+
+
+def load_grants(path: Path) -> dict:
+    """``{"grants": [...], "pending": [...], "log": [...]}``; any defect reads as empty, so a broken
+    or planted file grants nothing."""
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    state = state if isinstance(state, dict) else {}
+    lists = {key: state.get(key) for key in ("grants", "pending", "log")}
+    lists = {key: value if isinstance(value, list) else [] for key, value in lists.items()}
+    pending = [p for p in lists["pending"] if grant_entry(p, ("time",))]
+    return {
+        "grants": [g for g in lists["grants"] if grant_entry(g, ("granted", "expires"))],
+        "pending": [p for p in pending if isinstance(p.get("digest"), str)],
+        "log": [e for e in lists["log"] if isinstance(e, dict)],
+    }
+
+
+def grant_entry(entry: object, times: tuple[str, ...]) -> bool:
+    """A grant or pending entry with a valid kind and target and numeric times."""
+    if not isinstance(entry, dict):
+        return False
+    kind, target = entry.get("kind"), entry.get("target")
+    numeric = all(isinstance(entry.get(t), (int, float)) for t in times)
+    return isinstance(kind, str) and isinstance(target, str) and valid_grant(kind, target) and numeric
+
+
+def update_grants(session: str, change) -> object:
+    """Read, change and write the session's grant file under one lock; ``change`` mutates the state
+    and returns the result. Raises OSError when the file cannot be kept."""
+    path = grants_path(session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load_grants(path)
+        now = time.time()
+        state["pending"] = [p for p in state["pending"] if now - p["time"] <= PENDING_SECONDS]
+        result = change(state, now)
+        save_report_state(path, state)  # the same rename-and-prune write as the report state
+    return result
+
+
+def active_grants(session: object, now: float | None = None) -> list[tuple[str, str]]:
+    """The session's unexpired grants as (kind, target)."""
+    if not isinstance(session, str) or not SESSION_RE.match(session):
+        return []
+    moment = time.time() if now is None else now
+    grants = load_grants(grants_path(session))["grants"]
+    return [(g["kind"], g["target"]) for g in grants if g["expires"] > moment]
+
+
+# ---------------------------------------------------------------- session grants: the gate and the hooks
+
+
+def grant_gate(request: tuple[str, str, str], payload: dict) -> tuple[str | None, str]:
+    """The gate's answer to a grant command: a ask no allow line or grant lifts, after leaving a
+    pending entry for the hook; revoke and list are silent; anything else is refused."""
+    action, kind, target = request
+    session = payload.get("session_id")
+    if action == "malformed":
+        return DENY, f"cobot grant: one plain command, {GRANT_USAGE}"
+    if not main_thread(payload):
+        return DENY, "cobot grant: grants are the main thread's; a subagent never asks for one"
+    if action in ("revoke", "list"):
+        return None, ""
+    if not valid_grant(kind, target):
+        return DENY, f"cobot grant: unknown kind or malformed target ({', '.join(GRANT_KINDS)})"
+    if not isinstance(session, str) or not SESSION_RE.match(session):
+        return DENY, "cobot grant: no session to grant for"
+    entry = {"digest": command_digest(payload), "kind": kind, "target": target}
+    try:
+        update_grants(session, lambda state, now: state["pending"].append({**entry, "time": now}))
+    except OSError as error:
+        return DENY, f"cobot grant: the request could not be prepared ({error})"
+    return ASK, (
+        f"cobot session grant: every {kind} on {target} in this session, until --revoke or "
+        f"{GRANT_HOURS} h; only you can give it"
+    )
+
+
+def command_digest(payload: dict) -> str:
+    command = str((payload.get("tool_input") or {}).get("command") or "")
+    return hashlib.sha256(command.encode()).hexdigest()
+
+
+def posttool(stdin: str) -> None:
+    """PostToolUse on Bash: fires only after the command succeeded (probe P2). A grant is recorded
+    when the gate asked for exactly this command moments ago, on the main thread of a session a
+    person attends; a revoke narrows. Anything else records nothing."""
+    payload = json.loads(stdin)
+    command = str((payload.get("tool_input") or {}).get("command") or "")
+    if "cobot-rules grant" not in command:
+        return  # every other Bash call: out before any parse
+    request = grant_request(command)
+    session = payload.get("session_id")
+    if not request or request[0] not in ("grant", "revoke") or not main_thread(payload):
+        return
+    if not isinstance(session, str) or not SESSION_RE.match(session) or os.environ.get(ATTENDED_ENV) != "1":
+        return
+    update_grants(session, lambda state, now: record_grant(state, now, request, command_digest(payload)))
+    log_event({"tool": "grant", "head": command[:120], "decision": request[0], "reason": "recorded"})
+
+
+def record_grant(state: dict, now: float, request: tuple[str, str, str], digest: str) -> None:
+    action, kind, target = request
+    if action == "revoke":
+        state["grants"] = [g for g in state["grants"] if kind and (g["kind"], g["target"]) != (kind, target)]
+        return
+    match = [p for p in state["pending"] if (p["digest"], p["kind"], p["target"]) == (digest, kind, target)]
+    if not match:
+        return
+    state["pending"].remove(match[0])
+    state["grants"] = [g for g in state["grants"] if (g["kind"], g["target"]) != (kind, target)]
+    expires = now + GRANT_HOURS * 3600
+    state["grants"].append({"kind": kind, "target": target, "granted": now, "expires": expires})
+
+
+def sessionend(stdin: str) -> None:
+    """SessionEnd: the session's grants end with it (probe P4)."""
+    session = json.loads(stdin).get("session_id")
+    if isinstance(session, str) and SESSION_RE.match(session):
+        path = grants_path(session)
+        for leftover in (path, path.with_suffix(".lock")):
+            leftover.unlink(missing_ok=True)
+
+
+def cmd_grant(positional: list[str], options: dict[str, str], flags: set[str]) -> tuple[int, str]:
+    """``cobot-rules grant``: print the request (the hook records it once the owner approved the
+    prompt), or list the session's grants. Writes nothing."""
+    words = ["cobot-rules", *positional]
+    words += [f"--{flag}" for flag in sorted(flags)]
+    words += [w for name, value in options.items() for w in (f"--{name}", value)]
+    action, kind, target = grant_request(" ".join(words)) or ("malformed", "", "")
+    if action == "list":
+        return 0, list_grants(os.environ.get(SESSION_ENV))
+    if action == "revoke":
+        return 0, f"revoke requested: {f'{kind} on {target}' if kind else 'every grant'}; the hook records it"
+    if action == "grant" and valid_grant(kind, target):
+        return 0, (
+            f"grant requested: every {kind} on {target} in this session. It is recorded only once you "
+            "approved the prompt; check with cobot-rules grant --list."
+        )
+    return 2, f"cobot-rules: {GRANT_USAGE}; kinds: {', '.join(GRANT_KINDS)}"
+
+
+def list_grants(session: str | None) -> str:
+    grants = active_grants(session)
+    if not grants:
+        return "no grant in this session"
+    return "\n".join(f"granted: {kind} on {target}" for kind, target in grants)
+
+
 # ---------------------------------------------------------------- the gate under agy (spec antigravity)
 
 AGY_DECISION = {None: "allow", ASK: "force_ask", DENY: "deny"}  # allow defers; never auto_approve
@@ -5308,6 +5511,8 @@ def gate_agy(stdin: str) -> str:
         name, args = str(call["name"]), call.get("args") or {}
         if not isinstance(args, dict):
             raise TypeError("toolCall.args is not an object")
+        if name == "run_command" and grant_request(str(args.get("CommandLine") or "")):
+            return agy_output(DENY, "cobot grant: session grants are Claude Code only (spec session-grants)")
         workspaces = agy_workspaces(payload.get("workspacePaths"))
         plan = agy.translate(name, args, agy.known_servers(Path.home(), workspaces))
         verdict = judge_plan(plan, workspaces, payload.get("cwd"))
@@ -5331,14 +5536,14 @@ VALUE_OPTIONS = {
     "explain": {"tool", "agent"},
     "sync": {"settings"},
     "gate": {"runtime"},
+    "grant": {"target"},
 }
-SWITCHES: dict[str, set[str]] = {}
+SWITCHES: dict[str, set[str]] = {"grant": {"revoke", "list"}}
 
 
-def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str]]:
+def parse_options(argv: list[str]) -> tuple[list[str], dict[str, str], set[str]]:
     """Raises HelpRequested or UsageError (see _cobot_common.parse_cli); the gate takes no option."""
-    positional, options, _ = parse_cli(argv, VALUE_OPTIONS, SWITCHES)
-    return positional, options
+    return parse_cli(argv, VALUE_OPTIONS, SWITCHES)
 
 
 def tool_input_for(tool: str, target: str) -> dict:
@@ -5435,7 +5640,7 @@ def cmd_sync(options: dict[str, str]) -> str:
 
 def main(argv: list[str]) -> int:
     try:
-        positional, options = parse_options(argv)
+        positional, options, flags = parse_options(argv)
     except HelpRequested:
         print(__doc__.strip())
         return 0
@@ -5457,6 +5662,13 @@ def main(argv: list[str]) -> int:
         if output:
             print(output)
         return 0
+    if command in ("posttool", "sessionend"):
+        (posttool if command == "posttool" else sessionend)(sys.stdin.read())
+        return 0
+    if command == "grant":
+        code, text = cmd_grant(positional, options, flags)
+        print(text, file=sys.stdout if code == 0 else sys.stderr)
+        return code
     if command == "check" and len(positional) == 2:
         print(cmd_check(positional[1], options))
         return 0

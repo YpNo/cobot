@@ -132,15 +132,15 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
      - the command is exactly one `cobot-rules grant` segment, and its digest matches a pending
        entry younger than `PENDING_SECONDS` (600), which it consumes;
      - `session_id` matches `SESSION_RE`, and it is the main thread: no `agent_id`, and
-       `agent_type` absent, null or empty;
+       `agent_type` absent or null (an empty one is an internal agent's, not the main thread);
      - the command succeeded (PostToolUse fires only then, P2);
      - `CLAUDE_CODE_SESSION_ATTENDED` is `1` in the hook's environment (P1, P6).
    - The hook writes `<config dir>/cobot/grants/<session_id>.json` with `fcntl` locking and an
      atomic replace: `{kind, target, granted, expires}`. Targets are compared as exact strings.
    - `expires` is `granted + GRANT_HOURS` (12), a ceiling for a session that never ends
      cleanly. A `SessionEnd` hook removes the file. Files older than a week are pruned.
-   - `--revoke [<kind> --target <t>]` narrows silently; `--list` prints the grants and the
-     commands run under them. Both go through the same hook.
+   - `--revoke [<kind> --target <t>]` narrows silently, recorded by the same hook; `--list`
+     reads the file itself (Bash knows `CLAUDE_CODE_SESSION_ID`).
    - On any other Bash command the hook exits at once (a prefix check before any parse).
    - Accept: tests for each condition above, both ways. A malformed file grants nothing. A
      `../` session id writes nothing. A grant call with no pending entry, a stale one, or one for
@@ -267,7 +267,7 @@ re-checked by a gate dry run before folding.
 | 3 | MAJOR | context renamed under a grant | story 2: `kubectl config` writes and `~/.kube/**` never |
 | 4 | MAJOR | shell writes to `never` paths ask; `CLAUDE_CONFIG_DIR` escapes the rows | story 2: shell-write deny, rows from `config_dir()` |
 | 5 | MAJOR | PostToolUse cannot tell a person approved | story 5: pending entry from the gate; P6 host check |
-| 6 | MAJOR | empty `agent_type` reads as the main thread | story 5: main thread is no `agent_id`, `agent_type` empty; P5 widened |
+| 6 | MAJOR | empty `agent_type` reads as the main thread | story 5: main thread is no `agent_id`, no `agent_type` (empty is an agent); P5 widened |
 | 7 | MAJOR | deny-lists miss `-lock=0`, `create token` | story 2 and 4: false spellings, allow-listed options, `create token` never |
 | 8 | MAJOR | an owner `allow Bash(terraform*)` would silence apply | story 3: prompt-only ask |
 | 9 | MINOR | target checks at record time | story 5: format checks, exact strings |

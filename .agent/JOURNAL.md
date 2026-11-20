@@ -125,3 +125,11 @@ Proof: tests/test_probe_report.py 19 passed (both paths: one refusal then marked
 Open: hooks.json's description still says builder report check (T09 docs).
 Next: T04, the debug skill.
 verified: tree be8be74051fc110aeafd275b59b881250251c415 · focused suites
+
+## 2026-11-20 — debug-path T04: /cobot:debug leads the investigation in the main thread
+Changed: skills/debug/SKILL.md (frame with live context, grant list and production confirmation; reproduce; ranked hypotheses; one foreground investigator per hypothesis; at most three rounds; remedies printed, never run, whatever grant; record from template.md checked by cobot-memory debug check before git add; agy fallback), template.md, references/routing.md (the design input's table, git log -S for git bisect, terraform plan printed).
+Why: spec debug-path story 4.
+Proof: tests/test_debug_skill.py 15 passed, with check_plugin, workflow_skills, agents_sync 89 passed; check-plugin ok (31 skills, 10745 chars listed); markdownlint 0.24.2 clean; claude and agy validate pass.
+Open: cobot-memory debug check is named here and arrives in T05.
+Next: T05, the record secret guard.
+verified: tree 479d25c5f3c1696f786a337ac982330e5ee9e0d0 · focused suites

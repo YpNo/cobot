@@ -101,3 +101,11 @@ Proof: challenger SOUND WITH CHANGES (4 MAJOR, 3 MINOR, all folded) and a CLI co
 Open: accepted residuals: the Read tool is ungated for agents; kubeconfig exec entries; an active grant only the skill keeps from a lead mutation.
 Next: T01, the read-list rows.
 verified: tree d8b4cbac3f8e96b807fccb1851817786737bb237 · spec only, no code changed
+
+## 2026-11-20 — debug-path T01: the shared read list stops printing values, switching targets and hanging
+Changed: READ_GUARDS gains kubectl (target and identity flags, -s), istioctl (the same), kubectl get (-o other than wide/name in any spelling or cluster, --template, --raw, watch), kubectl logs (follow), kubectl events (watch) and gcloud (--configuration, --impersonate-service-account, --account, --access-token-file); Guard.why words the reason. never Bash(kubectl diff*--show-secrets*) in every scope.
+Why: spec debug-path story 2 (CLI consult): these forms were silent for the consultant, auditor and learner.
+Proof: tests/test_read_list_limits.py 189 passed; gate corpora (test_cobot_rules, gate_agy, gate_differential, session_grants, consult, sweep) 3130 passed; ruff 0.17.6 check and format clean; check-plugin ok.
+Open: the guards apply to the learner too (it shares the list); kubectl rollout status still waits by default; a --server before the verb on the main thread is not denied by the show-secrets row.
+Next: T02, the investigator agent.
+verified: tree 5c961a7f013969137ca5b47c085c2c53421f5018 · focused gate suite

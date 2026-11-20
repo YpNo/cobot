@@ -859,6 +859,7 @@ class Guard:
     suffix: str = ""
     check: object = None  # Callable[[list[str]], str | None]
     missing: str = ""  # an option without which the command writes or runs (``uv audit --frozen``)
+    why: str = "can write or run"  # what a hit does, in the reason
 
 
 def _words(text: str) -> frozenset[str]:
@@ -1070,6 +1071,82 @@ def curl_unsafe(tokens: list[str]) -> str | None:
     return None
 
 
+# kubectl reference (kubectl options, get, logs, events), read 2026-11-20: flags that point a read
+# at another cluster or identity than the kubeconfig's context (spec debug-path, story 2)
+KUBE_TARGET_FLAGS = frozenset(
+    "--server --token --as --as-group --as-uid --username --password --certificate-authority "
+    "--client-certificate --client-key --tls-server-name --insecure-skip-tls-verify".split()
+)
+KUBECTL_VALUE_LETTERS = "nlockLs"  # short options whose value follows, attached or as the next word
+KUBECTL_PLAIN_OUTPUTS = frozenset({"wide", "name"})  # the formats that print no field values
+KUBECTL_WATCH = frozenset({"--watch", "--watch-only"})
+KUBECTL_FOLLOW = frozenset({"--follow"})
+
+
+def short_letters(token: str) -> str:
+    """The letters a short-option cluster sets, up to and including the first that takes a value:
+    ``-Ao`` is ``Ao``, ``-nprod`` is ``n``; a long option or a plain word sets none."""
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return ""
+    for at, letter in enumerate(token[1:], start=1):
+        if letter in KUBECTL_VALUE_LETTERS:
+            return token[1 : at + 1]
+    return token[1:]
+
+
+def kube_target(tokens: list[str]) -> str | None:
+    """A flag that switches the cluster or identity (``--server``, ``--token``, ``--as`` …), or
+    kubectl's ``-s`` in a cluster; ``--context`` picks a context the owner's kubeconfig names."""
+    for token in tokens:
+        if token.split("=", 1)[0] in KUBE_TARGET_FLAGS or "s" in short_letters(token):
+            return token
+    return None
+
+
+def kubectl_waits(tokens: list[str], letter: str, longs: frozenset[str]) -> str | None:
+    """A watch or follow flag, long (``--watch=true`` too) or as a letter in a cluster."""
+    for token in tokens:
+        if token.split("=", 1)[0] in longs or letter in short_letters(token):
+            return token
+    return None
+
+
+def kubectl_get_unsafe(tokens: list[str]) -> str | None:
+    """``kubectl get`` that never exits (a watch) or prints field values: an output format other
+    than ``wide`` or ``name`` (``-oyaml``, ``-Ao json``, ``--output=jsonpath=…``), a template or
+    a raw API path. Every word is read, a value too: it over-reads, never under-reads."""
+    waits = kubectl_waits(tokens, "w", KUBECTL_WATCH)
+    if waits:
+        return waits
+    for at, token in enumerate(tokens):
+        name, eq, value = token.partition("=")
+        following = tokens[at + 1] if at + 1 < len(tokens) else ""
+        letters = short_letters(token)
+        if name in ("--template", "--raw"):
+            return token
+        if name == "--output":
+            output = value if eq else following
+        elif letters.endswith("o"):
+            output = token[len(letters) + 1 :].removeprefix("=") or following
+        else:
+            continue
+        if output not in KUBECTL_PLAIN_OUTPUTS:
+            return token
+    return None
+
+
+def kubectl_logs_follows(tokens: list[str]) -> str | None:
+    return kubectl_waits(tokens, "f", KUBECTL_FOLLOW)
+
+
+def kubectl_events_watches(tokens: list[str]) -> str | None:
+    return kubectl_waits(tokens, "w", KUBECTL_WATCH)
+
+
+KUBE_TARGET_WHY = "switches the cluster or identity"
+NEVER_EXITS_WHY = "never exits"
+
+
 # each row's source: the installed --help (version) or the upstream reference, read 2026-11-13
 READ_GUARDS: dict[str, Guard] = {
     # bfs 4.1.1 and GNU findutils find(1): actions that delete, run or write
@@ -1111,6 +1188,17 @@ READ_GUARDS: dict[str, Guard] = {
     # schema starts every provider binary, one committed under .terraform/ included
     "terraform providers": Guard(verbs=_words("lock mirror schema")),  # developer.hashicorp.com
     "tofu providers": Guard(verbs=_words("lock mirror schema")),
+    # spec debug-path, story 2: no field values, no other cluster or identity, no endless read
+    "kubectl": Guard(check=kube_target, why=KUBE_TARGET_WHY),
+    "istioctl": Guard(check=kube_target, why=KUBE_TARGET_WHY),
+    "kubectl get": Guard(check=kubectl_get_unsafe, why="prints values or never exits"),
+    "kubectl logs": Guard(check=kubectl_logs_follows, why=NEVER_EXITS_WHY),
+    "kubectl events": Guard(check=kubectl_events_watches, why=NEVER_EXITS_WHY),
+    # gcloud reference (gcloud topic flags), read 2026-11-20
+    "gcloud": Guard(
+        long=_words("configuration impersonate-service-account account access-token-file"),
+        why="switches the account or configuration",
+    ),
     "kubectl kustomize": Guard(long=_words("output"), short="o"),  # kubectl reference
     "kustomize build": Guard(long=_words("output"), short="o"),
     "helm template": Guard(long=_words("output-dir dependency-update")),  # helm.sh docs
@@ -1140,7 +1228,7 @@ def guarded(plain: list[str]) -> str | None:
             return f"{key} without {guard.missing} can write or run; {READ_LIST_GAP}"
         token = guard and guarded_token(tokens, guard)
         if token:
-            return f"{key} '{token[:30]}' can write or run; {READ_LIST_GAP}"
+            return f"{key} '{token[:30]}' {guard.why}; {READ_LIST_GAP}"
     return None
 
 

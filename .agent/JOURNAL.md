@@ -425,3 +425,11 @@ Proof: full suite 3514 passed, 98.46 %; ruff, markdownlint, check-plugin, sync-a
 Open: cobot-memory check warns JOURNAL.md is over 400 lines (compact is the owner's call).
 Next: the owner pushes feat/trust-boundaries and opens its PR.
 verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate, cobot-memory check
+
+## 2026-11-20 — spec session-grants (0.4.0), challenged
+Changed: .agent/specs/session-grants.md revision 2 (299 lines): gcloud, kubectl and helm grants per kind (deletes separate) on one explicit target, recorded by a PostToolUse hook only against a pending entry the gate wrote when it asked, main thread and Claude Code only; the gate emits allow for a covered command only (ADR-0008, decision 34 planned); grant_scope as allow-lists of groups, verbs and options; Terraform apply and destroy move from never to a prompt-only ask, never granted; the never list grows (state surgery and -lock= false spellings, token and secret printers, kubeconfig writes, cluster wipes, rm -rf of / and home, owner rule files from config_dir(), shell writes to never paths denied). T01 probes P1-P7 first.
+Why: 0.4.0 scope (owner, 2026-11-14), design input owner-ideas-03 §4; owner answers 2026-11-20: Claude Code only, deletes separate, gate tests plus apply-asks eval, no Terraform grants.
+Proof: two cold reads of the gate and docs; challenger RETHINK (2 BLOCKER, 6 MAJOR, 1 MINOR) and a CLI consult against upstream docs, every claim re-checked by gate dry runs, all folded; Terraform answer asked after BLOCKER 2.
+Open: the probe (T01) can still stop the design (P1, P2, P6).
+Next: T01, the probe.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · spec only, no code; gate dry runs of the challenged commands

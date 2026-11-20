@@ -52,12 +52,14 @@ import _cobot_agy as agy  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
+    DEBUG_REDACTED,
     HelpRequested,
     UsageError,
     checkout_root,
     cobot_config_dir,
     config_dir,
     data_dir,
+    debug_secret_kind,
     git,
     git_bytes,
     memory_dir,
@@ -4761,10 +4763,45 @@ def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent
         return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
     if tool in FILE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        return judge_file(tool, str(path), cwd, rules, agent) if path else Verdict(None, None, "no path")
+        if not path:
+            return Verdict(None, None, "no path")
+        verdict = judge_file(tool, str(path), cwd, rules, agent)
+        if verdict.decision == DENY:
+            return verdict
+        return debug_record_secret(tool, str(path), tool_input, cwd) or verdict
     if tool.startswith("mcp__"):
         return judge_mcp(tool, rules, agent)
     return Verdict(None, None, "tool not governed")
+
+
+DEBUG_FOLDER = "debug"  # under the memory folder: the debug records (spec debug-path, story 5)
+
+
+def written_text(tool: str, tool_input: dict) -> str:
+    """The new text a file tool writes: Write's content, Edit's and MultiEdit's new strings, a
+    notebook cell's new source."""
+    if tool == "MultiEdit":
+        edits = tool_input.get("edits") or []
+        return "\n".join(str(e.get("new_string") or "") for e in edits if isinstance(e, dict))
+    field = {"Write": "content", "Edit": "new_string", "NotebookEdit": "new_source"}.get(tool, "")
+    return str(tool_input.get(field) or "")
+
+
+def debug_record_secret(tool: str, path: str, tool_input: dict, cwd: str | None) -> Verdict | None:
+    """A deny when the write lands under the memory's ``debug/`` folder (resolved, so foreign mode's
+    outside folder too) and its new text is secret-shaped; the reason names the kind, never the
+    text. Any other file is judged by the rules alone."""
+    if DEBUG_FOLDER not in path:
+        return None
+    base = Path(cwd) if cwd else Path.cwd()
+    target = (base / path).resolve()
+    folder = (memory_dir(cwd) / DEBUG_FOLDER).resolve()
+    if folder not in target.parents:
+        return None
+    kind = debug_secret_kind(written_text(tool, tool_input))
+    if not kind:
+        return None
+    return Verdict(DENY, None, f"a debug record would hold {kind}; write {DEBUG_REDACTED} in its place")
 
 
 # ---------------------------------------------------------------- commands

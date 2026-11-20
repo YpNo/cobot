@@ -7,7 +7,9 @@ Commands
                                    create CONTEXT, JOURNAL, FINDINGS from the templates; never overwrites
   stamp                            ok <sha> | missing — <reason>: is HEAD covered by the last verified stamp
   trust                            trusted: <reason> | untrusted: <reason>
-  check                            mode, trust, files, journal order, brief size
+  check                            mode, trust, files, journal order, brief size; exit 1 on a bad debug record
+  debug check [FILE]               a debug record (or every one) without secret-shaped lines or excerpts over
+                                   20 lines or 2000 characters; exit 1 naming file and line
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
   journal add [ENTRY]              append the entry (argument or stdin): ## YYYY-MM-DD — title, then the fields
   findings add "<seen>" "<observation>" [--goes-to X] | findings list [--open] | findings close F-nn "<reason>"
@@ -54,6 +56,7 @@ from _cobot_common import (  # noqa: E402
     cobot_config_dir,
     config_dir,
     data_dir,
+    debug_record_problems,
     external_memory,
     git,
     git_bytes,
@@ -1069,6 +1072,31 @@ def missing_header_fields(mem: Memory) -> list[str]:
     return [key for key in HEADER_FIELD_RE.findall(head) if key not in present]
 
 
+def debug_problems(mem: Memory, file: str = "") -> tuple[list[str], int]:
+    """``<record>:<line>: <why>`` for each secret-shaped line or oversized excerpt in one record, or
+    in every record under the memory's ``debug/`` folder, and how many records were read."""
+    folder = mem.dir / "debug"
+    paths = [Path(file)] if file else sorted(folder.glob("*.md")) if folder.is_dir() else []
+    problems: list[str] = []
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            problems.append(f"{path.name}: unreadable ({type(error).__name__})")
+            continue
+        problems += [f"{path.name}:{line}: {why}" for line, why in debug_record_problems(text)]
+    return problems, len(paths)
+
+
+def cmd_debug_check(mem: Memory, file: str) -> tuple[str, int]:
+    """Exit 1 on a secret-shaped line or an excerpt over the cap (spec debug-path, story 5): run it
+    before ``git add``; the fix is in the record, never in the check."""
+    problems, count = debug_problems(mem, file)
+    if problems:
+        return "\n".join([f"debug: {len(problems)} problem(s) in {count} record(s)", *problems]), 1
+    return f"debug: ok, {count} record(s)", 0
+
+
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
@@ -1086,6 +1114,9 @@ def cmd_check(mem: Memory) -> str:
     if waiting:
         lines.append(f"noticed: {len(waiting)} waiting; /cobot:wrap files or drops each")
     lines.append(f"knowledge: {', '.join(mem.knowledge_topics()) or 'none'}; specs: {', '.join(mem.specs()) or 'none'}")
+    problems, _ = debug_problems(mem)
+    if problems:
+        lines += [f"debug: {len(problems)} problem(s); fix the records", *(f"  {p}" for p in problems)]
     brief = build_brief(mem, DEFAULT_BUDGET, trust_check=False)
     lines.append(f"brief: {len(brief)} chars (budget {DEFAULT_BUDGET})")
     dropped = DROPPED_RE.search(brief)
@@ -1177,6 +1208,12 @@ def main(argv: list[str]) -> int:
         print(f"{'trusted' if trusted else 'untrusted'}: {reason}{trust_file_note(trusted)}")
     elif command == "check":
         print(cmd_check(mem))
+        if debug_problems(mem)[0]:
+            return 1
+    elif command == "debug" and sub == "check":
+        out, code = cmd_debug_check(mem, positional[2] if len(positional) > 2 else "")
+        print(out)
+        return code
     elif command == "brief":
         print(build_brief(mem, int(options.get("budget", DEFAULT_BUDGET)), trust_check="no-trust-check" not in flags))
     elif command == "journal" and sub == "add":

@@ -133,3 +133,11 @@ Proof: tests/test_debug_skill.py 15 passed, with check_plugin, workflow_skills, 
 Open: cobot-memory debug check is named here and arrives in T05.
 Next: T05, the record secret guard.
 verified: tree 479d25c5f3c1696f786a337ac982330e5ee9e0d0 · focused suites
+
+## 2026-11-20 — debug-path T05: a debug record cannot carry a secret
+Changed: _cobot_common gains DEBUG_SECRET_PATTERNS (SECRET_RE, ya29., JWT, Bearer, URL credentials, client-*-data, "private_key":), debug_secret_kind (line by line, <redacted> dropped) and debug_record_problems (secret lines, fenced excerpts over 20 lines or 2000 chars); the gate denies an Edit, Write, MultiEdit or NotebookEdit resolving under the memory's debug/ folder whose new text matches, naming the kind; cobot-memory debug check [FILE] and check exit 1 naming file and line.
+Why: spec debug-path story 5 (challenger 3).
+Proof: tests/test_debug_records.py 34 passed (one negative per pattern on gate and check, clean record, elsewhere judged as today, the hook end to end; values built at run time); memory, rules, agy, differential, grants, knowledge 3189 passed; ruff clean; check-plugin ok.
+Open: the agy gate path carries only file_path, so under Antigravity only the check before git add holds; a shell write into debug/ asks as any shell write does.
+Next: T06, debug list and the brief count.
+verified: tree 711465a16412af5ca2bcf8b0ee645ea55d8f012e · focused suites

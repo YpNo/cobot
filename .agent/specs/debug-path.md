@@ -239,4 +239,19 @@ Consult point 7 (the read list's description) was checked and holds as written. 
 
 ## Converge
 
-pending
+2026-11-20, T01–T09 on `feat/debug-path`, each a commit with its journal entry.
+
+| story | done in | as written, or how it differs |
+|---|---|---|
+| 1 | T02 | as written; the agent also had to join `plugin.json`'s agents list; forge credential printers ask for it (as for the consultant), only the cloud ones are `never` |
+| 2 | T01 | through `READ_GUARDS` (an agent-scoped allow outranks a plain ask, so rows could not do it); the learner gets the limits too, sharing the list; the `--show-secrets` row is anchored at `kubectl diff`, so `kubectl --server x diff --show-secrets` on the main thread is not denied (`--server` asks for an agent) |
+| 3 | T03 | as written; `ReportKind` picks the check by agent type on both paths |
+| 4 | T04 | as written |
+| 5 | T05 | as written; patterns match line by line (whole-text, `token:\s*` reached the next line); under agy the gate sees no text, only the check holds |
+| 6 | T06 | as written; with no open finding the count is `## FINDINGS open: 0; debug: <n> open` |
+| 7 | T07 | as written; 3399 chars |
+| 8 | T08 | the prompts start with a bare `/cobot:debug` line (without it the model fixed the typo inline: 0.40 and 0.67); one local run each, 1.00 and 1.00; unprompted routing is not graded |
+| 9 | T09 | decision 35, design, architecture (roster now lists the auditor too), configuration, README, CHANGELOG, `hooks.json` description |
+
+Residuals, besides those above: `kubectl rollout status` waits by default and stays silent; in
+the read-only eval run the lead diagnosed without a probe.

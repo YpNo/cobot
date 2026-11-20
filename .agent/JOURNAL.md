@@ -165,3 +165,11 @@ Proof: tests/test_eval_graders.py 105 passed. Local runs (--runs 1, sonnet 5.5, 
 Open: unprompted routing from the protocol line is not graded (the model fixed the typo inline); in the read-only run the lead diagnosed without a probe.
 Next: T09, the docs.
 verified: tree ff4a1311ac54397a38a99b5474bb8b8f9d725327 · grader tests and local evals
+
+## 2026-11-20 — debug-path T09: decision 35 and the docs; the spec converged
+Changed: decision 35 in docs/01-decisions.md; docs/02-design.md (layout, a debug lead and investigator role, the unknown-cause path, the never row, the debug record, model routing, budget 650, two eval rows); docs/architecture.md (report check, roster with the auditor and the investigator, /cobot:debug, flow, debug list); docs/configuration.md (the debug record, the report state, the read-list limits); README (overview, diagram, eleven agents, usage, agy notes); CHANGELOG Added, Changed and Security; hooks.json description; the spec's Converge table.
+Why: spec debug-path story 9.
+Proof: full suite 4128 passed, coverage 98.43% (fail-under 85); markdownlint-cli2 0.24.2 clean over 139 files; ruff 0.17.6 check and format clean; shellcheck clean; check-plugin ok (agents ≈ 620 of 650 tokens, protocol 3399 chars); sync-agents --check in sync; claude plugin validate --strict and agy plugin validate pass.
+Open: unprompted routing to /cobot:debug is not graded; kubectl rollout status waits by default; the forge credential printers ask for the investigator rather than deny.
+Next: the owner's word on pushing chore/housekeeping and feat/debug-path.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · full suite with coverage, lint, validators

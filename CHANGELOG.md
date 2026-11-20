@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A debug path (decision 35).** `/cobot:debug <symptom>` leads a diagnosis in the main thread
+  when the cause is unknown. It frames the symptom with the live context and your active grants,
+  and a production target waits for your word. It reproduces the symptom, ranks two to five
+  hypotheses, and sends one read-only `cobot:investigator` per hypothesis, each with the expert
+  skill its routing table names. At most three rounds end in a root cause with evidence, or in
+  what to collect next. The remedy is printed with its inverse, never run, whatever grant the
+  session holds. A code fix goes to the build path or a spec. Eval cases
+  `debug-routes-by-evidence` and `debug-read-only`.
+- **The investigator agent.** It tests one hypothesis against one target. It shares the
+  consultant's read list, never holds a grant, and has no command tool under agy. Its report
+  carries each read as a command with its exit code and a short excerpt, a verdict, and the reads
+  it needs you or the lead to run. A report without proof goes back once, like a builder's, and
+  nothing is parked.
+- **Debug records.** Each investigation is kept in `.agent/debug/<date>-<slug>.md`, committed
+  like a spec. `cobot-memory debug list [--open]` lists them, and the brief's findings line counts
+  the open ones.
+
 - **Session grants (decision 34, ADR-0008).** For a lab or a demo, you can let the main thread
   run one kind of write on one named target for the rest of a Claude Code session: `gcloud` or
   `gcloud-delete` on a project, `kubectl`, `kubectl-delete`, `helm` or `helm-uninstall` on a
@@ -84,6 +101,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The read-only agents' read list is tighter (decision 35).** For the consultant, learner,
+  auditor and investigator, these now ask instead of running silently:
+  - a `kubectl get` output that prints field values (anything but `-o wide` and `-o name`, plus
+    `--template` and `--raw`);
+  - reads that never end (`logs -f`, `get -w`, `events --watch`);
+  - flags that point at another cluster, account or identity (`--server`, `--token`, `--as`;
+    gcloud `--configuration`, `--account`, `--impersonate-service-account`,
+    `--access-token-file`).
+
+  `--context` stays silent. A live `-o yaml` audit now asks you.
+- **The protocol routes an unknown cause to `/cobot:debug`.** It is still within 3400 characters.
+- **The agent listing budget is 650 tokens** (was 600), for the investigator's line.
 - **`terraform apply` and `destroy` ask instead of being denied** (also `tofu` and
   `terragrunt`). Each one is your answer at the prompt: no `allow` line and no grant silences
   it. The protocol and `lang-terraform` apply only a saved plan made inside the folder, on the
@@ -163,6 +192,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **A debug record cannot carry a secret (decision 35).** The gate refuses an Edit or Write under
+  `.agent/debug/` whose text holds a known token format, a `ya29.` token, a JWT, a `Bearer`
+  header, a password in a URL, kubeconfig key data or a service-account key. The refusal names
+  the kind, never the text. `cobot-memory debug check` runs before `git add`, and `check` exits 1
+  on such a line or on an excerpt over 20 lines or 2000 characters. Under agy only the check
+  holds.
+- **`kubectl diff --show-secrets` is `never`** in every scope.
 - **New `never` rows no grant and no prompt reaches:** Terraform state surgery (`state
   rm|mv|push|replace-provider`, `force-unlock`, CLI `import`, `taint`, `untaint`, `workspace
   delete -force`, any false `-lock=`); a delete of a `*tfstate*` object or bucket; `gcloud

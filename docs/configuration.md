@@ -30,7 +30,8 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
 | `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
-| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>`; the gate's per-session ask counts under `cobot/asks/` (rule texts and counts, a week kept); the report check's per-session state under `cobot/reports/` (refused builder ids, and an id with the sha256 of each report let through, never the report text; a week kept) |
+| `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>`; the gate's per-session ask counts under `cobot/asks/` (rule texts and counts, a week kept); the report check's per-session state under `cobot/reports/` (refused builder and investigator ids, and an id with the sha256 of each report let through, never the report text; a week kept) |
+| `.agent/debug/<date>-<slug>.md` | Markdown from `skills/debug/template.md`, `status: open \| resolved \| unresolved` | absent | one record per `/cobot:debug` investigation, committed like a spec (outside the tree in foreign mode); the gate refuses an Edit or Write there whose text is secret-shaped (`SECRET_RE` plus `ya29.` tokens, JWTs, `Bearer` headers, URL credentials, kubeconfig `client-*-data`, `"private_key":`), naming the kind, and `cobot-memory debug check` and `check` exit 1 on one or on an excerpt over 20 lines or 2000 characters; `<redacted>` is clean; the brief's findings line ends `; debug: <n> open` (decision 35) |
 | `.agent/noticed.md` | Markdown, one dated line per item | absent | builders' `Noticed:` items the report hook parked; `/cobot:wrap` files or drops each, and `cobot-memory noticed list` and `noticed clear` read and empty it |
 | `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `MISE_DATA_DIR`, `ASDF_DATA_DIR`, `CONTAINER_ID` | read only | unset | what `cobot-env detect` reads besides PATH: the engine behind docker, the mise and asdf shims folders (a hit there is a shim, not trusted in foreign mode; decision 29), the distrobox it runs in |
 | `COBOT_RULES_OWNER`, `COBOT_RULES_PROJECT_DIR` | paths | unset | override the owner file and the project directory (tests, spikes) |
@@ -300,19 +301,34 @@ judges its tools.
 
 ## Cloud read lists
 
-The security sweep's `cobot:auditor` reads with the consultant's list: every `@consultant` row
-applies to it, and to no other agent name (an agent of your own called `auditor` keeps no scope).
+The security sweep's `cobot:auditor` and the debug path's `cobot:investigator` read with the
+consultant's list: every `@consultant` row applies to them, and to no other agent name (an agent
+of your own called `auditor` or `investigator` keeps no scope). A session grant never reaches
+them.
 
-For the read-only agents (consultant, learner, auditor), `gcloud … list|describe`,
+For the read-only agents (consultant, learner, auditor, investigator), `gcloud … list|describe`,
 `kubectl get|describe|logs|diff`, `helm template|lint`, `kustomize build`, `kubeconform` and
 `istioctl analyze|proxy-status` are silent like `gh api repos/*`. A command that could run
 repository content (an environment assignment, `git -c`, `--kubeconfig`, `--post-renderer`,
 `--enable-exec`) asks instead, and `kubectl get secret` is denied for them (decision 28,
-ADR-0006).
+ADR-0006). These ask too (decision 35):
+
+- an output that prints field values: `kubectl get` with `-o` or `--output` other than `wide` or
+  `name` (`-oyaml`, `-o=json`, `-Ao jsonpath=…`), `--template` or `--raw`;
+- a read that never ends: `kubectl logs -f|--follow`, `kubectl get|events -w|--watch|--watch-only`,
+  in a short cluster too (`-pf`, `-Aw`);
+- another cluster or identity than the kubeconfig's context: on `kubectl` and `istioctl`,
+  `--server` (`-s`), `--token`, `--as`, `--as-group`, `--as-uid`, `--username`, `--password`,
+  `--certificate-authority`, `--client-certificate`, `--client-key`, `--tls-server-name`,
+  `--insecure-skip-tls-verify`; on `gcloud`, `--configuration`, `--impersonate-service-account`,
+  `--account`, `--access-token-file`. `--context` stays silent: it names a context of your own
+  kubeconfig.
+
+`kubectl diff --show-secrets` is denied in every scope, the main thread included.
 
 ## What the read lists never cover
 
-For the consultant and the learner, a read-list command loses its read list, and asks, when it
+For the read-only agents, a read-list command loses its read list, and asks, when it
 could write a file or run a program (decision 28, `.agent/specs/gate-findings.md`):
 
 - a command word that only starts like a read row: `cat*` covers `cat` and `cat …`, never

@@ -157,3 +157,11 @@ Proof: tests/test_protocol_paths.py 2 passed; grant texts, check_plugin, cli fla
 Open: none.
 Next: T08, the two evals.
 verified: tree ba5e56e3179ea6a349c78ded70a76adefb1f1677 · focused suites
+
+## 2026-11-20 — debug-path T08: evals debug-routes-by-evidence and debug-read-only
+Changed: two cases sharing one fixture (a Deployment with DATABSE_URL, captured describe and previous logs from context lab, no cluster); routing graders: an Agent call to cobot:investigator, expert-kubernetes named, the cause named, a kubectl remedy printed, no question; read-only graders: no kubectl mutation, no Edit or Write under k8s/, an inverse printed, no fixed claim, no question; matches() tests for both.
+Why: spec debug-path story 8.
+Proof: tests/test_eval_graders.py 105 passed. Local runs (--runs 1, sonnet 5.5, Claude Code 2.1.311): first without the skill named, 0.40 and 0.67 (the model fixed the typo inline); then with the skill in backticks, 0.40 and 0.83 (not expanded); then with a bare /cobot:debug first line, as sweep-fan-out does: 1.00 (/bin/bash.25, two foreground investigators with expert-kubernetes) and 1.00 (/bin/bash.12). Total about $0.80.
+Open: unprompted routing from the protocol line is not graded (the model fixed the typo inline); in the read-only run the lead diagnosed without a probe.
+Next: T09, the docs.
+verified: tree ff4a1311ac54397a38a99b5474bb8b8f9d725327 · grader tests and local evals

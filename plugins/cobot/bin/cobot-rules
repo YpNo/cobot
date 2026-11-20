@@ -5122,16 +5122,18 @@ def rules_committed(workspaces: list[str]) -> bool:
     return bool(workspaces)
 
 
-def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdict:
-    """The verdict for one translated agy call: the strictest over its Claude-shaped calls."""
+def _judge_plan_with_rules(
+    plan: agy.Plan, workspaces: list[str], cwd: str | None
+) -> tuple[Verdict, list[Rule]]:
+    """The verdict for one translated agy call and the loaded rules (used for repeated-ask offers)."""
     if plan.decision is not None:
-        return Verdict(BY_NAME[plan.decision], None, plan.note)
+        return Verdict(BY_NAME[plan.decision], None, plan.note), []
     if not workspaces:
-        return Verdict(ASK, None, NO_WORKSPACE)
+        return Verdict(ASK, None, NO_WORKSPACE), []
     if plan.needs_committed_rules:
         if not rules_committed(workspaces):
-            return Verdict(ASK, None, UNCOMMITTED_RULES)
-        return Verdict(ASK if plan.at_least_ask else None, None, plan.note)
+            return Verdict(ASK, None, UNCOMMITTED_RULES), []
+        return Verdict(ASK if plan.at_least_ask else None, None, plan.note), []
     rules, warnings = load_rules_agy(workspaces)
     for warning in warnings:
         print(f"cobot gate: {warning}", file=sys.stderr)
@@ -5151,8 +5153,14 @@ def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdic
         if outranks(verdict, best):
             best = verdict
     if plan.at_least_ask and best.decision is None:
-        return Verdict(ASK, None, plan.note)
-    return named_asks(best, asks, None)
+        return Verdict(ASK, None, plan.note), rules
+    return named_asks(best, asks, None), rules
+
+
+def judge_plan(plan: agy.Plan, workspaces: list[str], cwd: str | None) -> Verdict:
+    """The verdict for one translated agy call: the strictest over its Claude-shaped calls."""
+    verdict, _ = _judge_plan_with_rules(plan, workspaces, cwd)
+    return verdict
 
 
 def agy_workspaces(value: object) -> list[str]:
@@ -5174,7 +5182,7 @@ def gate_agy(stdin: str) -> str:
             raise TypeError("toolCall.args is not an object")
         workspaces = agy_workspaces(payload.get("workspacePaths"))
         plan = agy.translate(name, args, agy.known_servers(Path.home(), workspaces))
-        verdict = judge_plan(plan, workspaces, payload.get("cwd"))
+        verdict, rules = _judge_plan_with_rules(plan, workspaces, payload.get("cwd"))
         head = str(
             args.get("CommandLine") or args.get("Input") or args.get("TargetFile") or args.get("Path") or ""
         )
@@ -5185,6 +5193,8 @@ def gate_agy(stdin: str) -> str:
         pushes = base and name == "run_command" and verdict.decision == ASK and PUSH_RE.search(head)
         suffix = stamp_suffix(base) if pushes else ""  # no project, no stamp: the hook's folder is the plugin
         reason = verdict.reason(REASON_LIMIT - len(suffix)) + suffix
+        if name == "run_command" and verdict.decision == ASK:
+            reason = with_offer(reason, verdict, payload.get("conversationId"), rules)
     except Exception as error:  # noqa: BLE001 - any failure must end in "deny" under agy
         return agy_output(DENY, f"cobot gate could not judge the call ({type(error).__name__}: {error})")
     return json.dumps({"decision": agy_verdict_decision(verdict), "reason": reason[:REASON_LIMIT]})

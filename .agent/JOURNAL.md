@@ -385,3 +385,11 @@ Proof: 7df290d + T08 checks: ruff (check + format), shellcheck, check-plugin (30
 Open: live signed-in smoke-agy.sh and live agy swarm/subagent runs remain not run inside the sandboxed HOME; brief remains at 6000/6000 chars.
 Next: owner pushes feat/agy-agnostic and runs ./install.sh --agy && sh scripts/spikes/smoke-agy.sh in a signed-in terminal.
 verified: 7df290d · pytest+cov (98.25%, 4 pre-existing macOS failures), ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, agy plugin validate --strict
+
+## 2026-11-20 — rebase onto main (PRs #74/#75) and agy parity adaptations
+Changed: rebased feat/agy-agnostic onto origin/main 356b6ff (memory-and-ship + builder-proof-hosts); cobot-rules (_judge_plan_with_rules + with_offer wired into gate_agy via conversationId, tests in test_gate_agy.py); cobot-memory (config_prefix propagates COBOT_CONFIG_DIR ahead of CLAUDE_CONFIG_DIR, test_cobot_memory.py); skills/onboard, build, wrap, ship, spec, consult, security-sweep merged FOREGROUND dual-host strings + stamp --tree + noticed + manual agy invoke_subagent/swarm proof & noticed add; renumbered agy-agnostic decision to 33 in docs/01-decisions.md, CHANGELOG.md, CONTEXT.md, and recorded post-rebase adaptations in .agent/specs/agy-agnostic.md and docs/reference/antigravity-mechanics.md.
+Why: integrate main PRs #74/#75 without losing agy parity or breaking check-plugin / workflow skill invariants.
+Proof: TDD tests added first and verified failing then passing (with_offer on gate_agy, COBOT_CONFIG_DIR config_prefix, skill checks); verified post-commit across ruff, shellcheck, check-plugin, sync-agents --check, markdownlint-cli2, cobot-memory check, throwaway HOME install.sh --agy + agy plugin validate --strict, targeted pytest, and full pytest --cov.
+Open: 4 pre-existing Linux-path/APFS failures in test_cobot_rules.py + 1 APFS raw-byte failure in test_cobot_memory.py on macOS; live signed-in smoke-agy.sh remains not run in sandbox.
+Next: push feat/agy-agnostic and run ./install.sh --agy && sh scripts/spikes/smoke-agy.sh in signed-in owner terminal.
+verified: tree e777342fa3cde2d7a8e88c1f252b4b00e2e76470 · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, agy plugin validate --strict

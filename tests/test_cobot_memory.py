@@ -1000,7 +1000,14 @@ def test_trustNotRecorded_carriesTheConfigDirOfThisRun(memory, repo, monkeypatch
     assert f"CLAUDE_CONFIG_DIR={os.environ['CLAUDE_CONFIG_DIR']} " in line
     monkeypatch.delenv("CLAUDE_CONFIG_DIR")
     plain = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
-    assert "CLAUDE_CONFIG_DIR=" not in plain
+    assert "CLAUDE_CONFIG_DIR=" not in plain and "COBOT_CONFIG_DIR=" not in plain
+    cobot_dir = os.path.join(os.path.dirname(os.environ["HOME"]), "xdg-cobot")
+    monkeypatch.setenv("COBOT_CONFIG_DIR", cobot_dir)
+    cobot_line = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert f"COBOT_CONFIG_DIR={cobot_dir} " in cobot_line
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", os.path.join(os.environ["HOME"], ".claude"))
+    preferred_line = memory.trust_not_recorded(mem, Path("/x/trusted"), error, "--trust-root")
+    assert f"COBOT_CONFIG_DIR={cobot_dir} " in preferred_line and "CLAUDE_CONFIG_DIR=" not in preferred_line
 
 
 # ---------------------------------------------------------------- noticed items (story 3)

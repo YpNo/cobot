@@ -30,7 +30,9 @@ All notable changes to this project are documented here. The format follows
   - Split Antigravity gate asks into session-cacheable `ask` for local repeatable dev commands
     (`git commit/rebase/init`, `docker/podman run`, dependency adds, `make`, `just`, `uvx`, `npx`,
     `npm run`) vs `force_ask` for outward/destructive/privilege/`swarm add`/`swarm model` calls,
-    added `cobot-rules sync --runtime agy`, and added `1.5.11` native `swarm` and
+    wired repeated-ask allow suggestions (`with_offer` via `conversationId`) into `gate_agy`,
+    extended `cobot-memory` `config_prefix()` to propagate `COBOT_CONFIG_DIR` in `trust not
+    recorded:`, added `cobot-rules sync --runtime agy`, and added `1.5.11` native `swarm` and
     `list_resources`/`read_resource` governance in `_cobot_agy.py`.
 - **Builder reports are checked in the desktop app (decision 32, F-35).** There every `Agent`
   call runs in the background, so no report reached the check. A new `PreToolUse` hook on

@@ -529,10 +529,12 @@ def trust_not_recorded(mem: Memory, path: Path, error: OSError, flag: str) -> st
 
 
 def config_prefix() -> str:
-    """``CLAUDE_CONFIG_DIR=<dir> `` when this run has one: a command the owner runs elsewhere must
-    write and read the same trust files (F-47: init and check disagreed on the folder)."""
-    value = os.environ.get("CLAUDE_CONFIG_DIR")
-    return f"CLAUDE_CONFIG_DIR={shlex.quote(value)} " if value else ""
+    """``COBOT_CONFIG_DIR=<dir> `` or ``CLAUDE_CONFIG_DIR=<dir> `` when this run has one: a
+    command the owner runs elsewhere must write and read the same trust files (F-47)."""
+    for var in ("COBOT_CONFIG_DIR", "CLAUDE_CONFIG_DIR"):
+        if value := os.environ.get(var):
+            return f"{var}={shlex.quote(value)} "
+    return ""
 
 
 def trust_file_note(trusted: bool) -> str:

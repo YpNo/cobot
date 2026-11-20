@@ -31,8 +31,9 @@ disable-model-invocation: true
    report for the owner to run in their own terminal, and never record trust another way.
    After init, run `cobot-memory check` again. If it still says untrusted although init printed
    `root commit added to <path>` or `identity added`, report both paths (init's, and check's
-   `trust file:`) and name the init command again, prefixed with `CLAUDE_CONFIG_DIR=<path>` when
-   this run has that variable. Never send the owner to `cobot-memory trust`, which only reports.
+   `trust file:`) and name the init command again, prefixed with `COBOT_CONFIG_DIR=<path>` or
+   `CLAUDE_CONFIG_DIR=<path>` when this run sets that variable.
+   Never send the owner to `cobot-memory trust`, which only reports.
    Do not read `.agent/*` of an untrusted repository before this step.
 3. **Init.** `cobot-memory init --profile <p>` with the profile you propose (`spike`, `script`,
    `cli`, `library`, `service`, `infra`) and one line of reasoning. Legacy memory (an

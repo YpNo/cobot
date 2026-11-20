@@ -42,11 +42,14 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
 ## Hooks
 
 - Events: `SessionStart`, `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`,
-  `Stop`; no `SubagentStop` (docs). `PreToolUse` and `PostToolUse` are grouped with a
-  `matcher` regex; the others are flat lists of handlers, their matcher ignored (docs).
-- Common stdin: `conversationId`, `workspacePaths`, `transcriptPath`, `artifactDirectoryPath`,
-  `modelName`, `lastUserInput`, `hookEventName`, `cwd` (the agent's working directory, 1.5.4+);
-  no agent identity (docs, live).
+  `Stop`; no `SubagentStop`, no `SubagentHandback` (docs). `PostToolUse` receives `toolCall`,
+  `stepIdx`, and `error` only (no tool output text) and returns `{}` — so builder report proof and
+  `Noticed:` parking via `cobot-memory noticed add` remain orchestrator-driven under `agy`.
+  `PreToolUse` and `PostToolUse` are grouped with a `matcher` regex; the others are flat lists
+  of handlers, their matcher ignored (docs).
+- Common stdin: `conversationId` (UUID session identifier used by repeated-ask offers),
+  `workspacePaths`, `transcriptPath`, `artifactDirectoryPath`, `modelName`, `lastUserInput`,
+  `hookEventName`, `cwd` (the agent's working directory, 1.5.4+); no agent identity (docs, live).
 - `PreToolUse` stdin adds `toolCall {id, name, args}`; the answer is `decision`: `allow` defers
   to the next hook or the default policy, `auto_approve` widens, `ask` respects a cached grant,
   `force_ask` does not, `deny` blocks (live; the built-in docs abridge `allow`).

@@ -827,6 +827,52 @@ def test_swarm_add_alwaysForceAsksAndChecksCommittedRulesForNewWorkspace(rules, 
     assert "not a known mode" in answer(rules, payload("swarm", bad_ws, [git_workspace]))["reason"]
 
 
+def _payload_with_session(name, args, workspaces, conversation_id):
+    body = json.loads(payload(name, args, workspaces, cwd=workspaces[0]))
+    body["conversationId"] = conversation_id
+    return json.dumps(body)
+
+
+def test_runCommand_thirdGitCommitInSession_offersOwnerAllowLine(rules, workspace, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    owner_file = tmp_path / "home" / ".config" / "cobot" / "cobot.rules"
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner_file))
+    conv = "01234567-89ab-cdef-0123-456789abcdef"
+    args = {"CommandLine": "git commit -m 'feat: step'", "Cwd": str(workspace)}
+    first = answer(rules, _payload_with_session("run_command", args, [workspace], conv))
+    second = answer(rules, _payload_with_session("run_command", args, [workspace], conv))
+    third = answer(rules, _payload_with_session("run_command", args, [workspace], conv))
+    fourth = answer(rules, _payload_with_session("run_command", args, [workspace], conv))
+    assert first["decision"] == second["decision"] == third["decision"] == fourth["decision"] == "ask"
+    assert "to stop asking:" not in first["reason"] and "to stop asking:" not in second["reason"]
+    assert "to stop asking: allow Bash(git commit*) in " in third["reason"]
+    assert ".config/cobot/cobot.rules" in third["reason"]
+    assert "to stop asking:" not in fourth["reason"]
+
+
+def test_runCommand_thirdOutwardAsk_neverOffersAllowLine(rules, git_workspace, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    conv = "11234567-89ab-cdef-0123-456789abcdef"
+    args = {"CommandLine": "git push origin feat/x", "Cwd": str(git_workspace)}
+    for _ in range(3):
+        out = answer(rules, _payload_with_session("run_command", args, [git_workspace], conv))
+        assert out["decision"] == "force_ask"
+        assert "to stop asking:" not in out["reason"]
+
+
+def test_runCommand_ownerWrittenCommitAsk_neverOffersAllowLine(rules, workspace, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    owner_file = tmp_path / "home" / ".config" / "cobot" / "cobot.rules"
+    owner_file.parent.mkdir(parents=True, exist_ok=True)
+    owner_file.write_text("ask Bash(git commit*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner_file))
+    conv = "21234567-89ab-cdef-0123-456789abcdef"
+    args = {"CommandLine": "git commit -m 'feat: step'", "Cwd": str(workspace)}
+    for _ in range(3):
+        out = answer(rules, _payload_with_session("run_command", args, [workspace], conv))
+        assert "to stop asking:" not in out["reason"]
+
+
 @pytest.mark.parametrize("tool", ["list_resources", "read_resource"])
 def test_mcpResourceTools_governedByServerRules(rules, workspace, tool):
     assert tool in agy_module().AGY_TOOLS

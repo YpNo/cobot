@@ -44,7 +44,8 @@ then one journal line through `cobot-memory journal add`. Stop.
    run `cobot-memory check`, and print the owner-layer allow lines as onboard step 7 does.
    Items under `Noticed:` never go into the code. The report hook parks them in
    `.agent/noticed.md` for wrap, from the `Agent` result or the hand-back. Where no hook saw the
-   report (agy), pass its items to `cobot-memory noticed add` yourself.
+   report (Antigravity `invoke_subagent` or `swarm`), verify the proof yourself before ticking and
+   pass any `Noticed:` items to `cobot-memory noticed add` yourself.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
    layer allows it; never push from here.

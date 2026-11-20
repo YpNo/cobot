@@ -26,10 +26,11 @@ def test_build_journalsWithTheTreeStamp():
 
 
 def test_onboard_untrustedAfterInit_namesInitWithTheConfigDir():
-    # story 6 (F-47): both paths, the prefixed init command, never `cobot-memory trust`
+    # story 6 (F-47) + host-agnostic COBOT_CONFIG_DIR parity
     onboard = text("onboard")
     assert "run `cobot-memory check` again" in onboard and "trust file:" in onboard
-    assert "CLAUDE_CONFIG_DIR=<path>" in onboard and "Never send the owner to `cobot-memory trust`" in onboard
+    assert "COBOT_CONFIG_DIR=<path>" in onboard and "CLAUDE_CONFIG_DIR=<path>" in onboard
+    assert "Never send the owner to `cobot-memory trust`" in onboard
 
 
 def test_ship_groundChecksToolchainsRemoteAndTools():
@@ -53,11 +54,12 @@ def test_ship_groundChecksToolchainsRemoteAndTools():
 
 
 def test_wrapAndBuild_clearTheParkedNotices():
-    # story 3: wrap files or drops each parked item, build parks an async hand-back's itself
+    # story 3: wrap files or drops each parked item, build parks an async hand-back's and agy reports' itself
     wrap = text("wrap")
     assert "cobot-memory noticed list" in wrap and "cobot-memory noticed clear" in wrap
     build = text("build")
     assert "hand-back" in build and "cobot-memory noticed add" in build
+    assert "invoke_subagent" in build and "swarm" in build
 
 
 AGENT_SKILLS = ("build", "consult", "ship", "security-sweep", "wrap", "spec")

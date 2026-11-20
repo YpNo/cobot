@@ -141,3 +141,11 @@ Proof: tests/test_debug_records.py 34 passed (one negative per pattern on gate a
 Open: the agy gate path carries only file_path, so under Antigravity only the check before git add holds; a shell write into debug/ asks as any shell write does.
 Next: T06, debug list and the brief count.
 verified: tree 711465a16412af5ca2bcf8b0ee645ea55d8f012e · focused suites
+
+## 2026-11-20 — debug-path T06: debug records are listed, and the brief counts the open ones
+Changed: Memory.debug_records (status and title from each record's head, newest first); cobot-memory debug list [--open]; the brief's findings line ends "; debug: <n> open" when a record is open, as "## FINDINGS open: 0; debug: <n> open" when no finding is; untrusted memory loads nothing, so no count.
+Why: spec debug-path story 6 (challenger 6, 7): the brief sits at 5957 of 6000 chars, so a count, not a line.
+Proof: tests/test_debug_list.py 8 passed (list, --open, none, foreign mode's outside folder; brief open, open without findings, none open, untrusted); memory, session, knowledge, workflow-skill suites 234 passed; ruff clean; check-plugin ok; this repo's brief 5823 chars.
+Open: none.
+Next: T07, the protocol Paths line.
+verified: tree 1984ace2d54f5e6bbbdf1038f8c468ec578e4362 · focused suites

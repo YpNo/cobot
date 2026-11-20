@@ -8,6 +8,7 @@ Commands
   stamp                            ok <sha> | missing — <reason>: is HEAD covered by the last verified stamp
   trust                            trusted: <reason> | untrusted: <reason>
   check                            mode, trust, files, journal order, brief size; exit 1 on a bad debug record
+  debug list [--open]              the debug records, newest first: status, name, title
   debug check [FILE]               a debug record (or every one) without secret-shaped lines or excerpts over
                                    20 lines or 2000 characters; exit 1 naming file and line
   brief [--budget N] [--no-trust-check]   the session brief (default budget 6000 chars)
@@ -95,6 +96,9 @@ ENTRY_CAP = 1200
 SPECS_SHOWN = 3  # the brief names the newest specs only; the folder lists them all
 SPEC_HEAD_CHARS = 400  # where a spec's header line, with its date, sits
 SPEC_DATE_RE = re.compile(r"\bdate: (\d{4}-\d{2}-\d{2})\b")
+# a debug record's head (skills/debug/template.md): its status and its title (spec debug-path, story 6)
+DEBUG_STATUS_RE = re.compile(r"(?im)^status:\s*([a-z]+)")
+DEBUG_TITLE_RE = re.compile(r"(?m)^# (?:Debug\s*[—–-]\s*)?(.+)$")
 FINDINGS_FLOOR = 400
 SECTION_MARKER_RESERVE = 120
 BLOCK_SEPARATORS = 80  # headings and blank lines between the brief's blocks
@@ -186,6 +190,19 @@ class Memory:
     def knowledge_topics(self) -> list[str]:
         folder = self.dir / "knowledge"
         return sorted(p.stem for p in folder.glob("*.md")) if folder.is_dir() else []
+
+    def debug_records(self) -> list[tuple[str, str, str]]:
+        """``(name, status, title)`` for each record under ``debug/``, newest first (the names are
+        dated); a record without a ``status:`` line reads ``unknown``."""
+        folder = self.dir / "debug"
+        records = []
+        for path in sorted(folder.glob("*.md"), reverse=True) if folder.is_dir() else []:
+            head = path.read_text(encoding="utf-8", errors="replace")[:SPEC_HEAD_CHARS]
+            status = DEBUG_STATUS_RE.search(head)
+            title = DEBUG_TITLE_RE.search(head)
+            records.append((path.stem, status.group(1).lower() if status else "unknown",
+                            title.group(1).strip() if title else path.stem))  # fmt: skip
+        return records
 
     def specs(self) -> list[str]:
         folder = self.dir / "specs"
@@ -404,10 +421,12 @@ def build_brief(mem: Memory, budget: int, trust_check: bool = True) -> str:
     entries = mem.journal_entries()[:2]
     journal_block = "## JOURNAL (latest)\n" + "\n\n".join(trim_entry(e[1]) for e in entries) if entries else ""
     findings = mem.open_findings()
-    findings_block = ""
+    open_debug = sum(1 for _, status, _ in mem.debug_records() if status == "open")
+    debug_note = f"; debug: {open_debug} open" if open_debug else ""
+    findings_block = f"## FINDINGS open: 0{debug_note}" if debug_note else ""
     if findings:
         rows = "\n".join(f"| {a} | {b} | {c} | {d} |" for a, b, c, d in findings[-3:])
-        findings_block = f"## FINDINGS open: {len(findings)}\n{rows}"
+        findings_block = f"## FINDINGS open: {len(findings)}{debug_note}\n{rows}"
     tail = []
     if mem.knowledge_topics():
         tail.append("knowledge: " + ", ".join(mem.knowledge_topics()))
@@ -1097,6 +1116,14 @@ def cmd_debug_check(mem: Memory, file: str) -> tuple[str, int]:
     return f"debug: ok, {count} record(s)", 0
 
 
+def cmd_debug_list(mem: Memory, only_open: bool) -> str:
+    """``<status>  <name>  <title>`` per record, newest first; ``--open`` keeps the open ones."""
+    records = [r for r in mem.debug_records() if not only_open or r[1] == "open"]
+    if not records:
+        return "debug: no open records" if only_open else "debug: no records"
+    return "\n".join(f"{status:<10}  {name}  {title}" for name, status, title in records)
+
+
 def cmd_check(mem: Memory) -> str:
     trusted, reason = mem.trust()
     mode = "foreign (symlink)" if mem.dir.is_symlink() else ("committed" if mem.dir.is_dir() else "absent")
@@ -1161,6 +1188,7 @@ SWITCHES = {
     "init": {"foreign", "add-identity", "trust-root"},
     "brief": {"no-trust-check"},
     "findings": {"open"},
+    "debug": {"open"},
     "learn": {"dry-run", "keep-assumed", "promote", "in-place", "allow-reported"},
     "knowledge": {"stale", "json", "brief"},
     "compact": {"dry-run", "force"},
@@ -1210,6 +1238,8 @@ def main(argv: list[str]) -> int:
         print(cmd_check(mem))
         if debug_problems(mem)[0]:
             return 1
+    elif command == "debug" and sub == "list":
+        print(cmd_debug_list(mem, "open" in flags))
     elif command == "debug" and sub == "check":
         out, code = cmd_debug_check(mem, positional[2] if len(positional) > 2 else "")
         print(out)

@@ -109,3 +109,11 @@ Proof: tests/test_read_list_limits.py 189 passed; gate corpora (test_cobot_rules
 Open: the guards apply to the learner too (it shares the list); kubectl rollout status still waits by default; a --server before the verb on the main thread is not denied by the show-secrets row.
 Next: T02, the investigator agent.
 verified: tree 5c961a7f013969137ca5b47c085c2c53421f5018 · focused gate suite
+
+## 2026-11-20 — debug-path T02: the investigator, read-only by rule
+Changed: claude-agents/investigator.md (Read, Grep, Glob, Bash, WebFetch; sonnet, medium; prediction first, reads as commands, the given target only, the probe report shape) and its agy twin; plugin.json lists it; SCOPE_ALIASES maps cobot:investigator to the consultant's list; NO_COMMANDS gains it; AGENT_BUDGET_TOKENS 650.
+Why: spec debug-path story 1, owner answer 1.
+Proof: tests/test_investigator.py 47 passed (reads silent, mutations ask, cloud printers denied, same decisions as the consultant over the corpus, look-alike names unscoped); grant_store: a held grant allows the main thread and asks for the investigator; agents_sync, check_plugin, rules, read-list, grants, agy: 3051 passed; check-plugin ok (listing ≈ 620 of 650 tokens); claude and agy validate pass; ruff and markdownlint clean.
+Open: forge credential printers ask rather than deny for the investigator, as for the consultant; the report shape is not checked until T03.
+Next: T03, check_probe_report.
+verified: tree f15e6a0ee1e775f984fc68c2c40850db939d8291 · focused suites

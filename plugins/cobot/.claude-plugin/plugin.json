@@ -13,6 +13,7 @@
     "./claude-agents/challenger.md",
     "./claude-agents/consultant.md",
     "./claude-agents/go-builder.md",
+    "./claude-agents/investigator.md",
     "./claude-agents/learner.md",
     "./claude-agents/python-builder.md",
     "./claude-agents/rust-builder.md",

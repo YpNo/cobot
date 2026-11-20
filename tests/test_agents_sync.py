@@ -36,7 +36,7 @@ def test_agents_committedCopies_matchTheSync(sync):
 def test_agents_everyClaudeAgentHasAnAgyTwin():
     claude_names = {p.stem for p in (PLUGIN / "claude-agents").glob("*.md")}
     assert claude_names == {p.stem for p in (PLUGIN / "agents").glob("*.md")}
-    assert len(claude_names) == 10  # the auditor joined in spec security-auditor
+    assert len(claude_names) == 11  # the auditor (spec security-auditor), the investigator (debug-path)
 
 
 def test_agents_builderTools_mappedToBothFileToolFamilies_skillDropped(sync):
@@ -61,7 +61,7 @@ def test_agents_builderTools_mappedToBothFileToolFamilies_skillDropped(sync):
     assert "commandExecutionPolicy" not in out
 
 
-@pytest.mark.parametrize("name", ["consultant", "learner", "auditor"])
+@pytest.mark.parametrize("name", ["consultant", "learner", "auditor", "investigator"])
 def test_agents_readOnlyResearchers_getNoRunCommand_andCommandsOff(sync, name):
     out = fields(sync, sync.render(claude(name, "Read, Grep, Glob, Bash, WebFetch, WebSearch"), name))
     assert "run_command" not in out["tools"] and "manage_task" not in out["tools"]
@@ -152,6 +152,13 @@ def test_agents_auditorTwin_hasNoCommandTool_andCommandsOff(sync):
     assert twin["commandExecutionPolicy"] == "off" and twin["model"] == "inherit"
     source = sync.claude_fields((PLUGIN / "claude-agents" / "auditor.md").read_text(encoding="utf-8"))
     assert source["model"] == "inherit" and source["effort"] == "high"
+
+
+def test_agents_investigatorTwin_hasNoCommandTool_andCommandsOff(sync):
+    # spec debug-path, story 1: under agy the probe reads files and pages only
+    twin = fields(sync, (PLUGIN / "agents" / "investigator.md").read_text(encoding="utf-8"))
+    assert "run_command" not in twin["tools"] and "manage_task" not in twin["tools"]
+    assert twin["commandExecutionPolicy"] == "off" and twin["model"] == "flash"
 
 
 def test_agents_realTwinsKeepTheirClaudeBody(sync):

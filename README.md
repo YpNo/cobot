@@ -163,7 +163,7 @@ The commands you type, shown as Claude Code names them (under agy, drop `cobot:`
 | `/cobot:spec <what>` | writes the spec and has it challenged |
 | `/cobot:build <spec>` | builds the spec task by task, with proof |
 | `/cobot:wrap` | full checks, reviews, journal; ready for a pull request |
-| `/cobot:rules show \| check "<cmd>" \| explain "<cmd>" \| sync` | shows the rules and what the gate would do with a command; `sync` prints a Claude Code settings block for you to apply |
+| `/cobot:rules show \| check "<cmd>" \| explain "<cmd>" \| sync` | shows the rules and what the gate would do with a command; `sync` prints a Claude Code (or `--runtime agy`) settings block for you to apply |
 | `/cobot:learn <topic>` | researches a topic from primary sources into dated knowledge |
 | `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
 | `/cobot:contribute` | prepares a pull request to someone else's project, under their rules |
@@ -176,13 +176,14 @@ Language skills, experts and builders load on their own when your files need the
 
 The gate, the session brief, the skills and the ten agents come along. What agy cannot carry:
 
-- **Builder proof is asked for, not enforced.** No agy hook sees a subagent's report: read the
-  commands and exit codes yourself before you trust one.
+- **Builder proof and notices are asked for, not enforced.** No agy hook sees a subagent's report
+  (`PostToolUse` sees no tool output, no `SubagentHandback`): read the commands and exit codes
+  yourself before trusting a task, and pass any `Noticed:` items to `cobot-memory noticed add`.
 - **Builders are not fully proven gated.** The gate judged a subagent's calls in the smoke run;
   a cobot builder itself and calls inside `run_workflow` have not run there yet. Review a
   builder's diff before anything outward.
 - **The read-only agents read files only.** agy's hooks don't say which agent is calling, so the
-  consultant and the learner get no command tool there: no `git log` or `gh api` reads.
+  consultant, auditor, and learner get no command tool there: no `git log` or `gh api` reads.
 - **`/onboard`, `/rules` and `/security-sweep` can be started by the model.** agy has no
   owner-only skills; the brief tells the model to wait for you to type them.
 - **The gate fails closed by its answer.** It prints a deny on every failure it can see,
@@ -190,10 +191,11 @@ The gate, the session brief, the skills and the ten agents come along. What agy 
 - **A repository's own agy hooks run beside the gate.** The brief warns when a workspace holds
   hooks or plugins: read them before you let the session run.
 - **The gate respects `agy` execution modes.** Local repeatable dev commands (`git commit`, `uv add`,
-  `make`, `uvx`, `npx`) emit `ask` (honoring *Always Allow* per session), while outward,
-  destructive, credential, `swarm add`, and shell-wrapper calls emit `force_ask`, and `never` rows
-  emit `deny`. `/rules sync --runtime agy` renders `~/.gemini/antigravity-cli/settings.json`
-  permissions without writing to it.
+  `make`, `uvx`, `npx`) emit `ask` (honoring *Always Allow* per session; the third `git commit`
+  or `git rebase` ask in a session also suggests the `allow` rule for your owner rules file),
+  while outward, destructive, credential, `swarm add`, and shell-wrapper calls emit `force_ask`,
+  and `never` rows emit `deny`. `/rules sync --runtime agy` renders
+  `~/.gemini/antigravity-cli/settings.json` permissions without writing to it.
 - **Explicit Gemini agent tiers + overrides.** Agents default to `pro` for adversarial/security/language
   roles and `flash` for parallel `consultant` checklists and lightweight `builder` tasks (never
   `inherit`), overridable via `~/.config/cobot/models.json`, `.agent/models.json`, or `COBOT_AGENT_MODELS`.
@@ -219,9 +221,10 @@ graded against expected behaviour) are in [docs/development.md](docs/development
 ## CI/CD
 
 `ci.yml` runs every check on each push and pull request behind one required check, `ci-ok`; the
-evals run on manual dispatch. A `vX.Y.Z` tag runs `release.yml`, which publishes the GitHub
-release from this changelog. `knowledge-refresh.yml` opens a weekly pull request that refreshes
-the stalest knowledge. Details: [docs/development.md](docs/development.md#cicd).
+evals run on manual dispatch. A `vX.Y.Z` tag runs `release.yml`, which attaches pure host bundles
+(`cobot-claude.zip` and `cobot-agy.zip`) and publishes the GitHub release from this changelog.
+`knowledge-refresh.yml` opens a weekly pull request that refreshes the stalest knowledge. Details:
+[docs/development.md](docs/development.md#cicd).
 
 ## Security
 

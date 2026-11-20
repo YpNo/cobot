@@ -93,3 +93,11 @@ Proof: upstream read 2026-11-20 (PyPI ruff 0.17.6 from 2026-11-19, npm markdownl
 Open: the CI pins of @anthropic-ai/claude-code (2.1.318 in ci.yml, 2.1.322 in knowledge-refresh.yml) trail 2.1.329, left for the owner; markdownlint-cli2 0.24.2 is one day old.
 Next: spec the debug path.
 verified: tree d8b4cbac3f8e96b807fccb1851817786737bb237 · full suite, lint, contract, validate
+
+## 2026-11-20 — spec debug-path (0.4.0), challenged
+Changed: .agent/specs/debug-path.md revision 2 (242 lines): /cobot:debug as the main-thread lead, a read-only cobot:investigator per hypothesis sharing the consultant's read list by alias, a probe report check of its own, records in .agent/debug/ refused at write time when secret-shaped, the shared read list tightened (output formats, target-switching and watch flags ask; --show-secrets never), the protocol's Paths line, two evals; nine tasks.
+Why: owner-ideas-03 §2, the second piece of 0.4.0. Owner's answers: investigator with the agent budget at 650, remedies printed only, records committed.
+Proof: challenger SOUND WITH CHANGES (4 MAJOR, 3 MINOR, all folded) and a CLI consult on the routing reads; every claim re-checked with cobot-rules check dry runs (kubectl get -o yaml, logs -f, --server/--token and gcloud --configuration silent for the consultant today).
+Open: accepted residuals: the Read tool is ungated for agents; kubeconfig exec entries; an active grant only the skill keeps from a lead mutation.
+Next: T01, the read-list rows.
+verified: tree d8b4cbac3f8e96b807fccb1851817786737bb237 · spec only, no code changed

@@ -52,12 +52,14 @@ import _cobot_agy as agy  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
+    DEBUG_REDACTED,
     HelpRequested,
     UsageError,
     checkout_root,
     cobot_config_dir,
     config_dir,
     data_dir,
+    debug_secret_kind,
     git,
     git_bytes,
     memory_dir,
@@ -859,6 +861,7 @@ class Guard:
     suffix: str = ""
     check: object = None  # Callable[[list[str]], str | None]
     missing: str = ""  # an option without which the command writes or runs (``uv audit --frozen``)
+    why: str = "can write or run"  # what a hit does, in the reason
 
 
 def _words(text: str) -> frozenset[str]:
@@ -1070,6 +1073,82 @@ def curl_unsafe(tokens: list[str]) -> str | None:
     return None
 
 
+# kubectl reference (kubectl options, get, logs, events), read 2026-11-20: flags that point a read
+# at another cluster or identity than the kubeconfig's context (spec debug-path, story 2)
+KUBE_TARGET_FLAGS = frozenset(
+    "--server --token --as --as-group --as-uid --username --password --certificate-authority "
+    "--client-certificate --client-key --tls-server-name --insecure-skip-tls-verify".split()
+)
+KUBECTL_VALUE_LETTERS = "nlockLs"  # short options whose value follows, attached or as the next word
+KUBECTL_PLAIN_OUTPUTS = frozenset({"wide", "name"})  # the formats that print no field values
+KUBECTL_WATCH = frozenset({"--watch", "--watch-only"})
+KUBECTL_FOLLOW = frozenset({"--follow"})
+
+
+def short_letters(token: str) -> str:
+    """The letters a short-option cluster sets, up to and including the first that takes a value:
+    ``-Ao`` is ``Ao``, ``-nprod`` is ``n``; a long option or a plain word sets none."""
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return ""
+    for at, letter in enumerate(token[1:], start=1):
+        if letter in KUBECTL_VALUE_LETTERS:
+            return token[1 : at + 1]
+    return token[1:]
+
+
+def kube_target(tokens: list[str]) -> str | None:
+    """A flag that switches the cluster or identity (``--server``, ``--token``, ``--as`` …), or
+    kubectl's ``-s`` in a cluster; ``--context`` picks a context the owner's kubeconfig names."""
+    for token in tokens:
+        if token.split("=", 1)[0] in KUBE_TARGET_FLAGS or "s" in short_letters(token):
+            return token
+    return None
+
+
+def kubectl_waits(tokens: list[str], letter: str, longs: frozenset[str]) -> str | None:
+    """A watch or follow flag, long (``--watch=true`` too) or as a letter in a cluster."""
+    for token in tokens:
+        if token.split("=", 1)[0] in longs or letter in short_letters(token):
+            return token
+    return None
+
+
+def kubectl_get_unsafe(tokens: list[str]) -> str | None:
+    """``kubectl get`` that never exits (a watch) or prints field values: an output format other
+    than ``wide`` or ``name`` (``-oyaml``, ``-Ao json``, ``--output=jsonpath=…``), a template or
+    a raw API path. Every word is read, a value too: it over-reads, never under-reads."""
+    waits = kubectl_waits(tokens, "w", KUBECTL_WATCH)
+    if waits:
+        return waits
+    for at, token in enumerate(tokens):
+        name, eq, value = token.partition("=")
+        following = tokens[at + 1] if at + 1 < len(tokens) else ""
+        letters = short_letters(token)
+        if name in ("--template", "--raw"):
+            return token
+        if name == "--output":
+            output = value if eq else following
+        elif letters.endswith("o"):
+            output = token[len(letters) + 1 :].removeprefix("=") or following
+        else:
+            continue
+        if output not in KUBECTL_PLAIN_OUTPUTS:
+            return token
+    return None
+
+
+def kubectl_logs_follows(tokens: list[str]) -> str | None:
+    return kubectl_waits(tokens, "f", KUBECTL_FOLLOW)
+
+
+def kubectl_events_watches(tokens: list[str]) -> str | None:
+    return kubectl_waits(tokens, "w", KUBECTL_WATCH)
+
+
+KUBE_TARGET_WHY = "switches the cluster or identity"
+NEVER_EXITS_WHY = "never exits"
+
+
 # each row's source: the installed --help (version) or the upstream reference, read 2026-11-13
 READ_GUARDS: dict[str, Guard] = {
     # bfs 4.1.1 and GNU findutils find(1): actions that delete, run or write
@@ -1111,6 +1190,17 @@ READ_GUARDS: dict[str, Guard] = {
     # schema starts every provider binary, one committed under .terraform/ included
     "terraform providers": Guard(verbs=_words("lock mirror schema")),  # developer.hashicorp.com
     "tofu providers": Guard(verbs=_words("lock mirror schema")),
+    # spec debug-path, story 2: no field values, no other cluster or identity, no endless read
+    "kubectl": Guard(check=kube_target, why=KUBE_TARGET_WHY),
+    "istioctl": Guard(check=kube_target, why=KUBE_TARGET_WHY),
+    "kubectl get": Guard(check=kubectl_get_unsafe, why="prints values or never exits"),
+    "kubectl logs": Guard(check=kubectl_logs_follows, why=NEVER_EXITS_WHY),
+    "kubectl events": Guard(check=kubectl_events_watches, why=NEVER_EXITS_WHY),
+    # gcloud reference (gcloud topic flags), read 2026-11-20
+    "gcloud": Guard(
+        long=_words("configuration impersonate-service-account account access-token-file"),
+        why="switches the account or configuration",
+    ),
     "kubectl kustomize": Guard(long=_words("output"), short="o"),  # kubectl reference
     "kustomize build": Guard(long=_words("output"), short="o"),
     "helm template": Guard(long=_words("output-dir dependency-update")),  # helm.sh docs
@@ -1140,7 +1230,7 @@ def guarded(plain: list[str]) -> str | None:
             return f"{key} without {guard.missing} can write or run; {READ_LIST_GAP}"
         token = guard and guarded_token(tokens, guard)
         if token:
-            return f"{key} '{token[:30]}' can write or run; {READ_LIST_GAP}"
+            return f"{key} '{token[:30]}' {guard.why}; {READ_LIST_GAP}"
     return None
 
 
@@ -2978,12 +3068,14 @@ def candidates(tokens: list[str]) -> list[str]:
     return [written, *middle, last] if middle or written != last else [written]
 
 
-SCOPE_ALIASES = {"cobot:auditor": "consultant"}  # spec security-auditor: one read list, two agents
+# one read list, three agents (specs security-auditor and debug-path)
+SCOPE_ALIASES = {"cobot:auditor": "consultant", "cobot:investigator": "consultant"}
 
 
 def agent_matches(scope: str, agent: str | None) -> bool:
-    """``@consultant`` matches ``consultant`` and ``cobot:consultant``, and ``cobot:auditor`` (the
-    hook's namespaced name only: a user's own agent called ``auditor`` keeps no scope)."""
+    """``@consultant`` matches ``consultant`` and ``cobot:consultant``, and ``cobot:auditor`` and
+    ``cobot:investigator`` (the hook's namespaced names only: a user's own agent called
+    ``auditor`` or ``investigator`` keeps no scope)."""
     if not agent:
         return False
     if agent in SCOPE_ALIASES:
@@ -4671,10 +4763,45 @@ def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent
         return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
     if tool in FILE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        return judge_file(tool, str(path), cwd, rules, agent) if path else Verdict(None, None, "no path")
+        if not path:
+            return Verdict(None, None, "no path")
+        verdict = judge_file(tool, str(path), cwd, rules, agent)
+        if verdict.decision == DENY:
+            return verdict
+        return debug_record_secret(tool, str(path), tool_input, cwd) or verdict
     if tool.startswith("mcp__"):
         return judge_mcp(tool, rules, agent)
     return Verdict(None, None, "tool not governed")
+
+
+DEBUG_FOLDER = "debug"  # under the memory folder: the debug records (spec debug-path, story 5)
+
+
+def written_text(tool: str, tool_input: dict) -> str:
+    """The new text a file tool writes: Write's content, Edit's and MultiEdit's new strings, a
+    notebook cell's new source."""
+    if tool == "MultiEdit":
+        edits = tool_input.get("edits") or []
+        return "\n".join(str(e.get("new_string") or "") for e in edits if isinstance(e, dict))
+    field = {"Write": "content", "Edit": "new_string", "NotebookEdit": "new_source"}.get(tool, "")
+    return str(tool_input.get(field) or "")
+
+
+def debug_record_secret(tool: str, path: str, tool_input: dict, cwd: str | None) -> Verdict | None:
+    """A deny when the write lands under the memory's ``debug/`` folder (resolved, so foreign mode's
+    outside folder too) and its new text is secret-shaped; the reason names the kind, never the
+    text. Any other file is judged by the rules alone."""
+    if DEBUG_FOLDER not in path:
+        return None
+    base = Path(cwd) if cwd else Path.cwd()
+    target = (base / path).resolve()
+    folder = (memory_dir(cwd) / DEBUG_FOLDER).resolve()
+    if folder not in target.parents:
+        return None
+    kind = debug_secret_kind(written_text(tool, tool_input))
+    if not kind:
+        return None
+    return Verdict(DENY, None, f"a debug record would hold {kind}; write {DEBUG_REDACTED} in its place")
 
 
 # ---------------------------------------------------------------- commands
@@ -4692,8 +4819,9 @@ REPORT_BLOCK_REASON = (
 )
 
 
-def checks_block(report: str) -> tuple[str, list[str]] | None:
-    """The text after the Checks: header and the lines of its block, or None when absent."""
+def checks_block(report: str, sections: re.Pattern = REPORT_SECTION_RE) -> tuple[str, list[str]] | None:
+    """The text after the Checks: header and the lines of its block up to the next of ``sections``,
+    or None when absent."""
     lines = report.splitlines()
     for index, line in enumerate(lines):
         match = CHECKS_HEADER_RE.match(line)
@@ -4701,7 +4829,7 @@ def checks_block(report: str) -> tuple[str, list[str]] | None:
             continue
         block: list[str] = []
         for following in lines[index + 1 :]:
-            if REPORT_SECTION_RE.match(following):
+            if sections.match(following):
                 break
             block.append(following)
         return match.group(1).strip(), block
@@ -4720,6 +4848,79 @@ def check_report(report: str) -> tuple[bool, str]:
     if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
         return True, "command and exit code present"
     return False, "Checks: without a `command` and an exit marker"
+
+
+# a probe's report (spec debug-path, story 3): its own sections, its own proof
+PROBE_TYPE = "cobot:investigator"  # the hook's namespaced name only, as for the gate's alias
+PROBE_SECTION_RE = re.compile(r"^\s*[-*]?\s*`?(Hypothesis|Prediction|Verdict|Needs|Not checked)`?:")
+VERDICT_RE = re.compile(r"(?im)^\s*[-*]?\s*`?Verdict`?:\s*(confirmed|refuted|inconclusive)\b")
+NEEDS_HEADER_RE = re.compile(r"^\s*[-*]?\s*`?Needs`?:\s*(.*)$")
+PROBE_BLOCK_REASON = (
+    "probe report lacks proof; re-run the probe and require each read under Checks: as `<command>` → "
+    "exit <n> with an excerpt and a Verdict:, or `Checks: none — <reason>` with `Verdict: inconclusive` "
+    "and the reads the lead must run under Needs:"
+)
+PROBE_UNPROVEN_CONTEXT = "UNPROVEN: the probe's report has no command and exit code; do not count its verdict"
+
+
+def needs_items(report: str) -> list[str]:
+    """What a probe asks the lead to run: the text on the ``Needs:`` line and the lines below it,
+    up to the next section; ``none`` is nothing."""
+    lines = report.splitlines()
+    for index, line in enumerate(lines):
+        match = NEEDS_HEADER_RE.match(line)
+        if not match:
+            continue
+        items = [match.group(1).strip()]
+        for following in lines[index + 1 :]:
+            if PROBE_SECTION_RE.match(following) or CHECKS_HEADER_RE.match(following):
+                break
+            items.append(following.strip().lstrip("-* ").strip())
+        return [item for item in items if item and not NO_NOTICE_RE.match(item)]
+    return []
+
+
+def check_probe_report(report: str) -> tuple[bool, str]:
+    """A probe's report passes with a ``Verdict:`` and a command carrying an exit marker under
+    ``Checks:``, or with ``Checks: none — <reason>``, ``Verdict: inconclusive`` and a ``Needs:``
+    that names what the lead must run."""
+    verdict = VERDICT_RE.search(report)
+    if not verdict:
+        return False, "no Verdict: confirmed, refuted or inconclusive"
+    found = checks_block(report, PROBE_SECTION_RE)
+    if found is None:
+        return False, "no Checks: section"
+    head, block = found
+    if CHECKS_NONE_RE.match(head):
+        if verdict.group(1).lower() != "inconclusive":
+            return False, "Checks: none with a verdict other than inconclusive"
+        if not needs_items(report):
+            return False, "Checks: none without what the lead must run under Needs:"
+        return True, "checks: none, inconclusive, needs named"
+    text = "\n".join([head, *block])
+    if COMMAND_RE.search(text) and EXIT_MARKER_RE.search(text):
+        return True, "command and exit code present"
+    return False, "Checks: without a `command` and an exit marker"
+
+
+@dataclass(frozen=True)
+class ReportKind:
+    """How one kind of subagent's report is judged: its check, its words, whether notices park."""
+
+    check: object  # Callable[[str], tuple[bool, str]]
+    block_reason: str
+    unproven_context: str
+    parks: bool
+
+
+def report_kind(agent_type: str) -> ReportKind | None:
+    """Builders keep their check and park their notices; the investigator has its own and parks
+    nothing; any other agent's report is not judged."""
+    if BUILDER_TYPE_RE.match(agent_type):
+        return ReportKind(check_report, REPORT_BLOCK_REASON, UNPROVEN_CONTEXT, parks=True)
+    if agent_type == PROBE_TYPE:
+        return ReportKind(check_probe_report, PROBE_BLOCK_REASON, PROBE_UNPROVEN_CONTEXT, parks=False)
+    return None
 
 
 def response_text(response: object) -> str:
@@ -4823,11 +5024,14 @@ def save_report_state(path: Path, state: dict) -> None:
 
 
 def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple[str, list[str]]:
-    """``allow``, ``deny`` or ``unproven`` for one builder report, wherever it was delivered, and the
-    notices to park. ``key`` names the builder (its agent id, or the call's tool_use_id). The state
+    """``allow``, ``deny`` or ``unproven`` for one report, wherever it was delivered, judged by its
+    kind's check, and the notices to park (a builder's only). ``key`` names the subagent (its agent
+    id, or the call's tool_use_id). The state
     is read, decided and written under one lock, so parallel builders keep each other's records. A
     report this builder already had let through is not judged again; a first failure is refused
     once; a second failure, or one whose refusal cannot be recorded, goes through marked unproven."""
+    kind = report_kind(agent_type) or report_kind("cobot:builder")
+    check = kind.check
     digest = hashlib.sha256(text.removeprefix(UNPROVEN).encode()).hexdigest()
     path = report_state_path(session) if isinstance(session, str) and SESSION_RE.match(session) else None
     try:
@@ -4839,7 +5043,7 @@ def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple
             state = load_report_state(path)
             if f"{key}:{digest}" in state["allowed"]:
                 return "allow", []
-            ok, why = check_report(text)
+            ok, why = check(text)
             verdict = "allow" if ok else "unproven" if key in state["refused"] else "deny"
             if verdict == "deny":
                 state["refused"].append(key)
@@ -4847,9 +5051,11 @@ def judge_report(text: str, agent_type: str, key: str, session: object) -> tuple
                 state["allowed"].append(f"{key}:{digest}")
             save_report_state(path, state)
     except OSError:
-        ok, why = check_report(text)
+        ok, why = check(text)
         verdict = "allow" if ok else "unproven"  # a refusal that cannot be recorded is never made
     log_event({"tool": "report", "head": agent_type, "decision": verdict, "reason": why})
+    if not kind.parks:
+        return verdict, []
     items = noticed_items(text) if verdict != "deny" else []
     if verdict == "unproven":
         first = next((line.strip() for line in text.splitlines() if line.strip()), "")[:120]
@@ -4864,7 +5070,8 @@ def handback(stdin: str, wait: bool = True) -> str | None:
     try:
         payload = json.loads(stdin)
         agent_type = str(payload.get("agent_type", ""))
-        if payload.get("tool_name") != "SubagentHandback" or not BUILDER_TYPE_RE.match(agent_type):
+        kind = report_kind(agent_type)
+        if payload.get("tool_name") != "SubagentHandback" or kind is None:
             return None
         tool_input = payload.get("tool_input")
         if not isinstance(tool_input, dict) or not isinstance(tool_input.get("message"), str):
@@ -4877,7 +5084,7 @@ def handback(stdin: str, wait: bool = True) -> str | None:
         print(f"cobot report: unreadable hand-back ({type(error).__name__}); allowing", file=sys.stderr)
         return None
     if verdict == "deny":
-        decision = {"permissionDecision": "deny", "permissionDecisionReason": REPORT_BLOCK_REASON}
+        decision = {"permissionDecision": "deny", "permissionDecisionReason": kind.block_reason}
     elif verdict == "unproven":
         marked = {**tool_input, "message": UNPROVEN + tool_input["message"]}
         decision = {"permissionDecision": "allow", "updatedInput": marked}
@@ -4895,7 +5102,8 @@ def report(stdin: str, wait: bool = True) -> str | None:
         if payload.get("tool_name") != "Agent":
             return None
         subagent = str((payload.get("tool_input") or {}).get("subagent_type", ""))
-        if not BUILDER_TYPE_RE.match(subagent):
+        kind = report_kind(subagent)
+        if kind is None:
             return None
         response = payload.get("tool_response")
         if isinstance(response, dict) and response.get("status") == "async_launched":
@@ -4909,9 +5117,9 @@ def report(stdin: str, wait: bool = True) -> str | None:
         print(f"cobot report: could not read the payload ({type(error).__name__}); allowing", file=sys.stderr)
         return None
     if verdict == "deny":
-        return json.dumps({"decision": "block", "reason": REPORT_BLOCK_REASON})
+        return json.dumps({"decision": "block", "reason": kind.block_reason})
     if verdict == "unproven":
-        context = {"hookEventName": "PostToolUse", "additionalContext": UNPROVEN_CONTEXT}
+        context = {"hookEventName": "PostToolUse", "additionalContext": kind.unproven_context}
         return json.dumps({"hookSpecificOutput": context})
     return None
 

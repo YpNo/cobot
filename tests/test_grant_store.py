@@ -280,6 +280,23 @@ def test_subagent_underTheSessionsGrant_stillAsks(rules, config, extra):
     assert decision(rules, COVERED, **extra)["permissionDecision"] == "ask"
 
 
+@pytest.mark.parametrize(
+    ("grant", "command"),
+    [
+        (REQUEST, COVERED),
+        ("cobot-rules grant kubectl-delete --target lab", "kubectl delete pod p --context lab"),
+        ("cobot-rules grant kubectl-delete --target lab", "kubectl rollout restart deploy/api --context lab"),
+        ("cobot-rules grant kubectl --target lab", "kubectl apply -f m.yaml --context lab"),
+    ],
+)
+def test_investigator_underTheSessionsGrant_stillAsks(rules, config, grant, command):
+    # spec debug-path, story 1: a grant the session holds allows nothing to a probe
+    granted(rules, grant)
+    assert decision(rules, command)["permissionDecision"] == "allow"
+    out = decision(rules, command, agent_type="cobot:investigator", agent_id="i1")
+    assert out["permissionDecision"] == "ask"
+
+
 def test_expiredOrRevokedGrant_asksAgain(rules, config):
     granted(rules)
     rules.posttool(payload("cobot-rules grant --revoke", event="PostToolUse"))

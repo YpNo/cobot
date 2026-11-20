@@ -68,6 +68,8 @@ never Bash(kubectl config set-credentials*)
 never Bash(kubectl config delete-*)
 never Edit(~/.kube/*)
 never Write(~/.kube/*)
+# a diff that prints secret values in clear (spec debug-path, story 2)
+never Bash(kubectl diff*--show-secrets*)
 # cluster-wide wipes
 never Bash(kubectl delete*--all-namespaces*)
 never Bash(kubectl delete* -A)

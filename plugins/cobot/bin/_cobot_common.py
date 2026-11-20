@@ -13,6 +13,58 @@ SECRET_RE = re.compile(
     r"(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY"
     r"|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:password|passwd|secret|token)\s*[:=]\s*\S{6,})"
 )
+# what live output leaks most, on top of SECRET_RE, for a debug record (spec debug-path, story 5);
+# a pattern list, not a scanner: the excerpt cap and the owner's review of the diff do the rest
+DEBUG_SECRET_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
+    ("a known token format", SECRET_RE),
+    ("a Google access token", re.compile(r"\bya29\.[\w-]{10,}")),
+    ("a JWT", re.compile(r"\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.")),
+    ("a Bearer header", re.compile(r"(?i)\bbearer\s+\S{20,}")),
+    ("URL credentials", re.compile(r"://[^/\s:@]+:[^/\s@]+@")),
+    ("kubeconfig key data", re.compile(r"client-(?:key|certificate)-data:")),
+    ("a service-account key", re.compile(r'"private_key"\s*:')),
+)
+DEBUG_REDACTED = "<redacted>"  # what a record writes in a secret's place; never itself a match
+DEBUG_EXCERPT_LINES = 20
+DEBUG_EXCERPT_CHARS = 2000
+
+
+def debug_secret_kind(text: str) -> str | None:
+    """The kind of the first secret-shaped string in ``text``, or None, read line by line with
+    ``<redacted>`` dropped first, so ``token: <redacted>`` and ``https://u:<redacted>@h`` are clean
+    (whole-text, ``token:\\s*`` would reach into the next line)."""
+    for line in text.splitlines():
+        plain = line.replace(DEBUG_REDACTED, "")
+        kind = next((kind for kind, pattern in DEBUG_SECRET_PATTERNS if pattern.search(plain)), None)
+        if kind:
+            return kind
+    return None
+
+
+def debug_record_problems(text: str) -> list[tuple[int, str]]:
+    """``(line, why)`` for each secret-shaped line and each fenced excerpt over the cap
+    (20 lines or 2000 characters), the line numbers 1-based; empty for a clean record."""
+    problems: list[tuple[int, str]] = []
+    fence_start = 0
+    fence: list[str] | None = None
+    for number, line in enumerate(text.splitlines(), start=1):
+        kind = debug_secret_kind(line)
+        if kind:
+            problems.append((number, f"{kind}; replace it with {DEBUG_REDACTED}"))
+        if line.lstrip().startswith("```"):
+            if fence is None:
+                fence_start, fence = number, []
+                continue
+            size = len("\n".join(fence))
+            if len(fence) > DEBUG_EXCERPT_LINES or size > DEBUG_EXCERPT_CHARS:
+                cap = f"at most {DEBUG_EXCERPT_LINES} and {DEBUG_EXCERPT_CHARS}"
+                problems.append((fence_start, f"excerpt of {len(fence)} lines, {size} characters ({cap})"))
+            fence = None
+        elif fence is not None:
+            fence.append(line)
+    return problems
+
+
 URL_RE = re.compile(r"^[a-z+]+://(?:[\w.-]+@)?([\w.-]+)(?::\d+)?/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 HELP_ARGS = ("-h", "--help")
 # git reads repository config: an index refresh would run the repository's core.fsmonitor program,

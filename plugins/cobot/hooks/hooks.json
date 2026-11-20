@@ -1,5 +1,5 @@
 {
-  "description": "Rules gate on every governed call (never widens, blocks on failure), the builder report check where each host delivers the report (after an Agent call, or on a background builder's hand-back; sends back a report without command and exit code once, then lets it through marked UNPROVEN), the session grant record (after a Bash call the owner approved, and removed at SessionEnd), and the SessionStart brief (protocol, rule counts, trusted memory).",
+  "description": "Rules gate on every governed call (never widens, blocks on failure), the builder and investigator report checks where each host delivers the report (after an Agent call, or on a background agent's hand-back; sends back a report without command and exit code once, then lets it through marked UNPROVEN), the session grant record (after a Bash call the owner approved, and removed at SessionEnd), and the SessionStart brief (protocol, rule counts, trusted memory).",
   "hooks": {
     "PreToolUse": [
       {

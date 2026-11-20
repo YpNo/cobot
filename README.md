@@ -25,6 +25,9 @@ careful colleague would bring:
 - **Work with proof.** Rust, Go, Python, TypeScript (with React, Next.js and Vue), shell and
   Terraform work goes to builders that report the commands they ran with their exit codes; a
   report without proof goes back.
+- **A diagnosis before a fix.** When the cause is unknown (a pod that crashes, a red CI run, a
+  regression), `/cobot:debug` frames it, sends read-only investigators after each hypothesis
+  with the right expert, and prints the remedy for you, with its inverse: it never runs one.
 - **Memory per repository.** Context, verified commands, a journal and open findings live in
   `.agent/`, committed with your code (kept outside the tree in a repository you don't own), so
   each session starts where the last one stopped.
@@ -54,6 +57,7 @@ flowchart LR
     lead -->|bigger work| spec[Spec + challenge]
     spec --> build[Builders with proof]
     lead -->|audits| experts[Read-only experts]
+    lead -->|unknown cause| debug[Read-only investigators]
     gate{{Rules gate}} -.-> lead
     memory[(.agent memory)] -.-> lead
 ```
@@ -64,8 +68,8 @@ flowchart LR
 - **The gate.** A hook judges every tool call before it runs, from three rule layers: cobot's
   defaults, yours, and the repository's (which can only tighten).
 - **Skills and agents.** Workflow skills (onboard, spec, build, wrap, ship, …), knowledge skills
-  per language and domain, and ten agents: a challenger, a read-only consultant, learner and
-  security auditor, and six builders.
+  per language and domain, and eleven agents: a challenger, a read-only consultant, learner,
+  security auditor and debug investigator, and six builders.
 - **The tools behind them.** `cobot-memory`, `cobot-rules`, `cobot-env`, `cobot-deps` and
   `cobot-session` in `plugins/cobot/bin/`: Python standard library only, tested, called by the
   hooks and skills.
@@ -150,6 +154,9 @@ Stitch and Google Cloud: [docs/configuration.md](docs/configuration.md).
 2. **Ask for small changes as usual.** cobot names the size and skips the ceremony.
 3. **For a bigger change:** `/cobot:spec <what you want>`, then `/cobot:build <spec>`, then
    `/cobot:wrap` to run every check and record the result. You push and open the pull request.
+4. **When something is broken and you don't know why:** `/cobot:debug <the symptom>`. It asks
+   you to confirm a production target before probing, keeps the investigation in
+   `.agent/debug/`, and leaves every fix to you or to the build path.
 
 The commands you type, shown as Claude Code names them (under agy, drop `cobot:`):
 
@@ -159,6 +166,7 @@ The commands you type, shown as Claude Code names them (under agy, drop `cobot:`
 | `/cobot:spec <what>` | writes the spec and has it challenged |
 | `/cobot:build <spec>` | builds the spec task by task, with proof |
 | `/cobot:wrap` | full checks, reviews, journal; ready for a pull request |
+| `/cobot:debug <symptom>` | diagnoses an unknown cause with read-only investigators; prints the remedy, never runs it |
 | `/cobot:rules show \| check "<cmd>" \| explain "<cmd>" \| sync` | shows the rules and what the gate would do with a command; `sync` prints a Claude Code settings block for you to apply |
 | `/cobot:learn <topic>` | researches a topic from primary sources into dated knowledge |
 | `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
@@ -170,7 +178,7 @@ Language skills, experts and builders load on their own when your files need the
 
 ### Differences under Antigravity
 
-The gate, the session brief, the skills and the ten agents come along. What agy cannot carry:
+The gate, the session brief, the skills and the eleven agents come along. What agy cannot carry:
 
 - **Builder proof is asked for, not enforced.** No agy hook sees a subagent's report: read the
   commands and exit codes yourself before you trust one.
@@ -178,7 +186,9 @@ The gate, the session brief, the skills and the ten agents come along. What agy 
   a cobot builder itself and calls inside `run_workflow` have not run there yet. Review a
   builder's diff before anything outward.
 - **The read-only agents read files only.** agy's hooks don't say which agent is calling, so the
-  consultant and the learner get no command tool there: no `git log` or `gh api` reads.
+  consultant, the learner, the auditor and the investigator get no command tool there: no
+  `git log` or `gh api` reads, and `/cobot:debug`'s lead runs the read commands itself. A debug
+  record's secret check holds at `cobot-memory debug check`, not at write time.
 - **`/onboard`, `/rules` and `/security-sweep` can be started by the model.** agy has no
   owner-only skills; the brief tells the model to wait for you to type them.
 - **The gate fails closed by its answer.** It prints a deny on every failure it can see,

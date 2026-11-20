@@ -93,3 +93,83 @@ Proof: upstream read 2026-11-20 (PyPI ruff 0.17.6 from 2026-11-19, npm markdownl
 Open: the CI pins of @anthropic-ai/claude-code (2.1.318 in ci.yml, 2.1.322 in knowledge-refresh.yml) trail 2.1.329, left for the owner; markdownlint-cli2 0.24.2 is one day old.
 Next: spec the debug path.
 verified: tree d8b4cbac3f8e96b807fccb1851817786737bb237 · full suite, lint, contract, validate
+
+## 2026-11-20 — spec debug-path (0.4.0), challenged
+Changed: .agent/specs/debug-path.md revision 2 (242 lines): /cobot:debug as the main-thread lead, a read-only cobot:investigator per hypothesis sharing the consultant's read list by alias, a probe report check of its own, records in .agent/debug/ refused at write time when secret-shaped, the shared read list tightened (output formats, target-switching and watch flags ask; --show-secrets never), the protocol's Paths line, two evals; nine tasks.
+Why: owner-ideas-03 §2, the second piece of 0.4.0. Owner's answers: investigator with the agent budget at 650, remedies printed only, records committed.
+Proof: challenger SOUND WITH CHANGES (4 MAJOR, 3 MINOR, all folded) and a CLI consult on the routing reads; every claim re-checked with cobot-rules check dry runs (kubectl get -o yaml, logs -f, --server/--token and gcloud --configuration silent for the consultant today).
+Open: accepted residuals: the Read tool is ungated for agents; kubeconfig exec entries; an active grant only the skill keeps from a lead mutation.
+Next: T01, the read-list rows.
+verified: tree d8b4cbac3f8e96b807fccb1851817786737bb237 · spec only, no code changed
+
+## 2026-11-20 — debug-path T01: the shared read list stops printing values, switching targets and hanging
+Changed: READ_GUARDS gains kubectl (target and identity flags, -s), istioctl (the same), kubectl get (-o other than wide/name in any spelling or cluster, --template, --raw, watch), kubectl logs (follow), kubectl events (watch) and gcloud (--configuration, --impersonate-service-account, --account, --access-token-file); Guard.why words the reason. never Bash(kubectl diff*--show-secrets*) in every scope.
+Why: spec debug-path story 2 (CLI consult): these forms were silent for the consultant, auditor and learner.
+Proof: tests/test_read_list_limits.py 189 passed; gate corpora (test_cobot_rules, gate_agy, gate_differential, session_grants, consult, sweep) 3130 passed; ruff 0.17.6 check and format clean; check-plugin ok.
+Open: the guards apply to the learner too (it shares the list); kubectl rollout status still waits by default; a --server before the verb on the main thread is not denied by the show-secrets row.
+Next: T02, the investigator agent.
+verified: tree 5c961a7f013969137ca5b47c085c2c53421f5018 · focused gate suite
+
+## 2026-11-20 — debug-path T02: the investigator, read-only by rule
+Changed: claude-agents/investigator.md (Read, Grep, Glob, Bash, WebFetch; sonnet, medium; prediction first, reads as commands, the given target only, the probe report shape) and its agy twin; plugin.json lists it; SCOPE_ALIASES maps cobot:investigator to the consultant's list; NO_COMMANDS gains it; AGENT_BUDGET_TOKENS 650.
+Why: spec debug-path story 1, owner answer 1.
+Proof: tests/test_investigator.py 47 passed (reads silent, mutations ask, cloud printers denied, same decisions as the consultant over the corpus, look-alike names unscoped); grant_store: a held grant allows the main thread and asks for the investigator; agents_sync, check_plugin, rules, read-list, grants, agy: 3051 passed; check-plugin ok (listing ≈ 620 of 650 tokens); claude and agy validate pass; ruff and markdownlint clean.
+Open: forge credential printers ask rather than deny for the investigator, as for the consultant; the report shape is not checked until T03.
+Next: T03, check_probe_report.
+verified: tree f15e6a0ee1e775f984fc68c2c40850db939d8291 · focused suites
+
+## 2026-11-20 — debug-path T03: a probe's report is proof, checked by its own rule
+Changed: check_probe_report (a Verdict: and a command with an exit marker under Checks:, or Checks: none with Verdict: inconclusive and a non-empty Needs:); probe-worded block reason and UNPROVEN context; ReportKind picked by agent type in report() and handback(); the investigator parks nothing; checks_block takes the section pattern that ends the block.
+Why: spec debug-path story 3 (challenger 1, 2): the builders' check would have refused every probe report.
+Proof: tests/test_probe_report.py 19 passed (both paths: one refusal then marked, both passing forms, builder judged as today, look-alike names ignored); rules, agy, investigator suites 2548 passed with it; ruff clean; check-plugin ok.
+Open: hooks.json's description still says builder report check (T09 docs).
+Next: T04, the debug skill.
+verified: tree be8be74051fc110aeafd275b59b881250251c415 · focused suites
+
+## 2026-11-20 — debug-path T04: /cobot:debug leads the investigation in the main thread
+Changed: skills/debug/SKILL.md (frame with live context, grant list and production confirmation; reproduce; ranked hypotheses; one foreground investigator per hypothesis; at most three rounds; remedies printed, never run, whatever grant; record from template.md checked by cobot-memory debug check before git add; agy fallback), template.md, references/routing.md (the design input's table, git log -S for git bisect, terraform plan printed).
+Why: spec debug-path story 4.
+Proof: tests/test_debug_skill.py 15 passed, with check_plugin, workflow_skills, agents_sync 89 passed; check-plugin ok (31 skills, 10745 chars listed); markdownlint 0.24.2 clean; claude and agy validate pass.
+Open: cobot-memory debug check is named here and arrives in T05.
+Next: T05, the record secret guard.
+verified: tree 479d25c5f3c1696f786a337ac982330e5ee9e0d0 · focused suites
+
+## 2026-11-20 — debug-path T05: a debug record cannot carry a secret
+Changed: _cobot_common gains DEBUG_SECRET_PATTERNS (SECRET_RE, ya29., JWT, Bearer, URL credentials, client-*-data, "private_key":), debug_secret_kind (line by line, <redacted> dropped) and debug_record_problems (secret lines, fenced excerpts over 20 lines or 2000 chars); the gate denies an Edit, Write, MultiEdit or NotebookEdit resolving under the memory's debug/ folder whose new text matches, naming the kind; cobot-memory debug check [FILE] and check exit 1 naming file and line.
+Why: spec debug-path story 5 (challenger 3).
+Proof: tests/test_debug_records.py 34 passed (one negative per pattern on gate and check, clean record, elsewhere judged as today, the hook end to end; values built at run time); memory, rules, agy, differential, grants, knowledge 3189 passed; ruff clean; check-plugin ok.
+Open: the agy gate path carries only file_path, so under Antigravity only the check before git add holds; a shell write into debug/ asks as any shell write does.
+Next: T06, debug list and the brief count.
+verified: tree 711465a16412af5ca2bcf8b0ee645ea55d8f012e · focused suites
+
+## 2026-11-20 — debug-path T06: debug records are listed, and the brief counts the open ones
+Changed: Memory.debug_records (status and title from each record's head, newest first); cobot-memory debug list [--open]; the brief's findings line ends "; debug: <n> open" when a record is open, as "## FINDINGS open: 0; debug: <n> open" when no finding is; untrusted memory loads nothing, so no count.
+Why: spec debug-path story 6 (challenger 6, 7): the brief sits at 5957 of 6000 chars, so a count, not a line.
+Proof: tests/test_debug_list.py 8 passed (list, --open, none, foreign mode's outside folder; brief open, open without findings, none open, untrusted); memory, session, knowledge, workflow-skill suites 234 passed; ruff clean; check-plugin ok; this repo's brief 5823 chars.
+Open: none.
+Next: T07, the protocol Paths line.
+verified: tree 1984ace2d54f5e6bbbdf1038f8c468ec578e4362 · focused suites
+
+## 2026-11-20 — debug-path T07: the protocol routes an unknown cause to /cobot:debug
+Changed: protocol.md Paths opens with "unknown cause → /cobot:debug."; paid for by "Name the size first:" and "reject a report without them" (now any report, a probe's included).
+Why: spec debug-path story 7; the cap is 3400.
+Proof: tests/test_protocol_paths.py 2 passed; grant texts, check_plugin, cli flags, session, workflow skills 131 passed; check-plugin ok (protocol 3399 chars); markdownlint and ruff clean.
+Open: none.
+Next: T08, the two evals.
+verified: tree ba5e56e3179ea6a349c78ded70a76adefb1f1677 · focused suites
+
+## 2026-11-20 — debug-path T08: evals debug-routes-by-evidence and debug-read-only
+Changed: two cases sharing one fixture (a Deployment with DATABSE_URL, captured describe and previous logs from context lab, no cluster); routing graders: an Agent call to cobot:investigator, expert-kubernetes named, the cause named, a kubectl remedy printed, no question; read-only graders: no kubectl mutation, no Edit or Write under k8s/, an inverse printed, no fixed claim, no question; matches() tests for both.
+Why: spec debug-path story 8.
+Proof: tests/test_eval_graders.py 105 passed. Local runs (--runs 1, sonnet 5.5, Claude Code 2.1.311): first without the skill named, 0.40 and 0.67 (the model fixed the typo inline); then with the skill in backticks, 0.40 and 0.83 (not expanded); then with a bare /cobot:debug first line, as sweep-fan-out does: 1.00 (/bin/bash.25, two foreground investigators with expert-kubernetes) and 1.00 (/bin/bash.12). Total about $0.80.
+Open: unprompted routing from the protocol line is not graded (the model fixed the typo inline); in the read-only run the lead diagnosed without a probe.
+Next: T09, the docs.
+verified: tree ff4a1311ac54397a38a99b5474bb8b8f9d725327 · grader tests and local evals
+
+## 2026-11-20 — debug-path T09: decision 35 and the docs; the spec converged
+Changed: decision 35 in docs/01-decisions.md; docs/02-design.md (layout, a debug lead and investigator role, the unknown-cause path, the never row, the debug record, model routing, budget 650, two eval rows); docs/architecture.md (report check, roster with the auditor and the investigator, /cobot:debug, flow, debug list); docs/configuration.md (the debug record, the report state, the read-list limits); README (overview, diagram, eleven agents, usage, agy notes); CHANGELOG Added, Changed and Security; hooks.json description; the spec's Converge table.
+Why: spec debug-path story 9.
+Proof: full suite 4128 passed, coverage 98.43% (fail-under 85); markdownlint-cli2 0.24.2 clean over 139 files; ruff 0.17.6 check and format clean; shellcheck clean; check-plugin ok (agents ≈ 620 of 650 tokens, protocol 3399 chars); sync-agents --check in sync; claude plugin validate --strict and agy plugin validate pass.
+Open: unprompted routing to /cobot:debug is not graded; kubectl rollout status waits by default; the forge credential printers ask for the investigator rather than deny.
+Next: the owner's word on pushing chore/housekeeping and feat/debug-path.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · full suite with coverage, lint, validators

@@ -22,7 +22,7 @@ DESCRIPTION_MAX = 1536
 SKILL_DESCRIPTIONS_TOTAL_MAX = 15000  # every model-visible skill sits in the system prompt of every turn
 # knowledge skills: plugin skills are always listed and paths: does not gate them
 KNOWLEDGE_DESCRIPTION_MAX = 350
-AGENT_BUDGET_TOKENS = 600
+AGENT_BUDGET_TOKENS = 650  # the investigator's line (spec debug-path, owner answer 1)
 PROTOCOL_MAX_CHARS = 3400  # protocol.md is injected into every session (docs/02-design.md, decision 34)
 KNOWLEDGE_PREFIXES = ("lang-", "expert-", "fw-")  # the prefixes _cobot_knowledge tracks for staleness
 KNOWLEDGE_LINE = re.compile(r"- \[(verified|reported|assumed) \d{4}-\d{2}-\d{2} · src: ")

@@ -15,7 +15,7 @@ For agents and architects. The README is for people; the full design and its rea
 | Learning | dated knowledge lines with a status and a source; staleness in the brief (versions 30 days, idiom 90); deltas applied by `cobot-memory learn`, promoted into this repository by `learn --promote`; a weekly refresh PR | `bin/_cobot_knowledge.py`, `claude-agents/learner.md`, `skills/learn`, `.github/workflows/knowledge-refresh.yml` |
 | Currency | how far the lockfiles are behind and whether advisories exist, through the ecosystems' own tools, cached per repository; one line in the brief | `bin/cobot-deps` |
 | Environment | the machine by presence (engines, runtime managers, isolation, container, OS and package manager, helpers), executing nothing: a hit on a PATH entry the repository controls is reported as not trusted and never run, a mise or asdf shim as a shim (not trusted in foreign mode); the owner's install route and declined helpers per host in `~/.claude/cobot/machine.md`; one line in the brief; the `runs:` header (decision 29) | `bin/cobot-env`, `bin/_cobot_env.py`, `skills/onboard/references/workstation.md` |
-| Report check | a builder report without a command and an exit code goes back once, then through marked `UNPROVEN:` (decision 32): `PostToolUse` on Agent where the call waits for its result (the CLI), `PreToolUse` on `SubagentHandback` where it runs in the background (the desktop app); one state per session, so a report is judged once; every failure allows | `hooks/report.sh` → `bin/cobot-rules report` and `handback` |
+| Report check | a builder report without a command and an exit code goes back once, then through marked `UNPROVEN:` (decision 32); an investigator's report is judged by its own probe check (a verdict with a command and an exit code, or `Checks: none` with `inconclusive` and `Needs:`) and parks nothing (decision 35): `PostToolUse` on Agent where the call waits for its result (the CLI), `PreToolUse` on `SubagentHandback` where it runs in the background (the desktop app); one state per session, so a report is judged once; every failure allows | `hooks/report.sh` → `bin/cobot-rules report` and `handback` |
 | Session grants | one kind of write on one named project or context for a Claude Code session, main thread only (decision 34, ADR-0008): `cobot-rules grant` is a request the gate asks about, `PostToolUse` on Bash records it only after the owner approved that ask, the gate allows a covered command, `SessionEnd` removes the file; never under agy, never for Terraform | `hooks/grant.sh` → `bin/cobot-rules posttool`, `sessionend`, `grant`; `<config dir>/cobot/grants/` |
 | Antigravity adapter | the same policy under agy (ADR-0007): a root `hooks.json` sends every tool call to the gate, which translates agy's call and answers `allow` (no opinion), `force_ask` or `deny`, a deny on every failure; SessionStart prints the brief as one `injectSteps` system message with an agy section; no report check (no agy hook sees a subagent's report) | `hooks.json`, `hooks/gate-agy.sh`, `hooks/session-agy.sh` → `bin/cobot-rules gate --runtime agy`, `bin/cobot-session start --runtime agy`, `bin/_cobot_agy.py` |
 
@@ -23,9 +23,9 @@ For agents and architects. The README is for people; the full design and its rea
 
 | Kind | Members | Where |
 |---|---|---|
-| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `plugins/cobot/claude-agents/`, listed by file in `.claude-plugin/plugin.json` |
-| Agy agents | the same nine, written by `scripts/sync-agents.py` from `claude-agents/` (agy tool names, tiers, `mainAgent: false`; consultant and learner without a command tool) | `plugins/cobot/agents/`, read by agy through `.antigravity-plugin/plugin.json` |
-| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep`; onboard, rules and security-sweep are typed by the owner (`disable-model-invocation`) | `plugins/cobot/skills/` |
+| Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `auditor` (read-only sweep unit), `investigator` (read-only debug probe, decision 35), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `plugins/cobot/claude-agents/`, listed by file in `.claude-plugin/plugin.json` |
+| Agy agents | the same eleven, written by `scripts/sync-agents.py` from `claude-agents/` (agy tool names, tiers, `mainAgent: false`; consultant, learner, auditor and investigator without a command tool) | `plugins/cobot/agents/`, read by agy through `.antigravity-plugin/plugin.json` |
+| Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:debug`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep`; onboard, rules and security-sweep are typed by the owner (`disable-model-invocation`) | `plugins/cobot/skills/` |
 | Consult router | `/cobot:consult [domain]` spawns one `consultant` per domain in one message (parallel); procedures for `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api` | `plugins/cobot/skills/consult/`, `domains/` |
 | Knowledge skills (always listed: `paths:` does not gate plugin skills, so each description carries its triggers, ≤ 350 chars) | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-shell`, `lang-fallback`, `fw-react`, `fw-next`, `fw-vue`, `expert-api`, `expert-gitea`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh` | `plugins/cobot/skills/` |
 
@@ -40,6 +40,9 @@ is done in the main thread with a focused check. Medium and large work goes thro
 `/cobot:spec` (≤ 4 clarify questions, challenger and consults in parallel), `/cobot:build` (one
 builder per task, up to three worktree lanes, proof lines checked), then `/cobot:wrap` (full
 checks, reviews, journal with a verified stamp). One spec is one branch and one pull request.
+An unknown cause goes to `/cobot:debug` first: the lead frames and reproduces it, one read-only
+investigator per hypothesis probes it (at most three rounds), and the remedy is printed for the
+owner, never run; a code fix comes back to intake. The record lives in `.agent/debug/`.
 
 ## Memory commands
 
@@ -55,6 +58,10 @@ plugins/cobot/bin/cobot-memory findings add "ci.yml" "checkout is on a floating 
 
 ```bash
 plugins/cobot/bin/cobot-memory knowledge --stale
+```
+
+```bash
+plugins/cobot/bin/cobot-memory debug list --open
 ```
 
 ```bash

@@ -36,7 +36,7 @@ on one state. Below, `tf` means whichever was detected; record it in `.agent/CON
 | lint | `tflint --init && tflint --recursive --format compact` | `terraform` ruleset is bundled; add `google` in `.tflint.hcl` |
 | scan | `trivy config --severity HIGH,CRITICAL --exit-code 1 .` | successor of tfsec |
 | test | `tf test` (`-filter=tests/x.tftest.hcl` for one file) | mocks need no cloud |
-| plan | `tf plan -out=tfplan -input=false` | the owner reviews and applies |
+| plan | `tf plan -out=tfplan -input=false` | in the folder; `tf apply tfplan` asks the owner |
 | lock | `tf providers lock -platform=linux_amd64 -platform=darwin_arm64` | every platform that runs `init` |
 | docs | `terraform-docs markdown table --output-file README.md --output-mode inject .` | between `<!-- BEGIN_TF_DOCS -->` markers |
 
@@ -85,9 +85,13 @@ workspaces as the environment boundary for anything prod: one typo applies to th
 
 ## State and safety
 
-- The cobot gate denies `terraform|tofu apply` and `destroy`. Propose the plan, summarise it
-  (adds, changes, replaces, deletes), and stop. Treat `state rm|mv|push`, `force-unlock` and
-  `import` from the CLI as owner actions too: say what to run and why.
+- The cobot gate asks the owner on every `terraform|tofu|terragrunt apply` and `destroy`, and
+  no rule or session grant silences it. On the main thread only: `plan -out=tfplan` inside the
+  folder, summarise it (adds, changes, replaces, deletes) in the journal, then `apply tfplan`
+  and let the owner answer the prompt. Never apply without a saved plan (a destroy is
+  `plan -destroy -out=tfplan`, then `apply tfplan`). State surgery
+  (`state rm|mv|push`, `force-unlock`, `import`, `taint`, `-lock=false`) is denied: say what
+  the owner should run and why.
 - Remote state with locking for anything shared or prod: GCS backend locks natively; enable object
   versioning on the bucket, restrict IAM on it like a production secret; `kms_encryption_key` when
   required. OpenTofu also offers client-side state encryption.
@@ -141,7 +145,7 @@ project and only when the owner asks. Example and override patterns: `references
 
 ## Do not
 
-- Run `apply`, `destroy` or state surgery; propose and let the owner act.
+- Run `apply` or `destroy` from a builder or without a saved plan, or attempt state surgery.
 - Write a version constraint from memory: curl the registry or read `references/versions.md`.
 - Print state, plan JSON or sensitive outputs into the conversation or a log.
 - Commit `*.tfstate`, `tfplan`, `.terraform/` or a secret `.tfvars`.

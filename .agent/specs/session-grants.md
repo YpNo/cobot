@@ -296,3 +296,5 @@ owner in the interactive CLI):
 - P6: `CLAUDE_CODE_SESSION_ATTENDED` is `1` in the desktop app and the interactive CLI, `0`
   headless; Claude Code sets it, and hooks see it. `CLAUDE_CODE_ENTRYPOINT` is inherited from
   the parent process, so it proves nothing. So story 5 records with `ATTENDED=1`, no mode check.
+
+**T06, 2026-11-20:** owner's answer 5: the protocol cap goes from 3000 to 3400 (decision 34).

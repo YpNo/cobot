@@ -26,7 +26,8 @@ HTTPRoute, default-deny NetworkPolicy, PDB): `references/manifests.md`. Re-verif
 brief flags stale (versions after 30 days, idiom after 90). Images are `expert-containers`'s,
 the cluster and its IAM `expert-gcp`'s, the mesh `expert-service-mesh`'s. Renders, lint and
 reads are silent; `apply`, `delete`, `patch`, `scale`, `rollout restart`, `exec`,
-`port-forward`, `helm install|upgrade|uninstall` ask (decision 26).
+`port-forward`, `helm install|upgrade|uninstall` ask (decision 26), unless a session grant on
+the main thread covers them (*Session grants* below).
 
 - [verified 2026-11-08 · src: https://api.github.com/repos/kubernetes/kubernetes/releases] Kubernetes 1.37.2, 1.36.6, 1.35.10 (2026-10-28); Helm 4.3.1; kustomize 5.8.3; Gateway API 1.7.0; kubeconform 0.8.0.
 
@@ -160,7 +161,30 @@ search|history|verify|dependency list`, `kustomize build`, `kubeconform`. Ask: `
 apply|create|delete|replace|patch|edit|scale|set|label|annotate|taint|cordon|drain|rollout
 restart|undo|pause|resume|exec|port-forward|run|debug|cp|expose|autoscale`, `helm
 install|upgrade|uninstall|rollback|push|repo add|plugin install|registry login`. `kubectl diff`
-runs a server-side dry run against the current context: it reads, it does not write.
+runs a server-side dry run against the current context: it reads, it does not write. Denied
+everywhere: `kubectl config view --raw|--flatten`, `create token`, `get secret` with values,
+`config set-*|rename-context|delete-*`, Edit or Write under `~/.kube/`, and `delete` with `-A`,
+`--all-namespaces` or on `kube-system`.
+
+## Session grants (main thread only)
+
+A lab on one named context can run without a prompt per write. Ask the owner once, as the
+protocol says: this command only, every `kubectl` (or `helm`) on `<context>` this session, or
+no. On the second answer run `cobot-rules grant kubectl --target <context>`; the owner's prompt
+on it is the grant. Deletes are their own kinds and need their own grant.
+
+- `kubectl`: `apply -f`, `create -f`, `patch --patch-file`, `label`, `annotate`, `set image`.
+  `kubectl-delete`: `delete`, `scale`, `rollout restart`.
+- `helm`: `install`, `upgrade` (`--install` allowed), `rollback`. `helm-uninstall`:
+  `uninstall` and its aliases.
+- The command is plain (no pipe, `&&`, substitution or `KUBECONFIG=`), names `--context`
+  (helm: `--kube-context`) exactly once, and uses only `-n`, `-f`/`--values` with a relative
+  path inside the repository, `-l`, `--replicas`, `--overwrite`, and for helm `--set`,
+  `--version`, `--timeout`, `--wait`, `--create-namespace`. Anything else (`-k`, `--prune`,
+  `--force`, `--dry-run`, `--kubeconfig`, `--as`, `--server`, `--post-renderer`) asks.
+- The lab log, `.agent/labs/<slug>.md` (Edit): the context, then each command with its exit
+  code and inverse (`apply -f x.yaml` → `delete -f x.yaml`), ending with the teardown.
+- A builder never holds a grant; `cobot-rules grant --revoke` ends one early.
 
 ## Pitfalls
 
@@ -180,7 +204,8 @@ runs a server-side dry run against the current context: it reads, it does not wr
 
 ## Do not
 
-- Do not apply, delete, patch, scale, exec or port-forward from a task; propose the command.
+- Do not apply, delete, patch, scale, exec or port-forward from a builder or a consultant;
+  propose the command. On the main thread a write asks, or runs under a grant.
 - Do not write a Secret's value into a manifest, a values file or a kustomization.
 - Do not render with `--post-renderer`, `--enable-exec`, `--enable-alpha-plugins` or
   `--enable-helm` on a repository under audit, nor pass `--kubeconfig` from the tree.

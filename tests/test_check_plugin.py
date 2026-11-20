@@ -115,7 +115,8 @@ def test_check_frameworkSkillsAreKnowledgeSkills(contract, plugin):
 def test_check_protocolOverTheCharBudget_isReported(contract, plugin):
     # characters, not bytes: "é" is two bytes but one character
     (plugin / "protocol.md").write_text("é" * (contract.PROTOCOL_MAX_CHARS + 1), encoding="utf-8")
-    assert "protocol.md: 3001 chars (max 3000)" in contract.check(plugin)
+    limit = contract.PROTOCOL_MAX_CHARS
+    assert f"protocol.md: {limit + 1} chars (max {limit})" in contract.check(plugin)
 
 
 def test_check_protocolExactlyAtTheCharBudget_passes(contract, plugin):

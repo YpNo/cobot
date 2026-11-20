@@ -28,8 +28,8 @@ the verified commands.
 Contract: a failing `*.tftest.hcl` run first when behaviour changes (mocked providers, no
 credentials); smallest passing change; `terraform fmt -check -recursive`, `terraform validate`,
 `tflint` when configured, `terraform test`, and `terraform plan` only with the inputs the task
-names. `apply` and `destroy` are denied by the gate and are never yours. State, backends and
-provider versions change only when the task says so. Stay inside the module in scope; park
+names. `apply` and `destroy` ask the owner and are never yours: hand back the saved plan.
+State, backends and provider versions change only when the task says so. Stay inside the module in scope; park
 anything else under `Noticed:`. Never commit, push or edit `.agent/`, specs, changelog or the
 lock beyond what the task names. After two failed attempts at the same check, stop and hand back.
 

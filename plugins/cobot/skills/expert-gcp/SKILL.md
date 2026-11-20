@@ -21,8 +21,9 @@ service-agent table: `references/iam.md`. Universes (sovereign clouds, Google Cl
 `references/universe.md`. Google's remote MCP servers (setup, guard, proof):
 `references/mcp.md`. Re-verify a line the brief flags stale (versions after 30 days, idiom
 after 90). Terraform idiom and the check chain are `lang-terraform`'s; this skill is what the
-`google` provider needs on top. Plans are proposed, never applied; `gcloud` reads are silent,
-anything that creates, changes, deletes, deploys, enables, grants or logs in asks (decision 26).
+`google` provider needs on top. A Terraform apply runs only from a saved plan, at the owner's
+prompt; `gcloud` reads are silent, anything that creates, changes, deletes, deploys, enables,
+grants or logs in asks (decision 26), unless a session grant covers it (below).
 
 - [verified 2026-11-08 · src: https://registry.terraform.io/v1/providers/hashicorp/google] hashicorp/google and google-beta 8.10.0 (2026-11-03); gcloud 592.0.0 (2026-11-03).
 
@@ -190,9 +191,31 @@ Silent: `list`, `describe`, `get-iam-policy`, `get-value`, `config list`, `auth 
 `logging read`, `storage ls`, `version`. Ask: `create`, `delete`, `update`, `add-*`, `set-*`,
 `remove-*`, `deploy`, `submit`, `enable`, `disable`, `import`, `export`, `start`, `stop`,
 `resize`, `upgrade`, `patch`, `destroy`, `cp`, `mv`, `rm`, `rsync`, `publish`, `run`, `ssh`,
-`login`, `container fleet mesh *`. Not on the read-only agents' list at all: `auth
-print-access-token`, `secrets versions access`, `container clusters get-credentials`.
+`login`, `container fleet mesh *`. Denied everywhere, the owner runs them: `print-access-token`,
+`print-identity-token`, `config-helper`, `secrets versions access`, `projects delete`,
+`set-iam-policy`, `iam service-accounts keys create`, and a delete of a `*tfstate*` object or
+bucket. Not on the read-only agents' list: `container clusters get-credentials`.
 `--impersonate-service-account` on a read is fine; `--project` is stripped before matching.
+
+## gcloud: session grants (main thread only)
+
+A lab or a demo on one sandbox project can run without a prompt per write. Ask the owner once,
+as the protocol says: this command only, every `gcloud` (or `gcloud-delete`) on `<project>`
+this session, or no. On the second answer run `cobot-rules grant gcloud --target <project>`;
+the owner's prompt on it is the grant, and `cobot-rules grant --list` shows it. A grant covers
+`create`, `update` and `deploy` (`gcloud`) or `delete` (`gcloud-delete`) under `compute`
+(instances, disks, networks, subnets, firewall-rules, addresses, routers, instance-templates),
+`run` (services, jobs), `pubsub` (topics, subscriptions), `functions`, `artifacts repositories`,
+`dns` (managed-zones, record-sets) and `container` (clusters, node-pools). The command must be
+plain (no pipe, `&&`, substitution or assignment), name `--project <project>` once, and hold
+no `projects/`, `gs://` or URL argument and none of `--flags-file`, `--configuration`,
+`--account`, `--impersonate-service-account`, `--access-token-file`. Anything else asks as
+before; `gcloud storage` and IAM bindings are not grantable. A builder never holds a grant.
+
+The lab log, `.agent/labs/<slug>.md` (Edit): the project, then one line per granted or approved
+command with its exit code and its inverse (`run deploy x` → `run services delete x`). It ends
+with the teardown, run and logged, and the agent proposes a budget alert on the project
+(`gcloud billing budgets create`, which asks). `cobot-rules grant --revoke` ends the grant early.
 
 ## Pitfalls
 
@@ -217,5 +240,5 @@ print-access-token`, `secrets versions access`, `container clusters get-credenti
 - Do not grant a basic role, even to a service account, even in `dev`.
 - Do not write a provider block inside a reusable module, nor an endpoint or a service-agent
   email by hand.
-- Do not run `gcloud` writes, `gcloud auth login` or `get-credentials` from a task; propose the
-  command.
+- Do not run `gcloud` writes, `gcloud auth login` or `get-credentials` from a builder or a
+  consultant; propose the command. On the main thread a write asks, or runs under a grant.

@@ -473,3 +473,11 @@ Proof: tests first (the 3 positive cases failing, the 14 near-misses already ask
 Open: none.
 Next: T06, the protocol and skill texts.
 verified: tree a1ca27f7c1a768b6eeee8f6c6a40d66fdd384cd0 · pytest+cov, ruff, markdownlint, check-plugin, sync-agents --check, claude and agy plugin validate
+
+## 2026-11-20 — session grants T06: protocol and skill texts
+Changed: protocol.md gains a Grants paragraph (one AskUserQuestion with three answers, main thread only, plan -out then apply at the prompt, the lab log); apply leaves the outward list; lang-terraform, terraform-builder (synced), ship, expert-gcp, expert-kubernetes and README no longer say the gate denies apply, and the two expert skills document the grantable forms and the lab log; check-plugin's protocol cap is 3400.
+Why: spec session-grants story 7; owner's answer 5 raised the cap (the protocol reached 3400 chars).
+Proof: 3800 passed, coverage 98.43%; tests/test_grant_texts.py 23 passed (documented forms checked against grant_scope); ruff check and format, markdownlint, check-plugin (protocol 3400 chars), sync-agents --check, claude plugin validate --strict and agy validate (1 warning) all pass; documented verdicts dry-run with cobot-rules check.
+Open: docs/02-design.md and docs/architecture.md still say a 3k protocol (T08).
+Next: T07, the apply-asks eval.
+verified: tree 7c479907b77193cbf4d55c446e328256210e014c · full suite, lint, contract and validate

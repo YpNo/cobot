@@ -46,42 +46,20 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
 
 ## What the code says today (read 2026-11-20)
 
-- `terraform`, `terragrunt` and `tofu` `apply` and `destroy` are `never` (`default.rules:25-32`).
-  These match no rule: state surgery (`state rm|mv|push|replace-provider`, `force-unlock`, CLI
-  `import`), `gsutil rm -r`, `kubectl config rename-context|set-context`, a `plan -out` to any
-  path, and Edit or Write of `~/.claude/cobot.rules` and `~/.claude/cobot/**`.
-- Token printers, secret access, `set-iam-policy`, `keys create`, `projects delete`,
-  cluster-wide deletes and `rm -rf ~` ask.
-- A shell write to a `never` file path (`cp x ~/.claude/settings.json`) asks; it is not a deny.
-  The file rows are written with a literal `~/.claude`, so `CLAUDE_CONFIG_DIR` escapes them.
-- The gate never emits `allow` (`cobot-rules:13`, `test_gate_neverEmitsAllow`). The one `allow`
-  in the plugin is decision 32's hand-back marking.
-- `gate()` takes `agent_type or agent_name` by truthiness; internal agents send an empty
-  `agent_type` (claude-code-mechanics.md:79), which reads as the main thread. Per-session state is kept in `~/.local/share/cobot/{asks,reports}/`. Sandboxed Bash cannot
-  write `~/.claude/cobot/`. agy's payload has `conversationId` and no agent identity.
+- Apply and destroy are `never` (`default.rules:25-32`). State surgery, `gsutil rm -r`,
+  `kubectl config` writes and Edit or Write of cobot's owner files match no rule; token and
+  secret printers ask. A shell write to a `never` file path asks, and `CLAUDE_CONFIG_DIR`
+  escapes the literal `~/.claude` rows (challenger 4).
+- The gate never emits `allow` (`cobot-rules:13`); the one `allow` is decision 32's hand-back
+  marking. `gate()` reads `agent_type or agent_name` by truthiness (challenger 6).
+- State lives in `~/.local/share/cobot/{asks,reports}/`; sandboxed Bash cannot write
+  `~/.claude/cobot/`. agy sends `conversationId` and no agent identity.
 
 ## Stories and acceptance
 
-1. **The probe answers what grants rest on** (T01, written into this spec before T04).
-   - P1: does a PreToolUse hook `ask` show a prompt in each permission mode (default,
-     acceptEdits, plan, auto, bypassPermissions), also when a settings `allow` matches? Which
-     payload field gives the mode?
-   - P2: does PostToolUse on Bash fire only after the command ran? Does it carry `session_id`,
-     `agent_id`, `agent_type`, the mode, the command and the exit code?
-   - P3: does a hook `allow` skip a prompt a settings `ask` would show, and does a settings
-     `deny` still win?
-   - P4: does `SessionEnd` fire with `session_id`, and does a resumed session keep its id?
-   - P5: which of these send a non-empty `agent_type` or an `agent_id` on a Bash PreToolUse:
-     general-purpose, Explore, a background agent, a `context: fork` skill, a workflow agent?
-   - P6: what tells the interactive CLI and the desktop app apart from `-p`,
-     `--permission-prompt-tool` and the Agent SDK (an environment variable or a payload field)?
-   - P7: does an environment variable set in one Bash call reach the next (an `export`, or
-     `CLAUDE_ENV_FILE`)? Is the hook's environment the one Bash sees?
-   - The probe uses a scratch `CLAUDE_CONFIG_DIR` and `--plugin-dir`, never the owner's
-     settings. Where a mode needs a person at the prompt, the owner runs it.
-   - Accept: each answer in this spec with its date and version. A mode that runs a hook `ask`
-     without a prompt records no grant (story 5). If P1, P2 or P6 leave no safe way to record a
-     grant, stop and ask the owner.
+1. **The probe answers what grants rest on** (T01; answers under *Converge*). P1 hook `ask`
+   prompts per mode; P2 what PostToolUse carries; P3 hook `allow` against settings rules; P4
+   `SessionEnd` and resume; P5 subagent identity; P6 the host; P7 env between Bash calls.
 2. **The hard `never` list grows; no grant and no prompt reaches it.**
    - `default.rules` rows:
      - `terraform`, `terragrunt` and `tofu`: `state rm|mv|push|replace-provider`,
@@ -155,8 +133,8 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
        entry younger than `PENDING_SECONDS` (600), which it consumes;
      - `session_id` matches `SESSION_RE`, and it is the main thread: no `agent_id`, and
        `agent_type` absent, null or empty;
-     - the exit code is 0;
-     - the host and the mode are ones P1 and P6 showed to prompt a person.
+     - the command succeeded (PostToolUse fires only then, P2);
+     - `CLAUDE_CODE_SESSION_ATTENDED` is `1` in the hook's environment (P1, P6).
    - The hook writes `<config dir>/cobot/grants/<session_id>.json` with `fcntl` locking and an
      atomic replace: `{kind, target, granted, expires}`. Targets are compared as exact strings.
    - `expires` is `granted + GRANT_HOURS` (12), a ceiling for a session that never ends
@@ -221,7 +199,7 @@ Design input: `owner-ideas-03.md` §4 (2026-11-11), amended by the answers below
 | entry or crossing | guard | story |
 |---|---|---|
 | the model asks for a grant (`cobot-rules grant`) | rule-less ask no allow or grant lifts; deny for a subagent, under agy, an unknown kind, a malformed target | 5: subagent and agy denied; an owner `allow Bash(cobot-rules*)` does not lift it |
-| a grant is recorded (a hook writes state the gate trusts) | a pending entry the gate wrote, matched by digest and age; main thread; exit 0; a host and mode that prompt (P1, P6) | 5: no pending entry, stale, other command, non-prompting mode, SDK host: nothing recorded |
+| a grant is recorded (a hook writes state the gate trusts) | a pending entry the gate wrote, matched by digest and age; main thread; PostToolUse (success only); `ATTENDED=1` (P1, P6) | 5: no pending entry, stale, other command, `ATTENDED=0`, a subagent: nothing recorded |
 | the grants folder | `never` Edit/Write rows built from `config_dir()`; shell writes to it denied; sandboxed Bash cannot write the config dir; a malformed file grants nothing | 2 and 5: Edit, shell write and `CLAUDE_CONFIG_DIR` cases denied; corrupt file grants nothing |
 | session id from the payload as a file name | `SESSION_RE` (UUID only) | 5: `../x` writes and grants nothing |
 | a command crosses to `allow` | `grant_scope` allow-lists (groups, verbs, options), one target flag, no resource paths or URLs; `never` and prompt-only judged first; main thread; Claude Code only; unexpired | 4 and 6: every negative listed returns no allow |
@@ -251,9 +229,13 @@ last in the code.
 
 ## Trade-offs
 
-- **The hook records the grant, not the `grant` command.** Sandboxed Bash can neither write the
-  config dir nor learn the session id. The pending entry ties the record to an ask the gate
-  itself made.
+- **The hook records the grant, not the `grant` command.** Bash knows the session id
+  (`CLAUDE_CODE_SESSION_ID`, P6) but cannot write the config dir. The pending entry ties the
+  record to an ask the gate itself made.
+- **`ATTENDED=1` trusts the host.** An Agent SDK host that sets it and answers every ask by code
+  is the owner's own program; cobot cannot see past it.
+- **A grant never beats a settings `ask` or `deny` (P3).** An owner settings line that asks
+  about `gcloud` keeps asking under a grant; the docs say so.
 - **Allow-lists, not deny-lists.** The CLIs have more target-changing flags than any list keeps
   up with. A form outside the lists asks, which costs a prompt, never a wrong target. The lists
   grow by spec.
@@ -296,4 +278,21 @@ tightens), `SESSION_RE`, symlinked Edit targets, `rtk` and `-chdir`, agy, the ta
 
 ## Converge
 
-pending
+**T01, the probe, 2026-11-20** (Claude Code 2.1.326; a log-only probe plugin by `--plugin-dir`
+and permission rules by `--settings`, no settings file touched; six headless runs, then the
+owner in the interactive CLI):
+
+- P1: a hook `ask` showed the owner a prompt in auto, acceptEdits, plan and bypassPermissions
+  (default not run: the owner's default is auto). Headless, the command never ran, in any mode,
+  even where a settings `allow` matched. `permission_mode` is in the payload.
+- P2: PostToolUse on Bash fires only after success (a failed `ls` gave none), with
+  `session_id`, `permission_mode`, `tool_input`, `tool_use_id`, `tool_response`; no exit code.
+- P3: a hook `allow` ran a command no settings rule matched. It did not beat a settings `ask`
+  ("not granted yet"), and a settings `deny` won.
+- P4: `SessionEnd` fires on exit with `session_id` and a `reason`; a resume keeps the id.
+  P7: an `export` does not reach the next Bash call.
+- P5: general-purpose, Explore, background and `context: fork` agents send `agent_type` and
+  `agent_id`; the main thread sends neither. Workflow agents not probed.
+- P6: `CLAUDE_CODE_SESSION_ATTENDED` is `1` in the desktop app and the interactive CLI, `0`
+  headless; Claude Code sets it, and hooks see it. `CLAUDE_CODE_ENTRYPOINT` is inherited from
+  the parent process, so it proves nothing. So story 5 records with `ATTENDED=1`, no mode check.

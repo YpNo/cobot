@@ -433,3 +433,11 @@ Proof: two cold reads of the gate and docs; challenger RETHINK (2 BLOCKER, 6 MAJ
 Open: the probe (T01) can still stop the design (P1, P2, P6).
 Next: T01, the probe.
 verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · spec only, no code; gate dry runs of the challenged commands
+
+## 2026-11-20 — T01 session-grants: the probe's findings
+Changed: .agent/specs/session-grants.md Converge holds P1–P7; story 1 points there; story 5 records a grant on PostToolUse with CLAUDE_CODE_SESSION_ATTENDED=1 (no mode check, no exit-code field: PostToolUse fires only on success); trade-offs gain the session id in Bash, the SDK host, and a grant never beating a settings ask or deny.
+Why: spec session-grants story 1: recording rests on P1, P2, P6.
+Proof: Claude Code 2.1.326, a log-only probe plugin by --plugin-dir and rules by --settings (no settings file touched), scratchpad only. Six headless runs: hook ask never ran in any mode, bypassPermissions included, even with a settings allow; hook allow ran an unmatched command but lost to a settings ask and a settings deny; PostToolUse absent for a failed ls; subagents (general-purpose, Explore, background, context: fork) carry agent_type and agent_id, the main thread neither; resume keeps the session id; SessionEnd fires with reason; export does not persist; ATTENDED 0 headless, ENTRYPOINT inherited from the parent. The owner in the interactive CLI saw a prompt in auto, acceptEdits, plan and bypassPermissions; ATTENDED 1 there and in the desktop app.
+Open: workflow agents not probed; default mode not run interactively (the owner's default is auto). A grep of this session's env printed CLAUDE_* values into the local transcript (a broken pattern); a stray sed -i on /dev/null failed and edited nothing.
+Next: T02, the never additions and the prompt-only apply.
+verified: tree da5ab11d50f276edd1df3564947d95bfc0acb705 · spec only; probe logs in the session scratchpad

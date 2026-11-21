@@ -2,8 +2,7 @@
 name: lang-python
 description: >-
   Senior Python: verified interpreter and tools, the exact uv, ruff, pytest, type-check and audit
-  commands, 3.12+ idiom, pyproject and uv.lock shape, test and security rules, Home Assistant custom
-  components. Use on *.py, pyproject.toml, uv.lock, requirements*.txt, in python-builder, and before
+  commands, 3.12+ idiom, pyproject and uv.lock shape, test and security rules. Use on *.py, pyproject.toml, uv.lock, requirements*.txt, in python-builder, and before
   writing, reviewing or testing Python.
 paths:
   - "**/*.py"
@@ -83,11 +82,7 @@ tests/conftest.py  tests/test_<module>.py
 
 - `src/` layout so tests never import the working directory by accident.
 - One package per repository unless a workspace is declared (`[tool.uv.workspace]`).
-- Home Assistant custom components: `custom_components/<domain>/` with `manifest.json`
-  (`version`, `requirements`, `codeowners`), `hacs.json`, `strings.json` + `translations/`,
-  `config_flow.py`; the interpreter floor is HA's (`requires-python >= 3.14.2` in 2026.11);
-  validate with `hassfest` and the HACS action (both run from a branch ref upstream; pin the
-  commit in your own workflow).
+- Home Assistant custom components: `expert-homeassistant`.
 
 ## Tests
 

@@ -48,6 +48,5 @@ Notes
   that call `python` without uv.
 - A matrix over Python lines is worth it only for a published library; an application tests the
   line it deploys.
-- Home Assistant components: a second job with `home-assistant/actions/hassfest@<sha>` and
-  `hacs/action@<sha>` with `category: integration`; both upstreams publish branch refs, so pin
-  the commit and let Dependabot (`github-actions`) move it.
+- Home Assistant components: the hassfest and HACS job is `expert-homeassistant`'s
+  `references/ci.md`.

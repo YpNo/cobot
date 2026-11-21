@@ -209,9 +209,14 @@ All notable changes to this project are documented here. The format follows
 
 - **`hass-cli` under the gate (decision 36).** Every write to a live Home Assistant instance
   asks, and so do `-s`/`--server`, `--insecure` and `--debug` (it prints the request headers).
-  A token or password on the command line, or assigned a literal value in the command, is
-  refused. Reads stay silent in the main thread only. A read-only agent that names
-  `secrets.yaml` or a `.storage` path to a reader is refused.
+  A token or password on the command line, or a token variable set in the command, is refused;
+  expanding one asks. Reads stay silent in the main thread only, with the server from
+  `HASS_SERVER`.
+- **Read-only agents cannot print Home Assistant's secrets.** The consultant, learner, auditor and
+  investigator are refused a command that would print `secrets.yaml` or a `.storage/` file. That
+  covers naming the file, a `<` redirect, a recursive `grep`, `rg`, `semgrep` or verbose
+  `gitleaks` over a tree holding one unless excluded, a history printer in a repository that
+  tracks or tracked one unless a pathspec excludes it, and a `curl` `file:` URL.
 - **A debug record cannot carry a secret (decision 35).** The gate refuses an Edit or Write under
   `.agent/debug/` whose text holds a known token format, a `ya29.` token, a JWT, a `Bearer`
   header, a password in a URL, kubeconfig key data or a service-account key. The refusal names

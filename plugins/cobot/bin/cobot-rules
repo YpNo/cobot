@@ -50,6 +50,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_agy as agy  # noqa: E402
 import _cobot_make  # noqa: E402
+import _cobot_secrets as secrets  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
     DEBUG_REDACTED,
@@ -4317,32 +4318,33 @@ EXPANSION_ONLY_RE = re.compile(
     r"(?:\$(?:\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*|[0-9?#@*$!-])|" + shell.SENTINEL_RE.pattern + r")+"
 )
 HERE_OPERATORS = frozenset({"<<", "<<-", "<<<"})
-# the variables hass-cli 1.0.0 reads a secret from (homeassistant_cli/cli.py, read 2026-11-21);
-# an assignment drops out of the forms rules match, so a literal value is judged here (spec
-# expert-homeassistant, T04)
-SECRET_VARIABLES = frozenset({"HASS_TOKEN", "HASSIO_TOKEN", "HASS_SUPERVISOR_TOKEN", "HASS_PASSWORD"})
+# Home Assistant (spec expert-homeassistant): hass-cli 1.0.0 reads its token and password from
+# these variables, and click falls back to the HOMEASSISTANT_ prefix when they are unset
+# (homeassistant_cli/cli.py and click 8.5.1 core.py, read 2026-11-21). An assignment drops out of
+# the forms rules match, so the variables are judged here
+SECRET_VARIABLES = frozenset(
+    {
+        "HASS_TOKEN",
+        "HASSIO_TOKEN",
+        "HASS_SUPERVISOR_TOKEN",
+        "HASS_PASSWORD",
+        "HOMEASSISTANT_TOKEN",
+        "HOMEASSISTANT_SUPERVISOR_TOKEN",
+        "HOMEASSISTANT_PASSWORD",
+    }
+)
+SERVER_VARIABLES = frozenset({"HASS_SERVER", "HOMEASSISTANT_SERVER"})
+SECRET_EXPANSION_RE = re.compile(r"\$\{?!?(?:" + "|".join(sorted(SECRET_VARIABLES)) + r")\b")
+# commands that set a variable named as a word (`read -r X`, `printf -v X`, `for X in`)
+SETTERS = frozenset("read printf export declare typeset local readonly for mapfile readarray getopts".split())
+PRINTERS = frozenset({"printenv", "env", "echo", "printf"})
 HASS_ASSIGNMENT_REFUSAL = (
-    "a Home Assistant token or password written into the command lands in the transcript: set it "
-    "in your shell profile or a secret manager"
+    "a Home Assistant token or password set in a command lands in the transcript: set it in your "
+    "shell profile or a secret manager"
 )
-
-
-# a Home Assistant configuration's credentials: secrets.yaml, and .storage/ (auth,
-# core.config_entries). Judged here, not by rows: a reader row such as `cat *secrets.yaml*` is
-# viable for every globbed read (its literal prefix is `cat `), so each would ask
-SECRET_FILE_NAMES = frozenset({"secrets.yaml"})
-SECRET_FOLDERS = frozenset({".storage"})
-SECRET_FILE_READERS = frozenset(
-    "cat head tail less more grep egrep fgrep rg jq yq sort uniq diff cut awk".split()
-)
-SECRET_FILE_GIT_VERBS = frozenset({"show", "diff", "log", "blame", "grep", "cat-file"})
-# readers whose first operand is a pattern or a program, not a file, unless an option carries it
-PATTERN_FIRST = frozenset("grep egrep fgrep rg jq yq awk".split())
-PATTERN_OPTIONS = frozenset({"-e", "--regexp", "-f", "--file", "--from-file"})
-HASS_FILE_REFUSAL = (
-    "a read-only agent reads a Home Assistant secrets file (secrets.yaml or .storage/): report "
-    "whether it is tracked with git ls-files instead"
-)
+HASS_EXPANSION_NOTE = "the command expands or prints a Home Assistant token or password"
+HASS_SERVER_NOTE = "the environment's Home Assistant token goes to the server this names"
+HASS_INSECURE_NOTE = "TLS off: the Home Assistant token goes to whoever answers"
 
 
 def read_only_agent(agent: str | None) -> bool:
@@ -4351,42 +4353,74 @@ def read_only_agent(agent: str | None) -> bool:
     return bool(agent) and (agent_matches("consultant", agent) or agent_matches("learner", agent))
 
 
-def names_secret_file(word: str) -> bool:
-    """``config/secrets.yaml``, ``HEAD:secrets.yaml``, ``--file=.storage/auth``, ``.storage``."""
-    if shell.has_sentinel(word):
-        return False
-    parts = [part for part in re.split(r"[/:=]", word) if part]
-    return bool(parts) and (parts[-1] in SECRET_FILE_NAMES or any(p in SECRET_FOLDERS for p in parts))
-
-
-def reads_secret_file(segment: list[str]) -> bool:
-    """Whether a reader names a secrets file literally: a text reader, or a git verb that prints
-    content. ``git ls-files secrets.yaml`` only says whether it is tracked. A glob that could
-    expand to one is the anchored-glob residual of the read list."""
-    plain = strip_global_options(strip_wrappers(segment))
-    if not plain:
-        return False
-    if plain[0] in SECRET_FILE_READERS:
-        words = plain[1:]
-    elif plain[0] == "git" and plain[1:2] and plain[1] in SECRET_FILE_GIT_VERBS:
-        words = plain[2:]
-    else:
-        return False
-    if plain[0] in PATTERN_FIRST and not any(w.split("=", 1)[0] in PATTERN_OPTIONS for w in words):
-        operands = [index for index, word in enumerate(words) if not word.startswith("-")]
-        words = [w for index, w in enumerate(words) if not operands or index != operands[0]]
-    return any(names_secret_file(word) for word in words)
+def sets_variable(segment: list[str], names: frozenset[str]) -> bool:
+    """Whether the segment assigns one of the names (``X=``, ``X+=``, after ``env`` or ``export``)
+    or hands it to a setter (``read X``, ``printf -v X``, ``for X in``), whatever the value."""
+    if segment and segment[0] in SETTERS and any(word in names for word in segment[1:]):
+        return True
+    return any(word.partition("=")[1] and word.partition("=")[0].rstrip("+") in names for word in segment)
 
 
 def secret_assignment(segment: list[str]) -> bool:
-    """Whether a word gives a literal value to a variable hass-cli reads a secret from: inline
-    before the command, after ``env``, or through ``export`` or ``declare``. A value made only of
-    expansions (``"$(pass show ha)"``, ``$OTHER``) names no secret and passes."""
-    for word in segment:
-        name, sep, value = word.partition("=")
-        if sep and name in SECRET_VARIABLES and value and not EXPANSION_ONLY_RE.fullmatch(value):
-            return True
-    return False
+    """Any setting of a token variable in a command: the owner sets them in their own shell."""
+    return sets_variable(segment, SECRET_VARIABLES)
+
+
+def secret_expansion(command: str, segment: list[str]) -> bool:
+    """The command expands a token variable, or a printer names one (``printenv HASS_TOKEN``)."""
+    plain = strip_wrappers(segment)
+    printed = bool(plain) and plain[0] in PRINTERS and any(word in SECRET_VARIABLES for word in plain[1:])
+    return printed or bool(SECRET_EXPANSION_RE.search(command))
+
+
+def hass_cli_exposure(segment: list[str]) -> str | None:
+    """A server or ``-x`` (insecure) among hass-cli's options before the verb, short clusters read
+    letter by letter (``-vvvs``, ``-xv``); ``-ojson`` and ``-lDEBUG`` carry a value instead."""
+    plain = strip_wrappers(segment)
+    if plain[:1] != ["hass-cli"]:
+        return None
+    with_value, _ = GLOBAL_OPTIONS["hass-cli"]
+    rest = plain[1:]
+    while rest and rest[0].startswith("-") and rest[0] not in ("-", "--"):
+        word = rest.pop(0)
+        if word.startswith("--"):
+            if word.split("=", 1)[0] in with_value and "=" not in word:
+                rest = rest[1:]
+            continue
+        for position, letter in enumerate(word[1:], start=1):
+            if letter == "s":
+                return HASS_SERVER_NOTE
+            if letter == "x":
+                return HASS_INSECURE_NOTE
+            if f"-{letter}" in with_value:
+                rest = rest[1:] if position == len(word) - 1 else rest
+                break
+    return None
+
+
+def segment_base(dirs: Dirs, cwd: str | None) -> Path:
+    """The one directory a segment runs in, else the call's working directory."""
+    if dirs and len(dirs) == 1:
+        return next(iter(dirs))
+    return Path(cwd or os.getcwd())
+
+
+def hass_verdict(
+    command: str, segment: list[str], dirs: Dirs, cwd: str | None, agent: str | None
+) -> Verdict | None:
+    """The Home Assistant checks of one segment, strictest first; None when none applies."""
+    if secret_assignment(segment):
+        return Verdict(DENY, None, HASS_ASSIGNMENT_REFUSAL)
+    if secret_expansion(command, segment):
+        return Verdict(DENY if read_only_agent(agent) else ASK, None, HASS_EXPANSION_NOTE)
+    if read_only_agent(agent):
+        note = secrets.exposure(strip_global_options(strip_wrappers(segment)), segment_base(dirs, cwd))
+        if note:
+            return Verdict(DENY, None, note)
+    if sets_variable(segment, SERVER_VARIABLES):
+        return Verdict(ASK, None, HASS_SERVER_NOTE)
+    note = hass_cli_exposure(segment)
+    return Verdict(ASK, None, note) if note else None
 
 
 SHELL_WRITE_ASK = "text written into a file through the shell, or a write the gate cannot trace"
@@ -4727,15 +4761,17 @@ def judge_bash(
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
     config = RepositoryConfig(Path(cwd or os.getcwd()).resolve()) if agent else None
-    for segment, origin, unit, _ in entries:
+    redirected = secrets.redirect_exposure(reached.paths) if read_only_agent(agent) else None
+    if redirected:
+        best = Verdict(DENY, None, redirected)
+    for segment, origin, unit, dirs in entries:
         own = refused or (config and repository_config(strip_wrappers(segment), origin, config))
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
         if writes_by_script(segment, unit, holes) or edits_in_place(segment):
             verdict = Verdict(DENY, None, WRITING_SCRIPT)
-        if secret_assignment(segment):
-            verdict = Verdict(DENY, None, HASS_ASSIGNMENT_REFUSAL)
-        if read_only_agent(agent) and reads_secret_file(segment):
-            verdict = Verdict(DENY, None, HASS_FILE_REFUSAL)
+        hass = hass_verdict(command, segment, dirs, cwd, agent)
+        if hass and outranks(hass, verdict):
+            verdict = hass
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

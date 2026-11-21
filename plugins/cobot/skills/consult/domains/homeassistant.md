@@ -7,7 +7,10 @@ Read-only. Change nothing, commit nothing, run nothing the repository supplies: 
 of a manifest's requirements, no `hass-cli` (a live instance is the main thread's). Read
 `skills/expert-homeassistant/SKILL.md` and its references first; they are the baseline. Never
 read `secrets.yaml` or anything under `.storage/` (the gate refuses it): `git ls-files` says
-whether they are tracked. Network use is limited to documentation fetches.
+whether they are tracked. Recursive reads and history exclude them
+(`grep -rn --exclude=secrets.yaml --exclude-dir=.storage`, `rg -g '!secrets.yaml' -g '!.storage'`,
+`git log -p -- . ':!*secrets.yaml' ':!*.storage/*'`). Network use is limited to documentation
+fetches.
 
 ## Procedure
 

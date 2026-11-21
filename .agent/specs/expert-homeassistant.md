@@ -176,6 +176,21 @@ gets no row, and an anchored glob that could expand to the file stays the read l
 beside the ungated Read tool. `hass-cli --debug` asks: `HTTPConnection.send` prints the raw
 request at debuglevel 1 (exp: the Python 3.13.15 source).
 
+Folded at the wrap (2026-11-21, code and security reviews; the owner chose to fix the read gaps
+in this PR): `bin/_cobot_secrets.py` refuses a read-only agent's `<` redirect from a secrets
+file, a recursive `grep`, any `rg`, `semgrep` or verbose unredacted `gitleaks` over a tree that
+holds one unless the command excludes it (the tree walked, at most 20 000 entries), a history
+printer in a repository whose history or index tracks one with no pathspec excluding it, a
+`curl` `file:` URL, and an `-e` pattern attached to a short cluster. `hass_verdict` refuses any
+setting of the token variables (`+=`, `${X:-lit}`, `$'…'`, `$(echo …)`, `read`, `printf -v`,
+`for` included: the owner sets them in their own shell) and the `HOMEASSISTANT_` fallbacks click
+reads; refuses their expansion for read-only agents and asks on it in the main thread; asks on
+`HASS_SERVER` set and on `-s` or `-x` in any short cluster. Left as findings: `pipx run` and
+`python -m homeassistant_cli` (no gate form sees through them, for every `never` row), and
+`docker run --env=HASS_TOKEN=…` (already asks). Reasoned, not changed: `-l DEBUG` logs no
+header (hass-cli logs none, urllib3 logs the request line); a word such as
+`git commit -m "HASS_TOKEN=x"` is refused, which widens nothing.
+
 ## Trade-offs
 
 - The learner in the build over a skeleton: a full expert on day one, at three learner runs;

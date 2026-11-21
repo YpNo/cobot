@@ -172,7 +172,7 @@ The commands you type, shown as Claude Code names them (under agy, drop `cobot:`
 | `/cobot:ship` | writes the CI/CD pipeline from your verified commands |
 | `/cobot:contribute` | prepares a pull request to someone else's project, under their rules |
 | `/cobot:security-sweep` | audits the whole repository, read-only |
-| `/cobot:consult [domain]` | expert audits in parallel: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api`; with no domain, every one found here |
+| `/cobot:consult [domain]` | expert audits in parallel: `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api`, `homeassistant`; with no domain, every one found here |
 
 Language skills, experts and builders load on their own when your files need them.
 

@@ -197,3 +197,11 @@ Proof: tests/test_consult_domains.py, test_missing_domain.py, test_spec_skill.py
 Open: the two evals are paid and not run here (owner: gh workflow run ci.yml -f evals=true -f cases=consult-homeassistant,spec-names-missing-expert); spec-names-missing-expert has no CONTEXT.md, so it grades the step 2 fallback, not the domains line.
 Next: T07 the docs, decision 36, F-39 closed; then /cobot:wrap.
 verified: tree 2f8077d5f41c5ace3e7085a72398ac1e9397bd88 · focused suites, grader tests, check-plugin, ruff
+
+## 2026-11-21 — expert-homeassistant T07: decision 36 and the docs; the spec converged
+Changed: decision 36 in docs/01-decisions.md and decision 25 amended; docs/02-design.md §12 (Home Assistant: hass-cli under the gate, a server waits for cobot-reverse) and §15 R3; docs/architecture.md (consult domain, knowledge skill); docs/configuration.md (a Home Assistant section: the environment, what the gate refuses, asks and leaves silent); README consult row; CHANGELOG Added, Changed and Security; F-39 closed; the spec's Converge.
+Why: spec expert-homeassistant story 7 (T07).
+Proof: full suite with coverage exit 0, 98.44% (fail-under 85); ruff 0.17.6 check and format clean; markdownlint-cli2 0.24.2 clean over 146 files; shellcheck clean, the two new fixtures included; check-plugin ok (listing 11124 of 15000 chars, protocol 3399); sync-agents --check in sync; claude plugin validate --strict passes for the plugin and the marketplace; cobot-memory check: 0 open findings of 49, brief 4645 of 6000.
+Open: the paid evals consult-homeassistant and spec-names-missing-expert are the owner's to run; agy validate not re-run; onboard step 6b may collide with the gcp-mcp opt-in spec's onboard step (whichever merges second renumbers); Home Assistant capture and replay stays with cobot-reverse.
+Next: /cobot:wrap, then the owner's word on pushing feat/expert-homeassistant.
+verified: tree 2f8077d5f41c5ace3e7085a72398ac1e9397bd88 · full suite with coverage, lint, validators

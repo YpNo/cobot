@@ -299,6 +299,24 @@ judges its tools.
   including the IAM deny policy for projects in an organisation and the SSH tunnel for a remote
   host, is in `plugins/cobot/skills/expert-gcp/references/mcp.md`.
 
+## Home Assistant
+
+`hass-cli` reads its server and token from the environment: set `HASS_SERVER` and `HASS_TOKEN`
+in your shell profile, or from a secret manager, before the session (decision 36). The gate then
+judges it like this:
+
+- refused: `--token`, `--supervisor-token` or `--password` on the command line, and a command
+  that assigns a literal value to `HASS_TOKEN`, `HASSIO_TOKEN`, `HASS_SUPERVISOR_TOKEN` or
+  `HASS_PASSWORD` (`export HASS_TOKEN="$(pass show ha)"` passes: it names no value);
+- asked: every write verb (`service call`, `state edit|delete|toggle|turn_on|turn_off`,
+  `event fire`, `raw post|ws`, entity, device, area and integration writes), the whole `ha`
+  Supervisor group, `discover`, `map`, `-s`/`--server`, `--insecure` and `--debug`;
+- silent: the other reads, in the main thread only. No read-only agent has `hass-cli`.
+
+A long-lived token acts with its user's full rights: a non-admin user's token is enough to read.
+The consultant, learner, auditor and investigator are refused a read of `secrets.yaml` or a
+`.storage` path; the Read tool is not gated, so the consult's procedure carries that rule there.
+
 ## Cloud read lists
 
 The security sweep's `cobot:auditor` and the debug path's `cobot:investigator` read with the

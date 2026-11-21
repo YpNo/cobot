@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A Home Assistant expert (decision 36, F-39).** `expert-homeassistant` covers custom
+  integrations (manifest, translations, the quality scale, hassfest and HACS), configuration
+  (packages, `!include`, `!secret`, automations, blueprints), the REST and WebSocket APIs and
+  long-lived tokens, `hass-cli`, ZHA and the device, entity, area, floor and label registries.
+  Its 47 lines were verified at their upstream sources on 2026-11-21. `/cobot:consult
+  homeassistant` audits an integration or a configuration repository read-only. A debug
+  routing row sends Home Assistant symptoms to it. Eval case `consult-homeassistant`.
+- **Onboard and spec say when no expert covers a domain.** Onboard step 6b writes a `domains:`
+  line in CONTEXT.md's Stack and proposes `/cobot:learn` for each domain without an expert.
+  Spec step 2 reads that line, or does the match itself on an older memory, and the spec's
+  `Experts:` line names the domains with none. The challenger then says once that its points
+  on such a domain come from memory. Eval case `spec-names-missing-expert`.
+
 - **A debug path (decision 35).** `/cobot:debug <symptom>` leads a diagnosis in the main thread
   when the cause is unknown. It frames the symptom with the live context and your active grants,
   and a production target waits for your word. It reproduces the symptom, ranks two to five
@@ -101,6 +114,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`lang-python` no longer holds the Home Assistant lines.** They moved to
+  `expert-homeassistant` with their dates, and the hassfest SHA was re-verified.
 - **The read-only agents' read list is tighter (decision 35).** For the consultant, learner,
   auditor and investigator, these now ask instead of running silently:
   - a `kubectl get` output that prints field values (anything but `-o wide` and `-o name`, plus
@@ -192,6 +207,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **`hass-cli` under the gate (decision 36).** Every write to a live Home Assistant instance
+  asks, and so do `-s`/`--server`, `--insecure` and `--debug` (it prints the request headers).
+  A token or password on the command line, or assigned a literal value in the command, is
+  refused. Reads stay silent in the main thread only. A read-only agent that names
+  `secrets.yaml` or a `.storage` path to a reader is refused.
 - **A debug record cannot carry a secret (decision 35).** The gate refuses an Edit or Write under
   `.agent/debug/` whose text holds a known token format, a `ya29.` token, a JWT, a `Bearer`
   header, a password in a URL, kubeconfig key data or a service-account key. The refusal names

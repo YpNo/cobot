@@ -231,3 +231,11 @@ Proof: full suite 4387 passed, 98.32 %; ruff check and format clean; no commit f
 Open: the five GitGuardian incidents on the dashboard are the owner's to resolve.
 Next: merge PR 80, then the GCP MCP opt-in build.
 verified: tree 0edcc05a8708cfd16b6dcba4bf49dbf14d9fa4e2 · full suite with coverage, ruff
+
+## 2026-11-21 — gcp-mcp-opt-in: spec written, challenged and folded
+Changed: .agent/specs/gcp-mcp-opt-in.md (medium): the gcp-mcp: yes|no header line asked once at the first Google Cloud work (onboard 6b on first run or refresh, consult, spec and wrap gcp consultants, debug after its live context); the guarded setup in mcp.md at -s user; ask rows on every registration route (claude mcp add|add-json|remove, --mcp-config, ~/.claude.json, .mcp.json); the Google Cloud CLI server refused whole and its tool names on any server; a pinned test that grants never reach MCP; check warnings on the line and a repo .mcp.json.
+Why: owner-ideas-03 §4 MCP opt-in and reads-through-MCP (confirmed); owner's answers Q1 no by default, Q2 refuse cloudcli, Q3 eval plus text tests, Q4 -s user.
+Proof: challenger SOUND WITH CHANGES (4 MAJOR, 7 MINOR folded) and gcp consult (3 MAJOR, 5 MINOR folded), both run from cobot's agent definitions through a general agent because the cobot: agents were not loaded; Google's MCP docs read 2026-11-20 and 21; dry run cobot-rules check on claude mcp add prints none today.
+Open: onboard step 6b and spec step 5 overlap with the F-39 spec; second-identity roles reported until the build checks them; narrower readonly OAuth scopes unverified.
+Next: /cobot:build gcp-mcp-opt-in on the owner's word.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, no code

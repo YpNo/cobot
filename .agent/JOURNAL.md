@@ -173,3 +173,11 @@ Proof: full suite 4128 passed, coverage 98.43% (fail-under 85); markdownlint-cli
 Open: unprompted routing to /cobot:debug is not graded; kubectl rollout status waits by default; the forge credential printers ask for the investigator rather than deny.
 Next: the owner's word on pushing chore/housekeeping and feat/debug-path.
 verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · full suite with coverage, lint, validators
+
+## 2026-11-21 — spec expert-homeassistant (F-39): written and challenged
+Changed: .agent/specs/expert-homeassistant.md: expert-homeassistant (custom integrations, configuration, REST and WebSocket APIs, hass-cli, ZHA and registries), /cobot:consult homeassistant, hass-cli gate rows, onboard step 6b Domains and the spec step 2 Experts line; seven tasks in four lanes.
+Why: F-39, the owner asked for a Home Assistant expert on ha-manager and nothing said none existed.
+Proof: cobot-rules check reproduced the challenger's BLOCKER (cat config/secrets.yaml as cobot:consultant: none) and the inline-token MAJOR (HASS_TOKEN=x hass-cli state list: none); spec 206 lines; owner's answers Q1 a, Q2 a, Q3 b, Q4 a, narrowed to ask on -s/--server.
+Open: cobot:challenger not loaded in this session, the owner's challenger ran with cobot's challenger.md; no consultant relevant; onboard step 6b may collide with the gcp-mcp opt-in spec's onboard step; HA capture and replay stays with cobot-reverse.
+Next: /cobot:build expert-homeassistant on feat/expert-homeassistant.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, challenger verdict folded

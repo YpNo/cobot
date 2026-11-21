@@ -14,6 +14,12 @@ You run in the main thread so you can ask the owner. Do not build anything here.
 2. **Cold read.** Use the built-in Explore agent for the parts of the repository the change touches;
    read only what the spec needs. Note the verified commands that will prove each story, and
    note the sites of each trust-boundary kind the change touches (the template lists the kinds).
+   **Experts.** Read the `domains:` bullet of CONTEXT.md's Stack in the file itself (the brief
+   may drop the Stack); without one (a repository onboarded before onboard step 6b), match the
+   goal, the Stack and the files the change touches against the `lang-*`, `fw-*` and `expert-*`
+   skills yourself and propose an onboard refresh in the hand-over. Call each matching expert
+   by name before you write a fact about its domain. A domain with none: say so to the owner,
+   write its facts as questions, and propose `/cobot:learn <topic> --new-expert`.
    **New project** (CONTEXT.md's Stack says `decided by the first spec`, or its verified table
    holds only the `none yet` row): skip the cold read, there is nothing to read. The language is a
    clarify question unless the owner's request names it; once chosen, call the

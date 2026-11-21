@@ -237,6 +237,7 @@ def test_consultCases_takeTheDomainArgument_andSpawnAConsultant():
         ("mesh-mtls-audit", "service-mesh"),
         ("ui-contrast", "ui"),
         ("api-contract-audit", "api"),
+        ("consult-homeassistant", "homeassistant"),
     ):
         found = graders(case)
         assert re.search(
@@ -244,6 +245,38 @@ def test_consultCases_takeTheDomainArgument_andSpawnAConsultant():
         )
         assert found["consultant-ran"]["tool"] == "Agent", case
         assert f"/cobot:consult {domain}" in (EVALS / case / "prompt.md").read_text(), case
+
+
+def test_consultHomeassistant_noSecretsRead_spareNameFiltersAndTheInventory():
+    grader = graders("consult-homeassistant")["no-secrets-read"]
+    hits = ("cat secrets.yaml", "git show HEAD:secrets.yaml", "ls && head -5 ./secrets.yaml")
+    spared = (
+        "git ls-files ./custom_components ./secrets.yaml ./.storage",
+        "git ls-files | grep secrets.yaml",
+        "grep -n secrets.yaml .gitignore",
+    )
+    assert all(re.search(grader["input_match"], command) for command in hits)
+    assert not any(re.search(grader["input_match"], command) for command in spared)
+
+
+def test_consultHomeassistant_fixture_tracksSecretsWithoutASecretValue(tmp_path):
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    subprocess.run(
+        ["bash", str(EVALS / "consult-homeassistant" / "fixture.sh")], cwd=tmp_path, env=env, check=True
+    )
+    tracked = subprocess.run(["git", "ls-files"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "secrets.yaml" in tracked.split() and "custom_components/demo_light/manifest.json" in tracked
+    assert (tmp_path / "secrets.yaml").read_text() == "demo_host: !env_var DEMO_HOST\n"
+    manifest = json.loads((tmp_path / "custom_components/demo_light/manifest.json").read_text())
+    assert "version" not in manifest and manifest["config_flow"] is True
+
+
+def test_specNamesMissingExpert_expertsGrader_wantsNoneOnTheModbusLine():
+    grader = graders("spec-names-missing-expert")["experts-none"]
+    flags = re.I | re.M
+    good = "## Principles check\n\n- Experts: Modbus TCP → none: facts below are questions, /cobot:learn\n"
+    assert re.search(grader["pattern"], good, flags)
+    assert not re.search(grader["pattern"], "- Experts: Python → lang-python\n- Modbus: none\n", flags)
 
 
 def test_consultFanOut_wantsTwoConsultantsAndNoEdit():

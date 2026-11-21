@@ -148,6 +148,9 @@ def test_hassCli_read_asksForReadOnlyAgents(rules, agent):
         "jq . .storage/auth",
         "cat config/.storage/core.config_entries",
         "grep -r token .storage/",
+        "grep -e api secrets.yaml",
+        "grep --regexp=api secrets.yaml",
+        "jq -r .x .storage/core.config_entries",
     ],
 )
 @pytest.mark.parametrize("agent", ["cobot:consultant", "cobot:learner", "cobot:investigator"])
@@ -176,7 +179,14 @@ def test_secretFile_readOutsideReadOnlyAgents_isNotRefused(rules, agent):
 
 @pytest.mark.parametrize(
     "command",
-    ["git ls-files secrets.yaml", "git ls-files --error-unmatch config/secrets.yaml", "cat .gitignore"],
+    [
+        "git ls-files secrets.yaml",
+        "git ls-files --error-unmatch config/secrets.yaml",
+        "cat .gitignore",
+        "git ls-files | grep secrets.yaml",
+        "grep -n secrets.yaml .gitignore",
+        "jq '.secrets.yaml' ./config.json",
+    ],
 )
 @pytest.mark.parametrize("agent", [None, "cobot:consultant"])
 def test_secretFile_namedWithoutReading_staysSilent(rules, command, agent):

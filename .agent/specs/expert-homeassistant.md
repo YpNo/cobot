@@ -160,10 +160,21 @@ Domains**. Whichever merges second rebases onboard's numbering and keeps both. T
 | T01 | [x] `skills/expert-homeassistant/SKILL.md` (frontmatter, sections, *Do not*) and `references/versions.md`, `references/ci.md`; move `lang-python` SKILL.md's component bullet, `references/versions.md` § Home Assistant and `references/ci.md`'s hassfest bullet with their stamps; `lang-python` keeps one pointer and drops Home Assistant from its description. Check: `check-plugin.py`, story 2's grep | skill | — | — |
 | T02 | three `/cobot:learn` runs (question sets A, B, C), each delta quoted, dry-run, promoted `--in-place`; lines arranged by Edit. Check: story 1's commands, `cobot-memory check` | skill | — | T01 |
 | T03 | `skills/consult/domains/homeassistant.md`, the router's row and description; tests in `test_consult_domains.py`. Check: focused pytest, `check-plugin.py` | skill | — | T02 |
-| T04 | `hass-cli` in `GLOBAL_OPTIONS`; rows in `rules/default.rules` (never: `--token`, `--password`, `--supervisor-token` in both forms, the three variables' assignments; scoped never and main-thread anchored ask: the read-list readers on `secrets.yaml` and `.storage/`; ask: every write verb, `-s`/`--server`, `--insecure`, `--debug` if it prints headers); the assignment-prefix check in `cobot-rules`; negative tests for every trust-boundary row, tests first. Check: `pytest tests/test_cobot_rules.py -k hass_cli` and `-k secret_file`, `test_gate_differential.py`, `test_gate_agy.py` | gate | auth | — |
+| T04 | [x] `hass-cli` in `GLOBAL_OPTIONS`; rows in `rules/default.rules` (never: `--token`, `--password`, `--supervisor-token` in both forms, the three variables' assignments; scoped never and main-thread anchored ask: the read-list readers on `secrets.yaml` and `.storage/`; ask: every write verb, `-s`/`--server`, `--insecure`, `--debug` if it prints headers); the assignment-prefix check in `cobot-rules`; negative tests for every trust-boundary row, tests first. Check: `pytest tests/test_cobot_rules.py -k hass_cli` and `-k secret_file`, `test_gate_differential.py`, `test_gate_agy.py` | gate | auth | — |
 | T05 | onboard step 6b, spec step 2 (with the no-`domains:` fallback), the template's `Experts:` line, the challenger's sentence, `sync-agents.py`; text tests. Check: `test_workflow_skills.py`, `test_spec_skill.py`, `sync-agents.py --check`, markdownlint | workflow | — | — |
 | T06 | the debug routing row; evals `consult-homeassistant` (a fixture integration: no `version`, an unpinned requirement, `config_flow: true` without `config_flow.py`, hassfest at a branch ref, a tracked `secrets.yaml` holding only `x: !env_var X`, no secret-shaped literal) and `spec-names-missing-expert` (a Modbus repository: the spec's `Experts:` line says none and proposes `/cobot:learn`). Check: `test_debug_skill.py`, `test_eval_graders.py`; the paid runs are the owner's (`gh workflow run ci.yml -f evals=true -f cases=…`) | evals | — | T03, T05 |
 | T07 | decision 36, decision 25 and design §12, §15 amended, README, `docs/architecture.md`, `docs/configuration.md`, CHANGELOG, F-39 closed. Check: markdownlint, `cobot-memory check` | docs | — | T01–T06 |
+
+Built differently in T04 (2026-11-21), the secret-file guard: reader rows (`cat *secrets.yaml*`)
+cannot hold it. Their literal prefix is the bare `cat `, so `viable()` finds them matchable by
+every globbed or substituted read; scoped `never` rows made `cat ~/notes/*.md` ask for agents,
+and main-thread `ask` rows made `cat "$f"` and `git log $(…)` ask (`test_cobot_rules.py`'s
+silent cases). So `reads_secret_file` in `cobot-rules` refuses a read-only agent (consultant,
+learner, and the auditor and investigator through `SCOPE_ALIASES`) whose reader or
+content-printing git verb names `secrets.yaml` or a `.storage` path literally; the main thread
+gets no row, and an anchored glob that could expand to the file stays the read list's residual,
+beside the ungated Read tool. `hass-cli --debug` asks: `HTTPConnection.send` prints the raw
+request at debuglevel 1 (exp: the Python 3.13.15 source).
 
 ## Trade-offs
 

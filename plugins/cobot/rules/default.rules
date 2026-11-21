@@ -387,6 +387,19 @@ never Bash(kubectl get secret --prints-credential) # prints a credential into th
 never Bash(kubectl create token*) # prints a credential into the transcript
 ask Bash(npm token list*) # prints a credential into the transcript
 ask Bash(npm token ls*) # prints a credential into the transcript
+# Home Assistant (spec expert-homeassistant, T04): hass-cli reads its token and password from the
+# environment (HASS_TOKEN, HASS_SUPERVISOR_TOKEN, HASS_PASSWORD); on argv they land in the
+# transcript. A literal assignment of those variables is refused by the gate itself
+never Bash(hass-cli*--token*) # puts a Home Assistant token on the command line: use HASS_TOKEN
+never Bash(hass-cli*--supervisor-token*) # puts a Supervisor token on the command line: use HASS_SUPERVISOR_TOKEN
+never Bash(hass-cli*--password*) # puts a Home Assistant password on the command line: use HASS_PASSWORD
+ask Bash(hass-cli*--debug*) # http.client debug output prints the request headers, the token included
+ask Bash(hass-cli*--insecure*) # TLS off: the token goes to whoever answers
+ask Bash(hass-cli -s*) # the environment's token goes to the server named here: set HASS_SERVER
+ask Bash(hass-cli* -s*) # the environment's token goes to the server named here: set HASS_SERVER
+ask Bash(hass-cli* -[vx]s*) # the environment's token goes to the server named here: set HASS_SERVER
+ask Bash(hass-cli* -[vx][vx]s*) # the environment's token goes to the server named here: set HASS_SERVER
+ask Bash(hass-cli*--server*) # the environment's token goes to the server named here: set HASS_SERVER
 # git config writes that outlive the session (spec gate-f36-f40-f44, story 3). The canonical form
 # is `git config <scope> <read|write> [exec] <key> <value>`, `--file <path>` for a file scope;
 # an owner allow line names that form
@@ -414,6 +427,36 @@ ask Bash(glab mr note*)
 ask Bash(glab mr approve*)
 ask Bash(glab issue create*)
 ask Bash(glab issue note*)
+# Home Assistant: hass-cli 1.0.0 writes to the live instance (homeassistant_cli/plugins/*.py, read
+# 2026-11-21); global options before the verb are read past. Reads stay silent in the main thread
+# only: no read-only agent has hass-cli on its read list
+ask Bash(hass-cli service call*) # calls a service on the live Home Assistant instance
+ask Bash(hass-cli state edit*) # writes a state on the live Home Assistant instance
+ask Bash(hass-cli state delete*) # deletes a state on the live Home Assistant instance
+ask Bash(hass-cli state toggle*) # switches an entity on the live Home Assistant instance
+ask Bash(hass-cli state turn_on*) # switches an entity on the live Home Assistant instance
+ask Bash(hass-cli state turn_off*) # switches an entity on the live Home Assistant instance
+ask Bash(hass-cli event fire*) # fires an event on the live Home Assistant instance
+ask Bash(hass-cli raw post*) # any REST write on the live Home Assistant instance
+ask Bash(hass-cli raw ws*) # any WebSocket message, writes included
+ask Bash(hass-cli entity assign*) # changes the entity registry
+ask Bash(hass-cli entity rename*) # changes the entity registry
+ask Bash(hass-cli entity delete*) # changes the entity registry
+ask Bash(hass-cli entity enable*) # changes the entity registry
+ask Bash(hass-cli entity disable*) # changes the entity registry
+ask Bash(hass-cli device assign*) # changes the device registry
+ask Bash(hass-cli device rename*) # changes the device registry
+ask Bash(hass-cli device delete*) # changes the device registry
+ask Bash(hass-cli area create*) # changes the area registry
+ask Bash(hass-cli area delete*) # changes the area registry
+ask Bash(hass-cli area rename*) # changes the area registry
+ask Bash(hass-cli integration reload*) # reloads a config entry
+ask Bash(hass-cli integration delete*) # deletes a config entry
+ask Bash(hass-cli integration enable*) # changes a config entry
+ask Bash(hass-cli integration disable*) # changes a config entry
+ask Bash(hass-cli ha*) # the Supervisor: restarts, updates, reboots and options among its reads
+ask Bash(hass-cli discover*) # scans the local network
+ask Bash(hass-cli map*) # sends an entity's location to a map site
 # Gitea: gt (gitea/cli) and the archived tea; aliases are rewritten to these forms first
 ask Bash(gt pr create*)
 ask Bash(gt pr edit*)

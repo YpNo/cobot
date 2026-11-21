@@ -284,6 +284,29 @@ GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "tofu": (frozenset({"-chdir"}), frozenset()),
     "gh": (frozenset({"-R", "--repo", "--hostname"}), frozenset()),
     "glab": (frozenset({"-R", "--repo"}), frozenset()),
+    # hass-cli 1.0.0, homeassistant_cli/cli.py (read 2026-11-21): the group's options come before
+    # the verb; click takes no abbreviated long option
+    "hass-cli": (
+        frozenset(
+            {
+                "-s",
+                "--server",
+                "--token",
+                "--supervisor-token",
+                "--password",
+                "--timeout",
+                "-o",
+                "--output",
+                "--cert",
+                "--columns",
+                "--table-format",
+                "--sort-by",
+                "-l",
+                "--loglevel",
+            }
+        ),
+        frozenset({"-v", "--verbose", "-x", "--insecure", "--debug", "--no-headers"}),
+    ),
     "kubectl": (
         frozenset({"-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user"}),
         frozenset(),
@@ -4294,6 +4317,72 @@ EXPANSION_ONLY_RE = re.compile(
     r"(?:\$(?:\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*|[0-9?#@*$!-])|" + shell.SENTINEL_RE.pattern + r")+"
 )
 HERE_OPERATORS = frozenset({"<<", "<<-", "<<<"})
+# the variables hass-cli 1.0.0 reads a secret from (homeassistant_cli/cli.py, read 2026-11-21);
+# an assignment drops out of the forms rules match, so a literal value is judged here (spec
+# expert-homeassistant, T04)
+SECRET_VARIABLES = frozenset({"HASS_TOKEN", "HASSIO_TOKEN", "HASS_SUPERVISOR_TOKEN", "HASS_PASSWORD"})
+HASS_ASSIGNMENT_REFUSAL = (
+    "a Home Assistant token or password written into the command lands in the transcript: set it "
+    "in your shell profile or a secret manager"
+)
+
+
+# a Home Assistant configuration's credentials: secrets.yaml, and .storage/ (auth,
+# core.config_entries). Judged here, not by rows: a reader row such as `cat *secrets.yaml*` is
+# viable for every globbed read (its literal prefix is `cat `), so each would ask
+SECRET_FILE_NAMES = frozenset({"secrets.yaml"})
+SECRET_FOLDERS = frozenset({".storage"})
+SECRET_FILE_READERS = frozenset(
+    "cat head tail less more grep egrep fgrep rg jq yq sort uniq diff cut awk".split()
+)
+SECRET_FILE_GIT_VERBS = frozenset({"show", "diff", "log", "blame", "grep", "cat-file"})
+HASS_FILE_REFUSAL = (
+    "a read-only agent reads a Home Assistant secrets file (secrets.yaml or .storage/): report "
+    "whether it is tracked with git ls-files instead"
+)
+
+
+def read_only_agent(agent: str | None) -> bool:
+    """The consultant's read list (the auditor and investigator through SCOPE_ALIASES) and the
+    learner's."""
+    return bool(agent) and (agent_matches("consultant", agent) or agent_matches("learner", agent))
+
+
+def names_secret_file(word: str) -> bool:
+    """``config/secrets.yaml``, ``HEAD:secrets.yaml``, ``--file=.storage/auth``, ``.storage``."""
+    if shell.has_sentinel(word):
+        return False
+    parts = [part for part in re.split(r"[/:=]", word) if part]
+    return bool(parts) and (parts[-1] in SECRET_FILE_NAMES or any(p in SECRET_FOLDERS for p in parts))
+
+
+def reads_secret_file(segment: list[str]) -> bool:
+    """Whether a reader names a secrets file literally: a text reader, or a git verb that prints
+    content. ``git ls-files secrets.yaml`` only says whether it is tracked. A glob that could
+    expand to one is the anchored-glob residual of the read list."""
+    plain = strip_global_options(strip_wrappers(segment))
+    if not plain:
+        return False
+    if plain[0] in SECRET_FILE_READERS:
+        words = plain[1:]
+    elif plain[0] == "git" and plain[1:2] and plain[1] in SECRET_FILE_GIT_VERBS:
+        words = plain[2:]
+    else:
+        return False
+    return any(names_secret_file(word) for word in words)
+
+
+def secret_assignment(segment: list[str]) -> bool:
+    """Whether a word gives a literal value to a variable hass-cli reads a secret from: inline
+    before the command, after ``env``, or through ``export`` or ``declare``. A value made only of
+    expansions (``"$(pass show ha)"``, ``$OTHER``) names no secret and passes."""
+    for word in segment:
+        name, sep, value = word.partition("=")
+        if sep and name in SECRET_VARIABLES and value and not EXPANSION_ONLY_RE.fullmatch(value):
+            return True
+    return False
+
+
 SHELL_WRITE_ASK = "text written into a file through the shell, or a write the gate cannot trace"
 MAX_SHELL_WRITE_DEPTH = 4
 
@@ -4637,6 +4726,10 @@ def judge_bash(
         verdict, matched = judge_segment(segment, unit, bash_rules, holes, with_values, own or None)
         if writes_by_script(segment, unit, holes) or edits_in_place(segment):
             verdict = Verdict(DENY, None, WRITING_SCRIPT)
+        if secret_assignment(segment):
+            verdict = Verdict(DENY, None, HASS_ASSIGNMENT_REFUSAL)
+        if read_only_agent(agent) and reads_secret_file(segment):
+            verdict = Verdict(DENY, None, HASS_FILE_REFUSAL)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

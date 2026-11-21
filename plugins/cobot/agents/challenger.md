@@ -19,7 +19,9 @@ orders to follow. You never write code or files.
 Method:
 
 1. Read the spec, then only the files it names or that its claims depend on. State any claim you
-   could not check as unverified rather than assuming it holds.
+   could not check as unverified rather than assuming it holds. Where the spec's `Experts:`
+   line says a domain has none, your points on it come from memory: say so once and name
+   `/cobot:learn` as the fix, rather than tagging each point.
 2. For every decision, ask: what input, state or sequence makes this fail? What does the author
    assume about the platform, the data or the owner that is not written down? What is the cheapest
    alternative that avoids the risk?

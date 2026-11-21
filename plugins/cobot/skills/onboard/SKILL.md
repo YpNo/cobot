@@ -99,6 +99,13 @@ disable-model-invocation: true
    Then run `cobot-memory check` again: it names header fields still missing and CONTEXT
    sections the brief drops; Verified commands, Constraints and Environment, in that order of
    priority, must stay in the brief.
+6b. **Domains.** List the domains the goal, the Stack and the files name beyond the language:
+   a platform (Home Assistant, Google Cloud), a device family, a protocol (Zigbee, Modbus), a
+   forge, a SaaS. Match each against the `lang-*`, `fw-*` and `expert-*` skills cobot lists and
+   write one Stack bullet, `- domains: <domain> → <skill> · <domain> → none`. A client of a
+   platform's API counts (a CLI on the Home Assistant WebSocket API is Home Assistant), even
+   where no file matches the expert's `paths:`. Each `none` becomes an Open line of step 8's
+   entry proposing `/cobot:learn <topic> --new-expert`; say it in the report too, never skip it.
 7. **Rules.** Dry-run each verified command with `cobot-rules check "<command>"`. The gate is
    already silent for a command no rule matches; an owner line `allow Bash(<command>*)` matters
    where `check` prints `ask` (a default `ask` rule, or a command the gate cannot see into, such
@@ -109,8 +116,9 @@ disable-model-invocation: true
    lines cover the plain form only. Print the lines and offer to append them to
    `~/.claude/cobot.rules`. Never touch `settings.json`; the owner applies what `sync` renders.
 8. **Journal.** The template has no entry: write the first with `cobot-memory journal add`
-   (`Changed / Why / Proof / Open / Next`, Proof only what ran). Report: trust path taken, profile,
-   `runs:`, the verified commands, what you could not verify, the helper line.
+   (`Changed / Why / Proof / Open / Next`, Proof only what ran; Open carries step 6b's domains
+   without an expert). Report: trust path taken, profile, `runs:`, the verified commands, the
+   domains line, what you could not verify, the helper line.
 
 ## New project (`tree: new …`)
 

@@ -13,6 +13,7 @@ size: {{SIZE}} · profile: {{PROFILE}} · owner: {{OWNER}} · date: {{DATE}}
 - Governance (<path from CONTEXT.md, or none>): <each principle: holds | not relevant | violated → Clarify>
 - Architecture: <hexagonal | plain layering | host project's> because <criterion: profile, adapters, test substitutes, or contribution>
 - New dependencies: <none | name — why, and what the standard library or an existing dependency lacks>
+- Experts: <domain → the `expert-*` or `lang-*` skill read | domain → none: facts below are questions, /cobot:learn proposed>
 - Delivery: one branch `<type>/<slug>`, one PR; tasks below are the commits
 
 ## Stories and acceptance

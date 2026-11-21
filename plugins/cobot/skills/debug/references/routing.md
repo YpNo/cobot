@@ -13,6 +13,7 @@ listed is printed for the owner.
 | pod Pending, CrashLoopBackOff, OOMKilled | `expert-kubernetes` | `kubectl describe`, `kubectl logs --previous --tail 50`, `kubectl get events`, `kubectl get <kind> -o wide` |
 | 503, mTLS or RBAC denial in the mesh | `expert-service-mesh` | `istioctl analyze`, `istioctl proxy-status`, `istioctl proxy-config`, `istioctl x describe` (asks) |
 | permission denied, quota, API not enabled on GCP | `expert-gcp` | `gcloud logging read --limit 50`, `gcloud … get-iam-policy`, `gcloud services list` |
+| automation not firing, entity `unavailable`, integration setup failed (Home Assistant) | `expert-homeassistant` | the configuration in the repository; from the main thread only, with `HASS_SERVER` set: `hass-cli system log`, `hass-cli state get <entity>`, `hass-cli integration list` (no investigator holds `hass-cli`) |
 | plan drift, state lock | `lang-terraform` | `terraform providers`, `terraform state list` (asks); `terraform plan` is printed for the owner |
 | regression after a dependency bump | `lang-*` (the repository's) | `git diff <a>..<b> -- <lockfile>`, `cobot-deps check`, the advisory pages |
 | unknown domain | `lang-fallback` | the read list only; propose `/cobot:learn` after the incident |

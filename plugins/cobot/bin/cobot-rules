@@ -4336,6 +4336,9 @@ SECRET_FILE_READERS = frozenset(
     "cat head tail less more grep egrep fgrep rg jq yq sort uniq diff cut awk".split()
 )
 SECRET_FILE_GIT_VERBS = frozenset({"show", "diff", "log", "blame", "grep", "cat-file"})
+# readers whose first operand is a pattern or a program, not a file, unless an option carries it
+PATTERN_FIRST = frozenset("grep egrep fgrep rg jq yq awk".split())
+PATTERN_OPTIONS = frozenset({"-e", "--regexp", "-f", "--file", "--from-file"})
 HASS_FILE_REFUSAL = (
     "a read-only agent reads a Home Assistant secrets file (secrets.yaml or .storage/): report "
     "whether it is tracked with git ls-files instead"
@@ -4369,6 +4372,9 @@ def reads_secret_file(segment: list[str]) -> bool:
         words = plain[2:]
     else:
         return False
+    if plain[0] in PATTERN_FIRST and not any(w.split("=", 1)[0] in PATTERN_OPTIONS for w in words):
+        operands = [index for index, word in enumerate(words) if not word.startswith("-")]
+        words = [w for index, w in enumerate(words) if not operands or index != operands[0]]
     return any(names_secret_file(word) for word in words)
 
 

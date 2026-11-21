@@ -163,7 +163,7 @@ Domains**. Whichever merges second rebases onboard's numbering and keeps both. T
 | T04 | [x] `hass-cli` in `GLOBAL_OPTIONS`; rows in `rules/default.rules` (never: `--token`, `--password`, `--supervisor-token` in both forms, the three variables' assignments; scoped never and main-thread anchored ask: the read-list readers on `secrets.yaml` and `.storage/`; ask: every write verb, `-s`/`--server`, `--insecure`, `--debug` if it prints headers); the assignment-prefix check in `cobot-rules`; negative tests for every trust-boundary row, tests first. Check: `pytest tests/test_cobot_rules.py -k hass_cli` and `-k secret_file`, `test_gate_differential.py`, `test_gate_agy.py` | gate | auth | — |
 | T05 | [x] onboard step 6b, spec step 2 (with the no-`domains:` fallback), the template's `Experts:` line, the challenger's sentence, `sync-agents.py`; text tests. Check: `test_workflow_skills.py`, `test_spec_skill.py`, `sync-agents.py --check`, markdownlint | workflow | — | — |
 | T06 | [x] the debug routing row; evals `consult-homeassistant` (a fixture integration: no `version`, an unpinned requirement, `config_flow: true` without `config_flow.py`, hassfest at a branch ref, a tracked `secrets.yaml` holding only `x: !env_var X`, no secret-shaped literal) and `spec-names-missing-expert` (a Modbus repository: the spec's `Experts:` line says none and proposes `/cobot:learn`). Check: `test_debug_skill.py`, `test_eval_graders.py`; the paid runs are the owner's (`gh workflow run ci.yml -f evals=true -f cases=…`) | evals | — | T03, T05 |
-| T07 | decision 36, decision 25 and design §12, §15 amended, README, `docs/architecture.md`, `docs/configuration.md`, CHANGELOG, F-39 closed. Check: markdownlint, `cobot-memory check` | docs | — | T01–T06 |
+| T07 | [x] decision 36, decision 25 and design §12, §15 amended, README, `docs/architecture.md`, `docs/configuration.md`, CHANGELOG, F-39 closed. Check: markdownlint, `cobot-memory check` | docs | — | T01–T06 |
 
 Built differently in T04 (2026-11-21), the secret-file guard: reader rows (`cat *secrets.yaml*`)
 cannot hold it. Their literal prefix is the bare `cat `, so `viable()` finds them matchable by
@@ -212,5 +212,9 @@ check` before folding.
 
 ## Converge
 
-Agreed 2026-11-21 with the owner's answers above; nothing built. The build starts with
-`/cobot:build expert-homeassistant` on `feat/expert-homeassistant`.
+Agreed 2026-11-21 with the owner's answers above. Built the same day on
+`feat/expert-homeassistant`, every task ticked: T01 fd6b8ac, T04 50461b5, T02 18d3f9b, T03
+31f2068, T05 9503430, T06 d4a9a09, T07 the docs commit. Deviation: the secret-file guard is
+code in the gate, not reader rows (under Plan). Not run here: the two paid evals, and
+`cobot:learner`, `cobot:challenger` and the builders, which this session did not load
+(general-purpose agents ran `learner.md`'s method; the orchestrator built every task).

@@ -4,7 +4,8 @@ description: >-
   Read-only expert audits, one cobot:consultant per domain, run in parallel: gha (GitHub
   Actions), gitlab-ci, containers (Dockerfile, compose, image workflows), gcp (Google Cloud,
   Terraform google provider), kubernetes (manifests, charts), service-mesh (Istio, Cloud Service
-  Mesh), ui (stylesheets, components, themes), api (OpenAPI, swagger, proto). Use before a
+  Mesh), ui (stylesheets, components, themes), api (OpenAPI, swagger, proto), homeassistant
+  (custom integrations, configuration, blueprints). Use before a
   release, after changing those files, and from spec, wrap and ship. Never edits.
 argument-hint: "[domain ...] [path ...]"
 user-invocable: true
@@ -29,6 +30,7 @@ Arguments: `$ARGUMENTS`. You stay in the main thread; the consultants do the rea
    | `service-mesh` | `networking.istio.io` or `security.istio.io` resources |
    | `ui` | `*.css`, `*.scss`, `*.tsx`, `*.vue`, `*.svelte`, theme folders |
    | `api` | `**/*openapi*.json`, `**/*openapi*.y*ml`, `**/swagger*.json`, `**/*.proto` |
+   | `homeassistant` | `custom_components/*/manifest.json`, `hacs.json`, `.HA_VERSION`, `blueprints/**/*.yaml`, `automations.yaml` |
 
 2. **Fan out.** In **one message**, one `Agent` call per domain, `subagent_type: cobot:consultant`,
    `run_in_background: false` where the host offers it (else wait for every hand-back),

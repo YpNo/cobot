@@ -20,6 +20,37 @@ def bash_block(path: Path) -> str:
     return "\n".join(line[3:] if line.startswith("   ") else line for line in block.splitlines())
 
 
+ROUTER = DOMAINS.parent / "SKILL.md"
+
+
+def router_domains() -> list[str]:
+    """The domains the router's table names, in order."""
+    return re.findall(r"^   \| `([a-z-]+)` \|", ROUTER.read_text(encoding="utf-8"), re.M)
+
+
+def test_router_everyDomainRow_hasAProcedure():
+    domains = router_domains()
+    assert "homeassistant" in domains
+    assert sorted(domains) == sorted(path.stem for path in DOMAINS.glob("*.md"))
+
+
+def test_homeassistant_inventory_isSilentForTheConsultant(rules):
+    command = bash_block(DOMAINS / "homeassistant.md")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": os.getcwd(),
+        "agent_type": "cobot:consultant",
+    }
+    assert rules.gate(json.dumps(payload)) is None
+
+
+def test_homeassistant_procedure_namesNeitherSecretFileReadNorLiveInstanceRun():
+    text = (DOMAINS / "homeassistant.md").read_text(encoding="utf-8")
+    for refusal in ("check_config", "pip install", "hass-cli", "secrets.yaml", ".storage/"):
+        assert refusal in text, refusal
+
+
 @pytest.mark.skipif(shutil.which("jq") is None, reason="jq not installed")
 def test_uiContrast_oneCallFormula_givesTheReferenceRatios():
     command = bash_block(DOMAINS / "ui.md")

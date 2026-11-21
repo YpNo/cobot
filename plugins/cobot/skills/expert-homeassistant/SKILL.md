@@ -56,11 +56,16 @@ Zigbee radio and protocol facts beyond ZHA as an integration belong to a later
 
 - The token comes from the environment: `HASS_SERVER` and `HASS_TOKEN` set in the owner's shell
   profile or from a secret manager. `--token`, `--supervisor-token` and `--password` on the
-  command line are refused, and so is a literal value assigned to those variables in a command.
+  command line are refused, and so is setting a token variable in a command; expanding one asks
+  (a read-only agent is refused).
 - `hass-cli` reads are silent in the main thread only, with the server from `HASS_SERVER`;
-  `-s`/`--server`, `--insecure` and `--debug` (it prints the request headers) ask. Every write
-  verb asks, and the whole `ha` (Supervisor) group asks. No read-only agent has `hass-cli`: an
-  investigator or a consultant names the command and the main thread runs it.
+  `-s`/`--server`, `-x`/`--insecure` and `--debug` (it prints the request headers) ask. Every
+  write verb asks, and the whole `ha` (Supervisor) group asks. No read-only agent has
+  `hass-cli`: an investigator or a consultant names the command and the main thread runs it.
+- In a configuration repository, a read-only agent excludes the secrets from recursive reads and
+  history: `grep -r --exclude=secrets.yaml --exclude-dir=.storage`, `rg -g '!secrets.yaml'
+  -g '!.storage'`, `git log -p -- . ':!*secrets.yaml' ':!*.storage/*'`; the gate refuses the
+  unexcluded forms.
 - A long-lived token acts with its user's full rights (`references/api.md`): ask for a token of a
   non-admin user when the task only reads.
 

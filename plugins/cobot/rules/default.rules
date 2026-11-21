@@ -395,10 +395,8 @@ never Bash(hass-cli*--supervisor-token*) # puts a Supervisor token on the comman
 never Bash(hass-cli*--password*) # puts a Home Assistant password on the command line: use HASS_PASSWORD
 ask Bash(hass-cli*--debug*) # http.client debug output prints the request headers, the token included
 ask Bash(hass-cli*--insecure*) # TLS off: the token goes to whoever answers
-ask Bash(hass-cli -s*) # the environment's token goes to the server named here: set HASS_SERVER
-ask Bash(hass-cli* -s*) # the environment's token goes to the server named here: set HASS_SERVER
-ask Bash(hass-cli* -[vx]s*) # the environment's token goes to the server named here: set HASS_SERVER
-ask Bash(hass-cli* -[vx][vx]s*) # the environment's token goes to the server named here: set HASS_SERVER
+# -s and -x in any short cluster (-vvvs, -xv), HASS_SERVER set, and the token variables set or
+# expanded are judged in code (hass_verdict in cobot-rules)
 ask Bash(hass-cli*--server*) # the environment's token goes to the server named here: set HASS_SERVER
 # git config writes that outlive the session (spec gate-f36-f40-f44, story 3). The canonical form
 # is `git config <scope> <read|write> [exec] <key> <value>`, `--file <path>` for a file scope;

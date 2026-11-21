@@ -84,7 +84,7 @@ cobot/
     hooks/session.sh protocol.md           SessionStart shim and the ≤ 3.4k-char orchestrator protocol
     hooks/gate.sh                          5-line POSIX shim: no python3 → exit 2; exec python3 -I … || exit 2
     bin/cobot-rules  bin/cobot-memory  bin/cobot-session  bin/cobot-deps          Python 3 stdlib, no deps
-    bin/_cobot_common.py _cobot_make.py _cobot_knowledge.py _cobot_deps.py
+    bin/_cobot_common.py _cobot_make.py _cobot_knowledge.py _cobot_deps.py _cobot_secrets.py
                                            (cobot-memory: brief · learn [--promote] · knowledge · compact · risks · check)
     rules/default.rules
     settings/permissions.example.json      the hard-wall block the owner installs via `rules sync`

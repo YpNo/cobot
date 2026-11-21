@@ -99,6 +99,16 @@ scanner's module: a hole in the command's words (a substitution, a glob, a `${â€
 operator word) is never silent where some text in its place, for a glob some set of file names,
 would change which program runs or make a rule match the form that names what runs.
 
+Home Assistant's secrets are judged in code, not by rows (decision 36): a reader row such as
+`cat *secrets.yaml*` would be viable for every globbed or substituted read. `bin/_cobot_secrets.py`
+refuses a read-only agent's command that would print `secrets.yaml` or a `.storage/` file: named,
+through a redirect, by a recursive `grep`, any `rg`, a `semgrep` scan or a verbose unredacted
+`gitleaks` over a tree that holds one (the tree is walked, at most 20 000 entries), by a history
+printer in a repository whose history or index tracks one with no pathspec excluding it, or as a
+`curl` `file:` URL. `hass_verdict` in `cobot-rules` refuses any setting of the token variables,
+refuses their expansion for read-only agents and asks on it in the main thread, and asks on
+`HASS_SERVER` set and on `-s` or `-x` in a short cluster.
+
 For the read-only agents, a segment that could write a file or run a program never matches
 their read list (the scanner's `Scan.writes` holds the targets a redirection writes), and a read
 whose program the repository's files choose counts only in a repository trusted by identity

@@ -47,16 +47,9 @@ def test_hassCli_literalSecretAssignment_isRefused(rules, command):
     assert decide(rules, command) == "deny"
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        'export HASS_TOKEN="$(pass show ha/token)"',
-        "HASS_TOKEN=$HA_TOKEN hass-cli state list",
-        "export HASS_SERVER=http://homeassistant.local:8123",
-    ],
-)
-def test_hassCli_assignmentWithoutLiteralSecret_isNotRefused(rules, command):
-    assert decide(rules, command) != "deny"
+def test_hassCli_serverAssignment_isNotRefused(rules):
+    """Setting the server names no secret; it asks (test_secret_reads_gate.py), never refuses."""
+    assert decide(rules, "export HASS_SERVER=http://homeassistant.local:8123") != "deny"
 
 
 @pytest.mark.parametrize(

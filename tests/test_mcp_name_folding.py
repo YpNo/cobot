@@ -46,6 +46,41 @@ def test_mcpFolding_readsAndOtherServersKeepTheirVerdict(rules, tool, expected):
     assert decide(rules, tool) == expected, tool
 
 
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "mcp__x__run_gcloud_command__get",  # a second __ made the suffix look like the tool
+        "mcp__gcp-run__DEPLOYService",  # an acronym before the next word
+        "mcp__gcp-run__SETIamPolicy",
+        "mcp__ＧＣＰ-run__deploy_service",  # fullwidth folds to ASCII (NFKC)
+        "mcp__gcp-run__ｄeploy_service",
+    ],
+)
+def test_mcpFolding_bypassReviewSpellings_refused(rules, tool):
+    assert decide(rules, tool) == "deny", tool
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "mcp__gcp-run__scale_service__list",  # not a read: a second __ is not a tool name
+        "mcp__srv__get__delete_all",
+        "mcp__gcp-run__dеploy_service",  # Cyrillic е: not ASCII, so never a silent read
+        "mcp__srv__gеt_status",
+    ],
+)
+def test_mcpFolding_oddNames_neverASilentRead(rules, tool):
+    assert decide(rules, tool) == "ask", tool
+
+
+PLAIN_READS = ["mcp__gcp-logging__list_log_entries", "mcp__srv__GETService", "mcp__srv__get_status"]
+
+
+@pytest.mark.parametrize("tool", PLAIN_READS)
+def test_mcpFolding_plainReadsStaySilent(rules, tool):
+    assert decide(rules, tool) is None, tool
+
+
 def test_mcpFolding_allowRowStaysExact(rules, tmp_path, monkeypatch):
     owner = tmp_path / "owner.rules"
     owner.write_text("allow mcp__my-srv__do_thing\n")

@@ -720,9 +720,12 @@ never mcp__gcp-*__execute_sql
 # Google Cloud CLI server (Preview, cloudcli.googleapis.com/mcp): run_gcloud_command and
 # run_bq_command take a whole command the gate cannot see into, under a cloud-platform token.
 # Refused under any server name, so a rename does not lift it (spec gcp-mcp-opt-in, owner Q2).
+# A never or ask row also matches the name folded (case, - as _, camelCase and acronyms split,
+# NFKC), so any server named gcp_*, GCP-* or Gcp-* has these writes refused too, and no owner
+# allow lifts that. A gcp server under another name (a claude.ai connector, a plugin prefix) asks.
 never mcp__gcp-cloudcli__*
-never mcp__*__run_gcloud_command
-never mcp__*__run_bq_command
+never mcp__*__run_gcloud_command*
+never mcp__*__run_bq_command*
 
 # The owner registers every MCP server (spec gcp-mcp-opt-in): an injected `claude mcp add` could
 # name an attacker URL gcp-*, so registration asks by every route. list and get stay silent.

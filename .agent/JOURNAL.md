@@ -351,3 +351,11 @@ Proof: test_mcp_registration_routes exit 0 (eight new cases failed first); claud
 Open: F-55 to F-58 for a gate spec; F-55 first.
 Next: the F-54 review fold.
 verified: tree ba4ca19c7f435001e4bfa944e51c5d1a410ea366 · registration tests, dry runs
+
+## 2026-11-22 — F-54 bypass review folded: odd MCP names are never a silent read
+Changed: cobot-rules: mcp_is_read is false for a name that is not ASCII after NFKC, or that holds a second __ after the server (run_gcloud_command__get, scale_service__list), since which part is the tool cannot be known; mcp_words folds NFKC and splits an acronym from the next word (DEPLOYService, SETIamPolicy); mcp_fold folds NFKC first. default.rules: the Cloud CLI rows end in * (run_gcloud_command__get is refused), and a comment says that folding refuses these writes on any gcp_*, GCP-* or Gcp-* server and that a gcp server under another name only asks. tests/test_mcp_name_folding.py.
+Why: the bypass review of a0ac069: no CRITICAL or HIGH; one MEDIUM (a second __ made a write look like a read), four LOW (acronyms, Unicode lookalikes and fullwidth forms, host prefixes, the wider never rows to document). Cyrillic lookalikes now ask rather than fold; host-prefixed servers (claude_ai_, plugin_) keep asking, documented.
+Proof: test_mcp_name_folding exit 0 (seven new cases failed first); gate suites with the GOOGLE_MCP_TOOLS matrix, agy and session grants exit 0; ruff clean. GETService now reads as get_service, a read, where it asked before.
+Open: none for F-54.
+Next: the full suite and lint, then the report.
+verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · gate suites, ruff

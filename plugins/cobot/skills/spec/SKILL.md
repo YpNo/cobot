@@ -60,7 +60,8 @@ You run in the main thread so you can ask the owner. Do not build anything here.
    when workflows change, `gcp` for a Google Cloud module, `kubernetes` for manifests,
    `service-mesh` for mesh policies, `containers`, `gitlab-ci`, `ui`. Every call sets
    `run_in_background: false` where the host offers it; agents in one message still run in
-   parallel. Then wait for every hand-back.
+   parallel. Then wait for every hand-back. Picking `gcp` while CONTEXT.md has no valid
+   `gcp-mcp:` line asks expert-gcp's opt-in first ("The opt-in, once per repository").
 6. **Fold.** Fold every BLOCKER and MAJOR into the spec yourself. Ask the owner, with the
    challenger's scenario and your recommendation, only to overrule an objection or when the fold
    drops or moves something the owner asked for; write the answer under *Challenger verdict*.

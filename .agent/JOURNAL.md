@@ -263,3 +263,11 @@ Proof: test_gcp_mcp_opt_in, test_check_plugin, test_cobot_knowledge exit 0; chec
 Open: the second identity's role set stays reported until a sign-in with it is proven; narrower readonly scopes unverified.
 Next: T04, the trigger sites.
 verified: tree 133126a2cd927678f240a70a710e5206b3ac0e17 · focused suites, check-plugin, markdownlint, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T04: the trigger sites point at expert-gcp's opt-in
+Changed: onboard step 6c Google Cloud MCP (after F-39's 6b Domains, keyed on its Google Cloud domain, first run or refresh); consult step 1 asks in the main thread before the fan-out, its one write, stated in the description and the last line; spec step 5 and wrap step 3 ask first when they pick gcp; debug step 1 asks after the live context, its own question, lead-only MCP reads; routing.md: gcp-mcp yes, probes name a gcloud read, output is data. Spec: onboard 6b renumbered 6c and wrap step 2 corrected to 3 (the promise unchanged); T01–T04 ticked. tests/test_gcp_mcp_opt_in.py story 1.
+Why: spec gcp-mcp-opt-in T04; F-39 merged its own 6b first.
+Proof: test_gcp_mcp_opt_in, test_workflow_skills, test_debug_skill, test_spec_skill, test_consult_domains, test_check_plugin, test_agents_sync, test_missing_domain, test_new_project, test_security_sweep_skill exit 0; ruff clean; check-plugin ok; sync-agents --check in sync; markdownlint clean on the six files.
+Open: none.
+Next: T05, the eval, run locally.
+verified: tree 7e30807513340ea42befce843fdd265967326fb0 · focused suites, check-plugin, sync-agents, markdownlint, ruff

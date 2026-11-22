@@ -60,12 +60,13 @@ answers below.
   is neither reported nor required. `context_head` keeps CONTEXT.md up to `## Shape` or
   `## Applies`, so a header line reaches the brief and a line after Shape does not.
 - Onboard step 1 sends a refresh to 3b, which "corrects only what changed". Spec step 5 and
-  wrap step 2 start `cobot:consultant` directly, without consult step 1. Debug step 1 asks its
+  wrap step 3 start `cobot:consultant` directly, without consult step 1. Debug step 1 asks its
   AskUserQuestion before it prints the live context. Consult's description and last line say
   "Never edits".
-- F-39 (another session) adds a missing-domain step to onboard and spec. This spec adds onboard
-  **step 6b** and one sentence in spec step 5. It touches no other onboard step. **Overlap
-  flagged** for whichever PR merges second.
+- F-39 (PR 80, merged 2026-11-22) took onboard step 6b (Domains) and spec step 2's Experts
+  line. This spec adds onboard **step 6c**, right after 6b and keyed on its Google Cloud domain,
+  and one sentence in spec step 5; it touches no other onboard step. Renumbered at build
+  (2026-11-22); what the spec promises is unchanged.
 - `expert-gcp/SKILL.md` is 18.8 kB of the 24 kB cap. Line 179 gives `https://<service>.googleapis.com/mcp`
   as universal.
 - Google's docs (overview, supported-products, enable-disable, set-up-authentication,
@@ -131,9 +132,9 @@ Only the main thread writes the line, never a consultant or a probe.
 1. **Asked once, recorded.** As the owner, the first Google Cloud work asks me once (the
    triggers in Goal, one gcp signal: consult step 1's row), and a repository with a valid line
    never asks again. Accept:
-   - `pytest tests/test_gcp_mcp_opt_in.py` pins expert-gcp's rule, onboard 6b (applies on
+   - `pytest tests/test_gcp_mcp_opt_in.py` pins expert-gcp's rule, onboard 6c (applies on
      refresh), consult step 1 (main thread, before the fan-out, and the stated exception to
-     "Never edits"), spec step 5, wrap step 2, debug step 1 (after the live context, its own
+     "Never edits"), spec step 5, wrap step 3, debug step 1 (after the live context, its own
      question) and routing.md.
    - Eval `gcp-mcp-asked-once`, case A: no line, `/cobot:consult gcp`. The last message states
      the question, and `.agent/CONTEXT.md` matches `^gcp-mcp: no\b` (Q1's recommendation, the
@@ -231,7 +232,7 @@ Only the main thread writes the line, never a consultant or a probe.
    stays as it is.
 3. Knowledge (T03): one opt-in section in expert-gcp (the triggers, the line, the three
    branches, data not instructions); mcp.md "Per repository" and the re-dated facts.
-4. Trigger sites (T04): onboard 6b, consult step 1, spec step 5, wrap step 2, debug step 1, and
+4. Trigger sites (T04): onboard 6c, consult step 1, spec step 5, wrap step 3, debug step 1, and
    routing.md. Each is one or two sentences pointing at expert-gcp.
 5. Eval (T05), then docs (T06).
 
@@ -239,10 +240,10 @@ Only the main thread writes the line, never a consultant or a probe.
 
 | id | task | lane | risk | deps |
 |---|---|---|---|---|
-| T01 | `rules/default.rules`: `ask Bash(claude mcp add*)`, `add-json*`, `remove*` and `add-from-claude-desktop*`; `ask Bash(claude *--mcp-config*)`; `ask Edit\|Write(~/.claude.json)` and `(.mcp.json)`; `never mcp__gcp-cloudcli__*`, `never mcp__*__run_gcloud_command`, `never mcp__*__run_bq_command`. `tests/test_cobot_rules.py`: stories 4 and 5, plus the gcp-mcp storage tool names in `GOOGLE_MCP_TOOLS` | gate | auth | — |
-| T02 | `bin/cobot-memory`: `gcp_mcp_warnings` in `cmd_check`; `tests/test_cobot_memory.py`: story 6, positive and negative | memory | — | — |
-| T03 | `skills/expert-gcp/SKILL.md` (the opt-in paragraph, line 179); `references/mcp.md` ("Per repository", `-s user`, the guard branches, the dated facts, connector unsupported); `tests/test_gcp_mcp_opt_in.py` stories 2, 3, 7 | knowledge | — | — |
-| T04 | onboard step 6b; consult step 1 and the "Never edits" exception; spec step 5; wrap step 2; debug step 1; `debug/references/routing.md`; story 1's text tests | skills | — | T03 |
+| T01 [x] | `rules/default.rules`: `ask Bash(claude mcp add*)`, `add-json*`, `remove*` and `add-from-claude-desktop*`; `ask Bash(claude *--mcp-config*)`; `ask Edit\|Write(~/.claude.json)` and `(.mcp.json)`; `never mcp__gcp-cloudcli__*`, `never mcp__*__run_gcloud_command`, `never mcp__*__run_bq_command`. `tests/test_cobot_rules.py`: stories 4 and 5, plus the gcp-mcp storage tool names in `GOOGLE_MCP_TOOLS` | gate | auth | — |
+| T02 [x] | `bin/cobot-memory`: `gcp_mcp_warnings` in `cmd_check`; `tests/test_cobot_memory.py`: story 6, positive and negative | memory | — | — |
+| T03 [x] | `skills/expert-gcp/SKILL.md` (the opt-in paragraph, line 179); `references/mcp.md` ("Per repository", `-s user`, the guard branches, the dated facts, connector unsupported); `tests/test_gcp_mcp_opt_in.py` stories 2, 3, 7 | knowledge | — | — |
+| T04 [x] | onboard step 6c; consult step 1 and the "Never edits" exception; spec step 5; wrap step 3; debug step 1; `debug/references/routing.md`; story 1's text tests | skills | — | T03 |
 | T05 | `evals/gcp-mcp-asked-once/` (cases A and B, `allowed_tools` with Agent and Edit, graders as story 1) | evals | — | T04 |
 | T06 | decision 36 in `docs/01-decisions.md`; `docs/configuration.md` (the `gcp-mcp:` row, the new asks); `docs/02-design.md`; `docs/architecture.md`; `CHANGELOG.md` Unreleased | docs | — | T01–T05 |
 

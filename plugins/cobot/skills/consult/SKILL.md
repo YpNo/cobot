@@ -6,7 +6,8 @@ description: >-
   Terraform google provider), kubernetes (manifests, charts), service-mesh (Istio, Cloud Service
   Mesh), ui (stylesheets, components, themes), api (OpenAPI, swagger, proto), homeassistant
   (custom integrations, configuration, blueprints). Use before a
-  release, after changing those files, and from spec, wrap and ship. Never edits.
+  release, after changing those files, and from spec, wrap and ship. Never edits, except the
+  gcp-mcp line asked once.
 argument-hint: "[domain ...] [path ...]"
 user-invocable: true
 ---
@@ -32,6 +33,10 @@ Arguments: `$ARGUMENTS`. You stay in the main thread; the consultants do the rea
    | `api` | `**/*openapi*.json`, `**/*openapi*.y*ml`, `**/swagger*.json`, `**/*.proto` |
    | `homeassistant` | `custom_components/*/manifest.json`, `hacs.json`, `.HA_VERSION`, `blueprints/**/*.yaml`, `automations.yaml` |
 
+   `gcp` selected, named or detected, while CONTEXT.md has no valid `gcp-mcp:` line: ask
+   expert-gcp's opt-in here, in the main thread, before the fan-out (consultants cannot ask),
+   and write the line. It is this skill's one write.
+
 2. **Fan out.** In **one message**, one `Agent` call per domain, `subagent_type: cobot:consultant`,
    `run_in_background: false` where the host offers it (else wait for every hand-back),
    description `consult <domain>`, prompt (fill the brackets; the
@@ -55,4 +60,5 @@ Arguments: `$ARGUMENTS`. You stay in the main thread; the consultants do the rea
    Pass any `knowledge_delta` on unchanged for the orchestrator (`cobot-memory learn` or
    `/cobot:learn`). A report without file and line for a finding is sent back once.
 
-Never edit, apply, push or commit from here; fixes are proposed for the owner or a builder.
+Never edit, apply, push or commit from here; fixes are proposed for the owner or a builder. The
+one exception is the `gcp-mcp:` line of step 1, written by the main thread.

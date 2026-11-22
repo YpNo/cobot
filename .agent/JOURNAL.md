@@ -319,3 +319,11 @@ Proof: test_mcp_name_folding exit 0 (failed first: ten ask or silent where deny 
 Open: the bypass review of F-52, F-53 and F-54 runs next.
 Next: the bypass review, then the setup facts and the journal compaction.
 verified: tree 42ac28a1b6fc8b68a76599f1b44a90599bf111f5 · gate suites, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in: the setup facts checked at their sources
+Changed: references/mcp.md. Verified at the IAM role reference: each role of the second identity exists (Logs Viewer with logging.logEntries.list, Cloud Run Viewer, Monitoring Viewer, Service Usage Consumer with serviceusage.services.use, MCP Tool User; container.viewer listed, its title not read verbatim); X-Goog-User-Project needs serviceusage.services.use (system-parameters, set-quota-project). Verified at the Resource Manager references: a parent is {type, id} in v1 and organizations/123 or folders/876 in v3. Still reported, each with the live check it needs: whether the viewer set covers every read tool (sign in as the second identity, one read per server), and which version gcloud projects describe reads (describe one project in an organisation and one without). The setup now reads value(parent) for the words organization or folder, which both shapes hold, so the branch no longer depends on the unsettled one. Spec story 2 and Converge updated; text tests.
+Why: owner, before merging PR 81: the unconfirmed setup facts. No gcloud or ADC here, so primary sources only.
+Proof: test_gcp_mcp_opt_in, test_cobot_knowledge, test_check_plugin exit 0; markdownlint clean; check-plugin ok; cobot-memory knowledge expert-gcp: 86 lines, 6 reported, 1 assumed (universe.md). Sources read 2026-11-22 by a fetch agent: roles-permissions logging, run, monitoring, serviceusage, mcp, container; roles-overview; system-parameters; set-quota-project; set-up-authentication-mcp-servers; gcloud projects describe; Resource Manager v1 and v3 projects.
+Open: the two live checks above.
+Next: the bypass reviews, then the journal compaction.
+verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · focused suites, check-plugin, markdownlint

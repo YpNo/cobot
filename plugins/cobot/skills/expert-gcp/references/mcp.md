@@ -19,15 +19,20 @@ CONTEXT.md line `gcp-mcp: yes | no`, asked once (expert-gcp, "The opt-in").
 - [verified 2026-11-11 · src: exp: claude mcp add 2.1.311, then /mcp, in gcp-platform] `--client-id`, `--client-secret` (prompted) and `--callback-port` work with the header `x-goog-user-project: <project>`. `-s local` binds the server to the folder `claude mcp add` ran in, so a worktree does not see it; cobot registers at `-s user` (owner's answer, 2026-11-21). The desktop app's Reconnect does not start the OAuth flow; the CLI's `/mcp` → Authenticate does.
 - [verified 2026-11-11 · src: exp: claude -p in gcp-platform, sessions 298e1988, e4ca3deb, 67e5d579] `list_log_entries` and `list_clusters` answer from the main thread with no gate prompt. `cobot:consultant` has no MCP tools, so `/cobot:consult gcp` reads files and the main thread queries live data.
 - [verified 2026-11-21 · src: https://docs.cloud.google.com/mcp/configure-mcp-ai-application] Google's "Claude.ai, Claude Code, and Claude Desktop" section is a claude.ai custom connector: a Web client with the `https://claude.ai/api/mcp/auth_callback` redirect. Its tools are named `mcp__claude_ai_<Name>__*`, outside the `gcp-*` rows, so cobot does not support that route.
+- [verified 2026-11-22 · src: https://docs.cloud.google.com/iam/docs/roles-permissions/logging, /run, /monitoring, /serviceusage, /mcp] The second identity's roles exist: Logs Viewer (`roles/logging.viewer`, with `logging.logEntries.list`; private logs need Private Logs Viewer), Cloud Run Viewer, Monitoring Viewer, Service Usage Consumer (with `serviceusage.services.use`) and MCP Tool User ("permission to call tools on any MCP server enabled by the parent project"). `roles/container.viewer` is on /container; its title was not read verbatim.
+- [verified 2026-11-22 · src: https://docs.cloud.google.com/apis/docs/system-parameters, https://docs.cloud.google.com/docs/quotas/set-quota-project] `X-Goog-User-Project`: "The caller must have `serviceusage.services.use` permission on the project"; Service Usage Consumer carries it. Whether the basic Viewer role does is not listed there (the basic-roles page points to the console), so the setup never relies on it.
+- [reported 2026-11-22 · src: https://docs.cloud.google.com/mcp/set-up-authentication-mcp-servers] Beyond `roles/mcp.toolUser`, a caller needs "the required IAM roles for the accessed resources", per each server's reference page; the viewer set above is the matching read role per service, not checked tool by tool. A live check: sign in as the second identity and call one read tool per server.
+- [verified 2026-11-22 · src: https://docs.cloud.google.com/resource-manager/reference/rest/v1/projects, https://docs.cloud.google.com/resource-manager/reference/rest/v3/projects] A project's parent is `{type, id}` in v1 ("Supported parent types include "organization" and "folder"") and a string such as `organizations/123` or `folders/876` in v3.
+- [reported 2026-11-22 · src: https://docs.cloud.google.com/sdk/gcloud/reference/projects/describe] Which version `gcloud projects describe` reads is not stated, and the page shows no output. The setup reads `value(parent)` for the words `organization` or `folder`, which either shape holds. A live check: `gcloud projects describe <p> --format='value(parent)'` on a project in an organisation and on one without.
 - [reported 2026-11-11 · src: https://developers.google.com/identity/protocols/oauth2#expiration] With a consent screen in Testing for External users, refresh tokens expire after 7 days.
 
 ## Per repository (on `gcp-mcp: yes`)
 
 The agent prepares; the owner runs. Read first (both silent): `gcloud services list --enabled
---project <p>` and `gcloud projects describe <p> --format='value(parent.type)'`, with the project
-the owner confirms. It prints `organization`, `folder` or nothing [reported 2026-11-22: the
-Resource Manager v1 `parent: {type, id}` shape, not yet read on a live project]. Propose servers
-by signal:
+--project <p>` and `gcloud projects describe <p> --format='value(parent)'`, with the project the
+owner confirms. Read the output by the words it holds, not its shape: `organization` or `folder`
+(v1 `type=organization`, v3 `organizations/123`) means a parent, empty means none (see the
+2026-11-22 lines above). Propose servers by signal:
 
 | signal in the repository | server | service to enable |
 |---|---|---|
@@ -43,12 +48,13 @@ gate refuses it), and a claude.ai connector. Then print, in this order, and run 
    `roles/serviceusage.serviceUsageAdmin`; Owner has it).
 2. `gcloud projects add-iam-policy-binding <p> --member="user:<you>" --role="roles/mcp.toolUser"`.
 3. **The read-only guard**, by the parent read above:
-   - `organization` or `folder`: the deny policy of "Setup" step 2.
-   - nothing (no organisation): a second Google identity used only for MCP, holding predefined viewer roles
-     (`roles/logging.viewer`, `roles/container.viewer`, `roles/run.viewer`,
+   - names `organization` or `folder`: the deny policy of "Setup" step 2.
+   - empty (no organisation): a second Google identity used only for MCP, holding predefined
+     viewer roles (`roles/logging.viewer`, `roles/container.viewer`, `roles/run.viewer`,
      `roles/monitoring.viewer`), `roles/serviceusage.serviceUsageConsumer` (for
      `x-goog-user-project`) and `roles/mcp.toolUser`; never a basic role (expert-gcp rule 2).
-     [reported 2026-11-21: the role set, until a sign-in with it is proven.]
+     Each role and the quota permission are verified (2026-11-22 lines above); that the set
+     covers every read tool is not, since each server's reference names its own roles.
    - neither: say so in one line, "the gate is the only guard": the token can write.
 4. The OAuth client and consent screen (Setup step 3).
 5. One line per server, the secret flag bare so the CLI prompts for it:

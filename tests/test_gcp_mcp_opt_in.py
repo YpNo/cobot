@@ -104,8 +104,21 @@ def per_repository() -> str:
 def test_mcp_perRepository_readsFirst():
     body = per_repository()
     assert "gcloud services list --enabled" in body
-    assert "gcloud projects describe <p> --format='value(parent.type)'" in body
-    assert "prints `organization`, `folder` or nothing [reported" in " ".join(body.split())
+    assert "gcloud projects describe <p> --format='value(parent)'" in body
+    flat = " ".join(body.split())
+    assert "Read the output by the words it holds, not its shape" in flat
+    assert "v1 `type=organization`, v3 `organizations/123`" in flat
+
+
+def test_mcp_setupFacts_verifiedWhereASourceSettlesIt_reportedWithALiveCheckWhereNot():
+    lines = [line for line in text(MCP).splitlines() if "2026-11-22" in line and line.startswith("- [")]
+    verified = [line for line in lines if line.startswith("- [verified 2026-11-22")]
+    reported = [line for line in lines if line.startswith("- [reported 2026-11-22")]
+    assert any("roles-permissions" in line and "Service Usage Consumer" in line for line in verified)
+    assert any("system-parameters" in line and "serviceusage.services.use" in line for line in verified)
+    assert any("rest/v1/projects" in line and "rest/v3/projects" in line for line in verified)
+    assert len(reported) == 2 and all("A live check:" in line for line in reported)
+    assert "[reported 2026-11-21: the role set" not in text(MCP)
 
 
 def test_mcp_perRepository_signalTable_noStorage():
@@ -125,7 +138,7 @@ def test_mcp_perRepository_guardBranches_inOrder():
     steps += ["3. **The read-only guard**", "4. The OAuth client", "5. One line per server", "6. `/mcp` →"]
     positions = [body.index(step) for step in steps]
     assert positions == sorted(positions)
-    guards = ("`organization` or `folder`", "a second Google identity", "the gate is the only guard")
+    guards = ("names `organization` or `folder`", "a second Google identity", "the gate is the only guard")
     for branch in guards:
         assert branch in body, branch
 

@@ -271,3 +271,11 @@ Proof: test_gcp_mcp_opt_in, test_workflow_skills, test_debug_skill, test_spec_sk
 Open: none.
 Next: T05, the eval, run locally.
 verified: tree 7e30807513340ea42befce843fdd265967326fb0 · focused suites, check-plugin, sync-agents, markdownlint, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T05: evals gcp-mcp-asked-once and gcp-mcp-never-again
+Changed: two cases on a trusted lab repository with memory and a google provider (fixtures are heredocs, no secret-shaped literal); asked-once (no line): consultant ran, question stated, gcp-mcp: no written in the header, no AskUserQuestion, nothing registered; never-again (gcp-mcp: no present): consultant ran, the line kept and alone, no Edit of CONTEXT.md, no question, nothing registered. A bare /cobot:consult gcp first line, so no Skill grader. tests/test_eval_graders.py: matches() and fixture tests for both.
+Why: spec gcp-mcp-opt-in story 1 (owner Q3).
+Proof: tests/test_eval_graders.py exit 0; shellcheck clean on both fixtures; ruff clean. Local evals (--runs 1 --ablation none --scaffold, Claude Code 2.1.311): gcp-mcp-asked-once 1.00 ($0.33), gcp-mcp-never-again 1.00 ($0.27); a first run without --scaffold (0.67 each, no workspace) does not count. Total $1.23.
+Open: CI runs them three times; the evals environment refuses feature branches.
+Next: T06, the docs.
+verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · grader tests, shellcheck, local evals

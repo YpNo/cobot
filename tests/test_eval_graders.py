@@ -271,6 +271,55 @@ def test_consultHomeassistant_fixture_tracksSecretsWithoutASecretValue(tmp_path)
     assert "version" not in manifest and manifest["config_flow"] is True
 
 
+GCP_MCP_CASES = ("gcp-mcp-asked-once", "gcp-mcp-never-again")
+
+
+def gcp_mcp_fixture(tmp_path: Path, case: str) -> str:
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path / "home")}
+    (tmp_path / "home").mkdir()
+    workspace = tmp_path / "cwd"
+    workspace.mkdir()
+    subprocess.run(["bash", str(EVALS / case / "fixture.sh")], cwd=workspace, env=env, check=True)
+    return (workspace / ".agent" / "CONTEXT.md").read_text()
+
+
+@pytest.mark.parametrize("case", GCP_MCP_CASES)
+def test_gcpMcpCases_bareConsultLine_noSkillGrader_consultantAndNoRegistration(case):
+    found = graders(case)
+    body = (EVALS / case / "prompt.md").read_text().split("---\n", 2)[2]
+    assert body.lstrip().startswith("/cobot:consult gcp\n")
+    assert all(g.get("tool") != "Skill" for g in found.values()), case  # a bare line calls no Skill
+    assert found["consultant-ran"]["tool"] == "Agent" and found["no-question-tool"]["max"] == "0"
+    registered = found["nothing-registered"]["input_match"]
+    assert re.search(registered, "claude mcp add --transport http gcp-logging https://x")
+    assert re.search(registered, "gcloud services enable logging.googleapis.com")
+    assert not re.search(registered, "gcloud services list --enabled")
+
+
+def test_gcpMcpAskedOnce_fixtureHasNoLine_gradersWantNoInTheHeader(tmp_path):
+    context = gcp_mcp_fixture(tmp_path, "gcp-mcp-asked-once")
+    assert "gcp-mcp" not in context
+    found = graders("gcp-mcp-asked-once")
+    written = context.replace("runs: host\n", "runs: host\ngcp-mcp: no\n")
+    appended = context + "gcp-mcp: no\n"
+    assert matches(found["line-written"], written) and matches(found["line-in-header"], written)
+    assert matches(found["line-written"], appended) and not matches(found["line-in-header"], appended)
+    assert not matches(found["line-written"], context.replace("runs: host\n", "runs: host\ngcp-mcp: yes\n"))
+    stated = "I would have asked whether to use Google's Cloud MCP servers; I took no, CLI reads."
+    assert matches(found["question-stated"], stated)
+    assert not matches(found["question-stated"], "The consult found two findings in infra/main.tf.")
+
+
+def test_gcpMcpNeverAgain_fixtureHasTheLine_gradersWantItUntouched(tmp_path):
+    context = gcp_mcp_fixture(tmp_path, "gcp-mcp-never-again")
+    found = graders("gcp-mcp-never-again")
+    assert matches(found["line-kept-once"], context) and matches(found["one-line"], context)
+    doubled = context.replace("gcp-mcp: no\n", "gcp-mcp: yes\ngcp-mcp: no\n")
+    assert not matches(found["one-line"], doubled)
+    assert not matches(found["line-kept-once"], context.replace("gcp-mcp: no", "gcp-mcp: yes"))
+    assert re.search(found["no-context-edit"]["input_match"], '{"file_path": "/w/.agent/CONTEXT.md"}')
+
+
 def test_specNamesMissingExpert_expertsGrader_wantsNoneOnTheModbusLine():
     grader = graders("spec-names-missing-expert")["experts-none"]
     flags = re.I | re.M

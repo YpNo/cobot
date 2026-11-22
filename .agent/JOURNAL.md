@@ -247,3 +247,11 @@ Proof: gate suites (cobot_rules, differential, agy, read_list_limits, session_gr
 Open: none.
 Next: T02, the check warnings.
 verified: tree a1b06ed93d84c4c976c32e1eb918c5ada99deb08 · gate suites, ruff, check-plugin
+
+## 2026-11-22 — gcp-mcp-opt-in T02: check names a broken gcp-mcp line and a repository .mcp.json
+Changed: bin/cobot-memory: gcp_mcp_warnings in cmd_check: a gcp-mcp line that is not exactly yes or no (a trailing # comment allowed), repeated, or below the header; a repository .mcp.json (the checkout's) declaring gcp-* or a cloudcli.googleapis.com URL under any name. The file is read only when regular (lstat) and at most 64 kB, invalid JSON is one line, repository values and odd names are never echoed. gcp-mcp stays out of the template header. tests/test_gcp_mcp_check.py (story 6).
+Why: spec gcp-mcp-opt-in T02, the CONTEXT.md and .mcp.json trust-boundary rows.
+Proof: test_cobot_memory, test_gcp_mcp_check, test_cobot_session exit 0; ruff 0.17.6 check and format clean.
+Open: none.
+Next: T03, expert-gcp and mcp.md.
+verified: tree 408a612783490654fa0856320e2724e8df10899b · memory suites, ruff

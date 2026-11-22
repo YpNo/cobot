@@ -213,3 +213,12 @@ Proof: converge: stories 1-7 accepted today (story 2's grep shows two pointer li
 Open: F-50, F-51; the paid evals consult-homeassistant and spec-names-missing-expert not run; residuals: the Read and Grep tools, an anchored glob, the main thread's file reads; onboard step 6b overlaps the gcp-mcp-opt-in spec's step 6b (that build adapts, per its session).
 Next: the owner pushes feat/expert-homeassistant and opens one PR.
 verified: tree 29bd071b4cce235c7b251208cb26d96f2b7bcaca · full suite with coverage, lint, validators
+
+## 2026-11-22 — spec-names-missing-expert drops its spec-skill grader (spec expert-homeassistant)
+
+Changed: removed plugins/cobot/evals/spec-names-missing-expert/graders/spec-skill.md.
+Why: the prompt opens with a bare /cobot:spec line, which expands the skill without a Skill tool call, so the grader could never pass; the local run scored 0.83 with every other grader passing. spec-file already shows the spec skill ran.
+Proof: local eval, --runs 1, Sonnet 5.5: consult-homeassistant 1.00 ($0.19), spec-names-missing-expert 5/6 with only spec-skill failing ($0.39); tests/test_eval_graders.py passes.
+Open: CI evals cannot run from a feature branch (the evals environment's branch rule); the cases run 3 times in CI, once locally here.
+Next: merge PR 80, then the GCP MCP opt-in build.
+verified: tree 9cc43661fedd9af0c0b1054ac989ec7fddcfaac9 · eval-graders

@@ -1070,7 +1070,7 @@ def node_repo(tmp_path):
         ("pnpm exec -- git push", "ask"),
         ("pnpm dlx create-vite", "ask"),
         ("npx only-allow pnpm", "ask"),
-        ("bunx x", None),
+        ("bunx x", "ask"),  # downloads code like npx and uvx (F-53; the old None missed OPAQUE)
         ("pnpm install --frozen-lockfile", None),
         ("pnpm add left-pad", "ask"),
         ("uv run pytest -q", None),

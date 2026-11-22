@@ -116,7 +116,7 @@ MCP_WRITE_WORDS = frozenset(
 )
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
-    "xargs sudo doas su make gmake just task npx ssh mosh "
+    "xargs sudo doas su make gmake just task npx bunx ssh mosh "
     # each runs a command it is given, through a shell or after options the gate does not read
     # (bypass review of T01): GNU parallel's family, watchers, prefix tools, privilege and sandbox
     # launchers, terminal multiplexers and job queues
@@ -388,6 +388,7 @@ LAYERS = ("default", "owner", "project")
 NOTE_LAYERS = frozenset({"default", "owner"})
 PROMPT_ONLY_NOTE = "prompt only"  # a default row's note that keeps every allow line off it
 HOME_CONFIG = "~/.claude"  # the literal config dir file rows name; CLAUDE_CONFIG_DIR may move it
+HOME_STATE = "~/.claude.json"  # Claude Code's state and server list, moved into CLAUDE_CONFIG_DIR too
 SEALED = ("cobot.rules", "cobot/*")  # cobot's owner files under the config dir: no shell access
 RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
 SHOWN_TOOLS = FILE_TOOLS | {"Bash", "mcp"}  # a project row's tool a reason may name
@@ -525,9 +526,12 @@ def moved_config() -> str | None:
 
 def config_twin(rule: Rule, moved: str) -> Rule | None:
     """A file row under ``~/.claude``, also under the moved config dir: the owner files live
-    there, and a row written as ``~/.claude`` alone would miss them."""
+    there, and a row written as ``~/.claude`` alone would miss them. ``~/.claude.json`` sits
+    beside ``~/.claude``, but inside the moved dir as ``.claude.json`` (F-53)."""
     if rule.tool not in FILE_TOOLS:
         return None
+    if rule.pattern == HOME_STATE:
+        return replace(rule, pattern=moved + "/.claude.json")
     if rule.pattern != HOME_CONFIG and not rule.pattern.startswith(HOME_CONFIG + "/"):
         return None
     return replace(rule, pattern=moved + rule.pattern[len(HOME_CONFIG) :])

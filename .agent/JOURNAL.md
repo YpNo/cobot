@@ -303,3 +303,11 @@ Proof: test_file_tool_aliases exit 0 (failed first for the right reason: no deci
 Open: the bypass review of the three finding commits runs after F-54.
 Next: F-53.
 verified: tree 40e649488d10af5ddbdc5de21b0f1aefe5b88841 · gate suites, ruff
+
+## 2026-11-22 — F-53: bunx, node on Claude Code's cli.js, and the moved .claude.json
+Changed: cobot-rules: bunx in OPAQUE beside npx (the launcher comment and the 2026-11-07 commit said bunx stays opaque; the test row ("bunx x", None) had frozen the miss and now expects ask); config_twin maps ~/.claude.json to $CLAUDE_CONFIG_DIR/.claude.json when the variable moves the config dir (HOME_STATE). default.rules: ask Bash(node *@anthropic-ai/claude-code/*). tests/test_mcp_registration_routes.py. F-53 closed; git apply of a patch that creates .mcp.json remains the residual every protected file shares.
+Why: owner, before merging PR 81: work on the new findings.
+Proof: test_mcp_registration_routes exit 0 (failed first: bunx and node none, the moved .claude.json none); gate suites with test_install and test_check_plugin exit 0; ruff clean. node build/app.js and node --version stay silent; node dist/*.js and node -e already asked before this change.
+Open: the bypass review runs after F-54.
+Next: F-54.
+verified: tree 06ea7f3e0c08f019a67b08bf5af17b0433912ba0 · gate suites, ruff

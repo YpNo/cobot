@@ -279,3 +279,11 @@ Proof: tests/test_eval_graders.py exit 0; shellcheck clean on both fixtures; ruf
 Open: CI runs them three times; the evals environment refuses feature branches.
 Next: T06, the docs.
 verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · grader tests, shellcheck, local evals
+
+## 2026-11-22 — gcp-mcp-opt-in T06: decision 37 and the docs
+Changed: decision 37 in docs/01-decisions.md (36 is F-39's); docs/02-design.md §12 Google Cloud row; docs/configuration.md (the gcp-mcp header row, the Google Cloud MCP setup at -s user with the guard, the refusals and the registration asks); docs/architecture.md (Cloud CLI refusal, grants Bash-only, registration asks, the opt-in line); CHANGELOG Unreleased Added and Security; spec T05 and T06 ticked.
+Why: spec gcp-mcp-opt-in T06.
+Proof: markdownlint-cli2 0.24.2 clean over 146 files.
+Open: none.
+Next: /cobot:wrap.
+verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · markdownlint

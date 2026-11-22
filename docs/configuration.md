@@ -29,6 +29,7 @@ it. Nothing here touches `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/s
 | `~/.claude/cobot/grants/<session>.json` | JSON, written by cobot's gate and hooks only | absent | the session's grants (`kind`, `target`, `granted`, `expires`), pending requests, and the commands run under a grant (at most 200, 200 characters each); Edit, Write and shell writes to it are denied; removed at SessionEnd, files older than a week pruned |
 | `~/.claude/cobot/machine.md` | Markdown, one `## <host>` or `## <host>/<container>` section | absent | the owner's answers only: `route:` (install route) and `declined:` (helpers not to advise), written by `cobot-env prefer` and `decline`; lines you add are kept; nothing detected is stored |
 | `.agent/CONTEXT.md` `runs:` | header field | `host` | where commands run locally (`podman · builds: distrobox enter dev --`), asked by onboard step 3b or a new project's first spec; verified commands stay bare and CI runs them bare |
+| `.agent/CONTEXT.md` `gcp-mcp:` | header field, `yes` or `no`, a `# comment` may follow; not in the template | absent (asked) | whether Google Cloud live reads go through the owner's `gcp-*` MCP servers (`yes`) or `gcloud` and `kubectl` (`no`); asked once by the first Google Cloud work (onboard step 6c, `/cobot:consult gcp`, spec or wrap picking the gcp consultant, `/cobot:debug` on a Google Cloud target), never again; any other value, a second line or a line below the header counts as unset and `cobot-memory check` warns (decision 37) |
 | `CLAUDE_CONFIG_DIR` | path | `~/.claude` | where the owner files above live, under both runtimes; Claude Code's sandbox keeps it read-only to Bash, so there `cobot-memory init --add-identity` or `--trust-root` still writes the memory, then prints `trust not recorded:` with the command for the owner's own terminal and exits 1 (`cobot-env prefer` and `decline` print `answer not recorded:` the same way) |
 | `XDG_DATA_HOME` | path | `~/.local/share` | foreign-mode memory under `cobot/repos/<host>/<owner>/<repo>`; the gate's per-session ask counts under `cobot/asks/` (rule texts and counts, a week kept); the report check's per-session state under `cobot/reports/` (refused builder and investigator ids, and an id with the sha256 of each report let through, never the report text; a week kept) |
 | `.agent/debug/<date>-<slug>.md` | Markdown from `skills/debug/template.md`, `status: open \| resolved \| unresolved` | absent | one record per `/cobot:debug` investigation, committed like a spec (outside the tree in foreign mode); the gate refuses an Edit or Write there whose text is secret-shaped (`SECRET_RE` plus `ya29.` tokens, JWTs, `Bearer` headers, URL credentials, kubeconfig `client-*-data`, `"private_key":`), naming the kind, and `cobot-memory debug check` and `check` exit 1 on one or on an excerpt over 20 lines or 2000 characters; `<redacted>` is clean; the brief's findings line ends `; debug: <n> open` (decision 35) |
@@ -290,14 +291,23 @@ judges its tools.
   `claude mcp add stitch --transport http https://stitch.googleapis.com/mcp --header "X-Goog-Api-Key: …" -s user`.
   Generate and edit tools ask, list and get tools are silent.
 - **Google Cloud remote MCP servers** (`https://<service>.googleapis.com/mcp`) for
-  `expert-gcp`: register each one as `gcp-<service>` with a Desktop OAuth client, from inside
-  the repository:
-  `claude mcp add --transport http --client-id … --client-secret --callback-port 8765 -H "x-goog-user-project: <project>" -s local gcp-logging https://logging.googleapis.com/mcp`,
-  then sign in with `/mcp` from the CLI. Under a `gcp-*` name, read tools are silent,
+  `expert-gcp`, an opt-in per repository (decision 37). The first Google Cloud work asks once
+  whether to use them and writes `gcp-mcp: yes` or `gcp-mcp: no` into CONTEXT.md's header; edit
+  the line to change it. On yes, the agent prints the setup and you run it: the APIs, the
+  `roles/mcp.toolUser` binding, a read-only guard (the IAM deny policy with an organisation or
+  folder, else a second identity on viewer roles), a Desktop OAuth client, then one line per
+  server, registered once for every folder:
+  `claude mcp add --transport http --client-id … --client-secret --callback-port 8765 -H "x-goog-user-project: <project>" -s user gcp-logging https://logging.googleapis.com/mcp`,
+  and `/mcp` → Authenticate from the CLI. Under a `gcp-*` name, read tools are silent,
   write tools with a known verb (`create_`, `delete_`, `apply_`, …) are refused (`never`) and any
-  other tool asks; under any other name, every tool that is not a read asks. The full setup,
-  including the IAM deny policy for projects in an organisation and the SSH tunnel for a remote
-  host, is in `plugins/cobot/skills/expert-gcp/references/mcp.md`.
+  other tool asks; under any other name, every tool that is not a read asks. The Google Cloud
+  CLI server (`run_gcloud_command`, `run_bq_command`) is refused under any name, a claude.ai
+  connector is not supported, and no session grant reaches an MCP tool. `claude mcp add`,
+  `remove`, `--mcp-config` and an Edit or Write of `~/.claude.json` or `.mcp.json` ask.
+  `cobot-memory check` warns on a `gcp-mcp:` value other than yes or no, a second line or one
+  below the header, and on a repository `.mcp.json` declaring `gcp-*` or the Cloud CLI URL.
+  The full setup, including the SSH tunnel for a remote host, is in
+  `plugins/cobot/skills/expert-gcp/references/mcp.md`.
 
 ## Home Assistant
 

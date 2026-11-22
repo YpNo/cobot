@@ -244,8 +244,8 @@ Only the main thread writes the line, never a consultant or a probe.
 | T02 [x] | `bin/cobot-memory`: `gcp_mcp_warnings` in `cmd_check`; `tests/test_cobot_memory.py`: story 6, positive and negative | memory | — | — |
 | T03 [x] | `skills/expert-gcp/SKILL.md` (the opt-in paragraph, line 179); `references/mcp.md` ("Per repository", `-s user`, the guard branches, the dated facts, connector unsupported); `tests/test_gcp_mcp_opt_in.py` stories 2, 3, 7 | knowledge | — | — |
 | T04 [x] | onboard step 6c; consult step 1 and the "Never edits" exception; spec step 5; wrap step 3; debug step 1; `debug/references/routing.md`; story 1's text tests | skills | — | T03 |
-| T05 | `evals/gcp-mcp-asked-once/` (cases A and B, `allowed_tools` with Agent and Edit, graders as story 1) | evals | — | T04 |
-| T06 | decision 36 in `docs/01-decisions.md`; `docs/configuration.md` (the `gcp-mcp:` row, the new asks); `docs/02-design.md`; `docs/architecture.md`; `CHANGELOG.md` Unreleased | docs | — | T01–T05 |
+| T05 [x] | `evals/gcp-mcp-asked-once/` (cases A and B, `allowed_tools` with Agent and Edit, graders as story 1) | evals | — | T04 |
+| T06 [x] | decision 37 (36 went to F-39) in `docs/01-decisions.md`; `docs/configuration.md` (the `gcp-mcp:` row, the new asks); `docs/02-design.md`; `docs/architecture.md`; `CHANGELOG.md` Unreleased | docs | — | T01–T05 |
 
 ## Trade-offs
 

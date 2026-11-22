@@ -3107,12 +3107,17 @@ def agent_matches(scope: str, agent: str | None) -> bool:
     return scope in (agent, agent.split(":")[-1]) or agent in (scope, scope.split(":")[-1])
 
 
+# the file tools a row's tool also covers (F-52): MultiEdit is several Edits, and NotebookEdit
+# replaces a cell (an Edit) or inserts one (a Write)
+FILE_TOOL_ALIASES = {"Edit": frozenset({"MultiEdit", "NotebookEdit"}), "Write": frozenset({"NotebookEdit"})}
+
+
 def applies(rule: Rule, tool: str, agent: str | None) -> bool:
     if rule.agent and not agent_matches(rule.agent, agent):
         return False
     if rule.tool == "mcp":
         return tool.startswith("mcp__")
-    return rule.tool == tool
+    return rule.tool == tool or tool in FILE_TOOL_ALIASES.get(rule.tool, frozenset())
 
 
 def matches_bash(rule: Rule, forms: list[str]) -> bool:

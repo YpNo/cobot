@@ -295,3 +295,11 @@ Proof: converge: stories 1-7 accepted today. Full suite with coverage exit 0, 98
 Open: F-52, F-53, F-54; the second identity's roles and the value(parent.type) shape stay reported until a live project; the brief is 1 character under its budget; two sealed eval temp folders in /tmp could not be removed (tmpfs, gone at reboot).
 Next: the owner pushes the branch and opens one PR.
 verified: tree d95513ded06ddfe571632158b5247a885a941d45 · full suite with coverage, lint, validators, local evals
+
+## 2026-11-22 — F-52: MultiEdit and NotebookEdit meet the file rows
+Changed: cobot-rules applies(): an Edit row also covers MultiEdit and NotebookEdit, a Write row NotebookEdit (FILE_TOOL_ALIASES). tests/test_file_tool_aliases.py: the four file tools on ~/.claude/settings.json and .claude/settings.local.json (deny), ~/.claude.json and .mcp.json (ask), an ordinary file (silent); an owner allow of Edit does not lift a never for MultiEdit. F-52 closed.
+Why: owner, before merging PR 81: work on the new findings. hooks.json already routes both tools to the gate, but no row matched them.
+Proof: test_file_tool_aliases exit 0 (failed first for the right reason: no decision); gate suites (cobot_rules, differential, agy, session_grants, grant_store, cobot_shell, secret_reads, hass_cli, read_list_limits, gcp_mcp_gate, debug_records, investigator, probe_report) exit 0; ruff clean.
+Open: the bypass review of the three finding commits runs after F-54.
+Next: F-53.
+verified: tree 40e649488d10af5ddbdc5de21b0f1aefe5b88841 · gate suites, ruff

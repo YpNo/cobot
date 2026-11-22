@@ -343,3 +343,11 @@ Proof: test_file_tool_aliases exit 0; gate suites (cobot_rules, differential, ag
 Open: none for F-52.
 Next: the F-53 and F-54 review folds.
 verified: tree 3e85b36e0360144ad5c2c2b04082460c1d9a1cd9 · gate suites, ruff
+
+## 2026-11-22 — F-53 bypass review: the small routes folded, four larger ones parked
+Changed: default.rules: claude *mcp *add* and *mcp *remove* (options between mcp and the verb); ask on claude plugin install, plugin marketplace add, plugin enable and --plugin-dir (a plugin carries its own MCP servers); the node row matches the claude-code package folder without cli.js; Edit and Write of ~/.claude.json.backup* ask. tests/test_mcp_registration_routes.py. Findings F-55 (a plain variable in a path word hides it from never rows: CRITICAL, older than this branch), F-56 (copy into a folder; CLAUDE_CONFIG_DIR outside HOME loses folder protection), F-57 (interpreter code flags beyond -c, -e and -), F-58 (nested claude flags and env, unopaque launchers, renamed copies, globs on the existing ~/.claude.json).
+Why: the bypass review of 5a3f1a4 (1 CRITICAL, 4 HIGH, 4 MEDIUM, 3 LOW). F-55 to F-58 are changes to the gate's shell model across every protected file, not this PR's server-list rows: too large for PR 81, per the owner's instruction to stop and say why. Reproduced here: cp /tmp/e ~/.claude/$X none, cp /tmp/e/.claude.json ~/ none, node -p none.
+Proof: test_mcp_registration_routes exit 0 (eight new cases failed first); claude mcp list, mcp get, plugin list and plugin validate and git add src/* stay silent.
+Open: F-55 to F-58 for a gate spec; F-55 first.
+Next: the F-54 review fold.
+verified: tree ba4ca19c7f435001e4bfa944e51c5d1a410ea366 · registration tests, dry runs

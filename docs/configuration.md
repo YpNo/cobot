@@ -303,7 +303,9 @@ judges its tools.
   other tool asks; under any other name, every tool that is not a read asks. The Google Cloud
   CLI server (`run_gcloud_command`, `run_bq_command`) is refused under any name, a claude.ai
   connector is not supported, and no session grant reaches an MCP tool. `claude mcp add`,
-  `remove`, `--mcp-config` and an Edit or Write of `~/.claude.json` or `.mcp.json` ask.
+  `remove`, `reset-project-choices`, `claude --mcp-config` and `--settings`, an Edit or Write of
+  `~/.claude.json` or `.mcp.json`, and a shell word naming either file (`cp`, `tee`, a
+  redirection, `curl -o`) ask; a glob that only could name them does not.
   `cobot-memory check` warns on a `gcp-mcp:` value other than yes or no, a second line or one
   below the header, and on a repository `.mcp.json` declaring `gcp-*` or the Cloud CLI URL.
   The full setup, including the SSH tunnel for a remote host, is in

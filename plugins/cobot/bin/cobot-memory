@@ -1097,7 +1097,8 @@ GCP_MCP_VALID_RE = re.compile(r"^gcp-mcp: (?:yes|no)(?:\s+#.*)?\s*$")
 MCP_JSON = ".mcp.json"
 MCP_JSON_MAX_BYTES = 64 * 1024  # a project's server list is a few hundred bytes
 CLOUD_CLI_HOST = "cloudcli.googleapis.com"
-PRINTABLE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+PRINTABLE_NAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")  # fullmatch: no trailing newline
+URL_TEXT_RE = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.I)
 
 
 def gcp_mcp_warnings(mem: Memory) -> list[str]:
@@ -1113,7 +1114,8 @@ def context_gcp_mcp_warnings(context: str) -> list[str]:
         return []
     if len(lines) > 1:
         return [f"warning: gcp-mcp: {len(lines)} lines; keep one, in the header"]
-    if lines[0] not in context.split("\n## ", 1)[0]:
+    head = context.split("\n## ", 1)[0] if not context.startswith("## ") else ""
+    if GCP_MCP_LINE_RE.search(context).start() >= len(head):
         return ["warning: gcp-mcp: below the header, where the brief may drop it; move it above ## Stack"]
     if not GCP_MCP_VALID_RE.match(lines[0]):
         return ["warning: gcp-mcp must be yes or no; any other value counts as unset (expert-gcp)"]
@@ -1133,10 +1135,28 @@ def mcp_json_servers(path: Path) -> tuple[dict, str]:
         return {}, f"warning: {MCP_JSON} is over {MCP_JSON_MAX_BYTES // 1024} kB; not read"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (OSError, ValueError, RecursionError):  # JSONDecodeError and UnicodeDecodeError are ValueErrors
         return {}, f"warning: {MCP_JSON} is not valid JSON; not read"
     servers = data.get("mcpServers") if isinstance(data, dict) else None
     return (servers if isinstance(servers, dict) else {}), ""
+
+
+def url_host(url: str) -> str:
+    """The host of a URL, lowercased and without a trailing dot; empty when it does not parse."""
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:  # an unclosed IPv6 bracket, a bad port
+        return ""
+
+
+def server_hosts(config: object) -> set[str]:
+    """The hosts a server entry points at: its ``url``, and URLs in a stdio launcher's ``args``
+    (``mcp-remote https://…``)."""
+    if not isinstance(config, dict):
+        return set()
+    args = config.get("args") if isinstance(config.get("args"), list) else []
+    texts = [str(config.get("url") or ""), *(a for a in args if isinstance(a, str))]
+    return {url_host(m) for text in texts for m in URL_TEXT_RE.findall(text)} - {""}
 
 
 def mcp_json_warnings(path: Path) -> list[str]:
@@ -1145,10 +1165,8 @@ def mcp_json_warnings(path: Path) -> list[str]:
         return [problem]
     found = []
     for name in sorted(servers):
-        shown = name if PRINTABLE_NAME_RE.match(name) else "<unprintable name>"
-        config = servers[name]
-        url = str(config.get("url") or "") if isinstance(config, dict) else ""
-        if (urllib.parse.urlsplit(url).hostname or "") == CLOUD_CLI_HOST:
+        shown = name if PRINTABLE_NAME_RE.fullmatch(name) else "<unprintable name>"
+        if CLOUD_CLI_HOST in server_hosts(servers[name]):
             found.append(f"warning: {MCP_JSON} declares {shown} at {CLOUD_CLI_HOST}: the gate refuses the Cloud CLI server")
         elif name.lower().startswith("gcp-"):
             found.append(

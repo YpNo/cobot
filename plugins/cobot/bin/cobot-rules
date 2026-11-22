@@ -3570,9 +3570,12 @@ def word_touches(
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
-    is only a substitution is not resolved, like a variable, while a bare glob reaches real files."""
+    is only a substitution is not resolved, like a variable, while a bare glob reaches real files.
+    An ``ask`` row counts for a literal word only: a glob that could name ``.mcp.json`` is every
+    glob, and a refusal is what a "could name" protects."""
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     if shell.has_sentinel(token):
+        protected = [r for r in protected if r.decision == "never"]
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
         if not (pathlike or bare_glob):
             return False
@@ -3608,11 +3611,13 @@ def protected_file_touched(
     visited: Dirs = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
-    Edit/Write rule, or that moves or links a customization root or a protected folder. Each word
+    Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
+    the MCP server lists: a ``cp`` must not register a server where an Edit asks; spec
+    gcp-mcp-opt-in), or that moves or links a customization root or a protected folder. Each word
     is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
     redirection and runner targets) are checked word by word, never read as a command, in every
-    directory the script visits."""
-    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
+    directory the script visits. Either way the verdict is an ask (``protected_verdict``)."""
+    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision in ("never", ASK) and not r.agent]
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])

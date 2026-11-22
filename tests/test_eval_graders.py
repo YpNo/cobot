@@ -318,6 +318,11 @@ def test_gcpMcpNeverAgain_fixtureHasTheLine_gradersWantItUntouched(tmp_path):
     assert not matches(found["one-line"], doubled)
     assert not matches(found["line-kept-once"], context.replace("gcp-mcp: no", "gcp-mcp: yes"))
     assert re.search(found["no-context-edit"]["input_match"], '{"file_path": "/w/.agent/CONTEXT.md"}')
+    reasked = "I would have asked whether to use Google's Cloud MCP servers; I took no, CLI reads."
+    assert not matches(found["not-asked-again"], reasked)
+    kept = "CONTEXT.md already says gcp-mcp: no, so live reads would use gcloud; I asked nothing."
+    assert matches(found["not-asked-again"], kept)
+    assert matches(found["not-asked-again"], "Two findings in infra/main.tf; no question was needed.")
 
 
 def test_specNamesMissingExpert_expertsGrader_wantsNoneOnTheModbusLine():

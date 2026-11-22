@@ -114,6 +114,64 @@ def test_gcpMcpCheck_mcpJsonMalformed_oneLineAtMost(memory, repo, text):
         assert out == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[" * 30000 + "]" * 30000,  # under the cap, but deeper than the decoder recurses
+        '{"mcpServers": {"a": {"url": ' + "9" * 5000 + "}}}",  # past int's digit limit
+    ],
+)
+def test_gcpMcpCheck_mcpJsonThatBreaksTheDecoder_oneLineNoCrash(memory, repo, text):
+    assert warnings(memory, repo, HEADER + BODY, text) == ["warning: .mcp.json is not valid JSON; not read"]
+    assert "not valid JSON" in memory.cmd_check(memory.Memory())
+
+
+@pytest.mark.parametrize("url", ["http://[abc/mcp", "http://[::1/mcp", "https://x.example:port/mcp"])
+def test_gcpMcpCheck_unparsableUrl_noCrash(memory, repo, url):
+    assert warnings(memory, repo, HEADER + BODY, {"mcpServers": {"t": {"url": url}}}) == []
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"url": "https://cloudcli.googleapis.com./mcp"},
+        {"url": "https://u:p@CLOUDCLI.googleapis.com:443/mcp"},
+        {"command": "npx", "args": ["mcp-remote", "https://cloudcli.googleapis.com/mcp"]},
+    ],
+)
+def test_gcpMcpCheck_cloudCliHostSpelledOtherwise_warns(memory, repo, config):
+    out = warnings(memory, repo, HEADER + BODY, {"mcpServers": {"t": config}})
+    assert out == [f"warning: .mcp.json declares t {CLOUD_CLI}"]
+
+
+def test_gcpMcpCheck_cloudCliHostInUserinfoOnly_noWarning(memory, repo):
+    servers = {"mcpServers": {"t": {"url": "https://cloudcli.googleapis.com@evil.example/mcp"}}}
+    assert warnings(memory, repo, HEADER + BODY, servers) == []
+
+
+def test_gcpMcpCheck_nameWithATrailingNewline_isNotEchoed(memory, repo):
+    out = warnings(memory, repo, HEADER + BODY, {"mcpServers": {"gcp-x\n": {"url": "https://a"}}})
+    assert out == [declared("<unprintable name>")]
+
+
+def test_gcpMcpCheck_headerMentionIsNotTheLine_belowStillWarns(memory, repo):
+    context = "# C\nnote: set gcp-mcp: yes later\n" + BODY + "gcp-mcp: yes\n"
+    assert warnings(memory, repo, context) == [
+        "warning: gcp-mcp: below the header, where the brief may drop it; move it above ## Stack"
+    ]
+
+
+def test_gcpMcpCheck_noHeaderAtAll_lineIsBelow(memory, repo):
+    out = warnings(memory, repo, "## Stack\n\ngcp-mcp: yes\n")
+    assert out == ["warning: gcp-mcp: below the header, where the brief may drop it; move it above ## Stack"]
+
+
+def test_gcpMcpCheck_crlfLines_validAndInvalid(memory, repo):
+    crlf = (HEADER + "gcp-mcp: yes\n" + BODY).replace("\n", "\r\n")
+    assert warnings(memory, repo, crlf) == []
+    assert warnings(memory, repo, crlf.replace("gcp-mcp: yes", "gcp-mcp: maybe")) != []
+
+
 def test_gcpMcpCheck_mcpJsonOverTheCap_notRead(memory, repo):
     big = json.dumps({"mcpServers": {"gcp-a": {"url": "https://x"}}, "pad": "x" * (64 * 1024)})
     assert warnings(memory, repo, HEADER + BODY, big) == ["warning: .mcp.json is over 64 kB; not read"]

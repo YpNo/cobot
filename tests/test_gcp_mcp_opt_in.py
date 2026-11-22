@@ -45,6 +45,14 @@ def test_expertGcp_optIn_exactValuesAskedOnceRecorded():
     assert "counts as unset" in rule and "cobot-memory check" in rule
 
 
+def test_expertGcp_optIn_valueRuleMatchesCheck_brokenLineReplacedNotDoubled():
+    flat = " ".join(opt_in().split())
+    value_rule = "exactly `gcp-mcp: yes` or `gcp-mcp: no`, lowercase, optionally followed by"
+    assert value_rule + " a space and `# comment`" in flat
+    assert "replace it with the answer in one Edit" in flat and "never add a second one" in flat
+    assert "first word" not in flat
+
+
 def test_expertGcp_optIn_recommendsNoUnlessToolsPresent():
     assert re.search(r"Recommend `yes` when a `mcp__gcp-\*` tool is in your tool list, else `no`", opt_in())
 
@@ -96,7 +104,8 @@ def per_repository() -> str:
 def test_mcp_perRepository_readsFirst():
     body = per_repository()
     assert "gcloud services list --enabled" in body
-    assert "gcloud projects describe <p> --format='value(parent)'" in body
+    assert "gcloud projects describe <p> --format='value(parent.type)'" in body
+    assert "prints `organization`, `folder` or nothing [reported" in " ".join(body.split())
 
 
 def test_mcp_perRepository_signalTable_noStorage():
@@ -116,7 +125,7 @@ def test_mcp_perRepository_guardBranches_inOrder():
     steps += ["3. **The read-only guard**", "4. The OAuth client", "5. One line per server", "6. `/mcp` →"]
     positions = [body.index(step) for step in steps]
     assert positions == sorted(positions)
-    guards = ("`organizations/…` or `folders/…`", "a second Google identity", "the gate is the only guard")
+    guards = ("`organization` or `folder`", "a second Google identity", "the gate is the only guard")
     for branch in guards:
         assert branch in body, branch
 

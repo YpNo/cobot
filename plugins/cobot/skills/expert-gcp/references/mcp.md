@@ -24,8 +24,10 @@ CONTEXT.md line `gcp-mcp: yes | no`, asked once (expert-gcp, "The opt-in").
 ## Per repository (on `gcp-mcp: yes`)
 
 The agent prepares; the owner runs. Read first (both silent): `gcloud services list --enabled
---project <p>` and `gcloud projects describe <p> --format='value(parent)'`, with the project the
-owner confirms. Propose servers by signal:
+--project <p>` and `gcloud projects describe <p> --format='value(parent.type)'`, with the project
+the owner confirms. It prints `organization`, `folder` or nothing [reported 2026-11-22: the
+Resource Manager v1 `parent: {type, id}` shape, not yet read on a live project]. Propose servers
+by signal:
 
 | signal in the repository | server | service to enable |
 |---|---|---|
@@ -41,8 +43,8 @@ gate refuses it), and a claude.ai connector. Then print, in this order, and run 
    `roles/serviceusage.serviceUsageAdmin`; Owner has it).
 2. `gcloud projects add-iam-policy-binding <p> --member="user:<you>" --role="roles/mcp.toolUser"`.
 3. **The read-only guard**, by the parent read above:
-   - `organizations/…` or `folders/…`: the deny policy of "Setup" step 2.
-   - none: a second Google identity used only for MCP, holding predefined viewer roles
+   - `organization` or `folder`: the deny policy of "Setup" step 2.
+   - nothing (no organisation): a second Google identity used only for MCP, holding predefined viewer roles
      (`roles/logging.viewer`, `roles/container.viewer`, `roles/run.viewer`,
      `roles/monitoring.viewer`), `roles/serviceusage.serviceUsageConsumer` (for
      `x-goog-user-project`) and `roles/mcp.toolUser`; never a basic role (expert-gcp rule 2).

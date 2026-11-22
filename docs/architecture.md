@@ -138,7 +138,9 @@ On Google Cloud servers registered as `gcp-*`, default `never` rules refuse the 
 verb, since a personal project cannot hold the IAM deny policy that would refuse them. The Cloud
 CLI server's `run_gcloud_command` and `run_bq_command` are refused under any server name. MCP
 calls never consult the grant store, so a session grant covers Bash only. Registering a server
-asks (`claude mcp add|remove`, `--mcp-config`, an edit of `~/.claude.json` or `.mcp.json`):
+asks (`claude mcp add|remove`, `--mcp-config`, `--settings`, an edit of `~/.claude.json` or
+`.mcp.json`, or a shell word naming one: an `ask` file row protects a literal word the way a
+`never` row does, while a glob that only could name it stays silent):
 whether a repository uses Google's servers at all is its `gcp-mcp:` line, asked once in the main
 thread (decision 37).
 

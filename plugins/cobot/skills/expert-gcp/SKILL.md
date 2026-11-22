@@ -195,8 +195,10 @@ is consult's row (`*.tf` with `provider "google`, `cloudbuild*.y*ml`). When CONT
 has no valid line, ask in the main thread, one AskUserQuestion: use Google's Cloud MCP servers
 for live reads? Recommend `yes` when a `mcp__gcp-*` tool is in your tool list, else `no`. Write
 `gcp-mcp: yes` or `gcp-mcp: no` above `## Stack` (Edit), and never ask again; the owner edits the
-line to change it. The value is the first word, a `# comment` may follow; anything else, a
-second line or a line below the header counts as unset (`cobot-memory check` warns). Untrusted
+line to change it. The line is exactly `gcp-mcp: yes` or `gcp-mcp: no`, lowercase, optionally
+followed by a space and `# comment`; anything else, a second line or a line below the header counts as unset
+(`cobot-memory check` warns). When asking over such a line, replace it with the answer in one
+Edit, above `## Stack`, and remove any other `gcp-mcp:` line: never add a second one. Untrusted
 memory: no question, no write, CLI reads. No CONTEXT.md: ask, record nothing, propose
 `/cobot:onboard`. Only the main thread writes the line, never a consultant or a probe.
 

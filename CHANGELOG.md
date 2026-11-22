@@ -218,9 +218,11 @@ All notable changes to this project are documented here. The format follows
 ### Security
 
 - **MCP registration asks, and the Google Cloud CLI server is refused (decision 37).**
-  `claude mcp add`, `add-json`, `remove`, `--mcp-config` and an Edit or Write of
-  `~/.claude.json` or the repository's `.mcp.json` ask, so an injected instruction cannot
-  register a server under a `gcp-*` name. The Cloud CLI server is refused as `gcp-cloudcli`,
+  `claude mcp add`, `add-json`, `remove`, `reset-project-choices`, `claude --mcp-config` and
+  `--settings`, an Edit or Write of `~/.claude.json` or the repository's `.mcp.json`, and a
+  shell word naming either file (`cp`, `tee`, a redirection, `curl -o`) ask, so an injected
+  instruction cannot register a server under a `gcp-*` name. A glob that only could name them
+  stays silent. The Cloud CLI server is refused as `gcp-cloudcli`,
   and its `run_gcloud_command` and `run_bq_command` under any server name: they take a whole
   command the gate cannot judge. A test now pins that no session grant reaches an MCP tool.
   `/cobot:rules sync` now renders `mcp__gcp-cloudcli__*` as a deny permission.

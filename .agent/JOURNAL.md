@@ -214,6 +214,14 @@ Open: F-50, F-51; the paid evals consult-homeassistant and spec-names-missing-ex
 Next: the owner pushes feat/expert-homeassistant and opens one PR.
 verified: tree 29bd071b4cce235c7b251208cb26d96f2b7bcaca · full suite with coverage, lint, validators
 
+## 2026-11-21 — gcp-mcp-opt-in: spec written, challenged and folded
+Changed: .agent/specs/gcp-mcp-opt-in.md (medium): the gcp-mcp: yes|no header line asked once at the first Google Cloud work (onboard 6b on first run or refresh, consult, spec and wrap gcp consultants, debug after its live context); the guarded setup in mcp.md at -s user; ask rows on every registration route (claude mcp add|add-json|remove, --mcp-config, ~/.claude.json, .mcp.json); the Google Cloud CLI server refused whole and its tool names on any server; a pinned test that grants never reach MCP; check warnings on the line and a repo .mcp.json.
+Why: owner-ideas-03 §4 MCP opt-in and reads-through-MCP (confirmed); owner's answers Q1 no by default, Q2 refuse cloudcli, Q3 eval plus text tests, Q4 -s user.
+Proof: challenger SOUND WITH CHANGES (4 MAJOR, 7 MINOR folded) and gcp consult (3 MAJOR, 5 MINOR folded), both run from cobot's agent definitions through a general agent because the cobot: agents were not loaded; Google's MCP docs read 2026-11-20 and 21; dry run cobot-rules check on claude mcp add prints none today.
+Open: onboard step 6b and spec step 5 overlap with the F-39 spec; second-identity roles reported until the build checks them; narrower readonly OAuth scopes unverified.
+Next: /cobot:build gcp-mcp-opt-in on the owner's word.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, no code
+
 ## 2026-11-22 — spec-names-missing-expert drops its spec-skill grader (spec expert-homeassistant)
 
 Changed: removed plugins/cobot/evals/spec-names-missing-expert/graders/spec-skill.md.
@@ -231,14 +239,6 @@ Proof: full suite 4387 passed, 98.32 %; ruff check and format clean; no commit f
 Open: the five GitGuardian incidents on the dashboard are the owner's to resolve.
 Next: merge PR 80, then the GCP MCP opt-in build.
 verified: tree 0edcc05a8708cfd16b6dcba4bf49dbf14d9fa4e2 · full suite with coverage, ruff
-
-## 2026-11-21 — gcp-mcp-opt-in: spec written, challenged and folded
-Changed: .agent/specs/gcp-mcp-opt-in.md (medium): the gcp-mcp: yes|no header line asked once at the first Google Cloud work (onboard 6b on first run or refresh, consult, spec and wrap gcp consultants, debug after its live context); the guarded setup in mcp.md at -s user; ask rows on every registration route (claude mcp add|add-json|remove, --mcp-config, ~/.claude.json, .mcp.json); the Google Cloud CLI server refused whole and its tool names on any server; a pinned test that grants never reach MCP; check warnings on the line and a repo .mcp.json.
-Why: owner-ideas-03 §4 MCP opt-in and reads-through-MCP (confirmed); owner's answers Q1 no by default, Q2 refuse cloudcli, Q3 eval plus text tests, Q4 -s user.
-Proof: challenger SOUND WITH CHANGES (4 MAJOR, 7 MINOR folded) and gcp consult (3 MAJOR, 5 MINOR folded), both run from cobot's agent definitions through a general agent because the cobot: agents were not loaded; Google's MCP docs read 2026-11-20 and 21; dry run cobot-rules check on claude mcp add prints none today.
-Open: onboard step 6b and spec step 5 overlap with the F-39 spec; second-identity roles reported until the build checks them; narrower readonly OAuth scopes unverified.
-Next: /cobot:build gcp-mcp-opt-in on the owner's word.
-verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, no code
 
 ## 2026-11-22 — gcp-mcp-opt-in T01: registration asks, the Cloud CLI server refused, grants kept off MCP
 Changed: default.rules: never mcp__gcp-cloudcli__*, never mcp__*__run_gcloud_command and run_bq_command; ask Bash(claude *mcp add*), (claude *mcp remove*), (claude *--mcp-config*), Edit and Write of ~/.claude.json and .mcp.json. tests/test_gcp_mcp_gate.py (stories 4 and 5: rtk, absolute path and --debug forms ask; list and get stay silent; the CLI server denied under any name and over an owner allow; under an active gcloud grant MCP writes deny, scale_service asks, reads silent); test_cliInProcess_sync now expects the one expressible MCP deny, mcp__gcp-cloudcli__*.
@@ -287,3 +287,11 @@ Proof: markdownlint-cli2 0.24.2 clean over 146 files.
 Open: none.
 Next: /cobot:wrap.
 verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · markdownlint
+
+## 2026-11-22 — wrap gcp-mcp-opt-in: the reviews folded, the spec converged
+Changed: cobot-rules: an ask Edit/Write row now protects a literal shell word naming its file (cp, tee, a redirection, dd of=, curl -o, git checkout -- …), as never rows do; a glob that only could name it stays silent (word_touches keeps never rows for holes). default.rules: claude --settings, mcp reset-project-choices and claude-code mcp ask. cobot-memory: .mcp.json decoder and URL errors (RecursionError, int-digit ValueError, an unclosed IPv6 bracket) are one line, not a crash; names fullmatch; the header test is by position; the Cloud CLI host matched with a trailing dot, behind userinfo and in a stdio launcher's args. expert-gcp: the value rule matches check exactly, a broken line is replaced in place, never doubled; mcp.md reads value(parent.type) (reported shape). Eval gcp-mcp-never-again gains not-asked-again. Docs, decision 37, CHANGELOG updated; the journal's 2026-11-21 spec entry moved back to its date (the rebase had put it after 2026-11-22). Spec Converge written. Findings F-52 (MultiEdit and NotebookEdit match no file row), F-53 (bunx, node cli.js, $CLAUDE_CONFIG_DIR/.claude.json), F-54 (MCP refusals case-sensitive).
+Why: wrap reviews: code review 4 MAJOR and 5 MINOR, security review 1 HIGH, 1 MEDIUM and 8 LOW (code-reviewer and security-reviewer agents; cobot's consultants not loaded, no consult domain in the diff).
+Proof: converge: stories 1-7 accepted today. Full suite with coverage exit 0, 98.34% (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean with the new fixtures; markdownlint-cli2 0.24.2 clean over 146 files; claude plugin validate --strict passes for the plugin and the marketplace; check-plugin ok (protocol 3399); sync-agents --check in sync; agy plugin validate passes with its one warning; cobot-memory check: journal newest at bottom, brief 5999 of 6000; cobot-deps check --fresh: no supported lockfile. Local evals after the folds (--runs 1 --scaffold): gcp-mcp-asked-once 1.00, gcp-mcp-never-again 1.00 ($0.62; $1.85 for the build). Gate dry runs: cp, tee, cat >, dd of=, curl -o and git checkout -- on .mcp.json ask; git add src/* and cp src/* dist/ silent.
+Open: F-52, F-53, F-54; the second identity's roles and the value(parent.type) shape stay reported until a live project; the brief is 1 character under its budget; two sealed eval temp folders in /tmp could not be removed (tmpfs, gone at reboot).
+Next: the owner pushes the branch and opens one PR.
+verified: tree d95513ded06ddfe571632158b5247a885a941d45 · full suite with coverage, lint, validators, local evals

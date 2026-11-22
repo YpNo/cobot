@@ -729,10 +729,17 @@ never mcp__*__run_bq_command
 ask Bash(claude *mcp add*)
 ask Bash(claude *mcp remove*)
 ask Bash(claude *--mcp-config*)
+# a settings file can turn on every project server (enableAllProjectMcpServers), skipping the
+# approval a repository .mcp.json needs; reset-project-choices forgets the owner's refusals
+ask Bash(claude *--settings*)
+ask Bash(claude *mcp reset-project-choices*)
+ask Bash(claude-code *mcp *)
 ask Edit(~/.claude.json)
 ask Write(~/.claude.json)
 ask Edit(.mcp.json)
 ask Write(.mcp.json)
+# A shell word naming either file asks too (cp, tee, a redirection, dd of=, curl -o), as for a
+# protected file; a glob that only could name them does not (protected_file_touched).
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

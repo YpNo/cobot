@@ -143,7 +143,7 @@ Only the main thread writes the line, never a consultant or a probe.
      (a file grader).
 2. **A prepared, guarded setup.** As the owner answering yes, I get a prepared setup and do the
    sign-in myself. The agent reads `gcloud services list --enabled` and `gcloud projects
-   describe <p> --format='value(parent)'`. It then prints, filled in with the project I confirm
+   describe <p> --format='value(parent.type)'` (wrap fold: `value(parent)` prints `id=…;type=…`). It then prints, filled in with the project I confirm
    and in this order:
    - the APIs to enable, by the signal table (Logging always; GKE, Cloud Run, Monitoring by
      resource; never Storage, whose `read_object` reaches state buckets);
@@ -296,4 +296,20 @@ deny-policy caveats) goes into mcp.md in T03 through the build, not by `cobot-me
 
 ## Converge
 
-pending
+2026-11-22, wrap. Every story's acceptance ran today:
+
+| story | proof | status |
+|---|---|---|
+| 1 asked once | `tests/test_gcp_mcp_opt_in.py`; evals `gcp-mcp-asked-once` 1.00 and `gcp-mcp-never-again` 1.00 (local, `--runs 1 --scaffold`) | accepted |
+| 2 guarded setup | text tests; `cobot-rules check "claude mcp add …"` → ask | accepted; the `value(parent.type)` shape is reported |
+| 3 missing tools | text tests on the four branches | accepted |
+| 4 no MCP write | `tests/test_gcp_mcp_gate.py` (grant, Cloud CLI under any name) | accepted; casing is F-54 |
+| 5 no registration | gate tests: `claude mcp`, `--mcp-config`, `--settings`, Edit/Write and shell words on both files | accepted; bunx, node and `$CLAUDE_CONFIG_DIR` are F-53, MultiEdit F-52 |
+| 6 broken line named | `tests/test_gcp_mcp_check.py` (decoder crashes, bad URLs, trailing newline, header position, CRLF) | accepted |
+| 7 knowledge current | dated lines, check-plugin ok | accepted; the second identity's roles stay reported |
+
+Wrap reviews folded: code review 4 MAJOR, 5 MINOR (crash on hostile `.mcp.json`, shell writes,
+a broken line doubled, a never-again grader, header substring, trailing newline, the value rule,
+`value(parent)`); security review 1 HIGH, 1 MEDIUM, 8 LOW (the same shell route, closed by
+letting `ask` file rows protect literal words; `--settings` and `reset-project-choices`; the
+Cloud CLI host with a trailing dot or in `args`). Parked: F-52, F-53, F-54.

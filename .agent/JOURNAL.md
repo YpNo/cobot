@@ -222,3 +222,12 @@ Proof: local eval, --runs 1, Sonnet 5.5: consult-homeassistant 1.00 ($0.19), spe
 Open: CI evals cannot run from a feature branch (the evals environment's branch rule); the cases run 3 times in CI, once locally here.
 Next: merge PR 80, then the GCP MCP opt-in build.
 verified: tree 9cc43661fedd9af0c0b1054ac989ec7fddcfaac9 · eval-graders
+
+## 2026-11-22 — the branch is rewritten without a secret-shaped fixture value (spec expert-homeassistant)
+
+Changed: every commit on feat/expert-homeassistant now writes x for the old six-character placeholder value: tests/test_hass_cli_gate.py, tests/test_secret_reads_gate.py, the spec's trust-boundary row and one journal line. No other change.
+Why: GitGuardian flagged five of those values in the hass-cli gate fixtures (Generic CLI Secret, Generic Password) and scans every commit of a pull request, so only a rewrite clears it. Fixtures carry no secret-shaped literal.
+Proof: full suite 4387 passed, 98.32 %; ruff check and format clean; no commit from the spec on holds the old value. Backup branch backup/expert-homeassistant-d9b5369, local.
+Open: the five GitGuardian incidents on the dashboard are the owner's to resolve.
+Next: merge PR 80, then the GCP MCP opt-in build.
+verified: tree 0edcc05a8708cfd16b6dcba4bf49dbf14d9fa4e2 · full suite with coverage, ruff

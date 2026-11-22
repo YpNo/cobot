@@ -335,3 +335,11 @@ Proof: cobot-memory check: brief 4839 of 6000 (was 5999 at wrap, 5467 before thi
 Open: none.
 Next: fold the bypass reviews of F-52, F-53 and F-54.
 verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · cobot-memory check
+
+## 2026-11-22 — F-52 bypass review folded: every path key judged, aliases both ways for refusals
+Changed: cobot-rules judge(): a file call is judged on every path key it carries (file_path and notebook_path, PATH_KEYS), the debug-record secret check included, and the strictest verdict wins, so a decoy file_path no longer hides NotebookEdit's notebook_path. file_tool_covers(): a never or ask row runs both ways (a row written for MultiEdit or NotebookEdit also stops the Edit or Write doing the same write, as agy maps only to those), an allow of Edit reaches MultiEdit and nothing else (ALLOW_ALIASES), so it never silences a notebook insert that a Write ask covers. tests/test_file_tool_aliases.py: both decoy payloads, the three reverse rows, the allow-versus-insert case. The secret split across chained MultiEdit edits stays a limit of new-text checks; cobot-memory debug check scans the whole record (unchanged).
+Why: the bypass review of 25aedd1: one MEDIUM (the decoy path, reachable if the host passes extra keys), three LOW.
+Proof: test_file_tool_aliases exit 0; gate suites (cobot_rules, differential, agy, session_grants, grant_store, cobot_shell, secret_reads, hass_cli, read_list_limits, gcp_mcp_gate, mcp_registration_routes, mcp_name_folding, debug_records, check_plugin) exit 0; ruff clean. The test secret is built at run time.
+Open: none for F-52.
+Next: the F-53 and F-54 review folds.
+verified: tree 3e85b36e0360144ad5c2c2b04082460c1d9a1cd9 · gate suites, ruff

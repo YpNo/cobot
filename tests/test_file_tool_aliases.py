@@ -52,6 +52,45 @@ def test_fileToolAliases_editRowCoversMultiEditAndNotebookEdit_writeRowCoversNot
     assert not rules.applies(edit, "Write", None) and not rules.applies(write, "Edit", None)
 
 
+def raw(tool, tool_input):
+    return json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": os.getcwd()})
+
+
+SETTINGS = f"{HOME}/.claude/settings.json"
+
+
+def test_fileToolAliases_decoyFilePath_doesNotHideTheNotebookPath(rules):
+    decoy = {"file_path": "notes/ok.ipynb", "notebook_path": SETTINGS, "new_source": "x"}
+    assert verdict(rules, raw("NotebookEdit", decoy)) == "deny"
+    swapped = {"file_path": SETTINGS, "notebook_path": "notes/ok.ipynb", "new_source": "x"}
+    assert verdict(rules, raw("NotebookEdit", swapped)) == "deny"
+
+
+def test_fileToolAliases_decoyFilePath_doesNotHideADebugRecordSecret(rules):
+    token = "ya29." + "a" * 16  # built at run time: no secret-shaped literal in the tree
+    decoy = {"file_path": "x.ipynb", "notebook_path": ".agent/debug/r.ipynb", "new_source": token}
+    assert verdict(rules, raw("NotebookEdit", decoy)) == "deny"
+
+
+REVERSE = [("MultiEdit", "Edit"), ("NotebookEdit", "Edit"), ("NotebookEdit", "Write")]
+
+
+@pytest.mark.parametrize(("row_tool", "tool"), REVERSE)
+def test_fileToolAliases_restrictiveAliasRow_coversThePlainTool(rules, tmp_path, monkeypatch, row_tool, tool):
+    owner = tmp_path / "owner.rules"
+    owner.write_text(f"never {row_tool}(guarded/*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    assert verdict(rules, file_call(tool, "guarded/a")) == "deny"
+
+
+def test_fileToolAliases_ownerAllowOfEdit_doesNotSilenceANotebookInsert(rules, tmp_path, monkeypatch):
+    owner = tmp_path / "owner.rules"
+    owner.write_text("ask Write(notes/*)\nallow Edit(notes/*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    assert verdict(rules, file_call("NotebookEdit", "notes/a.ipynb")) == "ask"
+    assert verdict(rules, file_call("MultiEdit", "notes/a.md")) is None
+
+
 def test_fileToolAliases_ownerAllowOfEdit_reachesMultiEdit_neverStillWins(rules, tmp_path, monkeypatch):
     owner = tmp_path / "owner.rules"
     owner.write_text("allow Edit(docs/*)\nallow Edit(~/.claude/settings.json)\n")

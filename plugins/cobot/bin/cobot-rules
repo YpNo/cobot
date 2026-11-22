@@ -3112,8 +3112,21 @@ def agent_matches(scope: str, agent: str | None) -> bool:
 
 
 # the file tools a row's tool also covers (F-52): MultiEdit is several Edits, and NotebookEdit
-# replaces a cell (an Edit) or inserts one (a Write)
+# replaces a cell (an Edit) or inserts one (a Write). A never or ask row runs both ways, so a row
+# written for MultiEdit or NotebookEdit also stops the Edit or Write that does the same write (agy
+# maps its tools to Edit and Write only); an allow row reaches MultiEdit from Edit and nothing
+# else, so an allow of edits never silences a notebook insert (bypass review of F-52).
 FILE_TOOL_ALIASES = {"Edit": frozenset({"MultiEdit", "NotebookEdit"}), "Write": frozenset({"NotebookEdit"})}
+ALLOW_ALIASES = {"Edit": frozenset({"MultiEdit"})}
+
+
+def file_tool_covers(rule: Rule, tool: str) -> bool:
+    if rule.tool == tool:
+        return True
+    if rule.decision == "allow":
+        return tool in ALLOW_ALIASES.get(rule.tool, frozenset())
+    forward = tool in FILE_TOOL_ALIASES.get(rule.tool, frozenset())
+    return forward or rule.tool in FILE_TOOL_ALIASES.get(tool, frozenset())
 
 
 def applies(rule: Rule, tool: str, agent: str | None) -> bool:
@@ -3121,7 +3134,7 @@ def applies(rule: Rule, tool: str, agent: str | None) -> bool:
         return False
     if rule.tool == "mcp":
         return tool.startswith("mcp__")
-    return rule.tool == tool or tool in FILE_TOOL_ALIASES.get(rule.tool, frozenset())
+    return file_tool_covers(rule, tool)
 
 
 def matches_bash(rule: Rule, forms: list[str]) -> bool:
@@ -4926,17 +4939,30 @@ def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
     return resolve(matched, "no rule matched")
 
 
+PATH_KEYS = ("file_path", "notebook_path")  # the file tools' path fields
+STRICTNESS = {DENY: 2, ASK: 1, None: 0}
+
+
+def judge_path(
+    tool: str, path: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None
+) -> Verdict:
+    verdict = judge_file(tool, path, cwd, rules, agent)
+    if verdict.decision == DENY:
+        return verdict
+    return debug_record_secret(tool, path, tool_input, cwd) or verdict
+
+
 def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
     if tool == "Bash":
         return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
     if tool in FILE_TOOLS:
-        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        if not path:
+        # every path key the call carries: a decoy file_path must not hide NotebookEdit's
+        # notebook_path (bypass review of F-52); the strictest verdict wins
+        paths = [p for p in dict.fromkeys(str(tool_input.get(k) or "") for k in PATH_KEYS) if p]
+        if not paths:
             return Verdict(None, None, "no path")
-        verdict = judge_file(tool, str(path), cwd, rules, agent)
-        if verdict.decision == DENY:
-            return verdict
-        return debug_record_secret(tool, str(path), tool_input, cwd) or verdict
+        verdicts = [judge_path(tool, path, tool_input, cwd, rules, agent) for path in paths]
+        return max(verdicts, key=lambda v: STRICTNESS[v.decision])
     if tool.startswith("mcp__"):
         return judge_mcp(tool, rules, agent)
     return Verdict(None, None, "tool not governed")

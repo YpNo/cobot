@@ -26,8 +26,8 @@ For agents and architects. The README is for people; the full design and its rea
 | Agents | `challenger` (red team), `consultant` (read-only experts), `learner` (read-only research), `auditor` (read-only sweep unit), `investigator` (read-only debug probe, decision 35), `builder`, `rust-builder`, `go-builder`, `python-builder`, `typescript-builder`, `terraform-builder` | `plugins/cobot/claude-agents/`, listed by file in `.claude-plugin/plugin.json` |
 | Agy agents | the same eleven, written by `scripts/sync-agents.py` from `claude-agents/` (agy tool names, tiers, `mainAgent: false`; consultant, learner, auditor and investigator without a command tool) | `plugins/cobot/agents/`, read by agy through `.antigravity-plugin/plugin.json` |
 | Workflow skills | `/cobot:onboard`, `/cobot:spec`, `/cobot:build`, `/cobot:wrap`, `/cobot:debug`, `/cobot:rules`, `/cobot:learn`, `/cobot:ship`, `/cobot:contribute`, `/cobot:security-sweep`; onboard, rules and security-sweep are typed by the owner (`disable-model-invocation`) | `plugins/cobot/skills/` |
-| Consult router | `/cobot:consult [domain]` spawns one `consultant` per domain in one message (parallel); procedures for `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api` | `plugins/cobot/skills/consult/`, `domains/` |
-| Knowledge skills (always listed: `paths:` does not gate plugin skills, so each description carries its triggers, ≤ 350 chars) | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-shell`, `lang-fallback`, `fw-react`, `fw-next`, `fw-vue`, `expert-api`, `expert-gitea`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh` | `plugins/cobot/skills/` |
+| Consult router | `/cobot:consult [domain]` spawns one `consultant` per domain in one message (parallel); procedures for `gha`, `gitlab-ci`, `containers`, `gcp`, `kubernetes`, `service-mesh`, `ui`, `api`, `homeassistant` | `plugins/cobot/skills/consult/`, `domains/` |
+| Knowledge skills (always listed: `paths:` does not gate plugin skills, so each description carries its triggers, ≤ 350 chars) | `lang-rust`, `lang-go`, `lang-python`, `lang-typescript`, `lang-terraform`, `lang-shell`, `lang-fallback`, `fw-react`, `fw-next`, `fw-vue`, `expert-api`, `expert-gitea`, `expert-gha`, `expert-cicd`, `expert-gitlab-ci`, `expert-ui`, `expert-containers`, `expert-gcp`, `expert-kubernetes`, `expert-service-mesh`, `expert-homeassistant` | `plugins/cobot/skills/` |
 
 Knowledge is a skill, isolation is an agent. Only the orchestrator writes memory, through
 `cobot-memory`. Builders never commit. See ADR-0001 to ADR-0003; experts as skill pairs in
@@ -98,6 +98,16 @@ reaching arithmetic is not followed (`read x < f; echo $((x))`). The soundness t
 scanner's module: a hole in the command's words (a substitution, a glob, a `${…}` with an
 operator word) is never silent where some text in its place, for a glob some set of file names,
 would change which program runs or make a rule match the form that names what runs.
+
+Home Assistant's secrets are judged in code, not by rows (decision 36): a reader row such as
+`cat *secrets.yaml*` would be viable for every globbed or substituted read. `bin/_cobot_secrets.py`
+refuses a read-only agent's command that would print `secrets.yaml` or a `.storage/` file: named,
+through a redirect, by a recursive `grep`, any `rg`, a `semgrep` scan or a verbose unredacted
+`gitleaks` over a tree that holds one (the tree is walked, at most 20 000 entries), by a history
+printer in a repository whose history or index tracks one with no pathspec excluding it, or as a
+`curl` `file:` URL. `hass_verdict` in `cobot-rules` refuses any setting of the token variables,
+refuses their expansion for read-only agents and asks on it in the main thread, and asks on
+`HASS_SERVER` set and on `-s` or `-x` in a short cluster.
 
 For the read-only agents, a segment that could write a file or run a program never matches
 their read list (the scanner's `Scan.writes` holds the targets a redirection writes), and a read

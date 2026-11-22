@@ -299,6 +299,33 @@ judges its tools.
   including the IAM deny policy for projects in an organisation and the SSH tunnel for a remote
   host, is in `plugins/cobot/skills/expert-gcp/references/mcp.md`.
 
+## Home Assistant
+
+`hass-cli` reads its server and token from the environment: set `HASS_SERVER` and `HASS_TOKEN`
+in your shell profile, or from a secret manager, before the session (decision 36). The gate then
+judges it like this:
+
+- refused: `--token`, `--supervisor-token` or `--password` on the command line, and any command
+  that sets `HASS_TOKEN`, `HASSIO_TOKEN`, `HASS_SUPERVISOR_TOKEN`, `HASS_PASSWORD` or their
+  `HOMEASSISTANT_` fallbacks (an assignment, `export`, `read`, `printf -v`, `for`), whatever the
+  value: set them in your own shell before the session;
+- asked: every write verb (`service call`, `state edit|delete|toggle|turn_on|turn_off`,
+  `event fire`, `raw post|ws`, entity, device, area and integration writes), the whole `ha`
+  Supervisor group, `discover`, `map`, `-s`/`--server` and `-x`/`--insecure` (in any short
+  cluster too), `--debug`, `HASS_SERVER` set in a command, and a command that expands or prints
+  a token variable (`echo $HASS_TOKEN`, `printenv HASS_TOKEN`);
+- silent: the other reads, in the main thread only. No read-only agent has `hass-cli`.
+
+A long-lived token acts with its user's full rights: a non-admin user's token is enough to read.
+The consultant, learner, auditor and investigator are refused a command that would print
+`secrets.yaml` or a `.storage/` file: naming it, a `<` redirect, a recursive `grep`, `rg`,
+`semgrep` or verbose unredacted `gitleaks` over a tree holding one (exclude it:
+`--exclude=secrets.yaml --exclude-dir=.storage`, `-g '!secrets.yaml' -g '!.storage'`), a history
+printer (`git log -p`, `git show`, `git diff`, `git grep`) in a repository that tracks or tracked
+one unless a pathspec excludes it (`-- . ':!*secrets.yaml' ':!*.storage/*'`), or a `curl` `file:`
+URL; they are refused any expansion of a token variable. The Read tool is not gated, so the
+consult's procedure carries the rule there.
+
 ## Cloud read lists
 
 The security sweep's `cobot:auditor` and the debug path's `cobot:investigator` read with the

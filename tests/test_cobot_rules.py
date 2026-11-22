@@ -674,7 +674,8 @@ def test_cliInProcess_sync(rules, capsys, tmp_path, layers):
         "ls" in p and "rtk" not in p and p != "Bash(ls:*)" for p in fragment["permissions"]["allow"]
     )
     assert "Bash(git push --force:*)" in fragment["permissions"]["deny"]
-    assert "mcp__" not in json.dumps(fragment["permissions"]["deny"])
+    # only a whole server has a permission form (the Cloud CLI server, spec gcp-mcp-opt-in)
+    assert [p for p in fragment["permissions"]["deny"] if "mcp__" in p] == ["mcp__gcp-cloudcli__*"]
     assert "not expressible" in out and "never mcp__gcp-*__apply_*" in out
     assert settings.read_text() == json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}})
     assert '"deny"' in cli(rules, ["sync", "--settings", str(tmp_path / "none.json")], capsys)[1].out

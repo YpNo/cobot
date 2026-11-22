@@ -717,6 +717,22 @@ never mcp__gcp-*__upload_*
 never mcp__gcp-*__write_*
 never mcp__gcp-*__publish
 never mcp__gcp-*__execute_sql
+# Google Cloud CLI server (Preview, cloudcli.googleapis.com/mcp): run_gcloud_command and
+# run_bq_command take a whole command the gate cannot see into, under a cloud-platform token.
+# Refused under any server name, so a rename does not lift it (spec gcp-mcp-opt-in, owner Q2).
+never mcp__gcp-cloudcli__*
+never mcp__*__run_gcloud_command
+never mcp__*__run_bq_command
+
+# The owner registers every MCP server (spec gcp-mcp-opt-in): an injected `claude mcp add` could
+# name an attacker URL gcp-*, so registration asks by every route. list and get stay silent.
+ask Bash(claude *mcp add*)
+ask Bash(claude *mcp remove*)
+ask Bash(claude *--mcp-config*)
+ask Edit(~/.claude.json)
+ask Write(~/.claude.json)
+ask Edit(.mcp.json)
+ask Write(.mcp.json)
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

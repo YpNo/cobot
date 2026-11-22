@@ -239,3 +239,11 @@ Proof: challenger SOUND WITH CHANGES (4 MAJOR, 7 MINOR folded) and gcp consult (
 Open: onboard step 6b and spec step 5 overlap with the F-39 spec; second-identity roles reported until the build checks them; narrower readonly OAuth scopes unverified.
 Next: /cobot:build gcp-mcp-opt-in on the owner's word.
 verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, no code
+
+## 2026-11-22 — gcp-mcp-opt-in T01: registration asks, the Cloud CLI server refused, grants kept off MCP
+Changed: default.rules: never mcp__gcp-cloudcli__*, never mcp__*__run_gcloud_command and run_bq_command; ask Bash(claude *mcp add*), (claude *mcp remove*), (claude *--mcp-config*), Edit and Write of ~/.claude.json and .mcp.json. tests/test_gcp_mcp_gate.py (stories 4 and 5: rtk, absolute path and --debug forms ask; list and get stay silent; the CLI server denied under any name and over an owner allow; under an active gcloud grant MCP writes deny, scale_service asks, reads silent); test_cliInProcess_sync now expects the one expressible MCP deny, mcp__gcp-cloudcli__*.
+Why: spec gcp-mcp-opt-in T01 (owner Q2); rebased on a675320 first, F-39's onboard 6b kept, this spec's onboard step becomes 6c.
+Proof: gate suites (cobot_rules, differential, agy, read_list_limits, session_grants, grant_store, cobot_shell, check_plugin, investigator, hass_cli_gate, secret_reads_gate, gcp_mcp_gate, github_settings, grant_texts) exit 0; ruff 0.17.6 check and format clean; check-plugin ok.
+Open: none.
+Next: T02, the check warnings.
+verified: tree a1b06ed93d84c4c976c32e1eb918c5ada99deb08 · gate suites, ruff, check-plugin

@@ -327,3 +327,11 @@ Proof: test_gcp_mcp_opt_in, test_cobot_knowledge, test_check_plugin exit 0; mark
 Open: the two live checks above.
 Next: the bypass reviews, then the journal compaction.
 verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · focused suites, check-plugin, markdownlint
+
+## 2026-11-22 — the session brief gets headroom: CONTEXT.md trimmed under its floor
+Changed: .agent/CONTEXT.md: the verified rows re-dated to today's runs (coverage 98.34 %, shellcheck with the eval fixtures); the agy validation, agy staged install and paid CI evals rows moved to a new Release checks section below Applies, which the brief does not read, with the local eval command (--scaffold) moved there from Owner-terminal; the stale constraint 'the gate never emits allow' corrected to ADR-0008's one allow; header comments, a dated npm snapshot and a duplicate validate mention dropped.
+Why: owner, before merging PR 81: the brief was 5999 of 6000. compact had nothing to do (JOURNAL.md 329 lines, threshold 400) and would not have helped: the brief carries only the two latest entries (1200 characters each at most) and the open findings, and fills the rest with CONTEXT.md. CONTEXT.md is the one part with no cap, so it is where the headroom had to come from.
+Proof: cobot-memory check: brief 4839 of 6000 (was 5999 at wrap, 5467 before this trim), no dropped sections; CONTEXT.md's share of the brief 2489 characters, under CONTEXT_CAP 2500, so two full entries and three findings rows can no longer push a section out.
+Open: none.
+Next: fold the bypass reviews of F-52, F-53 and F-54.
+verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · cobot-memory check

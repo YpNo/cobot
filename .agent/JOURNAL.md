@@ -311,3 +311,11 @@ Proof: test_mcp_registration_routes exit 0 (failed first: bunx and node none, th
 Open: the bypass review runs after F-54.
 Next: F-54.
 verified: tree 06ea7f3e0c08f019a67b08bf5af17b0433912ba0 · gate suites, ruff
+
+## 2026-11-22 — F-54: MCP refusals meet a renamed server or a respelled tool
+Changed: cobot-rules: matches_mcp in judge_mcp. A never or ask MCP row also matches the folded name (mcp_fold: case-folded, - read as _, the tool's own name split into its words, camelCase included); an allow row, the host UI tools among them, matches the exact name only, so a fold can add a refusal or an ask and never lift one, as restrictive() does for file rows (F-30). tests/test_mcp_name_folding.py: GCP-run, gcp_run, Gcp-Run with DeployService, apply-k8s-manifest, GCP-cloudcli, runGcloudCommand, RUN_BQ_COMMAND denied; reads silent, scale_service asks, a non-gcp server asks; an owner allow and the host UI rows stay exact; an owner ask folds. F-54 closed.
+Why: owner, before merging PR 81: work on the new findings.
+Proof: test_mcp_name_folding exit 0 (failed first: ten ask or silent where deny was due); gate suites with the GOOGLE_MCP_TOOLS matrix exit 0; ruff clean.
+Open: the bypass review of F-52, F-53 and F-54 runs next.
+Next: the bypass review, then the setup facts and the journal compaction.
+verified: tree 42ac28a1b6fc8b68a76599f1b44a90599bf111f5 · gate suites, ruff

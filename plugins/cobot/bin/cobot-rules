@@ -4888,10 +4888,29 @@ def mcp_is_read(tool: str) -> bool:
     return not MCP_WRITE_WORDS.intersection(joined)
 
 
+def mcp_fold(name: str, pattern: bool) -> str:
+    """An MCP name without case, ``-`` read as ``_``, and a tool's own name split into its words
+    (``runGcloudCommand`` → ``run_gcloud_command``), so a renamed server or a respelled tool
+    meets the row written for it (F-54). A pattern keeps its ``*``."""
+    head, sep, last = name.rpartition("__")
+    if not sep:
+        return name.casefold().replace("-", "_")
+    last = last.casefold().replace("-", "_") if pattern else "_".join(mcp_words(name))
+    return f"{head.casefold().replace('-', '_')}__{last}"
+
+
+def matches_mcp(rule: Rule, tool: str) -> bool:
+    """A never or ask row matches the folded name too; an allow row only the exact name, so a fold
+    can add a refusal or an ask and never lift one (as ``restrictive`` does for file rows)."""
+    if fnmatch.fnmatchcase(tool, rule.pattern):
+        return True
+    return restrictive(rule) and fnmatch.fnmatchcase(mcp_fold(tool, False), mcp_fold(rule.pattern, True))
+
+
 def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
     """never > owner allow > owner or project ask > a read or a default allow (host UI tools) >
     default ask. A default rule never cancels an ask the owner or the project wrote."""
-    matched = [r for r in rules if applies(r, tool, agent) and fnmatch.fnmatchcase(tool, r.pattern)]
+    matched = [r for r in rules if applies(r, tool, agent) and matches_mcp(r, tool)]
     nevers = [r for r in matched if r.decision == "never"]
     if nevers:
         return Verdict(DENY, nevers[0])

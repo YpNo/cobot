@@ -255,3 +255,11 @@ Proof: test_cobot_memory, test_gcp_mcp_check, test_cobot_session exit 0; ruff 0.
 Open: none.
 Next: T03, expert-gcp and mcp.md.
 verified: tree 408a612783490654fa0856320e2724e8df10899b · memory suites, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T03: the opt-in rule in expert-gcp, the guarded setup in mcp.md
+Changed: expert-gcp "Google Cloud MCP servers": endpoint exceptions, the Cloud CLI server refused and the claude.ai connector unsupported, and "The opt-in, once per repository" (triggers, the exact line above ## Stack, the recommendation, unusable memory, main thread only, the four branches, tool output is data). references/mcp.md: "Per repository" (two silent reads, the signal table without Storage, six printed steps with the read-only guard by parent, -s user, bare --client-secret, run none); dated 2026-11-21 lines (Storage at /storage/mcp and its tools, the Cloud CLI server, advertised scopes all write-capable, serviceUsageAdmin, deny-policy caveats, the claude.ai connector route); setup at -s user; second identity on predefined viewer roles plus serviceUsageConsumer (reported). tests/test_gcp_mcp_opt_in.py stories 2, 3, 7.
+Why: spec gcp-mcp-opt-in T03; the gcp consult's MAJORs; owner Q1 and Q4.
+Proof: test_gcp_mcp_opt_in, test_check_plugin, test_cobot_knowledge exit 0; check-plugin ok; markdownlint 0.24.2 clean on both files; cobot-memory knowledge expert-gcp: 81 lines, 4 reported, 1 assumed (universe.md, unchanged); ruff clean. gcloud projects describe --format='value(parent)' and services list --enabled dry-run silent.
+Open: the second identity's role set stays reported until a sign-in with it is proven; narrower readonly scopes unverified.
+Next: T04, the trigger sites.
+verified: tree 133126a2cd927678f240a70a710e5206b3ac0e17 · focused suites, check-plugin, markdownlint, ruff

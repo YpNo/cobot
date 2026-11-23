@@ -4901,7 +4901,9 @@ def test_homeVariable_readsLikeTilde(rules, fake_home, command):
 
 
 @pytest.mark.parametrize(
-    "command", ["tee $HOME/notes.md", "cat ${HOME}/.bashrc", "ls $HOMEDIR/.gemini/config"]
+    # ~/.bashrc is an ask row since spec gate-f55 (story 2): an ordinary file in its place
+    "command",
+    ["tee $HOME/notes.md", "cat ${HOME}/notes.txt", "ls $HOMEDIR/.gemini/config"],
 )
 def test_homeVariable_ordinaryPaths_staySilent(rules, fake_home, command):
     _, home = fake_home

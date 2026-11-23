@@ -390,7 +390,9 @@ NOTE_LAYERS = frozenset({"default", "owner"})
 PROMPT_ONLY_NOTE = "prompt only"  # a default row's note that keeps every allow line off it
 HOME_CONFIG = "~/.claude"  # the literal config dir file rows name; CLAUDE_CONFIG_DIR may move it
 HOME_STATE = "~/.claude.json"  # Claude Code's state and server list, moved into CLAUDE_CONFIG_DIR too
-SEALED = ("cobot.rules", "cobot/*")  # cobot's owner files under the config dir: no shell access
+# files under the config dir no script may touch: cobot's owner files, and what Claude Code sources
+# into later Bash calls (shell snapshots, SessionStart env files; spec gate-f55, story 2)
+SEALED = ("cobot.rules", "cobot/*", "shell-snapshots/*", "session-env/*")
 RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
 SHOWN_TOOLS = FILE_TOOLS | {"Bash", "mcp"}  # a project row's tool a reason may name
 
@@ -517,6 +519,22 @@ def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -
             twin = moved and config_twin(rule, moved)
             if twin:
                 rules.append(twin)
+            zdot = zdotdir_twin(rule)
+            if zdot:
+                rules.append(zdot)
+
+
+ZSH_START_FILES = (".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout")
+
+
+def zdotdir_twin(rule: Rule) -> Rule | None:
+    """A row on a zsh start file in HOME, also under ``ZDOTDIR`` when the gate's environment sets
+    it: zsh reads its start files there (spec gate-f55, story 2)."""
+    folder = os.environ.get("ZDOTDIR", "")
+    name = rule.pattern[2:] if rule.pattern.startswith("~/") else ""
+    if rule.tool not in FILE_TOOLS or name not in ZSH_START_FILES or not folder:
+        return None
+    return replace(rule, pattern=os.path.join(os.path.expanduser(os.path.expandvars(folder)), name))
 
 
 def moved_config() -> str | None:
@@ -3782,7 +3800,9 @@ SPARE = "spare"  # an inherited name or run-time data: read like ``$(…)`` (F-5
 MAX_READINGS = 32  # readings of one segment; past it every variable in it is a full hole
 CONFIG_VARIABLE = "CLAUDE_CONFIG_DIR"
 VALUE_RE = r"('[^']*'|\"[^\"$`\\\\]*\"|[^\s;&|<>()'\"\\\\$`]*)"
-SHELL_HEAD_RE = re.compile(r"(?:^|[\s;&|(`'\"])(?:\S*/)?(?:sh|bash|zsh|dash|ksh|mksh|ash|yash)(?=\s|$)")
+SHELL_HEAD_RE = re.compile(
+    r"(?:^|[\s;&|(`'\"])(?:\S*/)?(?:r?bash|sh|zsh|dash|ksh|mksh|ash|yash|fish)[\d.-]*(?=[\s'\"]|$)"
+)
 ARGV_SETTERS_RE = re.compile(r"(?:^|[\s;&|(])(?:set|shift)(?=\s|$)|\w\s*\(\s*\)|(?:^|[\s;&|])function\s")
 RUNTIME_ASSIGNERS = r"(?:read|mapfile|readarray|getopts)"
 GLOB_VALUE_CHARS = frozenset("*?[")
@@ -5093,12 +5113,48 @@ def judge_bash(
             asks.append(verdict)
         if outranks(verdict, best):
             best = verdict
+    sourcing = shell_start_variable(command)
+    if sourcing.decision == ASK:
+        asks.append(sourcing)
+        best = sourcing if outranks(sourcing, best) else best
     written = shell_write_verdict(scanned, bash_rules)
     if written.decision == ASK:
         asks.append(written)
     if outranks(written, best):
         best = written
     return named_asks(best, asks, agent), trace
+
+
+# set in a command, each makes a later program read a file or run text the gate never sees: a
+# non-interactive bash sources BASH_ENV (a script's shebang too), zsh reads ZDOTDIR, a moved HOME
+# or XDG_CONFIG_HOME moves every start file, curl and wget read CURL_HOME and WGETRC, and PS4,
+# SHELLOPTS, BASHOPTS, PROMPT_COMMAND and exported functions run text (spec gate-f55, story 2)
+START_VARIABLES = (
+    "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND".split()
+)
+SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
+START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+)*?"
+
+
+def sets_start_variable(text: str, name: str) -> bool:
+    word = re.escape(name)
+    return bool(
+        re.search(rf"(?:^|[\s;&|(`]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
+        or re.search(rf"printf\s+(?:-[^\s;&|]+\s+)*-v\s*{word}\b", text)
+    )
+
+
+def shell_start_variable(command: str) -> Verdict:
+    """A command that sets a variable naming a file a program will read, or text a shell will run,
+    asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too."""
+    text = re.sub(r"[\\'\"]", "", command)
+    names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
+    found = next((name for name in names if sets_start_variable(text, name)), None)
+    if found is None and re.search(r"BASH_FUNC_\w+%%", text):
+        found = "BASH_FUNC_"
+    if found is None:
+        return Verdict(None, None, "no rule matched")
+    return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")
 
 
 def shell_write_verdict(scanned: shell.Scan, bash_rules: list[Rule]) -> Verdict:

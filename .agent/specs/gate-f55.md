@@ -29,7 +29,7 @@ Unchanged: `cp x ~/.claude/$(…)`, `HOME=/tmp true; cp x ~/.claude.json` and `b
 
 Silent and unchanged (the friction guard, each one a test row): `cp x $DEST` and `cat "$f"` with
 `DEST`/`f` never assigned in the command, `D=out; cp a $D`, `for f in *.md; do wc -l "$f"; done`,
-`echo $HOME`, `git log $REV` with `REV` unassigned, `cat ~/.bashrc`, `bash -c true`.
+`echo $HOME`, `git log $REV` with `REV` unassigned, `cat README.md`, `bash -c true`.
 
 ## Principles check
 
@@ -103,9 +103,9 @@ the hostile commands of its Goal rows; its friction rows must stay silent.
      hold a path the agent chose.
    - Accept: the variable rows of the Goal; the friction rows stay silent.
 2. **The files Claude Code sources between calls are protected.**
-   - **`never`** Edit, Write and shell access to `~/.claude/session-env/*`, and to its twin under
-     a moved config dir: its snapshots are sourced into later Bash calls. Also `never` on the file
-     `CLAUDE_ENV_FILE` names, read from the gate's environment when it is set.
+   - **`never`** Edit, Write and shell access (sealed) to `~/.claude/shell-snapshots/*`, the files
+     sourced into each Bash call, and to `~/.claude/session-env/*`, where SessionStart env files
+     go, each with its twin under a moved config dir.
    - **`ask`** on the shell start files: `~/.bashrc`, `~/.bash_aliases`, `~/.bash_profile`,
      `~/.bash_login`, `~/.bash_logout`, `~/.profile`, `~/.zshrc`, `~/.zshenv`, `~/.zprofile`,
      `~/.zlogin`, `~/.config/fish/config.fish` and `~/.config/fish/conf.d/*`, with the zsh files'
@@ -115,19 +115,19 @@ the hostile commands of its Goal rows; its friction rows must stay silent.
    - **`ask`** on a command that assigns `BASH_ENV`, `ENV` or `ZDOTDIR` (as a prefix, through
      `export`, `declare -x` or `env NAME=`) and runs a shell anywhere in it: that shell sources a
      file the gate never reads.
-   - At build, before T02, a dated note records three checks, and the rows land either way, since
-     a file the agent can plant code in needs no proof that it runs:
-     - that the snapshot is sourced on each call, from a session's `session-env` folder and the
-       `--debug` output of one Bash call;
-     - that `CLAUDE_CONFIG_DIR`, `CLAUDE_ENV_FILE` and the session id reach the PreToolUse hook's
-       environment;
-     - that the env file sits under `session-env/`. If `CLAUDE_ENV_FILE` is absent from the hook's
-       environment, its row is dropped rather than shipped as a dead check; `session-env/*` is the
-       guard.
+   - Build check, 2026-11-23:
+     - The per-session `session-env/<id>/` folders are empty on this machine (102 of them).
+     - The snapshots are `~/.claude/shell-snapshots/snapshot-bash-*.sh`: a script that unaliases,
+       exports and defines functions. So `shell-snapshots/*` was added; the challengers had named
+       `session-env/` for it.
+     - `CLAUDE_ENV_FILE` is absent from the Bash tool's environment, and the PreToolUse hook's
+       environment could not be shown, so its row is dropped and `session-env/*` is the guard.
+     - The sealed reason still reads "cobot's owner files" for these paths (MINOR wording).
    - Residual until F-56 lands: start files planted by a copy into `~` (`cp e/.bashrc ~/`,
      `cp -t ~ e/.zshenv`, `tar -xf e.tar -C ~`, `unzip -d ~`, `rsync e/ ~/`).
-   - Accept: the session-env, `CLAUDE_ENV_FILE`, start-file, rc-file and shell-variable rows,
-     through both the shell and the file tools; `cat ~/.bashrc` stays silent.
+   - Accept: the snapshot, session-env, start-file, rc-file and shell-variable rows, through both
+     the shell and the file tools. `cat ~/.bashrc` asks, since any shell word naming an ask-row
+     file asks, as `cat ~/.claude.json` does today.
 3. **Both runtimes (ADR-0007).** Under agy (`run_command`), story 1 reaches the same judgement on
    `~/.gemini/config` paths. Story 2's rows are Claude Code's files: under agy, the start-file and
    rc-file rows apply, and the session-env rows have no twin. Accept: rows in
@@ -186,7 +186,7 @@ and the gate dry run. Each one gets a bypass-aimed review before its commit.
 | id | task | lane | risk | deps |
 |---|---|---|---|---|
 | T01 ✅ | variable holes, operator alternatives, assignments, the `$`-text sites, differential rows (`_cobot_shell.py`, `cobot-rules`, tests) | gate | auth | — |
-| T02 | session-env and `CLAUDE_ENV_FILE` never rows, start-file and rc-file ask rows, the `BASH_ENV`/`ENV`/`ZDOTDIR` ask | gate | auth | T01 |
+| T02 ✅ | session-env and `CLAUDE_ENV_FILE` never rows, start-file and rc-file ask rows, the `BASH_ENV`/`ENV`/`ZDOTDIR` ask | gate | auth | T01 |
 | T03 | agy rows, CHANGELOG, FINDINGS, design doc | gate | — | T01, T02 |
 
 The tasks run in order, in one lane: T01 and T02 both edit `cobot-rules`.

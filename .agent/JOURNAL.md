@@ -399,3 +399,11 @@ Proof: full suite with coverage exit 0, 98.20 % (fail-under 85); ruff 0.17.6 che
 Open: F-59 accepted residual; F-60 for the F-56 spec; friction: inherited variables ask where $(…) asks (rm "$f", git commit -m "$MSG").
 Next: T02, the files sourced between calls.
 verified: tree 1a96d03e5c2b52ae43063223312cb38761a5dc93 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f55 T02: the files sourced between Bash calls are protected
+Changed: default.rules never rows on ~/.claude/shell-snapshots/* and ~/.claude/session-env/* (sealed: shell access refused, config-dir twins), ask rows on the shell start files (bash, zsh with ZDOTDIR twins, fish, nushell, environment.d, pam_environment, inputrc, ssh rc) and ~/.curlrc, ~/.wgetrc; cobot-rules shell_start_variable asks when a command sets BASH_ENV, ZDOTDIR, HOME, XDG_CONFIG_HOME, CURL_HOME, WGETRC, PS4, SHELLOPTS, BASHOPTS, PROMPT_COMMAND or an exported function (ENV with a shell only), quotes and escapes removed; shell heads widened (fish, rbash, versioned).
+Why: F-55 rests on inherited variables being safe; Claude Code sources ~/.claude/shell-snapshots/snapshot-bash-*.sh into every Bash call (read at build: unalias, exports, functions), so a planted line set a variable or ran code ungated.
+Proof: full suite with coverage exit 0, 98.21 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 4 MAJOR: quoted names, shebang scripts, moved homes, run-text variables), each a test row.
+Open: CLAUDE_ENV_FILE row dropped (absent from the Bash environment, hook environment not shown); cat ~/.bashrc asks like cat ~/.claude.json; the sealed reason still says cobot's owner files; F-56 residuals (cp e/.bashrc ~/).
+Next: T03, agy rows, CHANGELOG, FINDINGS, design doc.
+verified: tree 8f4e07be2fd6396fa49f197f18795c1487e28097 · full suite with coverage, ruff, check-plugin

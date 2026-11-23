@@ -145,3 +145,93 @@ def test_story1_scanner_emitsVariableHoles(rules):
     kinds = [hole.kind for hole in scanned.holes.values()]
     assert kinds.count("variable") == 6
     assert "$?" in scanned.outer and "${#E}" in scanned.outer
+
+
+# ---------------------------------------------------------------- story 2: files sourced between calls
+
+# Claude Code sources ~/.claude/shell-snapshots/snapshot-bash-*.sh into every Bash call (read at
+# build, 2026-11-23: a script that unaliases, exports and defines functions); session-env/ holds
+# the env files SessionStart hooks write (empty on this machine). A planted line there sets an
+# "inherited" variable or runs code ungated in a later call.
+SOURCED_REFUSED = [
+    "cp e/s.sh ~/.claude/shell-snapshots/snapshot-bash-1.sh",
+    "tee -a ~/.claude/shell-snapshots/snapshot-bash-1.sh",
+    "cp e/s.sh ~/.claude/session-env/abc/hook-1.sh",
+    "echo 'export D=x' >> ~/.claude/session-env/abc/hook-1.sh",
+]
+SOURCED_ASKED = [
+    "tee -a ~/.bashrc",
+    "cp x ~/.zshenv",
+    "mv x ~/.profile",
+    "cp x ~/.bash_aliases",
+    "cp x ~/.config/fish/conf.d/x.fish",
+    "cp x ~/.curlrc",
+    "cp x ~/.wgetrc",
+    "BASH_ENV=e/x bash -c true",
+    "export ENV=e/x; sh -c true",
+    "ZDOTDIR=e zsh -c true",
+    "env BASH_ENV=e/x bash -c true",
+    # T02 bypass review: quoted and escaped names, setters, shebang scripts, moved homes, run text
+    'export "BASH_ENV"=/tmp/e; bash -c true',
+    "export BASH\\_ENV=/tmp/e; bash -c true",
+    "read BASH_ENV <<< /tmp/e; export BASH_ENV; bash -c true",
+    "printf -v BASH_ENV /tmp/e; export BASH_ENV; bash -c true",
+    "BASH_ENV=/tmp/e ./run.sh",
+    "HOME=/tmp/h zsh -c true",
+    "XDG_CONFIG_HOME=/tmp/x fish -c true",
+    "CURL_HOME=/tmp/c curl https://h/x",
+    "WGETRC=/tmp/w wget https://h/x",
+    "env 'BASH_FUNC_ls%%=() { id; }' bash -c ls",
+    "PS4='$(id)' bash -x -c true",
+    "env SHELLOPTS=xtrace bash -c true",
+    'ENV=/tmp/e "bash" -i',
+    "cp x ~/.ssh/rc",
+    "cp x ~/.config/environment.d/x.conf",
+]
+
+
+@pytest.mark.parametrize("command", SOURCED_REFUSED)
+def test_story2_sessionSnapshotsAndEnvFiles_areRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", SOURCED_ASKED)
+def test_story2_startFilesAndShellVariables_ask(rules, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize(
+    ("tool", "path", "expected"),
+    [
+        ("Write", "~/.claude/shell-snapshots/snapshot-bash-1.sh", "deny"),
+        ("Edit", "~/.claude/session-env/abc/hook-1.sh", "deny"),
+        ("Edit", "~/.bashrc", "ask"),
+        ("Write", "~/.zshrc", "ask"),
+        ("Write", "~/.curlrc", "ask"),
+        ("Edit", "~/notes.md", None),
+    ],
+)
+def test_story2_fileTools_sameRows(rules, tool, path, expected):
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_file(tool, path, None, loaded, None).decision == expected
+
+
+def test_story2_zdotdirTwins_followTheGatesEnvironment(rules, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZDOTDIR", str(tmp_path / "zsh"))
+    loaded, _, _ = rules.load_rules(None)
+    assert rules.judge_bash(f"cp x {tmp_path}/zsh/.zshrc", loaded, None)[0].decision == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -c true",
+        "cat README.md",
+        "zsh -c 'echo hi'",
+        "ENV=prod true",
+        "echo $HOME",
+        "grep HOME README.md",
+    ],
+)
+def test_story2_frictionRows_staySilent(rules, command):
+    assert decide(rules, command) is None

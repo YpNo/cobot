@@ -170,6 +170,11 @@ TABLES: dict[str, Table] = {
 }
 # value options whose value is code loaded before the script: remote or inline asks
 PRELOAD_OPTIONS = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader", "--preload"})
+# a folder of modules or a config that loads code, judged by where it lies (php -c, bun -c, ts-node
+# -P, deno --config); perl and ruby -I
+FILE_OPTIONS = frozenset("-I -c --config --php-ini -P --project --import-map --tsconfig".split())
+# the interpreter changes into this folder before it opens the script
+CHDIR_OPTIONS = {"ruby": ("-C", "-X"), "bun": ("--cwd",), "ts-node": ("--cwd", "--dir")}
 # ``-MFoo`` or ``-MFoo=a,b`` names a module and words; anything else is a ``use`` list run at BEGIN
 # (``-M'lib qx(x)'``, ``-MPOSIX;system(…)``; bypass review of T01)
 PERL_MODULE = re.compile(r"-?[\w:]+(?:=[\w:,./-]*)?")
@@ -201,6 +206,10 @@ class Reading:
     in_place: bool = False
     settled: bool = False  # an info or purpose option: no script and no stdin code
     lacks: bool = False  # a letter the table does not know, read as a flag (the floor then holds)
+    loads: list[str] = field(default_factory=list)  # files a preload, include or config option names
+    candidates: list[str] = field(default_factory=list)  # words after an unknown option: maybe the script
+    base: str | None = None  # the folder the interpreter changes into before it opens the script
+    searches: bool = False  # ``perl -S``, ``ruby -S``: the script is looked up on PATH
 
     def asks(self) -> str | None:
         """The reason the argv runs code the gate cannot read, else None."""
@@ -254,8 +263,12 @@ def read_options(words: list[str], table: Table, reading: Reading) -> None:
         index += step
     if reading.module is not None:  # ``-m mod`` ends the options: the rest is the module's
         reading.module += words[index:]
-    if unknown_at is not None and any(floor_word(word, table) for word in words[unknown_at + 1 :]):
-        reading.why = reading.why or f"{reading.family} may run inline code after an option the gate lacks"
+    if unknown_at is not None:
+        later = words[unknown_at + 1 :]
+        if any(floor_word(word, table) for word in later):
+            reading.why = reading.why or f"{reading.family} may run inline code after an unknown option"
+        # the unknown option's value may have been read as the script (bypass review of T02)
+        reading.candidates = [word for word in later if not word.startswith("-")]
     settle(reading)
 
 
@@ -279,6 +292,8 @@ def settle(reading: Reading) -> None:
         reading.stdin, reading.script = True, None
     elif script is not None and remote(script):
         reading.why = reading.why or f"{reading.family} runs remote or inline code '{script[:40]}'"
+    elif script is not None and reading.searches and "/" not in script:
+        reading.why = reading.why or f"{reading.family} -S runs the first '{script[:40]}' on PATH"
     bare = script is None and reading.module is None and not reading.code and not reading.settled
     if bare and not reading.why:
         reading.stdin = True
@@ -332,6 +347,8 @@ def read_cluster(words: list[str], index: int, table: Table, reading: Reading) -
             reading.settled = True
         elif letter not in table.flags:  # read on as a flag: ``python3 -Rc x`` still reaches the c
             reading.lacks = True
+        elif letter == "S" and reading.family in ("perl", "ruby"):
+            reading.searches = True
         position += 1
     return 1
 
@@ -367,6 +384,16 @@ def option_value(name: str, value: str, reading: Reading) -> None:
         reading.why = f"php -d {value[:40]} loads a file or an extension"
     elif name in ("-S", "--server"):
         reading.settled = True
+    elif name in CHDIR_OPTIONS.get(reading.family, ()):
+        reading.base = value
+    if name in FILE_OPTIONS or (name in PRELOAD_OPTIONS and path_like(value)):
+        reading.loads.append(value)  # judged where the script is (bypass review of T02)
+
+
+def path_like(value: str) -> bool:
+    """A preload value naming a file, not a package (``-r ./x.js``, not ``-r ts-node/register``
+    or ``-rjson``)."""
+    return value.startswith(("/", ".", "~")) or value.endswith((".js", ".mjs", ".cjs", ".ts", ".rb", ".py"))
 
 
 def skip_values(words: list[str], value_options: frozenset[str]) -> list[str]:

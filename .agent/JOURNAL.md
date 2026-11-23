@@ -349,3 +349,11 @@ Proof: full suite green on the first cut (the new file aside); stories 1 and 2 1
 Open: perl -c keeps its ask (BEGIN blocks); tsx's own -e and -p are not documented, read as node's.
 Next: T02, scripts outside the project.
 verified: tree 064eb30892a1e7515ffe49b4e84229190e29cc09 · stories 1 and 2, gate test files, full suite (first cut), ruff
+
+## 2026-11-23 — gate-f57 T02: a script outside the project asks (story 4, Q1)
+Changed: outside_script in the gate's segment loop: an interpreter's script operand, the words an unknown option may have taken for it, and the files a preload, include or config option names ask when they lie outside the hook's working directory (relative ones read from each folder the walk gives, ruby -C, bun --cwd and ts-node --cwd moving the base; an unknown folder or an expansion asks; symlinks followed; an owner allow lifts it). perl -S and ruby -S without a / ask. cobot's own tools stay silent (own_tool_run and the plugin install folders); one route row in test_cobot_rules moved from a made-up /home/me to the real config dir.
+Why: the owner's Q1 answer; curl -so /tmp/s.py then python3 /tmp/s.py was two silent steps while bash /tmp/s.sh asks.
+Proof: full suite: the only failures are stories 3, 5, 6 and 7 rows of tests/test_gate_f57.py, not built yet; ruff clean. Bypass review SOUND WITH CHANGES (4 MAJOR, 1 MINOR), each a test row.
+Open: accepted, a script copied, linked or fetched into the project in the same command (paths are resolved as they are at check time), Q1's residual; friction, pushd sub && popd, cd sub &, a script under HOME outside the project.
+Next: T03, python -m and launchers.
+verified: tree 29b5e6a4b4276ffed9e060dc9144ead4850f0bfa · full suite, story 4 rows, ruff

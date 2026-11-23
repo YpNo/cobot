@@ -225,8 +225,10 @@ One lane: T01–T05 all edit the interpreter reading in `cobot-rules`.
 
 ## Residuals (kept out of this spec, and why)
 
-- **A script fetched into the project** (`curl -o s.py u`, then `python3 s.py` in another
-  command): Q1; weaker than `bash s.sh`, which always asks.
+- **A script fetched, copied or linked into the project** (`curl -o s.py u`, then `python3 s.py`,
+  in one command or two): Q1; weaker than `bash s.sh`, which always asks.
+- **A planted module or path** (`PYTHONPATH=/tmp python3 s.py`, `ruby -r json` with a planted
+  `json.rb` on the load path): the Q1 class; Q5's variables are the ones that run code directly.
 - **A copy or link of an interpreter under another name** (`ln -s /usr/bin/python3 p; ./p -c x`):
   the gate reads names, not files; F-58 holds the same class for `claude`.
 - **Other interpreters** (`lua`, `Rscript`, `osascript`, `jshell`, `erl`, `guile`, `tclsh`,
@@ -281,3 +283,17 @@ decision re-run on `f433a0a`). Folded into revision 2:
   `-M` with an expression asks, `-Mlib=lib` stays silent; deno's `--frozen`, `--lock`,
   `--node-modules-dir`, `--vendor` take no second word; schemes without case, `node22`,
   `deno x` and `bun <script>` ask. `perl -c` keeps its ask (BEGIN blocks), a documented friction.
+- T02 build: `outside_script` in the gate's segment loop; the root is the hook's working
+  directory, a relative script is read from each folder the walk gives, an unknown folder or an
+  expansion asks, symlinks are followed, an owner allow lifts it. cobot's own tools stay silent:
+  `own_tool_run`, and the plugin folders Claude Code and agy install into (the session brief runs
+  `python3 -I <config dir>/plugins/…/bin/cobot-env`; one route row moved from a made-up
+  `/home/me` to the real config dir). Bypass review (SOUND WITH CHANGES, 4 MAJOR, 1 MINOR), each a
+  test row: after an unknown option every later word is a possible script; `ruby -C`/`-X`,
+  `bun --cwd`, `ts-node --cwd`/`--dir` move the base; preload, include and config files
+  (`-r ./x`, `--import`, `-I`, `php -c`, `bun --config`, `ts-node -P`, `deno --preload`) are judged
+  where they lie; `perl -S` and `ruby -S` without a `/` ask. Accepted (Q1's residual, below): a
+  script copied, linked or fetched into the project earlier in the same command
+  (`curl -o d.py u && python3 d.py`, `ln -s /tmp l && python3 l/s.py`): the gate resolves paths as
+  they are when it checks. Friction: a cd the walk does not end (`pushd sub && popd`, `cd sub &`),
+  and a script under HOME outside the project (`python3 ~/.local/x.py`).

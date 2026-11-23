@@ -5875,6 +5875,60 @@ def judge_segment(
     return best
 
 
+def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) -> str | None:
+    """A script an interpreter runs from outside the project root asks, as ``bash /tmp/s.sh`` does
+    (spec gate-f57, story 4, Q1): a file there may come from ``curl -o`` or ``cp``, never from Edit
+    or Write. The root is the hook's working directory; a relative script is read from every folder
+    the walk says the segment runs in, and one the gate cannot place (an unknown folder, an
+    expansion) asks. A symlink is followed. The same holds for the words an unknown option may have
+    taken for the script, for the files a preload, include or config option names, and from the
+    folder ``ruby -C`` or ``bun --cwd`` changes into (bypass review of T02)."""
+    reading = inline.read_argv(argv)
+    if reading is None or reading.asks() or own_tool_run(argv) is not None:  # cobot's own bin/ tools
+        return None
+    if reading.script and installed_plugin_file(reading.script):
+        return None
+    root = Path(cwd or os.getcwd()).resolve()
+    bases = placed_bases(reading.base, dirs, root)
+    for word in [*filter(None, [reading.script]), *reading.candidates, *reading.loads]:
+        if not word_inside(word, bases, root):
+            return f"a script outside the project, not written with Edit or Write: '{show(word, holes)[:60]}'"
+    return None
+
+
+def installed_plugin_file(word: str) -> bool:
+    """A file under the plugin folders Claude Code and agy install into (the session brief runs
+    ``python3 -I <config dir>/plugins/…/bin/cobot-env``); the gate guards writes there."""
+    if shell.has_sentinel(word) or not os.path.isabs(os.path.expanduser(word)):
+        return False
+    real = Path(os.path.realpath(os.path.expanduser(word)))
+    roots = (config_dir() / "plugins", Path.home() / ".gemini" / "config" / "plugins")
+    return any(real.is_relative_to(os.path.realpath(root)) for root in roots)
+
+
+def placed_bases(base: str | None, dirs: Dirs, root: Path) -> list[Path] | None:
+    """The folders a relative script is read from (None when one is unknown): the walk's folders,
+    or the root when it has none, each joined with the interpreter's own ``-C`` folder."""
+    folders = None if dirs is None else (sorted(dirs) or [root])
+    if base is None or folders is None:
+        return folders
+    if shell.has_sentinel(base) or UNSURE_PATH_CHARS & set(base):
+        return None
+    return [folder / os.path.expanduser(base) for folder in folders]
+
+
+def word_inside(word: str, bases: list[Path] | None, root: Path) -> bool:
+    """Whether the file a word names lies under the root from every base, symlinks followed."""
+    path = os.path.expanduser(word)
+    if shell.has_sentinel(word) or UNSURE_PATH_CHARS & set(word):
+        return False
+    if os.path.isabs(path):
+        return Path(os.path.realpath(path)).is_relative_to(root)
+    if bases is None:
+        return False
+    return all(Path(os.path.realpath(base / path)).is_relative_to(root) for base in bases)
+
+
 WRITING_SCRIPT = "a script that writes files: edit them with Edit or Write, not a script (cobot protocol)"
 # what a Python script calls to write a file: open() or .open() with a writing mode, the pathlib
 # writers, and the moves and copies of os and shutil
@@ -6411,6 +6465,9 @@ def judge_bash(
             verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
+        outside = outside_script(program_of(segment), dirs, cwd, holes)
+        if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
+            verdict = Verdict(ASK, None, outside)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

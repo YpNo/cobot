@@ -333,3 +333,11 @@ Proof: full suite with coverage 98.34 %, 5400 passed, 2 failed under load: the n
 Open: accepted, protected_file_touched stays long; cd ~ && cd .CLAUDE && rm -r cobot denies (names compared without case); false denies on ||, if, functions, pipes, quoted ~. Pre-existing: 100 cds into distinct ~ folders take about 38 s on c9304bc too (a hook timeout).
 Next: Part 2, spec F-57 on security/gate-f57.
 verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-23 — spec gate-f57: inline code beyond -c, -e and - (F-57), for the owner
+Changed: .agent/specs/gate-f57.md revision 2: 15 measured Goal rows on f433a0a, eight stories (option tables per interpreter family with today's rule as a floor, code on stdin, python -m, scripts outside the project, launchers, awk and sed scans, Node inline writes, both runtimes), Q1 to Q5 with recommended defaults; FINDINGS F-63 opened (vim, emacs, gdb), per F-55 Q3 b.
+Why: the orchestrator relayed: spec F-57 on a new branch from the gate-f56-f60 tip, challenger, fold, owner questions; no build until the owner answers.
+Proof: challenger SOUND WITH CHANGES (1 CRITICAL, 9 MAJOR, 5 MINOR), all folded; its claims spot-checked with cobot-rules check (perl -Mstrict -e denies today, python3 /tmp/s.py none while bash /tmp/s.sh asks); markdownlint clean; cobot-memory check.
+Open: Q1 to Q5 for the owner; Ruby, tsx, gawk options and sed's e pages unread (rate limits, a 404, TLS), each a build checkpoint.
+Next: the owner answers Q1 to Q5; then T01.
+verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · spec text and findings only

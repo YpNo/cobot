@@ -39,6 +39,7 @@ from test_cobot_rules import (
     SUBSTITUTION_JUDGED,
     SUBSTITUTION_SILENT,
 )
+from test_gate_f55 import VARIABLES_JUDGED
 
 BASH = shutil.which("bash")
 SH = shutil.which("sh")
@@ -59,6 +60,7 @@ CORPUS = sorted(
         *(command for command, _ in SUBSTITUTION_JUDGED),
         *(c for c, _ in BYPASSES_CLOSED),
         *(c for c, _ in FINDINGS_CLOSED),
+        *VARIABLES_JUDGED,  # spec gate-f55, story 1
     }
 )
 

@@ -43,7 +43,7 @@ def bodies(scan: sh.Scan) -> list[str]:
         ('echo "a \\$(b) \\`c\\`"', 'echo "a \\$(b) \\`c\\`"'),
         ("echo \\$(b)", "echo \\$(b)"),
         ("ls # don't", "ls"),
-        ("echo a#b $# ${#x} ${!x} ${x[0]}", "echo a#b $# ${#x} ${!x} ${x[0]}"),
+        ("echo a#b $# ${#x} $? ${?}", "echo a#b $# ${#x} $? ${?}"),
         ("nix develop .#dev -c cargo test", "nix develop .#dev -c cargo test"),
     ],
 )
@@ -68,9 +68,9 @@ def test_scan_commentInsideSubstitution_endsAtTheLine():
 
 def test_scan_substitution_becomesASplitHoleWithItsBody():
     result = sh.scan('for f in $(find .claude -type f); do cat "$f"; done')
-    (hole,) = result.holes.values()
+    (hole,) = [h for h in result.holes.values() if h.kind == "substitution"]
     assert not hole.quoted and hole.span == "$(find .claude -type f)"
-    assert plain(result.outer) == 'for f in <0>; do cat "$f"; done'
+    assert plain(result.outer) == 'for f in <0>; do cat "<1>"; done'
     assert bodies(result) == ["find .claude -type f"]
 
 
@@ -362,7 +362,7 @@ def words(command: str) -> list[str]:
         ('p "{a,b}" \\{a,b} {a\\,b} {"a b",c}', ["p", "{a,b}", "{a,b}", "{a,b}", "a b", "c"]),
         (
             "p {} {a} {a,b {a..} stash@{0} ${x:-{a,b}}",
-            ["p", "{}", "{a}", "{a,b", "{a..}", "stash@{0}", "<substitution:${x:-{a,b}}>"],
+            ["p", "{}", "{a}", "{a,b", "{a..}", "stash@{0}", "<variable:${x:-{a,b}}>"],
         ),
         ("p {~,x}/a {$,}x", ["p", "~/a", "x/a", "$x", "x"]),
         ("p {a,b", ["p", "{a,b"]),
@@ -376,7 +376,10 @@ def words(command: str) -> list[str]:
         ),
         ("p {a,b}*", ["p", "a<glob:*>", "b<glob:*>"]),
         ("[ -f x ] [[ ]]", ["[", "-f", "x", "]", "[[", "]]"]),
-        ("echo $* $? $# $@ $1 \"*\" '?' \\*", ["echo", "$*", "$?", "$#", "$@", "$1", "*", "?", "*"]),
+        (
+            "echo $* $? $# $@ $1 \"*\" '?' \\*",
+            ["echo", "<variable:$*>", "$?", "$#", "<variable:$@>", "<variable:$1>", "*", "?", "*"],
+        ),
     ],
 )
 def test_expandBraces_andGlobHoles_matchBash(command, expected):
@@ -418,7 +421,7 @@ def test_scan_negatedSubshellWithABlank_staysCommands():
 
 def test_scan_globInsideQuotesOrArithmeticOrParameter_isNoHole():
     assert not sh.scan('echo "*" "$((2*3))" ${x#*} $((4*(5)))').holes.keys() - {
-        k for k, h in sh.REGISTRY.items() if h.kind == "substitution"
+        k for k, h in sh.REGISTRY.items() if h.kind in ("substitution", "variable")
     }
 
 
@@ -462,13 +465,42 @@ def test_scan_sentinelNotIssued_isAnError():
 # ---------------------------------------------------------------- parameter operators, locale strings
 
 
-@pytest.mark.parametrize(
-    "command",
-    ["echo ${x}", "echo ${#x}", "echo ${!x}", "echo ${x[0]}", "echo ${#x[@]}", "echo ${#} ${?} ${10}"]
-    + ['echo "${x}"'],
-)
-def test_scan_plainParameter_staysText(command):
+@pytest.mark.parametrize("command", ["echo ${#x}", "echo ${#x[@]}", "echo ${#} ${?} $? $$ $# $- $!"])
+def test_scan_lengthOrStatus_staysText(command):
     assert not sh.scan(command).holes
+
+
+@pytest.mark.parametrize(
+    ("command", "name", "quoted"),
+    [
+        ("echo $x", "x", False),
+        ("echo ${x}", "x", False),
+        ('echo "${x}"', "x", True),
+        ('echo "a$x/b"', "x", True),
+        ("echo ${!x}", "!x", False),
+        ("echo ${x[0]}", "x[0]", False),
+        ("echo ${10}", "10", False),
+        ("echo $1", "1", False),
+        ("echo $@", "@", False),
+        ("echo $_", "_", False),
+    ],
+)
+def test_scan_parameter_isAVariableHole(command, name, quoted):
+    """Spec gate-f55, story 1: the gate reads a variable by its class in the whole command."""
+    (hole,) = sh.scan(command).holes.values()
+    assert (hole.kind, hole.name, hole.quoted, hole.operator) == ("variable", name, quoted, "")
+
+
+def test_scan_alternativeOperator_keepsItsWord():
+    (hole,) = sh.scan("cp x ${X:+~/.claude/a}").holes.values()
+    assert (hole.name, hole.operator, hole.alternatives) == ("X", "alt", ("~/.claude/a",))
+    (hole,) = sh.scan("cp x ${X%.bak}").holes.values()
+    assert (hole.name, hole.operator) == ("X", "other")
+
+
+def test_scan_variableInsideSingleQuotesOrAQuotedHereDocument_staysText():
+    assert not sh.scan("echo '$x'").holes
+    assert not sh.scan("cat <<'E'\n$x\nE").holes
 
 
 @pytest.mark.parametrize(
@@ -492,12 +524,13 @@ def test_scan_parameterWithAnOperator_isAnUnknownHole(command, span, quoted):
 def test_scan_parameterOperatorWord_keepsItsSubstitutions_andHashIsNoComment():
     result = sh.scan("echo ${x:- #$(git push)} ok")
     assert bodies(result) == ["git push"] and plain(result.outer).endswith("ok")
-    assert [h.kind for h in result.holes.values()] == ["substitution", "substitution"]
+    assert [h.kind for h in result.holes.values()] == ["substitution", "variable"]
 
 
-def test_scan_subscriptWithASubstitution_staysPlainAndRunsIt():
+def test_scan_subscriptWithASubstitution_isAVariableAndRunsIt():
     result = sh.scan("echo ${a[$(id)]}")
-    assert bodies(result) == ["id"] and "${a[" in result.outer
+    assert bodies(result) == ["id"]
+    assert [h.kind for h in result.holes.values()] == ["substitution", "variable"]
 
 
 @pytest.mark.parametrize(
@@ -511,7 +544,7 @@ def test_scan_subscriptWithASubstitution_staysPlainAndRunsIt():
     ],
 )
 def test_scan_localeString_isAQuotedHoleWithItsUntranslatedValue(command, value):
-    (hole,) = sh.scan(command).holes.values()
+    (hole,) = [h for h in sh.scan(command).holes.values() if h.kind != "variable"]
     assert hole.quoted and hole.body is None and hole.value == value
 
 

@@ -17,7 +17,8 @@ spec protects them too (story 2). F-56, F-57 and F-58 are parked (last section).
 |---|---|---|
 | `cp x ~/.claude/$X` · `cp x "$HOME/.claude/${X}"` · `tee ~/$X` · `gh repo $V o/r` | none | ask |
 | `X=cobot.rules; cp x ~/.claude/$X` · `D=~/.claude/cobot.rules; cp x $D` · `cp x ${X:+~/.claude/cobot.rules}` · `HOME=~/.claude; cp x ~/cobot.rules` | none | deny |
-| `for D in ~/.claude/cobot.rules; do cp x $D; done` · `D=~/.claude/cobot.rules bash -c 'cp x $D'` · `bash -c 'cp x "$1"' _ ~/.claude/cobot.rules` · `sh -c 'cp x $0' ~/.claude/cobot.rules` | none | deny |
+| `for D in ~/.claude/cobot.rules; do cp x $D; done` · `PWD=~/.claude; cp x "$PWD/cobot.rules"` | none | deny |
+| `D=~/.claude/cobot.rules bash -c 'cp x $D'` · `bash -c 'cp x "$1"' _ ~/.claude/cobot.rules` · `sh -c 'cp x $0' ~/.claude/cobot.rules` · `read -r HOME <<< ~/.claude; cp x ~/cobot.rules` · `N=X; printf -v "$N" …; cp x "$X"` | none | ask |
 | `set -- ~/.claude/cobot.rul; cp x ${1}es` · `ls …; cp x ${_}es` · `A=(…); cp x "${A[0]}"` · `${!N}` · `declare -n` · `f(){ cp x $D; }; D=…; f` · `read D; cp x ~/.claude/$D` | none | ask |
 | `D='e/a ~/.claude.json'; tee $D` | none | ask |
 | `cp e/s.sh ~/.claude/session-env/<id>/snapshot-bash-1.sh` · `cp x "$CLAUDE_ENV_FILE"` · Write on a session-env file | none | deny |
@@ -70,8 +71,8 @@ the hostile commands of its Goal rows; its friction rows must stay silent.
          `&&`/`||` do not count;
        - a `for NAME in w…` loop variable: each word, a glob judged as a glob, so
          `for f in *.md` stays silent;
-       - inside a `sh|bash|zsh|dash|ksh -c` body: a name the outer command assigns (a prefix,
-         `env NAME=`, `export`), and `$0`…`$9`, `$@` and `$*` from the argv after the body.
+       - (built as a full hole instead, T01: every variable of a `sh -c` body or another runner
+         body is classed by text the gate did not read there, so the nested rows ask, not deny)
        - An unquoted use is split on the default IFS and each field judged, glob characters as
          globs. Any `IFS` assignment makes every unquoted put-in a full hole.
      - **Full hole** (in the text, but not computed): never spared by `reads_like_a_variable` or
@@ -88,9 +89,9 @@ the hostile commands of its Goal rows; its friction rows must stay silent.
        today, spared as a whole word, a hole where glued to path text (`~/.claude/$D`). This
        covers `read`, `mapfile`, `getopts`, `select`, and the builtins' implicit names `REPLY`,
        `MAPFILE`, `OPTARG`, `BASH_REMATCH`, `OLDPWD` and `DIRSTACK` whenever their builtin
-       appears. As with `cp x $(cat e/p)` today, the whole-word form is an accepted residual,
-       raised as F-59 for the owner (spare or ask: a trade against friction on `while read f`
-       loops).
+       appears. As with `cp x $(cat e/p)` today, the whole-word form is an **accepted residual**
+       (owner, 2026-11-23: "Spare, then build"): silent as a whole word, a hole glued to path text.
+       F-59 stays open, to be closed together with whole-word `$(…)`.
    - `HOME`, `PWD` and `CLAUDE_CONFIG_DIR`: the gate's own values (`home_forms`, `expand_pwd`,
      `config_dir()`) are always judged. An in-command assignment *adds* its value and never
      replaces them, for `~` too: `HOME=~/.claude; cp x ~/cobot.rules` denies, and
@@ -184,7 +185,7 @@ and the gate dry run. Each one gets a bypass-aimed review before its commit.
 
 | id | task | lane | risk | deps |
 |---|---|---|---|---|
-| T01 | variable holes, operator alternatives, assignments, the `$`-text sites, differential rows (`_cobot_shell.py`, `cobot-rules`, tests) | gate | auth | — |
+| T01 ✅ | variable holes, operator alternatives, assignments, the `$`-text sites, differential rows (`_cobot_shell.py`, `cobot-rules`, tests) | gate | auth | — |
 | T02 | session-env and `CLAUDE_ENV_FILE` never rows, start-file and rc-file ask rows, the `BASH_ENV`/`ENV`/`ZDOTDIR` ask | gate | auth | T01 |
 | T03 | agy rows, CHANGELOG, FINDINGS, design doc | gate | — | T01, T02 |
 
@@ -213,6 +214,9 @@ the folds are the revision 1 to 3 challenger answers, kept for the spec that tak
   - Fold: `<target>/<basename>` landing words through `word_touches`; extraction into the tracked
     cwd; unplaceable landings ask; the moved dir is an anchor, its parents count only as move or
     remove sources.
+  - Found by T01's bypass review, no variable involved: a joined target option
+    (`cp --target-directory=$HOME/.claude cobot.rules`, `cp -t$HOME/.claude …`, `mv --target-directory=…`)
+    gets none where `-t ~/.claude` denies.
   - Until it lands, `cp e/.bashrc ~/` slips past story 2's ask rows, as `cp e/.claude.json ~/`
     does today.
 - **F-57 (HIGH), inline code.**

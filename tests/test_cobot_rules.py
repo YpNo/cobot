@@ -3600,8 +3600,9 @@ def test_scan_unclosedPieceInsideABrace_isAnError(rules):
 # main-thread rows, run under bash by the differential test too
 FINDINGS_CLOSED = [
     # F-22: an operator word in ${…} is text bash expands
-    ("cargo ${x:-publish}", "ask"),
-    ('cargo "${x:-publish}"', "ask"),
+    # spec gate-f55: the word is read as an alternative, so bash's ``cargo publish`` is refused
+    ("cargo ${x:-publish}", "deny"),
+    ('cargo "${x:-publish}"', "deny"),
     ("terraform ${x:+apply}", "ask"),
     # F-23: a locale string is its untranslated text, or anything
     ('cargo $"publish"', "deny"),

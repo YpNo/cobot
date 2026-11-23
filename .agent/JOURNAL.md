@@ -391,3 +391,11 @@ Proof: challenger revision 4 UNSOUND (1 BLOCKER: nested sh -c turned outer assig
 Open: F-59 for the owner (spare or ask); revision 5 not challenged again.
 Next: owner go for /cobot:build gate-f55, T01 first, a bypass-aimed review per task.
 verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · spec only, cobot-memory check
+
+## 2026-11-23 — gate-f55 T01: a shell variable is a hole, read by its class
+Changed: _cobot_shell.py emits variable holes (name, operator, word; HOME and PWD stay text); cobot-rules reads each by its class in the whole command (put in, for/select lists, full holes, spared inherited or run-time data), HOME/PWD assignments add a reading, runner-body variables are full holes, word_touches treats a full hole as pathlike; tests/test_gate_f55.py, differential rows, scanner and rules rows updated; spec: F-59 recorded as accepted residual (owner: Spare, then build), T01 ticked, nested sh -c rows ask (build choice); F-60 filed (joined target option, pre-existing).
+Why: F-55 (CRITICAL): cp x ~/.claude/$X got no decision past the never rows.
+Proof: full suite with coverage exit 0, 98.20 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (2 BLOCKER: assigned PWD, run-time HOME; 2 MAJOR: indirect assigners, runner bodies), each shape a test row.
+Open: F-59 accepted residual; F-60 for the F-56 spec; friction: inherited variables ask where $(…) asks (rm "$f", git commit -m "$MSG").
+Next: T02, the files sourced between calls.
+verified: tree 1a96d03e5c2b52ae43063223312cb38761a5dc93 · full suite with coverage, ruff, check-plugin

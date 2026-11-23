@@ -3597,6 +3597,7 @@ def word_touches(
     An ``ask`` row counts for a literal word only: a glob that could name ``.mcp.json`` is every
     glob, and a refusal is what a "could name" protects."""
     pathlike = "/" in token or token.startswith("~") or globstar(token)
+    pathlike = pathlike or any(full_hole(key) for key in shell.sentinels(token))
     if shell.has_sentinel(token):
         protected = [r for r in protected if r.decision == "never"]
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
@@ -3775,6 +3776,277 @@ def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = Tru
     return any(fnmatch.fnmatchcase(name, os.path.basename(r.pattern).casefold()) for r in rows)
 
 
+# ---------------------------------------------------------------- variables (spec gate-f55, story 1)
+FULL = "full"  # a hole kind: a value the command computes; never spared, and pathlike
+SPARE = "spare"  # an inherited name or run-time data: read like ``$(…)`` (F-59, accepted residual)
+MAX_READINGS = 32  # readings of one segment; past it every variable in it is a full hole
+CONFIG_VARIABLE = "CLAUDE_CONFIG_DIR"
+VALUE_RE = r"('[^']*'|\"[^\"$`\\\\]*\"|[^\s;&|<>()'\"\\\\$`]*)"
+SHELL_HEAD_RE = re.compile(r"(?:^|[\s;&|(`'\"])(?:\S*/)?(?:sh|bash|zsh|dash|ksh|mksh|ash|yash)(?=\s|$)")
+ARGV_SETTERS_RE = re.compile(r"(?:^|[\s;&|(])(?:set|shift)(?=\s|$)|\w\s*\(\s*\)|(?:^|[\s;&|])function\s")
+RUNTIME_ASSIGNERS = r"(?:read|mapfile|readarray|getopts)"
+GLOB_VALUE_CHARS = frozenset("*?[")
+
+
+def assignment_forms(name: str) -> tuple[re.Pattern, re.Pattern]:
+    """Every way a command assigns ``name`` (``NAME=``, ``NAME+=``, ``NAME[i]=``, ``for``/``select``,
+    ``printf -v``, ``let``, ``((…))``, ``${NAME:=…}``, ``declare``-family, ``unset``), and the
+    run-time ones (``read``, ``mapfile``, ``getopts``)."""
+    word = re.escape(name)
+    plain = rf"(?:^|[\s;&|(`'\"]){word}(?:\[[^\]]*\])?\+?="
+    other = (
+        rf"(?:for|select)\s+{word}\b|printf\s+(?:-\S+\s+)*-v\s*{word}\b|\blet\b[^;&|\n]*\b{word}\b"
+        rf"|\(\([^)]*\b{word}\b|\$\{{{word}:?=|(?:declare|typeset|local|export|readonly|unset)\b[^;&|\n]*\b{word}\b"
+    )
+    runtime = rf"\b{RUNTIME_ASSIGNERS}\b[^;&|\n]*\b{word}\b"
+    return re.compile(f"{plain}|{other}"), re.compile(runtime)
+
+
+INDIRECT_ASSIGNER_RE = re.compile(  # an assigner whose name is not literal: any name may be set
+    r"(?:printf\s+(?:-[^\s;&|]+\s+)*-v\s*|(?:declare|typeset|local|export|readonly)\s+(?:-[^\s;&|]+\s+)*"
+    r"|(?:read|mapfile|readarray|getopts)\s+(?:[^\s;&|<>]+\s+)*)[\"']?" + shell.SENTINEL_RE.pattern
+)
+OPENERS = frozenset({"if", "while", "until", "for", "select", "case", "{", "("})
+CLOSERS = frozenset({"fi", "done", "esac", "}", ")"})
+
+
+@dataclass
+class Variables:
+    """How the whole command gives each name its value: the gate reads a variable hole by it."""
+
+    command: str
+    outer: str
+    nested_shell: bool
+    argv_set: bool
+    split_changed: bool
+    indirect: bool
+    own_keys: frozenset[str]  # the variable holes of the command itself, not of a runner body
+    cache: dict = field(default_factory=dict)
+
+
+def variables_of(command: str, scanned: shell.Scan) -> Variables:
+    return Variables(
+        command,
+        scanned.outer,
+        bool(SHELL_HEAD_RE.search(command)),
+        bool(ARGV_SETTERS_RE.search(command)),
+        bool(assignment_forms("IFS")[0].search(command)),
+        bool(INDIRECT_ASSIGNER_RE.search(scanned.outer)),
+        frozenset(own_holes(scanned)),
+    )
+
+
+def own_holes(scanned: shell.Scan) -> set[str]:
+    keys = set(scanned.holes)
+    for hole in scanned.holes.values():
+        if hole.body is not None:
+            keys |= own_holes(hole.body)
+    return keys
+
+
+def depth_at(outer: str, at: int) -> int:
+    """How many compound commands, groups or subshells are open at ``at`` in the outer text."""
+    depth = 0
+    for word in re.findall(r"[(){}]|[^\s;&|(){}]+", outer[:at]):
+        depth += (word in OPENERS) - (word in CLOSERS)
+    return depth
+
+
+def name_reading(name: str, ctx: Variables) -> tuple[str, list[str]]:
+    """``put`` (the fields of its one literal value), ``each`` (a ``for`` list), FULL or SPARE."""
+    if name not in ctx.cache:
+        ctx.cache[name] = classify_name(name, ctx)
+    return ctx.cache[name]
+
+
+def classify_name(name: str, ctx: Variables) -> tuple[str, list[str]]:
+    kind, values = classify_literally(name, ctx)
+    return (FULL, []) if kind == SPARE and ctx.indirect else (kind, values)
+
+
+def classify_literally(name: str, ctx: Variables) -> tuple[str, list[str]]:
+    if name.startswith("!") or "[" in name or name == "_":
+        return FULL, []
+    if name.isdigit() or name in ("@", "*"):
+        return (FULL, []) if ctx.nested_shell or ctx.argv_set else (SPARE, [])
+    assigned, runtime = assignment_forms(name)
+    found = assigned.findall(ctx.command)
+    if not found:
+        return SPARE, []  # inherited, or run-time data only (F-59)
+    if ctx.nested_shell or len(found) > 1 + declared(name, ctx):
+        return FULL, []
+    loop = re.search(
+        rf"(?:^|[;\n&|]|\bdo|\bthen)\s*(?:for|select)\s+{name}\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b", ctx.outer
+    )
+    if loop and not runtime.search(ctx.command):
+        words = flatten(split_segments(loop.group(1)))
+        kinds = {shell.kind_of(k) for w in words for k in shell.sentinels(w)}
+        if kinds & {"variable", FULL}:
+            return FULL, []
+        if kinds - {"glob"}:
+            return SPARE, []  # a list from ``$(…)``: run-time data, as the substitution is (F-59)
+        return ("each", words) if words else (FULL, [])
+    return literal_assignment(name, ctx)
+
+
+def declared(name: str, ctx: Variables) -> bool:
+    """``export NAME=…`` matches both the plain and the declare form: one assignment, counted twice."""
+    return bool(re.search(rf"(?:export|readonly|declare)\b[^;&|\n]*\b{name}=", ctx.command))
+
+
+def literal_assignment(name: str, ctx: Variables) -> tuple[str, list[str]]:
+    """One plain ``NAME=literal`` (``export``/``readonly``/``declare [-x]`` allowed) at the top of
+    the list, before every use, alone in its item: not a prefix, not after ``&&``/``||``, not in a
+    pipeline, nothing compound around it."""
+    keyword = r"(?:(?:export|readonly|declare(?:\s+-x)?)\s+)?"
+    pattern = rf"(?:^|[;\n])\s*{keyword}{re.escape(name)}={VALUE_RE}(?=\s*(?:[;\n]|$))"
+    match = re.search(pattern, ctx.outer)
+    kinds = {shell.kind_of(k) for k in shell.sentinels(match.group(1))} if match else set()
+    nested = kinds & {"variable", FULL, "glob"}
+    if not match or nested or depth_at(ctx.outer, match.start()):
+        return FULL, []  # a value with another variable in it is not followed; a substitution is put in
+    uses = [ctx.outer.find(k) for k, h in shell.REGISTRY.items() if h.kind == "variable" and h.name == name]
+    if any(at != -1 and at < match.end() for at in uses):
+        return FULL, []
+    value = match.group(1)
+    text = value[1:-1] if value[:1] in "'\"" and len(value) > 1 else value
+    return "put", [text]
+
+
+def hole_readings(hole: shell.Hole, ctx: Variables) -> list[list[str] | None]:
+    """The readings of one variable hole: each a list of fields, or None for a full hole. A hole of
+    a runner body (a script, a ``sh -c`` string) is classed by text the gate did not read here, so
+    it is a full hole."""
+    if hole.operator == "other" or hole.key not in ctx.own_keys:
+        return [None]
+    own = own_reading(hole, ctx)
+    if hole.operator != "alt":
+        return own
+    word = hole.alternatives[0] if hole.alternatives else ""
+    if shell.has_sentinel(word) or set(word) & set("$`"):
+        return own + [None]
+    try:
+        text = "".join(shlex.split(word)) if word else ""
+    except ValueError:
+        return own + [None]
+    return own + [[text] if text else []]
+
+
+def own_reading(hole: shell.Hole, ctx: Variables) -> list[list[str] | None]:
+    kind, values = name_reading(hole.name, ctx)
+    if hole.name == CONFIG_VARIABLE:
+        extra = [] if kind == SPARE else [None] if kind == FULL else [split_value(values[0], hole, ctx)]
+        return [[str(config_dir())], *extra]
+    if kind == SPARE:
+        return [[hole.key]]
+    if kind == FULL:
+        return [None]
+    if kind == "each":
+        return [[word] for word in values]
+    return [split_value(values[0], hole, ctx)]
+
+
+def split_value(value: str, hole: shell.Hole, ctx: Variables) -> list[str] | None:
+    """A put-in value as bash would pass it: one field when quoted; split on the default IFS and
+    globbed when not (a glob character or a changed IFS makes it a full hole)."""
+    if hole.quoted:
+        return [value]
+    if ctx.split_changed or GLOB_VALUE_CHARS & set(value):
+        return None
+    return value.split()
+
+
+def segment_readings(segment: list[str], ctx: Variables) -> list[list[str]]:
+    """The segment once for every reading of its variables (``X=a; gh repo $X`` is ``gh repo a``);
+    a full hole stands where the command computes a value. Past MAX_READINGS, every variable is a
+    full hole in one reading."""
+    readings = [list(segment)]
+    for key in [k for token in segment for k in shell.sentinels(token)]:
+        hole = shell.REGISTRY.get(key)
+        if hole is None or hole.kind != "variable" or self_reference(segment, key, hole, ctx):
+            continue
+        readings = [splice(r, key, fields, hole) for r in readings for fields in hole_readings(hole, ctx)]
+        if len(readings) > MAX_READINGS:
+            return [all_full(segment)]
+    return [assigned_home(r, ctx) for r in readings] if home_assigned(ctx) else readings
+
+
+def self_reference(segment: list[str], key: str, hole: shell.Hole, ctx: Variables) -> bool:
+    """``PATH=$PATH:x`` in the name's only assignment: the value read is the inherited one, spared."""
+    if hole.operator or not re.fullmatch(r"[A-Za-z_]\w*", hole.name):
+        return False
+    owner = [word for word in segment if key in word and re.match(rf"{hole.name}\+?=", word)]
+    return bool(owner) and len(assignment_forms(hole.name)[0].findall(ctx.command)) <= 1 + bool(
+        re.search(rf"(?:export|readonly|declare)\b[^;&|\n]*\b{hole.name}=", ctx.command)
+    )
+
+
+def splice(words: list[str], key: str, fields: list[str] | None, hole: shell.Hole) -> list[str]:
+    if fields is None:
+        fields = [shell.register(hole.span, hole.quoted, FULL)]
+    out: list[str] = []
+    for word in words:
+        if key not in word:
+            out.append(word)
+            continue
+        head, tail = word.split(key, 1)
+        if not fields:
+            joined = head + tail
+            out += [joined] if joined or hole.quoted else []
+        elif len(fields) == 1:
+            out.append(head + fields[0] + tail)
+        else:
+            out += [head + fields[0], *fields[1:-1], fields[-1] + tail]
+    return out
+
+
+def all_full(segment: list[str]) -> list[str]:
+    def full(match: re.Match) -> str:
+        hole = shell.REGISTRY.get(match.group())
+        if hole is None or hole.kind != "variable":
+            return match.group()
+        return shell.register(hole.span, hole.quoted, FULL)
+
+    return [shell.SENTINEL_RE.sub(full, word) for word in segment]
+
+
+# the names the gate reads as text, and the word prefixes that stand for them
+GATE_PREFIXES = {"HOME": ("~", "$HOME", "${HOME}"), "PWD": ("$PWD", "${PWD}", "~+")}
+
+
+def assigned_gate_names(ctx: Variables) -> list[str]:
+    """HOME and PWD when the command assigns them, by any form, run-time or indirect included."""
+    return [
+        name
+        for name in GATE_PREFIXES
+        if ctx.indirect or any(form.search(ctx.command) for form in assignment_forms(name))
+    ]
+
+
+def home_assigned(ctx: Variables) -> bool:
+    return bool(assigned_gate_names(ctx))
+
+
+def assigned_home(words: list[str], ctx: Variables) -> list[str]:
+    """With HOME or PWD assigned in the command, a word through ``~``, ``$HOME`` or ``$PWD`` may
+    name the assigned folder too (``HOME=~/.claude; cp x ~/cobot.rules``): the assigned value, or
+    a full hole, is added as a word beside the gate's own reading, which the word keeps."""
+    out = list(words)
+    for name in assigned_gate_names(ctx):
+        kind, values = name_reading(name, ctx)
+        for word in words:
+            for prefix in GATE_PREFIXES[name]:
+                if word == prefix or word.startswith(prefix + "/"):
+                    put = kind == "put"
+                    value = os.path.expanduser(values[0]) if put else shell.register(prefix, False, FULL)
+                    out.append(value.rstrip("/") + word[len(prefix) :])
+    return out
+
+
+def full_hole(key: str) -> bool:
+    return shell.kind_of(key) == FULL
+
+
 HOME_WORDS = ("$HOME", "${HOME}")
 PWD_TILDE_RE = re.compile(r"^~\+(?:/|$)")  # ``~+``: bash's PWD, the folder the segment runs in
 DIRECTORY_STACK_RE = re.compile(r"^~(?:-|[+-]?\d+)(?:/|$)")  # OLDPWD or a ``dirs`` entry
@@ -3828,6 +4100,8 @@ def reads_like_a_variable(token: str, key: str) -> bool:
     """A substitution stands for a whole unknown path where it leads the token (``$(pwd)/x``) or
     names its last part (``docs/$(date).md``); glued inside a folder name (``plu$(x)ins/``) or
     standing for a folder between literal ones (``.agents/$(x)/h.sh``), it does not."""
+    if full_hole(key):
+        return False  # a value the command computes is never spared (spec gate-f55)
     at = token.index(key)
     return at == 0 or (token[at - 1] == "/" and "/" not in token[at + len(key) :])
 
@@ -3977,7 +4251,8 @@ UNKNOWN_CHAR = "\x00"  # a hole read as one character nothing literal matches
 SEGMENT_STAR = "\x01"  # a glob hole in a path: any text without ``/``
 GLOBSTAR_MARK = "\x02"  # a ``*`` glob hole, until ``**`` runs are found
 GLOB_HOLES = frozenset({"*", "?", SEGMENT_STAR})  # what globs_meet reads as a hole
-EXPANSION_KINDS = frozenset({"glob", "brace"})  # holes a runner body may hold and stay readable
+# holes a runner body may hold and stay readable; a variable is read by its class (spec gate-f55)
+EXPANSION_KINDS = frozenset({"glob", "brace", "variable"})
 GLOB_ARGV_RUNNERS = frozenset({"docker", "podman", "docker-compose", "nix", "flatpak", "chroot"})
 # ``NAME=`` or ``NAME[…]=`` (the subscript a bracket glob hole): an assignment in the prefix
 ARRAY_ASSIGNMENT_RE = re.compile(f"^[A-Za-z_][A-Za-z0-9_]*({shell.SENTINEL_RE.pattern})?\\+?=")
@@ -4505,6 +4780,7 @@ def literal_word(word: str, scan: shell.Scan) -> bool:
     if any(hole.body is not None and holds_literal(hole.body) for hole in holes):
         return True
     names = re.findall(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", plain)
+    names += [h.name for k in shell.sentinels(plain) if (h := shell.REGISTRY.get(k)) and h.kind == "variable"]
     return any(re.search(rf"(?:^|[\s;&|(]){name}=", scan.outer) for name in names)
 
 
@@ -4753,7 +5029,10 @@ def protected_verdict(
     ask, since it only might name them."""
     owner_rows = [r for r in rules if sealed(r)]
     hit = owner_rows and protected_file_touched(placed, cwd, owner_rows, reached.paths, reached.visited)
-    literal = hit and not shell.has_sentinel(hit) and not any(c in hit for c in GLOB_CHARS)
+    # a whole-word variable is a merge's source of unknown content into a literal folder (``cp -r $X ~``)
+    whole_variable = bool(hit) and shell.kind_of(hit) == "variable"
+    plain_hit = whole_variable or not shell.has_sentinel(hit or "")
+    literal = hit and plain_hit and not any(c in hit for c in GLOB_CHARS)
     # a customization root (``.agents``) is flagged with no rule at all: not an owner-file hit
     if literal and not protected_file_touched(placed, cwd, [], reached.paths, reached.visited):
         return Verdict(DENY, None, f"shell access to cobot's owner files '{show(hit, holes)[:60]}'")
@@ -4775,6 +5054,12 @@ def judge_bash(
     entries: list[tuple[list[str], str, shell.Scan, Dirs]] = []
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
+    variables = variables_of(command, scanned)
+    entries = [
+        (reading, origin, unit, dirs)
+        for segment, origin, unit, dirs in entries
+        for reading in segment_readings(segment, variables)
+    ]
     best = Verdict(None, None, "no rule matched")
     placed = [(segment, dirs) for segment, _, _, dirs in entries]
     homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}

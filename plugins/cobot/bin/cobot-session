@@ -154,21 +154,18 @@ def build_payload(stdin: str) -> str:
 def agy_section() -> str:
     """Antigravity host adapter: tool/skill/agent mapping, plan mode, model routing and gaps."""
     return f"""{AGY_HEADING}
-- Plugin folder `{plugin_root()}`: bin/ is not on PATH; run `python3 -I <plugin folder>/bin/<tool> ...` \
-for cobot-memory, cobot-rules, cobot-deps and cobot-env. Skills live at `<plugin folder>/skills/<name>/SKILL.md`: \
-read with `read_file` (or `view_file`), or type `/<name>` (without `cobot:`).
-- Tools & names: Agent → `invoke_subagent` with unprefixed TypeName (`challenger`, `auditor`, `consultant`, \
-`learner`, `builder`, `*-builder`), AskUserQuestion → `ask_question`, parallel lanes → `Workspace="share"`, \
-reviews → `challenger` + `auditor` on `git diff`.
-- Plan mode: respect `plan` mode; do not edit repository files until the owner switches out of plan mode.
-- Models: defaults match task (`pro` for design/audit/languages, `flash` for `consultant`/`builder`); pass \
-`Model="pro"` on `invoke_subagent` for `[risk]` or overridden agents. For `swarm`: Carbon (design/audit), \
-Hydrogen (code), Argon (research), Flash (checklists).
-- Owner-only: onboard, rules and security-sweep run only when the owner types them; security-sweep and learn \
-run through `invoke_subagent` or not at all.
-- Children receive the workspace's AGENTS.md and GEMINI.md.
-- A builder's proof (command and exit code) is requested, not enforced: read it before you trust the report.
-- Builders' tool calls are not proven gated under agy: review their diff before any outward step."""
+- Plugin `{plugin_root()}`: run `python3 -I <plugin folder>/bin/<tool>` (cobot-memory, cobot-rules, \
+cobot-deps, cobot-env). Skills: `<plugin folder>/skills/<name>/SKILL.md` (`read_file` or `/<name>`).
+- Tools: Agent → `invoke_subagent` (unprefixed TypeName), AskUserQuestion → `ask_question`, \
+lanes → `Workspace="share"`, reviews → `challenger` + `auditor` on `git diff`.
+- Plan mode: do not edit repo files while in `plan` mode.
+- Models: `pro` (design/audit/languages), `flash` (`consultant`/`builder`); pass `Model="pro"` for \
+`[risk]`/overrides. `/swarm`: Neon (code), Carbon (advisor/audit), Hydrogen (read/checklists), Argon (research).
+- Advisor gate: consult `challenger` (`pro`/Carbon) only before freezing medium/large plans, after the \
+same error twice, or before closing small+ work (never on tiny).
+- Owner-only: onboard, rules, security-sweep; run security-sweep and learn via `invoke_subagent`.
+- Children inherit workspace AGENTS.md and GEMINI.md.
+- Builder proof is requested, not enforced; builders are not proven gated: review their diff before any outward step."""
 
 
 def workspace_warning(workspaces: list[str]) -> str:

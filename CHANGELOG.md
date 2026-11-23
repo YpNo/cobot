@@ -24,9 +24,11 @@ All notable changes to this project are documented here. The format follows
     `scripts/sync-agents.py` to `claude-agents/` and `agents/` with explicit task-matched Gemini
     tiers (`pro` for design/auditor/learner/language builders, `flash` for `consultant` and
     `builder` — never `inherit`), multi-level per-agent overrides (`.agent/models.json` <
-    `~/.config/cobot/models.json` < `--models` < `COBOT_AGENT_MODELS`), concrete Gemini 4 `swarm`
-    role mapping (`Carbon` / `Hydrogen` / `Argon` / `Flash`), and active override reporting in
-    `cobot-session`.
+    `~/.config/cobot/models.json` < `--models` < `COBOT_AGENT_MODELS`), concrete Gemini 4 `/swarm`
+    role mapping (`Neon` for language builders, `Carbon` advisor for `challenger`/`auditor`,
+    `Hydrogen` medium for `consultant`/`builder`, `Argon` for `learner`), a proportional Advisor
+    gate (`challenger` consulted after hitting the exact same error twice in `build`), and active
+    override reporting in `cobot-session`.
   - Split Antigravity gate asks into session-cacheable `ask` for local repeatable dev commands
     (`git commit/rebase/init`, `docker/podman run`, dependency adds, `make`, `just`, `uvx`, `npx`,
     `npm run`) vs `force_ask` for outward/destructive/privilege/`swarm add`/`swarm model` calls,

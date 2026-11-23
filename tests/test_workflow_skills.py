@@ -77,3 +77,9 @@ def test_build_neverTicksAnUnprovenReport():
     # builder-proof-hosts story 4: the hook's mark stops the tick; re-run or ask
     build = text("build")
     assert "`UNPROVEN:`" in build and "never ticked" in build and "ask the owner" in build
+
+
+def test_build_consultsChallengerAfterSameErrorTwice():
+    build = text("build")
+    assert "exact same error twice" in build
+    assert "cobot:challenger" in build and "advisor" in build

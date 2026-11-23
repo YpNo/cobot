@@ -1,4 +1,4 @@
-# Antigravity CLI mechanics that shape cobot (verified 2026-11-19, agy 1.5.11)
+# Antigravity CLI mechanics that shape cobot (verified 2026-11-23, agy 1.5.14)
 
 What cobot relies on under the Antigravity CLI (`agy`), each with its source. Re-read when agy's
 version moves; the design input (`docs/design-inputs/antigravity-0.3.0.md`) keeps the 1.5.3
@@ -21,14 +21,18 @@ Facts still to prove live are marked *smoke*: `scripts/spikes/smoke-agy.sh` fill
   0 warnings).
 - Rules: any file under `rules/` is ingested into the session prompt (`agy plugin list --json`
   reports `rules: N`), so gate policy files must not live under `rules/` (cobot uses
-  `policy/default.rules`).
+  `policy/default.rules`). Directory-based workspace rules load `AGENTS.md` and `GEMINI.md` only
+  (never `ANTIGRAVITY.md`; docs `rules.md`).
 - Agents: `agents/<n>.md` (synced from `agent-defs/<n>.md`); `tools` must be a YAML list (a string
   skips the agent); `model` is strictly the tier enum `inherit`, `flash_lite`, `flash` or `pro`
-  (probe 1.5.11: concrete IDs such as `gemini-4-carbon-high` fail `Invalid model tier` and skip the
-  agent); `effort` is ignored; an unknown tool name passes validate silently (probe). Also
-  `mainAgent`, `commandExecutionPolicy` (`off`, `auto`, `eager`, `sandbox`). Concrete Gemini 4
-  model IDs (`gemini-4-carbon-{low,medium,high}`, `gemini-4-hydrogen-*`, `gemini-4-argon-*`,
-  `gemini-3.8-flash-*`, `gemini-pro-orchestrator`) apply to `swarm(action="add", model=...)`.
+  (probe 1.5.14: concrete IDs such as `gemini-4-neon-high` or `gemini-4-carbon-high` fail
+  `Invalid model tier` and skip the agent); `effort` / `thinking_level` are unsupported; an unknown
+  tool name passes validate silently (probe). Also `mainAgent`, `commandExecutionPolicy` (`off`,
+  `auto`, `eager`, `sandbox`). Concrete Gemini 4 model IDs (`gemini-4-neon-{low,medium,high,xhigh}`,
+  `gemini-4-carbon-{low,medium,high}`, `gemini-4-hydrogen-{low,medium,high}`,
+  `gemini-4-argon-{low,medium,high}`, `gemini-3.8-flash-*`, `gemini-pro-orchestrator`) apply to
+  `/model` / `--model`, `Orchestrator`, and `swarm(action="add", model=...)` (since `1.5.13`,
+  swarms only start on explicit `/swarm`).
 - Skills: the Claude Code format; Claude-only keys pass; each skill is also a `/name` command;
   a body over 24 000 bytes is a problem (probe; EGM). Skill text is not expanded:
   `${CLAUDE_PLUGIN_ROOT}` stays literal.

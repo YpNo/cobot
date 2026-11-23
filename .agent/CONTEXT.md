@@ -13,7 +13,7 @@ runs: host                     # podman and distrobox present, nothing here need
 - pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor; `claude plugin validate --strict`
 
 ## Environment
-- Claude Code 2.1.311 locally, CI pins 2.1.322; Antigravity CLI (`agy`) 1.5.11 locally; hooks run as the user
+- Claude Code 2.1.311 locally, CI pins 2.1.322; Antigravity CLI (`agy`) 1.5.14 locally; hooks run as the user
 - the directory marketplace serves this checkout to every dogfood repository: keep it on `main`, branch in worktrees
 - owner's git: `safe.bareRepository = explicit`; rtk PreToolUse hook rewrites Bash to `rtk <cmd>`
 

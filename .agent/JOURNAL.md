@@ -393,3 +393,9 @@ Proof: TDD tests added first and verified failing then passing (with_offer on ga
 Open: 4 pre-existing Linux-path/APFS failures in test_cobot_rules.py + 1 APFS raw-byte failure in test_cobot_memory.py on macOS; live signed-in smoke-agy.sh remains not run in sandbox.
 Next: push feat/agy-agnostic and run ./install.sh --agy && sh scripts/spikes/smoke-agy.sh in signed-in owner terminal.
 verified: tree e777342fa3cde2d7a8e88c1f252b4b00e2e76470 · pytest+cov, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, agy plugin validate --strict
+
+## 2026-11-23 — Gemini 4 Neon routing and proportional Advisor gate (agy 1.5.14)
+Changed: _cobot_agy.py SWARM_GEMINI4_MODELS (5 language builders -> gemini-4-neon-high, challenger/auditor -> gemini-4-carbon-high, consultant/builder -> gemini-4-hydrogen-medium, learner -> gemini-4-argon-high); cobot-session agy_section() tightened within AGY_SECTION_CAP with Neon/Carbon/Hydrogen/Argon + Advisor gate; build/SKILL.md step 4 consults challenger once after hitting the exact same error twice; docs/reference/antigravity-mechanics.md (agy 1.5.14), ADR-0008, decision 33, CHANGELOG, .agent/specs/agy-agnostic.md, CONTEXT.md, and TDD tests in test_gate_agy.py, test_cobot_session.py, test_workflow_skills.py.
+Why: adopt Gemini 4 Neon and double-error Advisor escalation while rejecting non-viable prompt patterns (concrete model IDs in agents/*.md, ANTIGRAVITY.md, 3 search/grep/docs agents, hydrogen-low micro-routing).
+Proof: TDD tests failed before and passed after; post-commit ruff, shellcheck, check-plugin, sync-agents --check, markdownlint-cli2, throwaway HOME install.sh --agy + agy plugin validate --strict, and targeted pytest suites.
+verified: tree d7f456befaf1cbb96fd8d0d04fa40bd533b93352 · pytest, ruff, shellcheck, markdownlint, check-plugin, sync-agents --check, agy plugin validate --strict

@@ -318,8 +318,9 @@ def test_agy_section_coversUnprefixedNamesPlanModeModelsAndSwarm(session):
     assert "read_file" in section
     assert 'Workspace="share"' in section
     assert "plan mode" in section.lower()
-    for role in ("Carbon", "Hydrogen", "Argon", "Flash"):
+    for role in ("Neon", "Carbon", "Hydrogen", "Argon"):
         assert role in section
+    assert "Advisor gate" in section and "same error twice" in section and "never on tiny" in section
 
 
 def test_session_reportsActiveModelOverridesInBothRuntimes(session, project, tmp_path, monkeypatch):

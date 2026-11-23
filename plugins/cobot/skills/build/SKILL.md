@@ -49,8 +49,10 @@ then one journal line through `cobot-memory journal add`. Stop.
    Then commit the task on the spec's branch with a Conventional Commit message (one task = one
    commit, decision 20; no attribution footer, decision 18). `git commit` asks unless the owner's
    layer allows it; never push from here.
-4. A builder that fails the same check twice hands back: decide yourself whether to fix inline,
-   split the task, or stop and ask the owner. Never let a builder loop.
+4. A builder (or the main thread) that hits the exact same error twice stops looping: consult
+   `cobot:challenger` once as an advisor (`run_in_background: false` where the host offers it;
+   `invoke_subagent` `challenger` / `Model="pro"` under Antigravity; wait for every hand-back)
+   with the failing command and error, then decide whether to fix inline, split, or ask the owner.
 5. After a task group (a lane, or three tasks): one journal entry (`Changed / Why / Proof / Open /
    Next`) through `cobot-memory journal add`, committed with the task's code in one commit when
    it carries a stamp (`cobot-memory stamp --tree`, as wrap's journal step does).

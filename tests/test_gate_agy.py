@@ -802,6 +802,18 @@ def test_swarm_safeActions_allow(rules, workspace, action):
     assert decide(rules, "swarm", {"action": action}, [workspace]) == "allow"
 
 
+def test_swarmGemini4Models_routesNeonBuildersCarbonAdvisorsHydrogenReads():
+    models = agy_module().SWARM_GEMINI4_MODELS
+    builders = ("go-builder", "python-builder", "rust-builder", "terraform-builder", "typescript-builder")
+    for builder in builders:
+        assert models[builder] == "gemini-4-neon-high"
+    assert models["challenger"] == "gemini-4-carbon-high"
+    assert models["auditor"] == "gemini-4-carbon-high"
+    assert models["consultant"] == "gemini-4-hydrogen-medium"
+    assert models["builder"] == "gemini-4-hydrogen-medium"
+    assert models["learner"] == "gemini-4-argon-high"
+
+
 def test_swarm_modelSwitchAndUnknownActions_forceAsk(rules, workspace):
     out = answer(rules, payload("swarm", {"action": "model", "name": "parser", "model": "pro"}, [workspace]))
     assert out["decision"] == "force_ask"
@@ -811,10 +823,10 @@ def test_swarm_modelSwitchAndUnknownActions_forceAsk(rules, workspace):
 
 
 def test_swarm_add_alwaysForceAsksAndChecksCommittedRulesForNewWorkspace(rules, git_workspace):
-    inherit_call = {"action": "add", "name": "parser", "model": "gemini-4-hydrogen-high", "brief": "x"}
+    inherit_call = {"action": "add", "name": "parser", "model": "gemini-4-neon-high", "brief": "x"}
     out = answer(rules, payload("swarm", inherit_call, [git_workspace]))
     assert out["decision"] == "force_ask"
-    assert "parser" in out["reason"] and "gemini-4-hydrogen-high" in out["reason"]
+    assert "parser" in out["reason"] and "gemini-4-neon-high" in out["reason"]
     share_call = {**inherit_call, "workspace": "share"}
     clean_share = answer(rules, payload("swarm", share_call, [git_workspace]))
     assert clean_share["decision"] == "force_ask"

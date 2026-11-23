@@ -118,6 +118,32 @@ Rebasing `feat/agy-agnostic` onto PR #74 (`memory-and-ship`, Decision 31) and PR
      feature's decision to **Decision 33** across `docs/01-decisions.md`, `CHANGELOG.md`,
      `.agent/CONTEXT.md`, and this spec.
 
+## Gemini 4 Neon & Advisor Gate refinement (2026-11-23, `agy 1.5.14`)
+
+Following the release of **Gemini 4 Neon** (`agy 1.5.13+`, verified live on `agy 1.5.14`), an
+external multi-agent prompt was challenged before implementation:
+
+- **Rejected (mechanical & architectural blockers):**
+  1. Concrete model IDs (`gemini-4-neon-high`) / `thinking_level` in `agents/*.md` — live probe
+     on `agy 1.5.14` fails `agy plugin validate --strict` with `Invalid model tier` and skips the
+     agent (`inherit|flash_lite|flash|pro` only).
+  2. Routing micro-decisions (tool/path selection, retries) to `gemini-4-hydrogen-low` — impossible
+     from a plugin and increases latency; `agy 1.5.13+` already batches independent read/edit steps.
+  3. Three dedicated read-only agents (`search`, `grep`, `docs`) — exceeds `check-plugin.py`'s
+     600-token agent-listing cap (565 / 600 with 10 agents), violates *knowledge is a skill,
+     isolation is an agent*, and duplicates built-in `research`, `learner`, `consultant`, and
+     main-thread parallel tools.
+  4. `ANTIGRAVITY.md` rule file — ignored by `agy` (only `AGENTS.md` / `GEMINI.md` load; cobot
+     keeps orchestration rules in `protocol.md`, `cobot-session`, and skills).
+- **Adopted (owner-approved):**
+  1. Updated `SWARM_GEMINI4_MODELS` in `_cobot_agy.py` and `cobot-session` (`agy_section()`):
+     `gemini-4-neon-high` for the 5 language builders, `gemini-4-carbon-high` (Advisor) for
+     `challenger`/`auditor`, `gemini-4-hydrogen-medium` for `consultant`/`builder`, and
+     `gemini-4-argon-high` for `learner`.
+  2. Added a proportional **Advisor gate** (`build/SKILL.md` step 4 + `cobot-session`): consult
+     `challenger` (`pro`/Carbon) only before freezing medium/large plans (`/spec`), after hitting
+     the exact same error twice, or before closing small+ work (never on `tiny`).
+
 ## Verification & known gaps
 
 - Passed on rebased branch: `ruff` check & format, `shellcheck`, `check-plugin.py`,

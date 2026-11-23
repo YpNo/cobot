@@ -36,8 +36,11 @@ of ADR-0007 exposed four structural gaps:
    the five language builders; `flash` for `consultant` (parallel domain checklists) and `builder`.
    Overrides merge in order: trusted `.agent/models.json` < `~/.config/cobot/models.json` <
    `--models <file>` < `COBOT_AGENT_MODELS` (including global overrides and dynamic
-   `invoke_subagent(Model=...)`). `swarm` roles map to Gemini 4 `Carbon` / `Hydrogen` / `Argon` /
-   `Flash`.
+   `invoke_subagent(Model=...)`). `/swarm` roles map to Gemini 4 `Neon` (`*-builder` code),
+   `Carbon` (`challenger`/`auditor` advisor), `Hydrogen` (`consultant`/`builder` medium), and
+   `Argon` (`learner`). A proportional Advisor gate consults `challenger` (`pro`/Carbon) before
+   freezing medium/large plans, after hitting the exact same error twice, or before closing small+
+   work (never on tiny).
 4. **Mode-aware `ask` vs `force_ask` and `1.5.11` tools.** Under `agy`, `cobot-rules gate` emits
    `ask` (respecting *Always Allow* per session) only when every matching ask in a command is a
    local repeatable dev rule or opaque local dev runner (`make`, `just`, `uvx`, `npx`, `npm run`),

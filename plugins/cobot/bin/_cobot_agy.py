@@ -66,15 +66,15 @@ DEFAULT_AGENT_TIERS: dict[str, str] = {
 TIER_BY_AGENT: dict[str, str] = DEFAULT_AGENT_TIERS
 SWARM_GEMINI4_MODELS: dict[str, str] = {
     "auditor": "gemini-4-carbon-high",
-    "builder": "gemini-3.8-flash-high",
+    "builder": "gemini-4-hydrogen-medium",
     "challenger": "gemini-4-carbon-high",
-    "consultant": "gemini-3.8-flash-high",
-    "go-builder": "gemini-4-hydrogen-high",
+    "consultant": "gemini-4-hydrogen-medium",
+    "go-builder": "gemini-4-neon-high",
     "learner": "gemini-4-argon-high",
-    "python-builder": "gemini-4-hydrogen-high",
-    "rust-builder": "gemini-4-hydrogen-high",
-    "terraform-builder": "gemini-4-hydrogen-high",
-    "typescript-builder": "gemini-4-hydrogen-high",
+    "python-builder": "gemini-4-neon-high",
+    "rust-builder": "gemini-4-neon-high",
+    "terraform-builder": "gemini-4-neon-high",
+    "typescript-builder": "gemini-4-neon-high",
 }
 AGENT_TIERS = frozenset({"inherit", "flash", "pro"})  # flash_lite exists; cobot uses none of it
 

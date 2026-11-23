@@ -184,3 +184,11 @@ Proof: every Goal row measured with cobot-rules check on a5db3f8 (each none toda
 Open: Q1 (an extraction in a cwd that only holds the config dir: ask, recommended) and Q2 (a download with no output folder lands in the cwd: yes, recommended) for the owner.
 Next: owner review, then /cobot:build gate-f56-f60, T01 first, a bypass-aimed review per task.
 verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · spec only, cobot-memory check
+
+## 2026-11-23 — gate-f56-f60 T01: an option that says where a file lands is read in every form
+Changed: cobot-rules LANDING_OPTIONS (cp/mv/ln/install -t and --target-directory as a folder; curl -o/--output and wget -O/--output-document as a file; curl --output-dir and wget -P/--directory-prefix as a folder), landing_option_values in every form (joined short, cluster end, =, separate, a long prefix of 3+ chars except curl), landing_option_hit in protected_file_touched; JOINED_PATH_RE reads the path joined to any short option (wget -o~/x, gcc -o~/x, curl -sD~/x); 7z/7za/7zz/7zr -o and cpio -D in FOLDER_OPTIONS; tests/test_gate_f56_f60.py story 1; spec Clarify answers (Q1 ask, Q2 yes).
+Why: F-60 (HIGH): cp --target-directory=~/.claude cobot.rules got none where cp -t ~/.claude denied.
+Proof: tests/test_gate_f56_f60.py exit 0; full suite with coverage 98.65 % with one failure, test_gcpMcpGate_globThatOnlyCouldNameAServerList_staysSilent[cat */README.md], which passes alone and in its file (GLOB_DEADLINE 0.25 s under suite load; seen once during F-55 too); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; MAJOR: joined paths on other options, 7zz/7zr), each a test row.
+Open: the flaky glob-deadline test (pre-existing); cp -t ~ .bashrc and cp .bashrc ~ are T02; wget --execute= is T03.
+Next: T02, landing words per copier.
+verified: tree 89c6458f45d0dcdb3ce89d3a26ecdd6aacbe57eb · tests/test_gate_f56_f60.py, full suite (one flaky row), ruff, check-plugin

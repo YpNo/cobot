@@ -3241,7 +3241,24 @@ FOLDER_OPTIONS = {
     "unzip": (("-d",), ()),
     "patch": (("-d",), ("--directory",)),
     "git": (("-C",), ("--work-tree", "--git-dir")),
+    # spec gate-f56-f60, story 1: an extraction folder (7-Zip's ``-o`` is joined: ``-odir``)
+    **{name: (("-o",), ()) for name in ("7z", "7za", "7zz", "7zr")},
+    "cpio": (("-D",), ("--directory",)),
 }
+# options naming where a copy or a download lands (spec gate-f56-f60, story 1, F-60): per
+# program, (short letter, long name, kind). A ``folder`` is judged as ``cp -t DIR`` is, a
+# relocating word; a ``file`` as a path word. Read from coreutils ``cp``, ``mv``, ``ln`` and
+# ``install --help``, ``curl --help all`` and ``wget --help`` on 2026-11-23.
+LANDING_OPTIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
+    **{name: (("t", "--target-directory", "folder"),) for name in ("cp", "mv", "ln", "install")},
+    "curl": (("o", "--output", "file"), ("", "--output-dir", "folder")),
+    "wget": (("O", "--output-document", "file"), ("P", "--directory-prefix", "folder")),
+}
+# any short option with a path joined to it, for programs outside the table: the path after the
+# letters is a path word, as it is with a space (``wget -o~/log``, ``gcc -o~/x``, ``curl -c~/j``)
+JOINED_PATH_RE = re.compile(r"-[A-Za-z]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")
+LANDING_PREFIX_MIN = 3  # getopt takes any unambiguous prefix: ``cp --t=DIR`` is ``--target-directory``
+EXACT_LONG_NAMES = frozenset({"curl"})  # curl takes no abbreviated long option
 GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
 
 
@@ -3294,6 +3311,46 @@ def folder_options(segment: list[str]) -> list[str]:
         else:
             i += 2 if head == "git" and word in GIT_VALUE_OPTIONS else 1
     return [value for value in found if value]
+
+
+def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
+    """The values of the options that name where a copy or a download lands, with their kind, in
+    every form: separate, joined short (``-tDIR``, ``-o~/x``), the end of a short cluster
+    (``-rt DIR``), ``--long=VALUE``, ``--long VALUE``, and a long prefix of three or more
+    characters (spec gate-f56-f60, story 1). An over-read prefix only checks one more word."""
+    argv = program_of(segment)
+    table = LANDING_OPTIONS.get(argv[0] if argv else "", ())
+    letters = {short: kind for short, _, kind in table if short}
+    found: list[tuple[str, str]] = []
+    i = 1
+    while i < len(argv) and table:
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        if word == "--":
+            break
+        step = 1
+        if word.startswith("--"):
+            name, eq, value = word.partition("=")
+            kind = long_landing(argv[0], name, table)
+            if kind:
+                found.append((value if eq else following, kind))
+                step = 1 if eq else 2
+        elif word.startswith("-") and letters:
+            cluster = re.fullmatch(rf"-([a-zA-Z]*?)([{''.join(letters)}])(.*)", word)
+            if cluster:
+                found.append((cluster.group(3) or following, letters[cluster.group(2)]))
+                step = 1 if cluster.group(3) else 2
+        i += step
+    return [(value, kind) for value, kind in found if value and value != "-"]
+
+
+def long_landing(program: str, name: str, table: tuple[tuple[str, str, str], ...]) -> str | None:
+    """The kind of the landing option a long word names, exactly or by a prefix getopt takes."""
+    for _, long, kind in table:
+        exact = name == long
+        prefix = program not in EXACT_LONG_NAMES and len(name) >= LANDING_PREFIX_MIN and long.startswith(name)
+        if exact or prefix:
+            return kind
+    return None
 
 
 def deleted_words(segment: list[str]) -> frozenset[int]:
@@ -3688,6 +3745,9 @@ def protected_file_touched(
                 os.path.normpath(os.path.join(b, homed_folder)) for b in origin
             )  # linear, never compounded
         bases = sorted({*bases, *joined})
+        landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
+        if landed:
+            return landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         if FILES_FROM in deleted:
             return "-files0-from"
@@ -3710,6 +3770,13 @@ def protected_file_touched(
                 for base in bases
             ):
                 return token
+            joined = JOINED_PATH_RE.fullmatch(token)
+            if joined and any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for form in home_forms(joined.group(1))
+                for base in bases
+            ):
+                return token  # ``sort -o~/x``, ``curl -sD~/x``: a short option's joined path (F-60 review)
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):
@@ -3725,6 +3792,22 @@ def protected_file_touched(
                     return token
                 if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
                     return token
+    return None
+
+
+def landing_option_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+) -> str | None:
+    """The landing option value that names a protected folder (as a relocating word) or a protected
+    file (as a path word), in any of its forms (spec gate-f56-f60, story 1)."""
+    for value, kind in landing_option_values(segment):
+        for form in home_forms(value):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, kind == "folder", anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return value
     return None
 
 

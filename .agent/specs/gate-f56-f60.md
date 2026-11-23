@@ -158,10 +158,10 @@ For the owner at review. The stories carry the recommended defaults.
 - Q1 In a working directory that only holds the config dir (a session started in HOME), should
   `tar -xf x.tar` and `unzip x.zip` ask, or deny as `tar -C ~` does today? → recommended: ask.
   The archive's members are unknown, and a deny cannot be approved or granted (decision 34) →
-  **answer:** pending
+  **answer:** ask (owner, 2026-11-23: "Yes, then build")
 - Q2 Should a download with no output folder land in the working directory
   (`cd ~ && curl -O https://h/.claude.json`)? → recommended: yes, as the cwd already counts for a
-  relative path word; it costs a few lines → **answer:** pending
+  relative path word; it costs a few lines → **answer:** yes (owner, 2026-11-23: "Yes, then build")
 
 ## Plan
 

@@ -250,6 +250,59 @@ def test_story4_extractionInAHolderOrUnplaced_asks(rules, command):
     assert decide(rules, command) == "ask"
 
 
+# ---------------------------------------------------------------- story 5: moved config dir, moved holders
+
+MOVED_REFUSED = [
+    "cp e/cobot.rules {cc}/",
+    "tar -C {cc} -xf e.tar",
+    "unzip -d {cc} e.zip",
+    "ln -sfn e {cc}",
+    "mv {cc} {root}/y",
+    "rm -r {cc}",
+    "rm -r {root}",
+    "mv {root} /x",
+]
+MOVED_SILENT = ["cp report {root}/", "cp a ~", "ls {cc}", "mkdir -p {root}/other"]
+
+
+@pytest.fixture
+def moved_config(tmp_path, monkeypatch, rules):
+    """CLAUDE_CONFIG_DIR outside HOME: ``{root}/cc``."""
+    root = tmp_path / "outside"
+    (root / "cc").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root / "cc"))
+    return {"cc": str(root / "cc"), "root": str(root)}
+
+
+@pytest.mark.parametrize("command", MOVED_REFUSED)
+def test_story5_movedConfigDir_keepsItsFolderProtection(rules, moved_config, command):
+    assert decide(rules, command.format(**moved_config)) == "deny"
+
+
+@pytest.mark.parametrize("command", MOVED_SILENT)
+def test_story5_movedConfigDir_friction_staysSilent(rules, moved_config, command):
+    assert decide(rules, command.format(**moved_config)) is None
+
+
+@pytest.mark.parametrize("command", ["mv /home x", "mv ~ /tmp/h", "mv /home/ /x", "rename /home x"])
+def test_story5_movingAFolderThatHoldsTheConfigDir_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", ["mv /ho* x", "mv {root}* y"])
+def test_story5_movingAGlobThatCouldNameTheHolder_asks(rules, moved_config, command):
+    """T05 review: a glob source is judged as ``rm -rf /ho*`` is."""
+    assert decide(rules, command.format(**moved_config)) in ("ask", "deny")
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["mv build dist/", "mv a.txt ~/notes/", "mv ~/Downloads/x.zip .", "mv src/*.py lib/", 'mv "$f" dist/'],
+)
+def test_story5_ordinaryMoves_staySilent(rules, command):
+    assert decide(rules, command) is None
+
+
 @pytest.mark.parametrize("command", EXTRACTION_REFUSED)
 def test_story4_copyPassIntoAProtectedFolder_isRefused(rules, command):
     assert decide(rules, command) == "deny"

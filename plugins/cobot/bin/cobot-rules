@@ -3373,6 +3373,9 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
         or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
     ):
         return frozenset(range(at + 1, len(segment)))
+    moved = moved_sources(argv)
+    if moved:  # a folder moved away is gone from its place: as removed for the anchors (story 5)
+        return frozenset(at + i for i, word in enumerate(argv) if i > 0 and word in moved)
     if head not in FIND_PROGRAMS or not FIND_ACTIONS & set(argv):
         return frozenset()
     if "-files0-from" in argv:
@@ -3380,6 +3383,20 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
     inside = {at + i for i in find_body_indexes(argv)}
     words = {at + i for i in range(1, len(argv))} - inside
     return frozenset(words if find_starts(argv) else words | {IMPLICIT_FOLDER})
+
+
+MOVERS = frozenset({"mv", "rename"})
+
+
+def moved_sources(argv: list[str]) -> set[str]:
+    """The sources of a move (``mv``, ``rename``, ``git mv``, ``gio move|mv|rename``): moving a
+    folder that holds the config dir carries it away (``mv /home x``; spec gate-f56-f60, story 5)."""
+    head = argv[0] if argv else ""
+    gio = head == "gio" and argv[1:2] in (["move"], ["mv"], ["rename"])
+    if head not in MOVERS and not gio and not (head == "git" and copy_verb(argv) is not None):
+        return set()
+    _, sources, _ = merge_parts(argv[(copy_verb(argv) or 0) + 1 :])
+    return set(sources)  # a glob is judged as rm's is: it asks where it could name an anchor
 
 
 def find_starts(argv: list[str]) -> list[int]:
@@ -3499,6 +3516,8 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
     """The folders holding an absolute protected pattern, and their parents below HOME: moving or
     linking one carries the protected files with it (``mv ~/.gemini/config x``)."""
     home, anchors = os.path.expanduser("~"), set()
+    moved = moved_config()
+    outside = moved if moved and not moved.startswith(home + "/") else None
     for rule in protected:
         pattern = os.path.expanduser(rule.pattern)
         if not os.path.isabs(pattern):
@@ -3507,6 +3526,10 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
         folder = literal.rstrip("/") if literal.endswith("/") else os.path.dirname(literal)
         while folder not in (home, "/", "") and folder.startswith(home + "/"):
             anchors.add(folder.casefold())  # compared without case (F-30)
+            folder = os.path.dirname(folder)
+        # a config dir moved outside HOME: its folders up to and including it (spec gate-f56-f60, story 5)
+        while outside and (folder == outside or folder.startswith(outside + "/")):
+            anchors.add(folder.casefold())
             folder = os.path.dirname(folder)
     return frozenset(anchors)
 

@@ -216,3 +216,11 @@ Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 che
 Open: a cd into a missing folder leaves the cwd unknown, so an extraction after it asks; cpio -i asks anywhere without --no-absolute-filenames (accepted friction); payload cwd ~/.claude denies where cd ~/.claude asks (MINOR).
 Next: T05, moved config dir and moved holders.
 verified: tree 555a3d3a927f6ce0c13f3c6fcfbc059d1bb5cf0c · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T05: a moved config dir keeps its folder protection, and moving a folder that holds it is refused
+Changed: cobot-rules protected_anchors walks a config dir moved outside HOME up to and including it; deleted_words marks a move's sources (moved_sources: mv, rename, git mv, gio move|mv|rename) as removed, so mv /home x and mv of the moved dir's parent deny like rm -r, and a glob source asks as rm's does; tests story 5; FINDINGS F-62 filed (tar --remove-files, zip -m, chmod/chown -R, mount --bind, bwrap, a symlinked CLAUDE_CONFIG_DIR).
+Why: F-56 (HIGH): with CLAUDE_CONFIG_DIR outside HOME, cp, tar -C, unzip -d, ln -sfn, mv and rm on it reached no decision; mv /home x got none.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; MAJOR: a glob source in a move; the pre-existing ones became F-62); no friction found (mv a b, git mv, mv src/*.py lib/ silent).
+Open: F-62; inside HOME, cd ~ && mv .claude z asks where mv ~/.claude y denies (pre-existing, MINOR).
+Next: T06, agy rows, CHANGELOG, FINDINGS, docs.
+verified: tree ff787bc156c9012aafbf2d99617d915116175647 · full suite with coverage, ruff, check-plugin

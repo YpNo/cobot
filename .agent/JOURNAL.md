@@ -383,3 +383,11 @@ Proof: challenger revision 2 UNSOUND (1 BLOCKER, 6 MAJOR, 2 MINOR); each shape r
 Open: Q1 to Q4 for the owner; revision 3 not challenged again.
 Next: the owner reviews; then /cobot:build gate-f55-f58, T01 first, a bypass-aimed review per task.
 verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · spec only, cobot-memory check
+
+## 2026-11-23 — spec gate-f55: split to F-55 alone (owner), challenged and folded
+Changed: .agent/specs/gate-f55-f58.md renamed gate-f55.md, revision 5 (264 lines): F-55 variable holes and the files sourced between calls only; F-56 to F-58 parked with their shapes and folds; Q1 a, Q2 put in, Q3 b, Q4 a recorded; branch renamed security/gate-f55; FINDINGS F-55 to F-58 pointed at it; F-59 added (run-time data in a whole word, owner decision).
+Why: owner, relayed by the orchestrator session: "Split, F-55 first", then one challenger pass on the narrowed revision.
+Proof: challenger revision 4 UNSOUND (1 BLOCKER: nested sh -c turned outer assignments and argv into inherited names; 4 MAJOR, 3 MINOR); each shape re-probed with cobot-rules check on cc525b7 (none); all folded into revision 5.
+Open: F-59 for the owner (spare or ask); revision 5 not challenged again.
+Next: owner go for /cobot:build gate-f55, T01 first, a bypass-aimed review per task.
+verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · spec only, cobot-memory check

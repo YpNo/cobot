@@ -105,8 +105,8 @@ like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hype
 `taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
 `script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
-Not covered: a link reached after a second hole segment (`*/d*/key.txt`), a variable other than
-HOME naming a protected path, a `CDPATH` set only in your shell profile, a link created between
+Not covered: a link reached after a second hole segment (`*/d*/key.txt`), an inherited variable
+or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell profile, a link created between
 the check and the run, archive members not written on the command line, folder options of
 other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
 `busybox find`.
@@ -241,10 +241,36 @@ Known options and attached values (`-R o/r`, `--notes=x`, `-tx`) are read for ce
 `gh release -R o/r delete v1` is still refused. `gh pr merge --delete-branch` asks like any
 merge; the branch deletion is not refused.
 
-`${…}` and `$"…"`: a `${…}` with an operator word (`${x:-word}`, `${x#pat}`, `${x@Q}`) is a
-hole of unknown text, like a substitution; `${x}`, `$x` and `${#x}` stay text, a variable's
-value. A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo
+`${…}` and `$"…"`: a variable is a hole read by how the command sets it (spec gate-f55):
+
+- **Put in:** one literal assignment at the top of the list, before its use. `X=publish; cargo $X`
+  is denied. A `for` list is put in word by word.
+- **Alternatives:** `${x:-word}`, `${x:+word}` and `${x:=word}` are the value or the word, each
+  judged, so `cargo ${x:-publish}` is denied.
+- **Full hole, a path word that is never spared:**
+  - other operators (`${x#pat}`, `${x@Q}`), `${!x}`, `${a[0]}` and `$_`;
+  - a positional after `set`, `shift` or a function;
+  - a second or nested assignment;
+  - every variable of a runner body or a `sh -c` string.
+- **Spared as a whole word, like `$(…)` (F-59):** an inherited name, or run-time data (`read`,
+  `mapfile`, a loop over `$(…)`). Glued to path text it is a hole, so `cp x ~/.claude/$X` asks.
+- **Text:** `${#x}`, `$?`, `$$`, `$#`, and `$HOME` and `$PWD`, which the gate puts in itself. A
+  command that assigns HOME or PWD adds that reading.
+
+A locale string `$"…"` is a hole whose known value is its untranslated text, so `cargo
 $"publish"` is denied.
+
+The files a later Bash call sources are sealed, the start files ask, and so do the variables
+that point a program at a file:
+
+- `~/.claude/shell-snapshots/*` and `~/.claude/session-env/*` (with the moved config dir's
+  twins) are refused to scripts and the file tools.
+- The shell start files ask: bash, zsh (with `ZDOTDIR`'s twins), fish, nushell,
+  `environment.d`, `~/.pam_environment`, `~/.inputrc` and `~/.ssh/rc`. So do `~/.curlrc` and
+  `~/.wgetrc`.
+- Setting `BASH_ENV`, `ZDOTDIR`, `HOME`, `XDG_CONFIG_HOME`, `CURL_HOME`, `WGETRC`, `PS4`,
+  `SHELLOPTS`, `BASHOPTS`, `PROMPT_COMMAND` or an exported function asks, and so does `ENV`
+  with a shell.
 
 Precedence: `never` in any layer wins; a prompt-only ask (`terraform`, `tofu` and `terragrunt`
 `apply` and `destroy`) asks whatever else matches; an `allow` from the owner layer (or an
@@ -397,8 +423,8 @@ could write a file or run a program (decision 28, `.agent/specs/gate-findings.md
 
 `cargo audit` and `cargo deny check` are not on the read lists: a repository's
 `.cargo/config.toml` alias shadows them. Use `cargo-audit audit` and `cargo-deny check`. Read
-lists still take a plain variable as text (`find $X`): an agent cannot carry a variable across
-Bash calls, and an assignment in the command asks.
+lists still take an inherited variable as a word (`find $X`): an agent cannot carry a variable
+across Bash calls while the shell snapshots are sealed, and an assignment in the command asks.
 
 ### Repository configuration and trust
 

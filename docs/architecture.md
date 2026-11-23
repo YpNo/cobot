@@ -93,8 +93,24 @@ A command substitution is judged by what it runs: a quote-aware scanner (`bin/_c
 gives each `$(…)`, backtick and process substitution body to the same rules, and the
 substitution itself asks only where its text could decide which program runs or make a `never`
 or `ask` row match; anything outside the scanner's model asks. A substitution that is a whole
-argument is not resolved for the protected-file check, like a variable, and a variable's value
-reaching arithmetic is not followed (`read x < f; echo $((x))`). The soundness target, in the
+argument is not resolved for the protected-file check, and a variable's value reaching
+arithmetic is not followed (`read x < f; echo $((x))`).
+
+A shell variable is a hole too (spec gate-f55). The gate reads each one by how the whole command
+gives it its value:
+
+- **Put in.** One plain literal assignment at the top of the list, before its use, is put in,
+  split and globbed as bash does; so is a `for` or `select` list.
+- **Full hole.** A value the command computes, a second assignment, one inside a compound
+  command, `${!…}`, a subscript, `$_`, a positional after `set`, and every variable of a runner
+  body: never spared, and a path word.
+- **Spared.** An inherited name or run-time data (`read`, `mapfile`) is spared as a whole word,
+  like `$(…)`. Glued to path text it is a hole. The whole-word form is an accepted residual (F-59).
+
+`HOME` and `PWD` stay the gate's own values; an assignment in the command adds a reading. What
+makes sparing inherited names sound: the files Claude Code sources into later Bash calls
+(`~/.claude/shell-snapshots/*`, `~/.claude/session-env/*`) are sealed, the shell start files ask,
+and setting `BASH_ENV`, `ZDOTDIR`, `HOME`, `PS4` and their kin asks. The soundness target, in the
 scanner's module: a hole in the command's words (a substitution, a glob, a `${…}` with an
 operator word) is never silent where some text in its place, for a glob some set of file names,
 would change which program runs or make a rule match the form that names what runs.

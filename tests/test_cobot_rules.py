@@ -3600,8 +3600,9 @@ def test_scan_unclosedPieceInsideABrace_isAnError(rules):
 # main-thread rows, run under bash by the differential test too
 FINDINGS_CLOSED = [
     # F-22: an operator word in ${…} is text bash expands
-    ("cargo ${x:-publish}", "ask"),
-    ('cargo "${x:-publish}"', "ask"),
+    # spec gate-f55: the word is read as an alternative, so bash's ``cargo publish`` is refused
+    ("cargo ${x:-publish}", "deny"),
+    ('cargo "${x:-publish}"', "deny"),
     ("terraform ${x:+apply}", "ask"),
     # F-23: a locale string is its untranslated text, or anything
     ('cargo $"publish"', "deny"),
@@ -4900,7 +4901,9 @@ def test_homeVariable_readsLikeTilde(rules, fake_home, command):
 
 
 @pytest.mark.parametrize(
-    "command", ["tee $HOME/notes.md", "cat ${HOME}/.bashrc", "ls $HOMEDIR/.gemini/config"]
+    # ~/.bashrc is an ask row since spec gate-f55 (story 2): an ordinary file in its place
+    "command",
+    ["tee $HOME/notes.md", "cat ${HOME}/notes.txt", "ls $HOMEDIR/.gemini/config"],
 )
 def test_homeVariable_ordinaryPaths_staySilent(rules, fake_home, command):
     _, home = fake_home

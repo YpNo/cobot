@@ -56,6 +56,14 @@ BRACKET_CODE_RE = re.compile(r"\$[({]|`")
 # ``${…}`` read as a variable's value or a number: a name, positional or special parameter,
 # ``#`` or ``!`` before one, a subscript; anything else holds an operator word bash expands
 PLAIN_PARAMETER_RE = re.compile(r"^[#!]?(?:[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?|\d+|[*@#?$!-])$")
+POSITIONAL_PARAMETERS = "*@"  # with the digits: argv a ``set``, a function or ``sh -c`` gives
+VARIABLE_MODES = ("top", "sub", "dq", "param")  # where an expansion is a word of a command
+NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# names the gate puts in itself, as text (``home_forms``, ``expand_pwd``); an in-command
+# assignment to one adds a reading there, never replaces the gate's own value
+GATE_TEXT_VARIABLES = frozenset({"HOME", "PWD"})
+TEXT_PARAMETER_RE = re.compile(r"^(?:#.+|[?$#!-])$")  # a length or a status: a number, never a path
+ALTERNATIVE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*|\d+):?[-+=](.*)$", re.DOTALL)
 SEQUENCE_RE = re.compile(r"^(?:([-+]?\d+)\.\.([-+]?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.([-+]?\d+))?$")
 _COUNTER = itertools.count()  # one key space per process: inner scans share the outer holes
 REGISTRY: dict[str, Hole] = {}  # every hole by key; the gate reads kinds and spans here
@@ -68,8 +76,10 @@ class Hole:
     quoted: bool  # exactly one word (inside double quotes, a process substitution, ``$'…'``)
     body: Scan | None  # the command it runs; None for arithmetic, ``$'…'``, braces and globs
     value: str | None = None  # known text: a bare ``cat <<'D'`` here-document, an untranslated ``$"…"``
-    kind: str = "substitution"  # or ``glob`` (file names) or ``brace`` (``alternatives``)
-    alternatives: tuple[str, ...] = ()  # a brace's alternatives, scanned, quotes kept
+    kind: str = "substitution"  # or ``glob`` (file names), ``brace`` (``alternatives``), ``variable``
+    alternatives: tuple[str, ...] = ()  # a brace's alternatives, scanned, quotes kept; a variable's word
+    name: str = ""  # a variable's name: ``X``, ``1``, ``@``, ``_``, or ``!X``/``A[0]`` (never put in)
+    operator: str = ""  # a variable's ``${…}`` operator: "" none, ``alt`` (-, :-, +, :+, =, :=) or ``other``
 
 
 @dataclass(frozen=True)
@@ -137,6 +147,13 @@ def scan(command: str, issued: frozenset[str] = frozenset()) -> Scan:
 
 def _drop_issued(issued: frozenset[str]):
     return lambda match: "" if match.group() in issued and match.group() in REGISTRY else match.group()
+
+
+def register(span: str, quoted: bool, kind: str) -> str:
+    """A hole the gate makes after the scan (spec gate-f55: a variable read as a full hole)."""
+    key = f"{OPEN}{next(_COUNTER)}{CLOSE}"
+    REGISTRY[key] = Hole(key, span[:SPAN_LIMIT], quoted, None, kind=kind)
+    return key
 
 
 def kind_of(key: str) -> str | None:
@@ -370,9 +387,11 @@ class _Scanner:
         value: str | None = None,
         kind: str = "substitution",
         alternatives: tuple[str, ...] = (),
+        name: str = "",
+        operator: str = "",
     ) -> None:
         key = f"{OPEN}{next(_COUNTER)}{CLOSE}"
-        hole = Hole(key, span[:SPAN_LIMIT], quoted, body, value, kind, alternatives)
+        hole = Hole(key, span[:SPAN_LIMIT], quoted, body, value, kind, alternatives, name, operator)
         self.scan.holes[key] = REGISTRY[key] = hole
         self.emit(key)
 
@@ -503,9 +522,18 @@ class _Scanner:
 
     def dollar(self) -> bool:
         nxt = self.text[self.i + 1 : self.i + 2]
-        if nxt and (nxt in SPECIAL_PARAMETERS or nxt.isdigit()):
-            self.emit("$" + nxt)  # ``$*``, ``$?``: a parameter, not a glob
+        if nxt and (nxt in POSITIONAL_PARAMETERS or nxt.isdigit()) and self.mode in VARIABLE_MODES:
+            self.variable("$" + nxt, nxt)  # ``$1``, ``$@``: argv the command may set (spec gate-f55)
             self.i += 2
+            return False
+        if nxt and (nxt in SPECIAL_PARAMETERS or nxt.isdigit()):
+            self.emit("$" + nxt)  # ``$?``, ``$$``: a parameter, not a glob, never a path
+            self.i += 2
+            return False
+        name = NAME_RE.match(self.text, self.i + 1)
+        if name and self.mode in VARIABLE_MODES and name.group() not in GATE_TEXT_VARIABLES:
+            self.variable("$" + name.group(), name.group())
+            self.i = name.end()
             return False
         if nxt == "'" and self.mode in QUOTING_MODES:
             return self.ansi_c()
@@ -590,11 +618,26 @@ class _Scanner:
             raise ShellError("${…@P} prompt expansion")
         self.scan.holes.update(inner.scan.holes)
         self.i = inner.i + 1
-        if PLAIN_PARAMETER_RE.match(content):
-            self.emit("${" + content + "}")
+        span = self.text[start : self.i]
+        text = TEXT_PARAMETER_RE.match(content) or content in GATE_TEXT_VARIABLES
+        if self.mode not in VARIABLE_MODES or text:
+            self.emit("${" + content + "}")  # a length, ``${?}``: a number, never a path
+        elif PLAIN_PARAMETER_RE.match(content):
+            self.variable(span, content)
         else:
-            self.hole(self.text[start : self.i], self.mode not in EXPANDING_MODES, None)
+            alternative = ALTERNATIVE_RE.match(content)
+            if alternative:
+                self.variable(span, alternative.group(1), "alt", (alternative.group(2),))
+            else:
+                operand = NAME_RE.match(content.lstrip("#!"))
+                self.variable(span, operand.group() if operand else content, "other")
         return False
+
+    def variable(self, span: str, name: str, operator: str = "", word: tuple[str, ...] = ()) -> None:
+        """A parameter expansion (spec gate-f55, story 1): the gate reads it by its class in the
+        whole command, so it is a hole here, one word inside double quotes."""
+        quoted = self.mode == "dq"
+        self.hole(span, quoted, None, kind="variable", alternatives=word, name=name, operator=operator)
 
     def backtick(self) -> bool:
         j = self.i + 1

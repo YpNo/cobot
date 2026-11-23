@@ -106,6 +106,9 @@ disable-model-invocation: true
    platform's API counts (a CLI on the Home Assistant WebSocket API is Home Assistant), even
    where no file matches the expert's `paths:`. Each `none` becomes an Open line of step 8's
    entry proposing `/cobot:learn <topic> --new-expert`; say it in the report too, never skip it.
+6c. **Google Cloud MCP.** When the domains line names Google Cloud (consult's gcp signal) and the
+   header has no valid `gcp-mcp:` line, on a first run or a refresh: ask expert-gcp's opt-in
+   ("The opt-in, once per repository") and write the line above `## Stack`. Never asked again.
 7. **Rules.** Dry-run each verified command with `cobot-rules check "<command>"`. The gate is
    already silent for a command no rule matches; an owner line `allow Bash(<command>*)` matters
    where `check` prints `ask` (a default `ask` rule, or a command the gate cannot see into, such

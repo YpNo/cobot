@@ -214,6 +214,14 @@ Open: F-50, F-51; the paid evals consult-homeassistant and spec-names-missing-ex
 Next: the owner pushes feat/expert-homeassistant and opens one PR.
 verified: tree 29bd071b4cce235c7b251208cb26d96f2b7bcaca · full suite with coverage, lint, validators
 
+## 2026-11-21 — gcp-mcp-opt-in: spec written, challenged and folded
+Changed: .agent/specs/gcp-mcp-opt-in.md (medium): the gcp-mcp: yes|no header line asked once at the first Google Cloud work (onboard 6b on first run or refresh, consult, spec and wrap gcp consultants, debug after its live context); the guarded setup in mcp.md at -s user; ask rows on every registration route (claude mcp add|add-json|remove, --mcp-config, ~/.claude.json, .mcp.json); the Google Cloud CLI server refused whole and its tool names on any server; a pinned test that grants never reach MCP; check warnings on the line and a repo .mcp.json.
+Why: owner-ideas-03 §4 MCP opt-in and reads-through-MCP (confirmed); owner's answers Q1 no by default, Q2 refuse cloudcli, Q3 eval plus text tests, Q4 -s user.
+Proof: challenger SOUND WITH CHANGES (4 MAJOR, 7 MINOR folded) and gcp consult (3 MAJOR, 5 MINOR folded), both run from cobot's agent definitions through a general agent because the cobot: agents were not loaded; Google's MCP docs read 2026-11-20 and 21; dry run cobot-rules check on claude mcp add prints none today.
+Open: onboard step 6b and spec step 5 overlap with the F-39 spec; second-identity roles reported until the build checks them; narrower readonly OAuth scopes unverified.
+Next: /cobot:build gcp-mcp-opt-in on the owner's word.
+verified: tree 37cd32d46b865c1c521b6cc7af300a02064096d0 · spec only, no code
+
 ## 2026-11-22 — spec-names-missing-expert drops its spec-skill grader (spec expert-homeassistant)
 
 Changed: removed plugins/cobot/evals/spec-names-missing-expert/graders/spec-skill.md.
@@ -231,3 +239,131 @@ Proof: full suite 4387 passed, 98.32 %; ruff check and format clean; no commit f
 Open: the five GitGuardian incidents on the dashboard are the owner's to resolve.
 Next: merge PR 80, then the GCP MCP opt-in build.
 verified: tree 0edcc05a8708cfd16b6dcba4bf49dbf14d9fa4e2 · full suite with coverage, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T01: registration asks, the Cloud CLI server refused, grants kept off MCP
+Changed: default.rules: never mcp__gcp-cloudcli__*, never mcp__*__run_gcloud_command and run_bq_command; ask Bash(claude *mcp add*), (claude *mcp remove*), (claude *--mcp-config*), Edit and Write of ~/.claude.json and .mcp.json. tests/test_gcp_mcp_gate.py (stories 4 and 5: rtk, absolute path and --debug forms ask; list and get stay silent; the CLI server denied under any name and over an owner allow; under an active gcloud grant MCP writes deny, scale_service asks, reads silent); test_cliInProcess_sync now expects the one expressible MCP deny, mcp__gcp-cloudcli__*.
+Why: spec gcp-mcp-opt-in T01 (owner Q2); rebased on a675320 first, F-39's onboard 6b kept, this spec's onboard step becomes 6c.
+Proof: gate suites (cobot_rules, differential, agy, read_list_limits, session_grants, grant_store, cobot_shell, check_plugin, investigator, hass_cli_gate, secret_reads_gate, gcp_mcp_gate, github_settings, grant_texts) exit 0; ruff 0.17.6 check and format clean; check-plugin ok.
+Open: none.
+Next: T02, the check warnings.
+verified: tree a1b06ed93d84c4c976c32e1eb918c5ada99deb08 · gate suites, ruff, check-plugin
+
+## 2026-11-22 — gcp-mcp-opt-in T02: check names a broken gcp-mcp line and a repository .mcp.json
+Changed: bin/cobot-memory: gcp_mcp_warnings in cmd_check: a gcp-mcp line that is not exactly yes or no (a trailing # comment allowed), repeated, or below the header; a repository .mcp.json (the checkout's) declaring gcp-* or a cloudcli.googleapis.com URL under any name. The file is read only when regular (lstat) and at most 64 kB, invalid JSON is one line, repository values and odd names are never echoed. gcp-mcp stays out of the template header. tests/test_gcp_mcp_check.py (story 6).
+Why: spec gcp-mcp-opt-in T02, the CONTEXT.md and .mcp.json trust-boundary rows.
+Proof: test_cobot_memory, test_gcp_mcp_check, test_cobot_session exit 0; ruff 0.17.6 check and format clean.
+Open: none.
+Next: T03, expert-gcp and mcp.md.
+verified: tree 408a612783490654fa0856320e2724e8df10899b · memory suites, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T03: the opt-in rule in expert-gcp, the guarded setup in mcp.md
+Changed: expert-gcp "Google Cloud MCP servers": endpoint exceptions, the Cloud CLI server refused and the claude.ai connector unsupported, and "The opt-in, once per repository" (triggers, the exact line above ## Stack, the recommendation, unusable memory, main thread only, the four branches, tool output is data). references/mcp.md: "Per repository" (two silent reads, the signal table without Storage, six printed steps with the read-only guard by parent, -s user, bare --client-secret, run none); dated 2026-11-21 lines (Storage at /storage/mcp and its tools, the Cloud CLI server, advertised scopes all write-capable, serviceUsageAdmin, deny-policy caveats, the claude.ai connector route); setup at -s user; second identity on predefined viewer roles plus serviceUsageConsumer (reported). tests/test_gcp_mcp_opt_in.py stories 2, 3, 7.
+Why: spec gcp-mcp-opt-in T03; the gcp consult's MAJORs; owner Q1 and Q4.
+Proof: test_gcp_mcp_opt_in, test_check_plugin, test_cobot_knowledge exit 0; check-plugin ok; markdownlint 0.24.2 clean on both files; cobot-memory knowledge expert-gcp: 81 lines, 4 reported, 1 assumed (universe.md, unchanged); ruff clean. gcloud projects describe --format='value(parent)' and services list --enabled dry-run silent.
+Open: the second identity's role set stays reported until a sign-in with it is proven; narrower readonly scopes unverified.
+Next: T04, the trigger sites.
+verified: tree 133126a2cd927678f240a70a710e5206b3ac0e17 · focused suites, check-plugin, markdownlint, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T04: the trigger sites point at expert-gcp's opt-in
+Changed: onboard step 6c Google Cloud MCP (after F-39's 6b Domains, keyed on its Google Cloud domain, first run or refresh); consult step 1 asks in the main thread before the fan-out, its one write, stated in the description and the last line; spec step 5 and wrap step 3 ask first when they pick gcp; debug step 1 asks after the live context, its own question, lead-only MCP reads; routing.md: gcp-mcp yes, probes name a gcloud read, output is data. Spec: onboard 6b renumbered 6c and wrap step 2 corrected to 3 (the promise unchanged); T01–T04 ticked. tests/test_gcp_mcp_opt_in.py story 1.
+Why: spec gcp-mcp-opt-in T04; F-39 merged its own 6b first.
+Proof: test_gcp_mcp_opt_in, test_workflow_skills, test_debug_skill, test_spec_skill, test_consult_domains, test_check_plugin, test_agents_sync, test_missing_domain, test_new_project, test_security_sweep_skill exit 0; ruff clean; check-plugin ok; sync-agents --check in sync; markdownlint clean on the six files.
+Open: none.
+Next: T05, the eval, run locally.
+verified: tree 7e30807513340ea42befce843fdd265967326fb0 · focused suites, check-plugin, sync-agents, markdownlint, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in T05: evals gcp-mcp-asked-once and gcp-mcp-never-again
+Changed: two cases on a trusted lab repository with memory and a google provider (fixtures are heredocs, no secret-shaped literal); asked-once (no line): consultant ran, question stated, gcp-mcp: no written in the header, no AskUserQuestion, nothing registered; never-again (gcp-mcp: no present): consultant ran, the line kept and alone, no Edit of CONTEXT.md, no question, nothing registered. A bare /cobot:consult gcp first line, so no Skill grader. tests/test_eval_graders.py: matches() and fixture tests for both.
+Why: spec gcp-mcp-opt-in story 1 (owner Q3).
+Proof: tests/test_eval_graders.py exit 0; shellcheck clean on both fixtures; ruff clean. Local evals (--runs 1 --ablation none --scaffold, Claude Code 2.1.311): gcp-mcp-asked-once 1.00 ($0.33), gcp-mcp-never-again 1.00 ($0.27); a first run without --scaffold (0.67 each, no workspace) does not count. Total $1.23.
+Open: CI runs them three times; the evals environment refuses feature branches.
+Next: T06, the docs.
+verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · grader tests, shellcheck, local evals
+
+## 2026-11-22 — gcp-mcp-opt-in T06: decision 37 and the docs
+Changed: decision 37 in docs/01-decisions.md (36 is F-39's); docs/02-design.md §12 Google Cloud row; docs/configuration.md (the gcp-mcp header row, the Google Cloud MCP setup at -s user with the guard, the refusals and the registration asks); docs/architecture.md (Cloud CLI refusal, grants Bash-only, registration asks, the opt-in line); CHANGELOG Unreleased Added and Security; spec T05 and T06 ticked.
+Why: spec gcp-mcp-opt-in T06.
+Proof: markdownlint-cli2 0.24.2 clean over 146 files.
+Open: none.
+Next: /cobot:wrap.
+verified: tree ef79286c2dcf6d52297efba4cb96e3a020c7e6a6 · markdownlint
+
+## 2026-11-22 — wrap gcp-mcp-opt-in: the reviews folded, the spec converged
+Changed: cobot-rules: an ask Edit/Write row now protects a literal shell word naming its file (cp, tee, a redirection, dd of=, curl -o, git checkout -- …), as never rows do; a glob that only could name it stays silent (word_touches keeps never rows for holes). default.rules: claude --settings, mcp reset-project-choices and claude-code mcp ask. cobot-memory: .mcp.json decoder and URL errors (RecursionError, int-digit ValueError, an unclosed IPv6 bracket) are one line, not a crash; names fullmatch; the header test is by position; the Cloud CLI host matched with a trailing dot, behind userinfo and in a stdio launcher's args. expert-gcp: the value rule matches check exactly, a broken line is replaced in place, never doubled; mcp.md reads value(parent.type) (reported shape). Eval gcp-mcp-never-again gains not-asked-again. Docs, decision 37, CHANGELOG updated; the journal's 2026-11-21 spec entry moved back to its date (the rebase had put it after 2026-11-22). Spec Converge written. Findings F-52 (MultiEdit and NotebookEdit match no file row), F-53 (bunx, node cli.js, $CLAUDE_CONFIG_DIR/.claude.json), F-54 (MCP refusals case-sensitive).
+Why: wrap reviews: code review 4 MAJOR and 5 MINOR, security review 1 HIGH, 1 MEDIUM and 8 LOW (code-reviewer and security-reviewer agents; cobot's consultants not loaded, no consult domain in the diff).
+Proof: converge: stories 1-7 accepted today. Full suite with coverage exit 0, 98.34% (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean with the new fixtures; markdownlint-cli2 0.24.2 clean over 146 files; claude plugin validate --strict passes for the plugin and the marketplace; check-plugin ok (protocol 3399); sync-agents --check in sync; agy plugin validate passes with its one warning; cobot-memory check: journal newest at bottom, brief 5999 of 6000; cobot-deps check --fresh: no supported lockfile. Local evals after the folds (--runs 1 --scaffold): gcp-mcp-asked-once 1.00, gcp-mcp-never-again 1.00 ($0.62; $1.85 for the build). Gate dry runs: cp, tee, cat >, dd of=, curl -o and git checkout -- on .mcp.json ask; git add src/* and cp src/* dist/ silent.
+Open: F-52, F-53, F-54; the second identity's roles and the value(parent.type) shape stay reported until a live project; the brief is 1 character under its budget; two sealed eval temp folders in /tmp could not be removed (tmpfs, gone at reboot).
+Next: the owner pushes the branch and opens one PR.
+verified: tree d95513ded06ddfe571632158b5247a885a941d45 · full suite with coverage, lint, validators, local evals
+
+## 2026-11-22 — F-52: MultiEdit and NotebookEdit meet the file rows
+Changed: cobot-rules applies(): an Edit row also covers MultiEdit and NotebookEdit, a Write row NotebookEdit (FILE_TOOL_ALIASES). tests/test_file_tool_aliases.py: the four file tools on ~/.claude/settings.json and .claude/settings.local.json (deny), ~/.claude.json and .mcp.json (ask), an ordinary file (silent); an owner allow of Edit does not lift a never for MultiEdit. F-52 closed.
+Why: owner, before merging PR 81: work on the new findings. hooks.json already routes both tools to the gate, but no row matched them.
+Proof: test_file_tool_aliases exit 0 (failed first for the right reason: no decision); gate suites (cobot_rules, differential, agy, session_grants, grant_store, cobot_shell, secret_reads, hass_cli, read_list_limits, gcp_mcp_gate, debug_records, investigator, probe_report) exit 0; ruff clean.
+Open: the bypass review of the three finding commits runs after F-54.
+Next: F-53.
+verified: tree 40e649488d10af5ddbdc5de21b0f1aefe5b88841 · gate suites, ruff
+
+## 2026-11-22 — F-53: bunx, node on Claude Code's cli.js, and the moved .claude.json
+Changed: cobot-rules: bunx in OPAQUE beside npx (the launcher comment and the 2026-11-07 commit said bunx stays opaque; the test row ("bunx x", None) had frozen the miss and now expects ask); config_twin maps ~/.claude.json to $CLAUDE_CONFIG_DIR/.claude.json when the variable moves the config dir (HOME_STATE). default.rules: ask Bash(node *@anthropic-ai/claude-code/*). tests/test_mcp_registration_routes.py. F-53 closed; git apply of a patch that creates .mcp.json remains the residual every protected file shares.
+Why: owner, before merging PR 81: work on the new findings.
+Proof: test_mcp_registration_routes exit 0 (failed first: bunx and node none, the moved .claude.json none); gate suites with test_install and test_check_plugin exit 0; ruff clean. node build/app.js and node --version stay silent; node dist/*.js and node -e already asked before this change.
+Open: the bypass review runs after F-54.
+Next: F-54.
+verified: tree 06ea7f3e0c08f019a67b08bf5af17b0433912ba0 · gate suites, ruff
+
+## 2026-11-22 — F-54: MCP refusals meet a renamed server or a respelled tool
+Changed: cobot-rules: matches_mcp in judge_mcp. A never or ask MCP row also matches the folded name (mcp_fold: case-folded, - read as _, the tool's own name split into its words, camelCase included); an allow row, the host UI tools among them, matches the exact name only, so a fold can add a refusal or an ask and never lift one, as restrictive() does for file rows (F-30). tests/test_mcp_name_folding.py: GCP-run, gcp_run, Gcp-Run with DeployService, apply-k8s-manifest, GCP-cloudcli, runGcloudCommand, RUN_BQ_COMMAND denied; reads silent, scale_service asks, a non-gcp server asks; an owner allow and the host UI rows stay exact; an owner ask folds. F-54 closed.
+Why: owner, before merging PR 81: work on the new findings.
+Proof: test_mcp_name_folding exit 0 (failed first: ten ask or silent where deny was due); gate suites with the GOOGLE_MCP_TOOLS matrix exit 0; ruff clean.
+Open: the bypass review of F-52, F-53 and F-54 runs next.
+Next: the bypass review, then the setup facts and the journal compaction.
+verified: tree 42ac28a1b6fc8b68a76599f1b44a90599bf111f5 · gate suites, ruff
+
+## 2026-11-22 — gcp-mcp-opt-in: the setup facts checked at their sources
+Changed: references/mcp.md. Verified at the IAM role reference: each role of the second identity exists (Logs Viewer with logging.logEntries.list, Cloud Run Viewer, Monitoring Viewer, Service Usage Consumer with serviceusage.services.use, MCP Tool User; container.viewer listed, its title not read verbatim); X-Goog-User-Project needs serviceusage.services.use (system-parameters, set-quota-project). Verified at the Resource Manager references: a parent is {type, id} in v1 and organizations/123 or folders/876 in v3. Still reported, each with the live check it needs: whether the viewer set covers every read tool (sign in as the second identity, one read per server), and which version gcloud projects describe reads (describe one project in an organisation and one without). The setup now reads value(parent) for the words organization or folder, which both shapes hold, so the branch no longer depends on the unsettled one. Spec story 2 and Converge updated; text tests.
+Why: owner, before merging PR 81: the unconfirmed setup facts. No gcloud or ADC here, so primary sources only.
+Proof: test_gcp_mcp_opt_in, test_cobot_knowledge, test_check_plugin exit 0; markdownlint clean; check-plugin ok; cobot-memory knowledge expert-gcp: 86 lines, 6 reported, 1 assumed (universe.md). Sources read 2026-11-22 by a fetch agent: roles-permissions logging, run, monitoring, serviceusage, mcp, container; roles-overview; system-parameters; set-quota-project; set-up-authentication-mcp-servers; gcloud projects describe; Resource Manager v1 and v3 projects.
+Open: the two live checks above.
+Next: the bypass reviews, then the journal compaction.
+verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · focused suites, check-plugin, markdownlint
+
+## 2026-11-22 — the session brief gets headroom: CONTEXT.md trimmed under its floor
+Changed: .agent/CONTEXT.md: the verified rows re-dated to today's runs (coverage 98.34 %, shellcheck with the eval fixtures); the agy validation, agy staged install and paid CI evals rows moved to a new Release checks section below Applies, which the brief does not read, with the local eval command (--scaffold) moved there from Owner-terminal; the stale constraint 'the gate never emits allow' corrected to ADR-0008's one allow; header comments, a dated npm snapshot and a duplicate validate mention dropped.
+Why: owner, before merging PR 81: the brief was 5999 of 6000. compact had nothing to do (JOURNAL.md 329 lines, threshold 400) and would not have helped: the brief carries only the two latest entries (1200 characters each at most) and the open findings, and fills the rest with CONTEXT.md. CONTEXT.md is the one part with no cap, so it is where the headroom had to come from.
+Proof: cobot-memory check: brief 4839 of 6000 (was 5999 at wrap, 5467 before this trim), no dropped sections; CONTEXT.md's share of the brief 2489 characters, under CONTEXT_CAP 2500, so two full entries and three findings rows can no longer push a section out.
+Open: none.
+Next: fold the bypass reviews of F-52, F-53 and F-54.
+verified: tree 53f4a2465d4589bb599b62ec5a1c95079043128c · cobot-memory check
+
+## 2026-11-22 — F-52 bypass review folded: every path key judged, aliases both ways for refusals
+Changed: cobot-rules judge(): a file call is judged on every path key it carries (file_path and notebook_path, PATH_KEYS), the debug-record secret check included, and the strictest verdict wins, so a decoy file_path no longer hides NotebookEdit's notebook_path. file_tool_covers(): a never or ask row runs both ways (a row written for MultiEdit or NotebookEdit also stops the Edit or Write doing the same write, as agy maps only to those), an allow of Edit reaches MultiEdit and nothing else (ALLOW_ALIASES), so it never silences a notebook insert that a Write ask covers. tests/test_file_tool_aliases.py: both decoy payloads, the three reverse rows, the allow-versus-insert case. The secret split across chained MultiEdit edits stays a limit of new-text checks; cobot-memory debug check scans the whole record (unchanged).
+Why: the bypass review of 25aedd1: one MEDIUM (the decoy path, reachable if the host passes extra keys), three LOW.
+Proof: test_file_tool_aliases exit 0; gate suites (cobot_rules, differential, agy, session_grants, grant_store, cobot_shell, secret_reads, hass_cli, read_list_limits, gcp_mcp_gate, mcp_registration_routes, mcp_name_folding, debug_records, check_plugin) exit 0; ruff clean. The test secret is built at run time.
+Open: none for F-52.
+Next: the F-53 and F-54 review folds.
+verified: tree 3e85b36e0360144ad5c2c2b04082460c1d9a1cd9 · gate suites, ruff
+
+## 2026-11-22 — F-53 bypass review: the small routes folded, four larger ones parked
+Changed: default.rules: claude *mcp *add* and *mcp *remove* (options between mcp and the verb); ask on claude plugin install, plugin marketplace add, plugin enable and --plugin-dir (a plugin carries its own MCP servers); the node row matches the claude-code package folder without cli.js; Edit and Write of ~/.claude.json.backup* ask. tests/test_mcp_registration_routes.py. Findings F-55 (a plain variable in a path word hides it from never rows: CRITICAL, older than this branch), F-56 (copy into a folder; CLAUDE_CONFIG_DIR outside HOME loses folder protection), F-57 (interpreter code flags beyond -c, -e and -), F-58 (nested claude flags and env, unopaque launchers, renamed copies, globs on the existing ~/.claude.json).
+Why: the bypass review of 5a3f1a4 (1 CRITICAL, 4 HIGH, 4 MEDIUM, 3 LOW). F-55 to F-58 are changes to the gate's shell model across every protected file, not this PR's server-list rows: too large for PR 81, per the owner's instruction to stop and say why. Reproduced here: cp /tmp/e ~/.claude/$X none, cp /tmp/e/.claude.json ~/ none, node -p none.
+Proof: test_mcp_registration_routes exit 0 (eight new cases failed first); claude mcp list, mcp get, plugin list and plugin validate and git add src/* stay silent.
+Open: F-55 to F-58 for a gate spec; F-55 first.
+Next: the F-54 review fold.
+verified: tree ba4ca19c7f435001e4bfa944e51c5d1a410ea366 · registration tests, dry runs
+
+## 2026-11-22 — F-54 bypass review folded: odd MCP names are never a silent read
+Changed: cobot-rules: mcp_is_read is false for a name that is not ASCII after NFKC, or that holds a second __ after the server (run_gcloud_command__get, scale_service__list), since which part is the tool cannot be known; mcp_words folds NFKC and splits an acronym from the next word (DEPLOYService, SETIamPolicy); mcp_fold folds NFKC first. default.rules: the Cloud CLI rows end in * (run_gcloud_command__get is refused), and a comment says that folding refuses these writes on any gcp_*, GCP-* or Gcp-* server and that a gcp server under another name only asks. tests/test_mcp_name_folding.py.
+Why: the bypass review of a0ac069: no CRITICAL or HIGH; one MEDIUM (a second __ made a write look like a read), four LOW (acronyms, Unicode lookalikes and fullwidth forms, host prefixes, the wider never rows to document). Cyrillic lookalikes now ask rather than fold; host-prefixed servers (claude_ai_, plugin_) keep asking, documented.
+Proof: test_mcp_name_folding exit 0 (seven new cases failed first); gate suites with the GOOGLE_MCP_TOOLS matrix, agy and session grants exit 0; ruff clean. GETService now reads as get_service, a read, where it asked before.
+Open: none for F-54.
+Next: the full suite and lint, then the report.
+verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · gate suites, ruff
+
+## 2026-11-22 — F-52 to F-54 closed: the gate findings, their bypass reviews, and what they parked
+Changed: CHANGELOG Security (F-52 to F-54); FINDINGS rows F-55 to F-58 cut to one line each, their detail kept here.
+Why: owner, before merging PR 81: fix the new findings, give each gate change the bypass review, keep the brief's headroom.
+Proof: full suite with coverage exit 0, 98.33 % (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean; markdownlint-cli2 0.24.2 clean; claude plugin validate --strict passes twice; check-plugin ok; sync-agents in sync; agy validate passes with its one warning.
+Open: F-55 (CRITICAL, older than this branch): a plain variable in a path word is read as text: cp x ~/.claude/$X, X=settings.json; cp x ~/.claude/$X and ${X} get no decision, past the never rows on settings.json and cobot's owner files. Fix: $NAME in a path word is a hole for path_may_match; expand earlier assignments (shell_state), HOME, CLAUDE_CONFIG_DIR. F-56 (HIGH): a copy, move or link into a folder that is not an anchor: cp e/.claude.json ~/, cp -t ~, rsync, install, curl --output-dir ~ -O, wget -P ~ (protected_anchors keeps folders strictly below HOME); with CLAUDE_CONFIG_DIR outside HOME the moved dir has no folder protection (cp e/cobot.rules /tmp/cc/, tar -C, unzip -d, rsync -a, ln -sfn). Fix: (dirname, basename) pairs for literal file rows, the moved dir and its parents as anchors, --output-dir and -P as folder options. F-57 (HIGH): inline code only for -c, -e and - (INLINE_CODE_FLAGS): node -p/--print/-pe/--eval=, python3 -ic, stdin-fed interpreters, deno eval, bun -e, php -r, awk system(), vim -c !; node -p can run git push --force. Fix: an interpreter is opaque unless it has a script operand and no code flag, clusters read. F-58 (MEDIUM): a nested claude with CLAUDE_CONFIG_DIR=… (prefix or export), --dangerously-skip-permissions, --permission-mode, --allowedTools, --setting-sources; launchers not opaque (deno run|x npm:, dx, pnpx, corepack, volta, asdf exec, fnm exec, nvm exec, npm explore, npm exec <pkg> --); claude-code copies under other names; a glob on the existing ~/.claude.json (tee ~/.cl*.json). Verb rows on any program (* mcp add*) need the glob handling first: a leading * makes every glob could-match. All four change the gate's shell model for every protected file, too large for PR 81.
+Next: the owner merges PR 81 after review; then a gate spec for F-55 to F-58, F-55 first.
+verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · full suite with coverage, lint, validators

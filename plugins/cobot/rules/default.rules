@@ -717,6 +717,42 @@ never mcp__gcp-*__upload_*
 never mcp__gcp-*__write_*
 never mcp__gcp-*__publish
 never mcp__gcp-*__execute_sql
+# Google Cloud CLI server (Preview, cloudcli.googleapis.com/mcp): run_gcloud_command and
+# run_bq_command take a whole command the gate cannot see into, under a cloud-platform token.
+# Refused under any server name, so a rename does not lift it (spec gcp-mcp-opt-in, owner Q2).
+# A never or ask row also matches the name folded (case, - as _, camelCase and acronyms split,
+# NFKC), so any server named gcp_*, GCP-* or Gcp-* has these writes refused too, and no owner
+# allow lifts that. A gcp server under another name (a claude.ai connector, a plugin prefix) asks.
+never mcp__gcp-cloudcli__*
+never mcp__*__run_gcloud_command*
+never mcp__*__run_bq_command*
+
+# The owner registers every MCP server (spec gcp-mcp-opt-in): an injected `claude mcp add` could
+# name an attacker URL gcp-*, so registration asks by every route. list and get stay silent.
+ask Bash(claude *mcp *add*)
+ask Bash(claude *mcp *remove*)
+ask Bash(claude *--mcp-config*)
+# a plugin carries its own MCP servers (.mcp.json, mcpServers): installing or loading one registers them
+ask Bash(claude *plugin install*)
+ask Bash(claude *plugin marketplace add*)
+ask Bash(claude *plugin enable*)
+ask Bash(claude *--plugin-dir*)
+# a settings file can turn on every project server (enableAllProjectMcpServers), skipping the
+# approval a repository .mcp.json needs; reset-project-choices forgets the owner's refusals
+ask Bash(claude *--settings*)
+ask Bash(claude *mcp reset-project-choices*)
+ask Bash(claude-code *mcp *)
+# Claude Code run through node by its own cli.js reaches the same verbs (bunx is opaque, F-53)
+ask Bash(node *@anthropic-ai/claude-code*)
+ask Edit(~/.claude.json)
+ask Write(~/.claude.json)
+# a backup swapped in later restores whatever server list it holds
+ask Edit(~/.claude.json.backup*)
+ask Write(~/.claude.json.backup*)
+ask Edit(.mcp.json)
+ask Write(.mcp.json)
+# A shell word naming either file asks too (cp, tee, a redirection, dd of=, curl -o), as for a
+# protected file; a glob that only could name them does not (protected_file_touched).
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

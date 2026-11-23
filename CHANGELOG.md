@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Google Cloud MCP, opt-in per repository (decision 37).** The first Google Cloud work in a
+  repository (onboarding's gcp domain, `/cobot:consult gcp`, a spec or wrap that picks the gcp
+  consultant, `/cobot:debug` on a Google Cloud target) asks you once whether to use Google's
+  remote Cloud MCP servers for live reads, and writes `gcp-mcp: yes` or `gcp-mcp: no` into
+  CONTEXT.md's header. On yes, the agent prints a guarded setup for you to run: the APIs, the
+  MCP role, a read-only guard, the OAuth client and `claude mcp add -s user`. On no, live reads
+  use `gcloud` and `kubectl`. `cobot-memory check` names a broken line and a repository
+  `.mcp.json` that declares `gcp-*` servers. Eval cases `gcp-mcp-asked-once` and
+  `gcp-mcp-never-again`.
+
 - **A Home Assistant expert (decision 36, F-39).** `expert-homeassistant` covers custom
   integrations (manifest, translations, the quality scale, hassfest and HACS), configuration
   (packages, `!include`, `!secret`, automations, blueprints), the REST and WebSocket APIs and
@@ -207,6 +217,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **MCP registration asks, and the Google Cloud CLI server is refused (decision 37).**
+  `claude mcp add`, `add-json`, `remove`, `reset-project-choices`, `claude --mcp-config` and
+  `--settings`, an Edit or Write of `~/.claude.json` or the repository's `.mcp.json`, and a
+  shell word naming either file (`cp`, `tee`, a redirection, `curl -o`) ask, so an injected
+  instruction cannot register a server under a `gcp-*` name. A glob that only could name them
+  stays silent. The Cloud CLI server is refused as `gcp-cloudcli`,
+  and its `run_gcloud_command` and `run_bq_command` under any server name: they take a whole
+  command the gate cannot judge. A test now pins that no session grant reaches an MCP tool.
+  `/cobot:rules sync` now renders `mcp__gcp-cloudcli__*` as a deny permission.
+- **File and MCP rows reach every spelling (F-52, F-53, F-54).** An Edit row now covers MultiEdit
+  and NotebookEdit and a Write row NotebookEdit; a refusal written for either also stops the
+  plain tool, and a file call is judged on every path key it carries. `bunx` is opaque like
+  `npx`; `node` on Claude Code's package, `claude plugin install`, `marketplace add`, `enable`
+  and `--plugin-dir` ask; `~/.claude.json` and its backups are protected inside a moved
+  `CLAUDE_CONFIG_DIR` too. `never` and `ask` MCP rows match a renamed server or a respelled tool
+  (case, `-` and `_`, camelCase and acronyms, NFKC), while an `allow` stays exact; an MCP name
+  that is not ASCII or holds a second `__` is never read as a silent read. Four larger shell-model
+  gaps the bypass reviews found are parked as F-55 to F-58 for a gate spec.
 - **`hass-cli` under the gate (decision 36).** Every write to a live Home Assistant instance
   asks, and so do `-s`/`--server`, `--insecure` and `--debug` (it prints the request headers).
   A token or password on the command line, or a token variable set in the command, is refused;

@@ -1,0 +1,98 @@
+"""F-52: MultiEdit and NotebookEdit write files too, so an Edit row covers both and a Write row
+covers NotebookEdit (a notebook cell can be inserted, which creates content). Before this, no file
+row matched them and a MultiEdit of a never-protected settings file got no decision."""
+
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
+
+def file_call(tool, path):
+    if tool == "MultiEdit":
+        tool_input = {"file_path": path, "edits": [{"old_string": "a", "new_string": "b"}]}
+    elif tool == "NotebookEdit":
+        tool_input = {"notebook_path": path, "new_source": "x", "edit_mode": "insert"}
+    else:
+        tool_input = {"file_path": path, "content": "x", "old_string": "a", "new_string": "b"}
+    return json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": os.getcwd()})
+
+
+def verdict(rules, raw):
+    out = rules.gate(raw)
+    return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
+
+
+HOME = os.path.expanduser("~")
+
+
+@pytest.mark.parametrize("tool", ["Edit", "Write", "MultiEdit", "NotebookEdit"])
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (f"{HOME}/.claude/settings.json", "deny"),
+        (".claude/settings.local.json", "deny"),
+        (f"{HOME}/.claude.json", "ask"),
+        (".mcp.json", "ask"),
+        ("src/app.py", None),
+    ],
+)
+def test_fileToolAliases_everyFileToolGetsTheRowsVerdict(rules, tool, path, expected):
+    assert verdict(rules, file_call(tool, path)) == expected, (tool, path)
+
+
+def test_fileToolAliases_editRowCoversMultiEditAndNotebookEdit_writeRowCoversNotebookEdit(rules):
+    loaded, _, _ = rules.load_rules(None)
+    edit = next(r for r in loaded if r.tool == "Edit")
+    write = next(r for r in loaded if r.tool == "Write")
+    assert all(rules.applies(edit, tool, None) for tool in ("Edit", "MultiEdit", "NotebookEdit"))
+    assert rules.applies(write, "NotebookEdit", None) and not rules.applies(write, "MultiEdit", None)
+    assert not rules.applies(edit, "Write", None) and not rules.applies(write, "Edit", None)
+
+
+def raw(tool, tool_input):
+    return json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": os.getcwd()})
+
+
+SETTINGS = f"{HOME}/.claude/settings.json"
+
+
+def test_fileToolAliases_decoyFilePath_doesNotHideTheNotebookPath(rules):
+    decoy = {"file_path": "notes/ok.ipynb", "notebook_path": SETTINGS, "new_source": "x"}
+    assert verdict(rules, raw("NotebookEdit", decoy)) == "deny"
+    swapped = {"file_path": SETTINGS, "notebook_path": "notes/ok.ipynb", "new_source": "x"}
+    assert verdict(rules, raw("NotebookEdit", swapped)) == "deny"
+
+
+def test_fileToolAliases_decoyFilePath_doesNotHideADebugRecordSecret(rules):
+    token = "ya29." + "a" * 16  # built at run time: no secret-shaped literal in the tree
+    decoy = {"file_path": "x.ipynb", "notebook_path": ".agent/debug/r.ipynb", "new_source": token}
+    assert verdict(rules, raw("NotebookEdit", decoy)) == "deny"
+
+
+REVERSE = [("MultiEdit", "Edit"), ("NotebookEdit", "Edit"), ("NotebookEdit", "Write")]
+
+
+@pytest.mark.parametrize(("row_tool", "tool"), REVERSE)
+def test_fileToolAliases_restrictiveAliasRow_coversThePlainTool(rules, tmp_path, monkeypatch, row_tool, tool):
+    owner = tmp_path / "owner.rules"
+    owner.write_text(f"never {row_tool}(guarded/*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    assert verdict(rules, file_call(tool, "guarded/a")) == "deny"
+
+
+def test_fileToolAliases_ownerAllowOfEdit_doesNotSilenceANotebookInsert(rules, tmp_path, monkeypatch):
+    owner = tmp_path / "owner.rules"
+    owner.write_text("ask Write(notes/*)\nallow Edit(notes/*)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    assert verdict(rules, file_call("NotebookEdit", "notes/a.ipynb")) == "ask"
+    assert verdict(rules, file_call("MultiEdit", "notes/a.md")) is None
+
+
+def test_fileToolAliases_ownerAllowOfEdit_reachesMultiEdit_neverStillWins(rules, tmp_path, monkeypatch):
+    owner = tmp_path / "owner.rules"
+    owner.write_text("allow Edit(docs/*)\nallow Edit(~/.claude/settings.json)\n")
+    monkeypatch.setenv("COBOT_RULES_OWNER", str(owner))
+    assert verdict(rules, file_call("MultiEdit", f"{HOME}/.claude/settings.json")) == "deny"

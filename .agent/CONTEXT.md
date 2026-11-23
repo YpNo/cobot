@@ -2,40 +2,37 @@
 
 profile: library
 goal: a Claude Code plugin marketplace that makes the main thread a governed orchestrator
-forge: github                  # YpNo/cobot; ci.yml, release.yml, knowledge-refresh.yml
+forge: github                  # YpNo/cobot
 owner: YpNo (Michael Lopez) · public since 0.2.0 (2026-11-14) · MIT
-governance: docs/01-decisions.md   # the owner's decisions are this repository's principles
-runs: host                     # podman and distrobox present, nothing here needs them
+governance: docs/01-decisions.md
+runs: host
 
 ## Stack
 - Python 3.12+ standard library only for `plugins/cobot/bin/*`
 - POSIX sh for hooks and `install.sh`; Markdown for skills and agents
-- pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor; `claude plugin validate --strict`
+- pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor
 
 ## Environment
-- Claude Code 2.1.311 locally, CI pins 2.1.322 (npm latest 2.1.325, 2026-11-14); hooks run as the user
+- Claude Code 2.1.311 locally, CI pins 2.1.322; hooks run as the user
 - the directory marketplace serves this checkout to every dogfood repository: keep it on `main`, branch in worktrees
 - owner's git: `safe.bareRepository = explicit`; rtk PreToolUse hook rewrites Bash to `rtk <cmd>`
 
 ## Verified commands
 | purpose | command | result | verified |
 |---|---|---|---|
-| tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.68 %, 2473 tests) | 2026-11-15 |
-| lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` | exit 0 | 2026-11-20 |
-| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh` | exit 0 | 2026-11-15 |
-| markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` | exit 0 | 2026-11-20 |
-| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-15 |
-| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-15 |
-| plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-15 |
-| memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-15 |
-| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 (in sync: all) | 2026-11-15 |
-| agy validation (throwaway HOME) | `HOME=$(mktemp -d) agy plugin validate plugins/cobot` | passed, the one hooks/hooks.json warning | 2026-11-15 |
-| agy staged install (throwaway HOME) | `HOME=$(mktemp -d) ./install.sh --agy` | exit 0, group cobot-<random> | 2026-11-15 |
-| evals (paid, CI) | `gh workflow run ci.yml -f evals=true [-f cases=<case>]` | 16 of 17 (run 43584857035) | 2026-11-14 |
+| tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.34 %) | 2026-11-22 |
+| lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` | exit 0 | 2026-11-22 |
+| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh plugins/cobot/evals/*/fixture.sh` | exit 0 | 2026-11-22 |
+| markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` | exit 0 | 2026-11-22 |
+| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-22 |
+| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-22 |
+| plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-22 |
+| memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-22 |
+| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 | 2026-11-22 |
 
 ## Constraints
 - nothing writes to `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills`, `~/.claude/settings.json` (ADR-0003)
-- the Claude Code gate never emits `allow`; any failure blocks (exit 2 in the shim). Under agy it answers `allow` (no opinion), `force_ask` or `deny`, never `auto_approve`, and every failure prints a deny (exit 0)
+- the Claude Code gate emits `allow` only for a command a session grant covers (ADR-0008); any failure blocks (exit 2). Under agy: `allow` (no opinion), `force_ask` or `deny`, never `auto_approve`; a failure prints a deny
 - agents never write `.agent/`; only the orchestrator and wrap do
 - commits: Conventional Commits, no Co-Authored-By; PR bodies never mention Claude Code
 - coverage floor 85 % on `bin/`; check-plugin holds the size caps
@@ -44,13 +41,22 @@ runs: host                     # podman and distrobox present, nothing here need
 - applies: TDD on `bin/`, SHA-pinned actions, Keep a Changelog, SemVer
 - does not apply: a service deployment, a database, browser E2E
 
+## Release checks
+Verified, run at release or when agy or CI changes; the brief leaves them out.
+
+| purpose | command | result | verified |
+|---|---|---|---|
+| agy validation (throwaway HOME) | `HOME=$(mktemp -d) agy plugin validate plugins/cobot` | passed, the one hooks/hooks.json warning | 2026-11-22 |
+| agy staged install (throwaway HOME) | `HOME=$(mktemp -d) ./install.sh --agy` | exit 0, group cobot-<random> | 2026-11-15 |
+| evals (paid, CI; the evals environment refuses feature branches) | `gh workflow run ci.yml -f evals=true [-f cases=<case>]` | 16 of 17 (run 43584857035) | 2026-11-14 |
+| evals, local (paid) | `cd plugins/cobot && PATH="$PWD/bin:$PATH" claude plugin eval . --runs 1 --ablation none --no-publish --scaffold --allow-tools Bash Write Edit [--case <glob>]` | gcp-mcp-asked-once and gcp-mcp-never-again 1.00 | 2026-11-22 |
+
 ## Owner-terminal commands
 Carried over, not re-run; the brief leaves them out.
 
 | purpose | command | result | verified |
 |---|---|---|---|
 | reinstall into a dogfood repository (uninstall + install; `claude plugin update` ignores same-version edits) | `./install.sh --refresh /path/to/repo` | carried over, not re-run | 2026-11-08 (journal) |
-| evals, local (paid; needs `PATH="$PWD/bin:$PATH"`) | `cd plugins/cobot && claude plugin eval . --runs 1 --ablation none --no-publish --allow-tools Bash Write Edit` | carried over, not re-run | 2026-11-08 (journal) |
 | R1 spikes (owner's terminal) | `sh scripts/spikes/spike-r1.sh` | carried over, not re-run | 2026-11-06 (journal) |
 | coexistence spikes (owner's terminal) | `sh scripts/spikes/spike-coexistence.sh` | carried over, not re-run | 2026-11-06 (journal) |
 | agy smoke (owner's terminal, signed in, real HOME) | `./install.sh --agy && sh scripts/spikes/smoke-agy.sh` | second run: every runnable check ok; w1, m1, S4 not run | 2026-11-15 |

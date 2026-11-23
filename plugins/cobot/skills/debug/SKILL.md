@@ -24,7 +24,9 @@ during `/cobot:build` stays the builder's; a cause that is already known is buil
    `cobot-rules grant --list` too: an active grant is named before any probe, so the owner sees
    what would not ask. When the target names production (`prod` in a context, project or
    cluster name, or the owner says so), the owner confirms that target before any probe; no
-   answer, no probe.
+   answer, no probe. When that context names a Google Cloud target and CONTEXT.md has no valid
+   `gcp-mcp:` line, ask expert-gcp's opt-in now, its own question, and write the line; with
+   `yes` and `mcp__gcp-*` tools, you read through them here, a probe never does.
 2. **Reproduce.** One command that shows the symptom (a failing test, a `kubectl describe`, a
    `gh run view --log-failed`, a `curl -s`), run once, its exit code and a short excerpt kept.
    When it cannot be reproduced safely or at all, state the waiver and why in one line.

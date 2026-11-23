@@ -38,6 +38,7 @@ import shlex
 import subprocess
 import sys
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -116,7 +117,7 @@ MCP_WRITE_WORDS = frozenset(
 )
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
-    "xargs sudo doas su make gmake just task npx ssh mosh "
+    "xargs sudo doas su make gmake just task npx bunx ssh mosh "
     # each runs a command it is given, through a shell or after options the gate does not read
     # (bypass review of T01): GNU parallel's family, watchers, prefix tools, privilege and sandbox
     # launchers, terminal multiplexers and job queues
@@ -388,6 +389,7 @@ LAYERS = ("default", "owner", "project")
 NOTE_LAYERS = frozenset({"default", "owner"})
 PROMPT_ONLY_NOTE = "prompt only"  # a default row's note that keeps every allow line off it
 HOME_CONFIG = "~/.claude"  # the literal config dir file rows name; CLAUDE_CONFIG_DIR may move it
+HOME_STATE = "~/.claude.json"  # Claude Code's state and server list, moved into CLAUDE_CONFIG_DIR too
 SEALED = ("cobot.rules", "cobot/*")  # cobot's owner files under the config dir: no shell access
 RULES_FILE = ".agent/cobot.rules"  # the project layer, relative to a repository root
 SHOWN_TOOLS = FILE_TOOLS | {"Bash", "mcp"}  # a project row's tool a reason may name
@@ -525,9 +527,12 @@ def moved_config() -> str | None:
 
 def config_twin(rule: Rule, moved: str) -> Rule | None:
     """A file row under ``~/.claude``, also under the moved config dir: the owner files live
-    there, and a row written as ``~/.claude`` alone would miss them."""
+    there, and a row written as ``~/.claude`` alone would miss them. ``~/.claude.json`` sits
+    beside ``~/.claude``, but inside the moved dir as ``.claude.json`` (F-53)."""
     if rule.tool not in FILE_TOOLS:
         return None
+    if rule.pattern == HOME_STATE:
+        return replace(rule, pattern=moved + "/.claude.json")
     if rule.pattern != HOME_CONFIG and not rule.pattern.startswith(HOME_CONFIG + "/"):
         return None
     return replace(rule, pattern=moved + rule.pattern[len(HOME_CONFIG) :])
@@ -3107,12 +3112,30 @@ def agent_matches(scope: str, agent: str | None) -> bool:
     return scope in (agent, agent.split(":")[-1]) or agent in (scope, scope.split(":")[-1])
 
 
+# the file tools a row's tool also covers (F-52): MultiEdit is several Edits, and NotebookEdit
+# replaces a cell (an Edit) or inserts one (a Write). A never or ask row runs both ways, so a row
+# written for MultiEdit or NotebookEdit also stops the Edit or Write that does the same write (agy
+# maps its tools to Edit and Write only); an allow row reaches MultiEdit from Edit and nothing
+# else, so an allow of edits never silences a notebook insert (bypass review of F-52).
+FILE_TOOL_ALIASES = {"Edit": frozenset({"MultiEdit", "NotebookEdit"}), "Write": frozenset({"NotebookEdit"})}
+ALLOW_ALIASES = {"Edit": frozenset({"MultiEdit"})}
+
+
+def file_tool_covers(rule: Rule, tool: str) -> bool:
+    if rule.tool == tool:
+        return True
+    if rule.decision == "allow":
+        return tool in ALLOW_ALIASES.get(rule.tool, frozenset())
+    forward = tool in FILE_TOOL_ALIASES.get(rule.tool, frozenset())
+    return forward or rule.tool in FILE_TOOL_ALIASES.get(tool, frozenset())
+
+
 def applies(rule: Rule, tool: str, agent: str | None) -> bool:
     if rule.agent and not agent_matches(rule.agent, agent):
         return False
     if rule.tool == "mcp":
         return tool.startswith("mcp__")
-    return rule.tool == tool
+    return file_tool_covers(rule, tool)
 
 
 def matches_bash(rule: Rule, forms: list[str]) -> bool:
@@ -3570,9 +3593,12 @@ def word_touches(
 ) -> bool:
     """Whether one shell word names, or could name, a protected file. A bare word is a path in the
     working directory too, so ``tee hooks.json`` run inside ``.agents/`` is caught; a word that
-    is only a substitution is not resolved, like a variable, while a bare glob reaches real files."""
+    is only a substitution is not resolved, like a variable, while a bare glob reaches real files.
+    An ``ask`` row counts for a literal word only: a glob that could name ``.mcp.json`` is every
+    glob, and a refusal is what a "could name" protects."""
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     if shell.has_sentinel(token):
+        protected = [r for r in protected if r.decision == "never"]
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
         if not (pathlike or bare_glob):
             return False
@@ -3608,11 +3634,13 @@ def protected_file_touched(
     visited: Dirs = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
-    Edit/Write rule, or that moves or links a customization root or a protected folder. Each word
+    Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
+    the MCP server lists: a ``cp`` must not register a server where an Edit asks; spec
+    gcp-mcp-opt-in), or that moves or links a customization root or a protected folder. Each word
     is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
     redirection and runner targets) are checked word by word, never read as a command, in every
-    directory the script visits."""
-    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision == "never" and not r.agent]
+    directory the script visits. Either way the verdict is an ask (``protected_verdict``)."""
+    protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision in ("never", ASK) and not r.agent]
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
@@ -4858,15 +4886,22 @@ def restrictive(rule: Rule) -> bool:
 
 
 def mcp_words(tool: str) -> list[str]:
-    """The words of an MCP tool's own name (after the last ``__``): snake, kebab and camel case."""
-    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", tool.rsplit("__", 1)[-1])
+    """The words of an MCP tool's own name (after the last ``__``): snake, kebab and camel case, an
+    acronym split from the next word (``DEPLOYService``), fullwidth forms folded (NFKC)."""
+    name = unicodedata.normalize("NFKC", tool.rsplit("__", 1)[-1])
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
     return [word for word in re.split(r"[^A-Za-z0-9]+", name.lower()) if word]
 
 
 def mcp_is_read(tool: str) -> bool:
     """A read verb first, and no write word joined to it (``get_or_create_user``, ``list_and_delete``).
     A write word used as a noun stays a read (``get_commit``, ``get_workflow_run``); ``checkout`` is
-    not ``check``."""
+    not ``check``. A name past NFKC that is not ASCII, or with a second ``__`` after the server
+    (``run_gcloud_command__get``), is never a read: which part is the tool is not knowable."""
+    folded = unicodedata.normalize("NFKC", tool)
+    if not folded.isascii() or folded.removeprefix("mcp__").count("__") > 1:
+        return False
     words = mcp_words(tool)
     if not words or words[0] not in MCP_READ_VERBS:
         return False
@@ -4874,10 +4909,30 @@ def mcp_is_read(tool: str) -> bool:
     return not MCP_WRITE_WORDS.intersection(joined)
 
 
+def mcp_fold(name: str, pattern: bool) -> str:
+    """An MCP name without case, ``-`` read as ``_``, and a tool's own name split into its words
+    (``runGcloudCommand`` → ``run_gcloud_command``), so a renamed server or a respelled tool
+    meets the row written for it (F-54). A pattern keeps its ``*``."""
+    name = unicodedata.normalize("NFKC", name)
+    head, sep, last = name.rpartition("__")
+    if not sep:
+        return name.casefold().replace("-", "_")
+    last = last.casefold().replace("-", "_") if pattern else "_".join(mcp_words(name))
+    return f"{head.casefold().replace('-', '_')}__{last}"
+
+
+def matches_mcp(rule: Rule, tool: str) -> bool:
+    """A never or ask row matches the folded name too; an allow row only the exact name, so a fold
+    can add a refusal or an ask and never lift one (as ``restrictive`` does for file rows)."""
+    if fnmatch.fnmatchcase(tool, rule.pattern):
+        return True
+    return restrictive(rule) and fnmatch.fnmatchcase(mcp_fold(tool, False), mcp_fold(rule.pattern, True))
+
+
 def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
     """never > owner allow > owner or project ask > a read or a default allow (host UI tools) >
     default ask. A default rule never cancels an ask the owner or the project wrote."""
-    matched = [r for r in rules if applies(r, tool, agent) and fnmatch.fnmatchcase(tool, r.pattern)]
+    matched = [r for r in rules if applies(r, tool, agent) and matches_mcp(r, tool)]
     nevers = [r for r in matched if r.decision == "never"]
     if nevers:
         return Verdict(DENY, nevers[0])
@@ -4893,17 +4948,30 @@ def judge_mcp(tool: str, rules: list[Rule], agent: str | None) -> Verdict:
     return resolve(matched, "no rule matched")
 
 
+PATH_KEYS = ("file_path", "notebook_path")  # the file tools' path fields
+STRICTNESS = {DENY: 2, ASK: 1, None: 0}
+
+
+def judge_path(
+    tool: str, path: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None
+) -> Verdict:
+    verdict = judge_file(tool, path, cwd, rules, agent)
+    if verdict.decision == DENY:
+        return verdict
+    return debug_record_secret(tool, path, tool_input, cwd) or verdict
+
+
 def judge(tool: str, tool_input: dict, cwd: str | None, rules: list[Rule], agent: str | None) -> Verdict:
     if tool == "Bash":
         return judge_bash(str(tool_input.get("command", "")), rules, agent, cwd)[0]
     if tool in FILE_TOOLS:
-        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        if not path:
+        # every path key the call carries: a decoy file_path must not hide NotebookEdit's
+        # notebook_path (bypass review of F-52); the strictest verdict wins
+        paths = [p for p in dict.fromkeys(str(tool_input.get(k) or "") for k in PATH_KEYS) if p]
+        if not paths:
             return Verdict(None, None, "no path")
-        verdict = judge_file(tool, str(path), cwd, rules, agent)
-        if verdict.decision == DENY:
-            return verdict
-        return debug_record_secret(tool, str(path), tool_input, cwd) or verdict
+        verdicts = [judge_path(tool, path, tool_input, cwd, rules, agent) for path in paths]
+        return max(verdicts, key=lambda v: STRICTNESS[v.decision])
     if tool.startswith("mcp__"):
         return judge_mcp(tool, rules, agent)
     return Verdict(None, None, "tool not governed")

@@ -21,7 +21,8 @@ argument-hint: [spec slug]
    domain (`run_in_background: false` where the host offers it; wait for every hand-back) with the prompt of `/cobot:consult` step 2 (workflows changed → `gha`; a Dockerfile or
    compose file → `containers`; a `google` provider or `cloudbuild.yaml` → `gcp`; manifests,
    kustomizations or charts → `kubernetes`; Istio or mesh policies → `service-mesh`). A reviewer
-   that did not run is `not run` in the journal, never clean.
+   that did not run is `not run` in the journal, never clean. Picking `gcp` while CONTEXT.md has
+   no valid `gcp-mcp:` line asks expert-gcp's opt-in first, before the fan-out.
    Propose `/cobot:security-sweep` (the owner types it), the whole-tree pass, before a release or handover, not at
    every wrap; a finding the owner accepts becomes a row in `.agent/accepted-risks.md`
    (`why · by · expires`, at most 90 days). Fold what is cheap and safe; everything else is journaled

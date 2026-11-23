@@ -42,6 +42,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import sys
 import unicodedata
 import urllib.parse
@@ -1091,6 +1092,90 @@ def missing_header_fields(mem: Memory) -> list[str]:
     return [key for key in HEADER_FIELD_RE.findall(head) if key not in present]
 
 
+GCP_MCP_LINE_RE = re.compile(r"(?m)^gcp-mcp:.*$")
+GCP_MCP_VALID_RE = re.compile(r"^gcp-mcp: (?:yes|no)(?:\s+#.*)?\s*$")
+MCP_JSON = ".mcp.json"
+MCP_JSON_MAX_BYTES = 64 * 1024  # a project's server list is a few hundred bytes
+CLOUD_CLI_HOST = "cloudcli.googleapis.com"
+PRINTABLE_NAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")  # fullmatch: no trailing newline
+URL_TEXT_RE = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.I)
+
+
+def gcp_mcp_warnings(mem: Memory) -> list[str]:
+    """``warning:`` lines for the Google Cloud MCP opt-in (spec gcp-mcp-opt-in): a ``gcp-mcp:``
+    line that is not exactly yes or no, repeated, or below the header, and a repository
+    ``.mcp.json`` declaring ``gcp-*`` or the Cloud CLI server. Repository text is never echoed."""
+    return context_gcp_mcp_warnings(mem.read("CONTEXT.md")) + mcp_json_warnings(mem.checkout / MCP_JSON)
+
+
+def context_gcp_mcp_warnings(context: str) -> list[str]:
+    lines = GCP_MCP_LINE_RE.findall(context)
+    if not lines:
+        return []
+    if len(lines) > 1:
+        return [f"warning: gcp-mcp: {len(lines)} lines; keep one, in the header"]
+    head = context.split("\n## ", 1)[0] if not context.startswith("## ") else ""
+    if GCP_MCP_LINE_RE.search(context).start() >= len(head):
+        return ["warning: gcp-mcp: below the header, where the brief may drop it; move it above ## Stack"]
+    if not GCP_MCP_VALID_RE.match(lines[0]):
+        return ["warning: gcp-mcp must be yes or no; any other value counts as unset (expert-gcp)"]
+    return []
+
+
+def mcp_json_servers(path: Path) -> tuple[dict, str]:
+    """The ``mcpServers`` object of a repository's ``.mcp.json``, or a warning why it was not
+    read: only a regular file under the cap is parsed, and nothing in it runs."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return {}, ""
+    if not stat.S_ISREG(info.st_mode):
+        return {}, f"warning: {MCP_JSON} is not a regular file; not read"
+    if info.st_size > MCP_JSON_MAX_BYTES:
+        return {}, f"warning: {MCP_JSON} is over {MCP_JSON_MAX_BYTES // 1024} kB; not read"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        return {}, f"warning: {MCP_JSON} is not valid JSON; not read"
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    return (servers if isinstance(servers, dict) else {}), ""
+
+
+def url_host(url: str) -> str:
+    """The host of a URL, lowercased and without a trailing dot; empty when it does not parse."""
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:  # an unclosed IPv6 bracket, a bad port
+        return ""
+
+
+def server_hosts(config: object) -> set[str]:
+    """The hosts a server entry points at: its ``url``, and URLs in a stdio launcher's ``args``
+    (``mcp-remote https://…``)."""
+    if not isinstance(config, dict):
+        return set()
+    args = config.get("args") if isinstance(config.get("args"), list) else []
+    texts = [str(config.get("url") or ""), *(a for a in args if isinstance(a, str))]
+    return {url_host(m) for text in texts for m in URL_TEXT_RE.findall(text)} - {""}
+
+
+def mcp_json_warnings(path: Path) -> list[str]:
+    servers, problem = mcp_json_servers(path)
+    if problem:
+        return [problem]
+    found = []
+    for name in sorted(servers):
+        shown = name if PRINTABLE_NAME_RE.fullmatch(name) else "<unprintable name>"
+        if CLOUD_CLI_HOST in server_hosts(servers[name]):
+            found.append(f"warning: {MCP_JSON} declares {shown} at {CLOUD_CLI_HOST}: the gate refuses the Cloud CLI server")
+        elif name.lower().startswith("gcp-"):
+            found.append(
+                f"warning: {MCP_JSON} declares {shown}: not the owner's registration;"
+                " cobot uses only user-scope gcp-* servers"
+            )
+    return found
+
+
 def debug_problems(mem: Memory, file: str = "") -> tuple[list[str], int]:
     """``<record>:<line>: <why>`` for each secret-shaped line or oversized excerpt in one record, or
     in every record under the memory's ``debug/`` folder, and how many records were read."""
@@ -1152,6 +1237,7 @@ def cmd_check(mem: Memory) -> str:
     missing = missing_header_fields(mem)
     if missing:
         lines.append(f"context: header fields missing (template): {', '.join(missing)}")
+    lines += gcp_mcp_warnings(mem)
     context_lines = len(mem.read("CONTEXT.md").splitlines())
     if context_lines > 120:
         lines.append(f"warning: CONTEXT.md has {context_lines} lines (> 120), trim the Shape section")

@@ -469,7 +469,7 @@ Never parallel: tiny and small, anything needing the owner's answers, anything w
 | context7 | `plugins/cobot/.mcp.json` | current library docs; stale API facts were the audit's biggest rot source |
 | HashiCorp terraform | provided by the HashiCorp plugins when the owner enables them; **not duplicated**, and not installed at user scope on this machine today | `lang-terraform` works without it: `terraform providers lock`, registry API over `curl`, dated "verified on" lines |
 | GitHub | not in release 1 | `gh` covers the flow at zero context cost and the rules match `Bash(gh …)` lines exactly; revisit if issue triage needs it |
-| Google Cloud | none (decision 28): `gcloud` under the gate, `expert-gcp` + `/cobot:consult gcp` in `cobot` | a server would create `cobot-gcp`; evaluated when one earns its cost |
+| Google Cloud | none shipped (decision 28): `gcloud` under the gate, `expert-gcp` + `/cobot:consult gcp` in `cobot`; Google's remote servers are an opt-in per repository, `gcp-mcp: yes \| no` in CONTEXT.md, asked once, registered by the owner at user scope, reads only (decision 37) | live reads from the main thread; writes stay with `gcloud` and Terraform, and the Cloud CLI server is refused |
 | Home Assistant | none (decision 36): `hass-cli` under the gate, `expert-homeassistant` + `/cobot:consult homeassistant` in `cobot`; a server waits for `cobot-reverse` (R3) | device state during protocol work |
 
 Outward writes to code and repositories go through `git`/`gh` CLI, never through MCP write

@@ -176,3 +176,11 @@ Proof: cobot-memory check without the journal warning, brief 5384 chars (budget 
 Open: none new.
 Next: the owner pushes security/gate-f55 and opens the PR.
 verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · cobot-memory check, ruff, check-plugin, sync-agents
+
+## 2026-11-23 — spec gate-f56-f60 written and challenged, nothing built
+Changed: .agent/specs/gate-f56-f60.md revision 2 (248 lines): six stories on where a copy, download or extraction lands (F-56) and option values joined to their option (F-60); FINDINGS F-56 and F-60 pointed at it; F-61 filed for the writers kept out (cpio -p, pax, ditto, sftp, aria2c, gh download -D, curl --create-dirs).
+Why: owner, relayed by the orchestrator session: "Spec F-56 and F-60", one spec, kept small; F-57 and F-58 out.
+Proof: every Goal row measured with cobot-rules check on a5db3f8 (each none today); challenger revision 1 SOUND WITH CHANGES (5 MAJOR, 2 MINOR), each shape re-probed and folded; cobot-memory check ok, brief 5500 chars.
+Open: Q1 (an extraction in a cwd that only holds the config dir: ask, recommended) and Q2 (a download with no output folder lands in the cwd: yes, recommended) for the owner.
+Next: owner review, then /cobot:build gate-f56-f60, T01 first, a bypass-aimed review per task.
+verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · spec only, cobot-memory check

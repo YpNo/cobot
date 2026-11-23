@@ -186,6 +186,11 @@ DENO_SUBCOMMANDS = frozenset(
 DENO_VALUE_OPTIONS = frozenset(
     "-c --config --import-map --cert --location --seed --preload --require --ext -L --log-level".split()
 )  # ``--lock``, ``--frozen``, ``--node-modules-dir``, ``--vendor``: an optional ``=`` value only
+# Python modules that run code from their arguments or a prompt (Q2: the named list; docs.python.org
+# timeit, code, pdb, profile, trace, asyncio, runpy, idle; ``_pyrepl`` is 3.13's REPL)
+CODE_MODULES = frozenset(
+    "timeit code pdb cProfile profile trace asyncio _pyrepl idlelib IPython runpy".split()
+)
 BUN_SUBCOMMANDS = frozenset(
     "test install add remove update outdated link unlink pm build create init upgrade publish patch "
     "audit info why".split()
@@ -217,6 +222,8 @@ class Reading:
             return self.why
         if self.code:
             return f"{self.family} runs inline code from its command line"
+        if self.module and package(self.module[0]) in CODE_MODULES:  # ``asyncio.__main__`` too
+            return f"python -m {self.module[0][:40]} runs code from its arguments or a prompt"
         if self.stdin:
             return f"{self.family} reads its code from stdin"
         return None
@@ -238,6 +245,19 @@ def read_argv(argv: list[str]) -> Reading | None:
     if words is not None:
         read_options(words, TABLES[name], reading)
     return reading
+
+
+def pip_argv(argv: list[str]) -> list[str] | None:
+    """``python -m pip …`` as the ``pip …`` it runs, else None."""
+    reading = read_argv(argv)
+    module = reading.module if reading else None
+    return ["pip", *module[1:]] if module and package(module[0]) == "pip" else None
+
+
+def package(module: str) -> str:
+    """The top package a ``-m`` name runs from (``idlelib.pyshell``, ``pip.__main__``; bypass review
+    of T03)."""
+    return module.split(".", 1)[0]
 
 
 def read_options(words: list[str], table: Table, reading: Reading) -> None:

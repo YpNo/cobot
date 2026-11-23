@@ -139,6 +139,9 @@ OPAQUE_SUBCOMMANDS = {
     "uv": frozenset({"run"}),
     "uvx": frozenset({""}),
     "kubectl": frozenset({"exec"}),
+    "pipx": frozenset({"run", "runpip"}),  # a package from the index, as ``uvx`` (spec gate-f57, story 5)
+    "pixi": frozenset({"run", "exec", "x"}),  # a task from pixi.toml, or a command (T03 review)
+    "rye": frozenset({"run"}),
 }
 # entry wrappers: the command they run is visible once their own options are parsed
 SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
@@ -2210,7 +2213,7 @@ def opaque_as_read(plain: list[str]) -> bool:
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
     reading = inline.read_argv(plain)
-    if reading is not None and reading.asks():  # inline code, stdin or a remote module (gate-f57)
+    if reading is not None and (reading.asks() or inline.pip_argv(plain)):  # gate-f57: pip expands
         return True
     if head in OPAQUE_SUBCOMMANDS:
         verb = canonical_package_manager(strip_global_options(plain))
@@ -2386,7 +2389,95 @@ def inner_rustup(plain: list[str]) -> list[str] | None:
     return None
 
 
+INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help"})
+# Python launchers (spec gate-f57, story 5): their options around ``run``, value options then flags
+LAUNCHER_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "poetry": (
+        frozenset({"-C", "--directory", "-P", "--project"}),
+        frozenset(
+            "-q --quiet -v -vv -vvv --verbose -n --no-interaction --no-ansi --ansi --no-plugins "
+            "--no-cache".split()
+        ),
+    ),
+    "pdm": (
+        frozenset({"-p", "--project", "--venv", "--skip"}),
+        frozenset(
+            "-q --quiet -v --verbose -g --global -s --site-packages -r --recreate -l --list --json".split()
+        ),
+    ),
+    "hatch": (
+        frozenset({"-e", "--env", "-p", "--project", "--data-dir", "--cache-dir", "--config"}),
+        frozenset("-q --quiet -v --verbose --no-color --interactive --no-interactive".split()),
+    ),
+    "conda": (
+        frozenset({"-n", "--name", "-p", "--prefix", "--cwd"}),
+        frozenset("--live-stream --no-capture-output -v --verbose --debug-wrapper-scripts".split()),
+    ),
+}
+LAUNCHER_TABLES = {"mamba": "conda", "micromamba": "conda"}  # the same ``run`` (bypass review of T03)
+HATCH_SELECTOR_RE = re.compile(r"[+-][\w-]+=\S*")  # ``hatch run +py=3.12 …``: a matrix filter
+# corepack runs the manager, or a binary of one, it names (``corepack pnpx x`` is ``pnpm dlx x``)
+COREPACK_BINARIES = {
+    "npm": ["npm"],
+    "pnpm": ["pnpm"],
+    "yarn": ["yarn"],
+    "npx": ["npx"],
+    "pnpx": ["pnpm", "dlx"],
+    "yarnpkg": ["yarn"],
+}
+COREPACK_OWN = frozenset("enable disable install pack prepare use up cache hydrate".split()) | INFO_FLAGS
+
+
+def inner_launcher(plain: list[str]) -> list[str] | None:
+    """``poetry run``, ``pdm run``, ``hatch run`` (and ``hatch env run``), ``conda run`` (and mamba's):
+    options before and after ``run``, then the command; None on an option the gate does not know
+    (the command could start anywhere). hatch's ``env:`` prefix and matrix filters are dropped. A
+    launcher's own script table (pdm and hatch scripts in pyproject.toml) is not read."""
+    head = plain[0]
+    value_options, flags = LAUNCHER_OPTIONS[LAUNCHER_TABLES.get(head, head)]
+    flags = flags | INFO_FLAGS
+    rest = split_options(plain[1:], value_options, flags)
+    if rest is not None and head == "hatch" and rest[:2] == ["env", "run"]:
+        rest = rest[1:]
+    if rest is None or rest[:1] != ["run"]:
+        return None if rest is None else NOTHING_HIDDEN
+    rest = split_options(rest[1:], value_options, flags)
+    if rest is None:
+        return None
+    rest = rest[1:] if rest[:1] == ["--"] else rest
+    if head == "hatch":
+        rest = hatch_command(rest)
+    return [shell.join(rest)] if rest else NOTHING_HIDDEN
+
+
+def hatch_command(words: list[str]) -> list[str]:
+    """``hatch run +py=3.12 test:python -c x`` runs ``python -c x``."""
+    rest = list(words)
+    while rest and HATCH_SELECTOR_RE.fullmatch(rest[0]):
+        rest = rest[1:]
+    if rest and ":" in rest[0]:
+        rest = [rest[0].split(":", 1)[1], *rest[1:]]
+    return rest
+
+
+def inner_corepack(plain: list[str]) -> list[str] | None:
+    """``corepack pnpm@9 exec …`` runs the manager it names; ``corepack enable`` runs nothing; any
+    other first word stays opaque."""
+    word = plain[1] if len(plain) > 1 else ""
+    name = word.split("@", 1)[0]
+    if name in COREPACK_BINARIES:
+        return [shell.join([*COREPACK_BINARIES[name], *plain[2:]])]
+    return NOTHING_HIDDEN if not word or word in COREPACK_OWN else None
+
+
 WRAPPER_PARSERS = {
+    "poetry": inner_launcher,
+    "pdm": inner_launcher,
+    "hatch": inner_launcher,
+    "conda": inner_launcher,
+    "mamba": inner_launcher,
+    "micromamba": inner_launcher,
+    "corepack": inner_corepack,
     "rustup": inner_rustup,
     "distrobox": inner_distrobox,
     "distrobox-enter": inner_distrobox,
@@ -2668,6 +2759,9 @@ def expand_runner(plain: list[str], here: Path | None) -> tuple[list[str], Dirs]
         commands = expand_node(plain, here)
     elif head in SHELLS:
         commands = expand_shell(plain)
+    elif inline.family(head) == "python":  # ``python -m pip …`` is ``pip …`` (spec gate-f57, story 3)
+        pip = inline.pip_argv(plain)
+        commands = [shell.join(pip)] if pip else None
     elif head in WRAPPER_PARSERS:
         commands = WRAPPER_PARSERS[head](plain)
     else:

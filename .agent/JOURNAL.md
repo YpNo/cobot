@@ -357,3 +357,11 @@ Proof: full suite: the only failures are stories 3, 5, 6 and 7 rows of tests/tes
 Open: accepted, a script copied, linked or fetched into the project in the same command (paths are resolved as they are at check time), Q1's residual; friction, pushd sub && popd, cd sub &, a script under HOME outside the project.
 Next: T03, python -m and launchers.
 verified: tree 29b5e6a4b4276ffed9e060dc9144ead4850f0bfa · full suite, story 4 rows, ruff
+
+## 2026-11-23 — gate-f57 T03: python -m and the launchers (stories 3 and 5)
+Changed: CODE_MODULES (Q2's named list) asks on a -m module's top package (asyncio.__main__, idlelib.pyshell too); python -m pip (and pip.__main__) expands to pip through expand_runner, so its rows judge it. inner_launcher reads poetry, pdm, hatch (hatch env run, its env: prefix and +py= filters), conda, mamba and micromamba around run; inner_corepack maps the managers and their binaries (pnpx is pnpm dlx), an unknown first word stays opaque; pipx run and runpip, pixi run, exec and x, rye run are opaque.
+Why: F-57 rows 4, 5 and 9: python3 -m timeit x, python3 -m pip install x and poetry run python -c x reached no decision.
+Proof: full suite: only stories 6, 7 and 8 rows of tests/test_gate_f57.py fail, not built yet; stories 1 to 5 268 passed; ruff clean. Bypass review (3 HIGH, 3 MEDIUM, 1 LOW), each a test row.
+Open: accepted, corepack pnpm@<url> (its source unread), pdm and hatch scripts in pyproject.toml judged as the word they look like; friction, conda run -nbase asks.
+Next: T04, awk and sed.
+verified: tree db61d5c988db2278665b606772576bd979f7f015 · full suite, stories 1 to 5, ruff

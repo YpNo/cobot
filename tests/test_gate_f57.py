@@ -390,6 +390,15 @@ MODULE_ASK = [
     "python3 -m idlelib",
     "python3 -m IPython",
     "python3 -I -m code",
+    # bypass review of T03: a package's __main__ or a submodule
+    "python3 -m asyncio.__main__",
+    "python3 -m idlelib.pyshell",
+    "python3 -m idlelib.idle",
+    "python3 -m _pyrepl.__main__",
+    "python3 -m IPython.__main__",
+    "env python3 -m asyncio.__main__",
+    "python3 -m pip.__main__ install x",
+    "poetry run python -m pip.__main__ install x",
 ]
 MODULE_FRICTION = [
     "python3 -m pytest -q",
@@ -433,6 +442,20 @@ LAUNCHER_ASK = [
     "node --run build",
     "poetry run --unknown-option x",
     "conda run --unknown-option python s.py",
+    # bypass review of T03
+    "hatch run test:python -c x",
+    "hatch run test:pip install x",
+    "hatch run +py=3.12 test:python -c x",
+    "hatch env run -- python -c x",
+    "corepack npx x",
+    "corepack npx node -e x",
+    "corepack pnpx x",
+    "corepack unknown-binary x",
+    "mamba run -n base python -c x",
+    "micromamba run -n x python -m timeit x",
+    "pixi run python -c x",
+    "rye run python -c x",
+    "pipx runpip x install y",
 ]
 LAUNCHER_FRICTION = [
     "poetry run pytest",
@@ -442,7 +465,13 @@ LAUNCHER_FRICTION = [
     "poetry install",
     "pdm install",
     "corepack enable",
+    "corepack use pnpm@9",
     "pipx list",
+    "poetry --version",
+    "pdm run -l",
+    "pdm run --skip :all pytest",
+    "hatch run test:pytest",
+    "hatch run +py=3.12 test:pytest",
 ]
 
 

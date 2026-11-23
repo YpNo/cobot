@@ -256,3 +256,11 @@ Proof: full suite with coverage exit 0, 98.28 %; ruff clean; markdownlint clean;
 Open: pre-existing tier, a cd into an owner folder makes a download or extraction ask, not deny (also curl -O and tar xf); dpkg --root is a residual.
 Next: T08 in-place decompression.
 verified: tree f7ca68c759a305e523b1fdff23082218d9b4cbef · full suite with coverage, ruff, markdownlint, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T08: in-place decompression (F-61)
+Changed: decompress_landings (each input without its suffix or -S, beside it or in zstd's --output-dir-flat|-mirror or lzop's -p), judged by download_hit; -N and -r unplaced; zstd --filelist and xz --files ask; -c, -t, -l and -o files add none; a names-a-protected-file check on relative landings after an unfollowed cd; landing words capped.
+Why: F-61, gunzip ~/.claude/cobot.rules.gz and kin got none.
+Proof: full suite with coverage, 98.30 %, one failure: the known flaky glob-deadline test under load, which passes alone; ruff clean. Bypass review folded: cluster scan per program (-dT0, -dS.x), -- ends options, xz --files, lz4 --multiple, lbzip2, lrzip, lzop -x and -p, getopt prefixes, the cap.
+Open: pre-existing, a followed cd into an owner folder asks where the literal path denies (touch too); 5000 plain words take about 6 s in the word loop (cat too).
+Next: T09 removal, cover, link and lock verbs.
+verified: tree 970927fb5011b00c138b661e0571bfa4348307d3 · full suite with coverage, ruff

@@ -3264,13 +3264,16 @@ LANDING_OPTIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
     # 2026-11-23; aria2c writes ``-o`` inside ``-d``. gh's are read for its download verbs only.
     "aria2c": (("d", "--dir", "folder"), ("o", "--out", "file"), ("O", "--index-out", "indexed")),
     "gh": (("D", "--dir", "folder"), ("O", "--output", "file")),
+    # story 7, T08: ``zstd --help`` 1.5, read 2026-11-23 (zstd takes no abbreviated long option)
+    "zstd": (("", "--output-dir-flat", "folder"), ("", "--output-dir-mirror", "folder")),
+    "lzop": (("p", "--path", "folder"),),  # lzop's output folder (T08 review)
 }
 GH_DOWNLOADING = frozenset({"release", "run"})  # ``gh release download``, ``gh run download``
 # any short option with a path joined to it, for programs outside the table: the path after the
 # letters is a path word, as it is with a space (``wget -o~/log``, ``gcc -o~/x``, ``curl -c~/j``)
 JOINED_PATH_RE = re.compile(r"-[A-Za-z0-9#:]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")  # curl -#o~/x
 LANDING_PREFIX_MIN = 3  # getopt takes any unambiguous prefix: ``cp --t=DIR`` is ``--target-directory``
-EXACT_LONG_NAMES = frozenset({"curl"})  # curl takes no abbreviated long option
+EXACT_LONG_NAMES = frozenset({"curl", "zstd"})  # they take no abbreviated long option
 GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
 
 
@@ -4110,7 +4113,9 @@ def protected_file_touched(
         bases = sorted({*bases, *joined})
         landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
         landed = landed or (landing_hit(segment, bases, protected, anchors, budget) if relocating else None)
-        landed = landed or (download_hit(segment, bases, protected, anchors, budget) if command else None)
+        away = dirs != start  # a cd ran, or one the gate cannot follow
+        if command and not landed:
+            landed = download_hit(segment, bases, protected, anchors, budget, away)
         if command and not landed:
             landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
         if landed and not unsure_landing(landed):
@@ -4206,15 +4211,27 @@ def landing_hit(
 
 
 def download_hit(
-    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+    segment: list[str],
+    bases: list[str],
+    protected: list[Rule],
+    anchors: frozenset[str],
+    budget: GlobBudget,
+    unknown: Dirs | bool = False,
 ) -> str | None:
-    """A download that lands on a protected file, or whose names are unknown in a folder that is
-    protected (the folder itself) or holds a protected folder (``<folder>/*``, which asks: the
-    owner may approve a download into HOME). The working directory when it names no folder (Q2)."""
-    parts = download_landings(program_of(segment))
+    """A download or decompression that lands on a protected file, or whose names are unknown in a
+    folder that is protected (the folder itself) or holds a protected folder (``<folder>/*``, which
+    asks: the owner may approve a download into HOME). The working directory when it names no
+    folder (Q2). After a ``cd`` the gate did not follow (``unknown``), a relative landing named
+    like a protected file counts, as a relative word does (T08)."""
+    argv = program_of(segment)
+    if protected and listed_decompression(argv):
+        return "<files from a list>/*"
+    parts = download_landings(argv) or decompress_landings(argv)
     if parts is None:
         return None
     folders, words, unplaced = parts
+    if protected and len(words) + len(folders) > LANDING_WORDS_MAX:
+        return "<too many copy paths>/*"  # judged in time, as copies are (T08 review)
     for word in words:
         for form in home_forms(word):
             anchored = os.path.isabs(form) or form.startswith("~")
@@ -4222,6 +4239,8 @@ def download_hit(
                 word_touches(form, base, protected, False, anchors, False, budget)
                 for base in bases[: 1 if anchored else None]
             ):
+                return word
+            if unknown and not anchored and names_a_protected_file(form, protected):
                 return word
     if not unplaced or not protected:  # the rule-less customization-root pass must not meet it
         return None
@@ -4235,6 +4254,157 @@ def download_hit(
             if any(holds_an_anchor(p, anchors) for p in places):
                 return f"{folder.rstrip('/')}/*"
     return None
+
+
+# in-place decompression (story 7, T08): read from gzip 1.13, xz 5.6, zstd 1.5 and bzip2 1.0
+# ``--help`` and the lz4, brotli, pigz, lzip, lzop and p7zip manuals on 2026-11-23. Each input
+# lands beside itself without its suffix; ``-c``, ``-t`` and ``-l`` write nothing.
+DECOMPRESSING = frozenset("gunzip unxz unlzma unzstd bunzip2 unlz4 unpigz uncompress lunzip lrunzip".split())
+DECOMPRESS_FLAG = frozenset(
+    "gzip xz lzma zstd zstdmt bzip2 pbzip2 lbzip2 lz4 brotli lzip plzip lzop pigz compress p7zip "
+    "lrzip".split()
+)
+NOT_WRITING_LETTERS = frozenset("ctl")
+NOT_WRITING_LONGS = ("--stdout", "--to-stdout", "--test", "--list")
+NOT_WRITING_PREFIX = 4  # getopt's shortest unique prefix among them: gzip's ``--std`` (T08 review)
+SUFFIX_TAKERS = frozenset("gzip gunzip pigz unpigz xz unxz lzma unlzma brotli".split())  # -S, --suffix
+NAME_RESTORERS = frozenset("gzip gunzip pigz unpigz".split())  # -N restores a stored name
+PAIRED_OUTPUT = frozenset({"lz4", "unlz4"})  # ``lz4 -d in out``: a second operand is the output
+# per program, the short options that take a value: a cluster ends there (``-dT0``, ``-dS.x``)
+DECOMPRESS_VALUE_SHORTS = {
+    **dict.fromkeys(("pigz", "unpigz"), "Sbp"),
+    **dict.fromkeys(("xz", "unxz", "lzma", "unlzma"), "STM"),
+    **dict.fromkeys(("zstd", "unzstd", "zstdmt"), "oDTBM"),
+    "brotli": "oSqw",
+    "lzip": "oms",
+    "lzop": "opS",
+    "lrzip": "oOSpLwN",
+}
+DECOMPRESS_VALUE_DEFAULT = "So"
+DECOMPRESS_VALUE_LONGS = frozenset(
+    "--suffix --output --trace --filelist --output-dir-flat --output-dir-mirror --threads --files --files0 "
+    "--path".split()
+)
+FILE_LISTS = {
+    "zstd": "--filelist",
+    "zstdmt": "--filelist",
+    **dict.fromkeys(("xz", "unxz", "lzma", "unlzma"), "--files"),
+}
+GZIP_SUFFIXES = ("-gz", "_z", "-z")  # gzip's other suffixes; ``.z`` and ``.Z`` strip as an extension
+
+
+def decompress_options(argv: list[str]) -> tuple[set[str], list[str]]:
+    """A decompressor's short letters and long words before ``--``: each cluster read up to the
+    first letter that takes a value, digits skipped (``-dT0``, ``-d1``, ``-dS.x``; T08 review)."""
+    head = argv[0] if argv else ""
+    takers = DECOMPRESS_VALUE_SHORTS.get(head, DECOMPRESS_VALUE_DEFAULT)
+    letters: set[str] = set()
+    longs: list[str] = []
+    for word in argv[1:]:
+        if word == "--":
+            break
+        if word.startswith("--"):
+            longs.append(word)
+            continue
+        if not word.startswith("-"):
+            continue
+        for c in word[1:]:
+            if c.isalpha():
+                letters.add(c)
+            if c in takers:
+                break
+    return letters, longs
+
+
+def decompresses(argv: list[str]) -> bool:
+    head = argv[0] if argv else ""
+    if head in DECOMPRESSING:
+        return True
+    letters, longs = decompress_options(argv)
+    long = any(long_prefix(w, "--decompress", 6) or long_prefix(w, "--uncompress", 5) for w in longs)
+    flag = "d" in letters or (head == "lzop" and "x" in letters)  # lzop -x extracts in place
+    return head in DECOMPRESS_FLAG and (flag or long)
+
+
+def listed_decompression(argv: list[str]) -> bool:
+    """``zstd --filelist`` and ``xz --files[0]`` name their inputs in a file: decompressed or
+    removed (``--rm``), they may be anywhere (challenger and T08 review, story 7)."""
+    option = FILE_LISTS.get(argv[0] if argv else "")
+    if not option or not any(w.startswith(option) for w in argv):
+        return False
+    return decompresses(argv) or "--rm" in argv
+
+
+def decompress_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | None:
+    """An in-place decompression's folders, the words it lands at, and whether its names are
+    unknown (``-N``) or every file under a folder is rewritten (``-r``), in the shape
+    ``download_landings`` returns, so ``download_hit`` judges both alike (story 7, T08)."""
+    head = argv[0] if argv else ""
+    if not decompresses(argv):
+        return None
+    letters, longs = decompress_options(argv)
+    quiet = any(long_prefix(w, o, NOT_WRITING_PREFIX) for w in longs for o in NOT_WRITING_LONGS)
+    if letters & NOT_WRITING_LETTERS or quiet:
+        return None
+    inputs, suffix, output = decompress_operands(argv)
+    multiple = "m" in letters or any(long_prefix(w, "--multiple", 5) for w in longs)
+    if output or (head in PAIRED_OUTPUT and len(inputs) == 2 and not multiple):
+        return None  # the output file is a word of the segment already
+    outdirs = [value for value, kind in landing_option_values(argv) if kind == "folder"]
+    recursive = "r" in letters or any(long_prefix(w, "--recursive", 5) for w in longs)
+    restored = head in NAME_RESTORERS and ("N" in letters or any(long_prefix(w, "--name", 5) for w in longs))
+    words, folders = [], []
+    for source in inputs:
+        folder = outdirs[0] if outdirs else os.path.dirname(source) or "."
+        folders.append(source if recursive else folder)
+        name = stripped_name(os.path.basename(source), suffix if head in SUFFIX_TAKERS else "")
+        if name:
+            words.append(os.path.join(folder, name))
+    return folders, words, recursive or restored
+
+
+def decompress_operands(argv: list[str]) -> tuple[list[str], str, bool]:
+    """The inputs, a ``-S`` suffix, and whether an ``-o`` output file is named."""
+    takers = DECOMPRESS_VALUE_SHORTS.get(argv[0], DECOMPRESS_VALUE_DEFAULT)
+    inputs, suffix, output, i = [], "", False, 1
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        if word == "--":
+            inputs += argv[i + 1 :]
+            break
+        if word.startswith("--"):
+            takes = name in DECOMPRESS_VALUE_LONGS and not eq
+            given = value if eq else following
+            suffix = given if long_prefix(name, "--suffix", 5) else suffix
+            output = output or long_prefix(name, "--output", 5)  # brotli's ``--out=`` (T08 review)
+            i += 2 if takes else 1
+            continue
+        if word.startswith("-") and len(word) > 1:
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in takers), None)
+            letter = word[taker] if taker else ""
+            given = word[taker + 1 :] or following if taker else ""
+            suffix = given if letter == "S" else suffix
+            output = output or letter == "o"
+            i += 2 if taker and not word[taker + 1 :] else 1
+            continue
+        inputs.append(word)
+        i += 1
+    return inputs, suffix, output
+
+
+def stripped_name(name: str, suffix: str) -> str:
+    """A compressed file's name without its suffix: ``-S``'s when it ends the name, ``.tgz`` and
+    ``.taz`` as ``.tar``, gzip's ``-gz`` and ``_z``, else the last extension."""
+    if suffix and name.endswith(suffix) and name != suffix:
+        return name[: -len(suffix)]
+    if name.lower().endswith((".tgz", ".taz")):
+        return name[:-4] + ".tar"
+    for other in GZIP_SUFFIXES:
+        if name.endswith(other) and name != other:
+            return name[: -len(other)]
+    stem, dot, _ = name.rpartition(".")
+    return stem if dot and stem else ""
 
 
 # extractions (spec gate-f56-f60, story 4): read from GNU tar 1.35, bsdtar 3.7, UnZip 6, GNU cpio

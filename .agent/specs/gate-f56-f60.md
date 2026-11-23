@@ -277,7 +277,7 @@ then the focused tests, ruff and the gate dry run, with a bypass-aimed review be
 | T05 ✅ | anchors up to a moved `config_dir()`; moving a folder that holds an anchor | gate | auth | — |
 | T06 ✅ | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T01–T05 |
 | T07 ✅ | aria2c, gh; ditto, pax, sftp; jar, ar, unar, bsd*, dpkg-deb | gate | auth | T02–T04 |
-| T08 | in-place decompression | gate | auth | T03 |
+| T08 ✅ | in-place decompression | gate | auth | T03 |
 | T09 | removal, cover, link and lock verbs | gate | auth | T05 |
 | T10 | the config dir's real path | gate | auth | T05 |
 | T11 | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T07–T10 |

@@ -8,6 +8,8 @@ locking the config dir, and reaching it through a symlink. Each row reached no d
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 
@@ -161,6 +163,124 @@ def test_story7_writerInAProtectedCwdOrUnplaced_asks(rules, command):
 
 @pytest.mark.parametrize("command", WRITER_SILENT)
 def test_story7_writerElsewhere_staysSilent(rules, command):
+    assert decide(rules, command) is None
+
+
+# ---------------------------------------------------------------- story 7, T08: in-place decompression
+
+DECOMPRESSED_REFUSED = [
+    "gunzip ~/.claude/cobot.rules.gz",
+    "gunzip -f ~/.claude/cobot.rules.gz",
+    "gzip -d ~/.claude/cobot.rules.gz",
+    "gzip -dk ~/.claude/cobot.rules.gz",
+    "gzip --decompress ~/.claude/cobot.rules.gz",
+    "gzip --decomp ~/.claude/cobot.rules.gz",
+    "gunzip -S .x ~/.claude/cobot.rules.x",
+    "gunzip --suffix=.x ~/.claude/cobot.rules.x",
+    "gunzip ~/.claude/cobot.rules-gz",
+    "gunzip ~/.claude/cobot.rules_z",
+    "xz -d ~/.claude/cobot.rules.xz",
+    "unxz ~/.claude/cobot.rules.xz",
+    "lzma -d ~/.claude/cobot.rules.lzma",
+    "unlzma ~/.claude/cobot.rules.lzma",
+    "zstd -d ~/.claude/cobot.rules.zst",
+    "unzstd ~/.claude/cobot.rules.zst",
+    "zstd -d --output-dir-flat ~/.claude e/cobot.rules.zst",
+    "zstd -d e/cobot.rules.zst --output-dir-mirror ~/.claude",
+    "zstd -d --output-dir-flat ~/.claude x.zst",
+    "bunzip2 ~/.claude/cobot.rules.bz2",
+    "bzip2 -d ~/.claude/cobot.rules.bz2",
+    "lz4 -d ~/.claude/cobot.rules.lz4",
+    "unlz4 ~/.claude/cobot.rules.lz4",
+    "brotli -d ~/.claude/cobot.rules.br",
+    "p7zip -d ~/.claude/cobot.rules.7z",
+    "pigz -d ~/.claude/cobot.rules.gz",
+    "unpigz ~/.claude/cobot.rules.gz",
+    "lzip -d ~/.claude/cobot.rules.lz",
+    "lzop -d ~/.claude/cobot.rules.lzo",
+    "uncompress ~/.claude/cobot.rules.Z",
+    "cd ~/.claude && gunzip cobot.rules.gz",
+    "gunzip -N ~/.claude/x.gz",
+    "gunzip x.gz ~/.claude/cobot.rules.gz",
+    "gunzip -- ~/.claude/cobot.rules.gz",
+    # T08 bypass review: clusters with digits and values, operands after --, lz4 --multiple,
+    # lbzip2, lrzip, lzop -x and -p, getopt prefixes
+    "zstd -dT0 ~/.claude/cobot.rules.zst",
+    "xz -dT0 ~/.claude/cobot.rules.xz",
+    "pigz -dp4 ~/.claude/cobot.rules.gz",
+    "gzip -d1 ~/.claude/cobot.rules.gz",
+    "zstd -d19 ~/.claude/cobot.rules.zst",
+    "gzip -dS.x ~/.claude/cobot.rules.x",
+    "xz -dS.r ~/.claude/cobot.rules.r",
+    "zstd -d -Dlocal ~/.claude/cobot.rules.zst",
+    "gzip -dSc ~/.claude/cobot.rulesc",
+    "gzip -d -- -t ~/.claude/cobot.rules.gz",
+    "gzip -d ~/.claude/cobot.rules.gz -- -c",
+    "lz4 -d --multiple ~/.claude/cobot.rules.lz4 b.lz4",
+    "lbzip2 -d ~/.claude/cobot.rules.bz2",
+    "lrunzip ~/.claude/cobot.rules.lrz",
+    "lzop -x ~/.claude/cobot.rules.lzo",
+    "lzop -d -p ~/.claude ./cobot.rules.lzo",
+    "lzop -d --path=~/.claude ./cobot.rules.lzo",
+]
+DECOMPRESSED_ASKED = [
+    "gunzip ~/.claude.json.gz",
+    "cd ~ && gunzip .claude.json.gz",
+    "gunzip ~/.bashrc.gz",
+    "gunzip -N ~/x.gz",
+    "zstd -d --filelist l",
+    "zstd --rm --filelist l",
+    "sudo gunzip ~/.claude/cobot.rules.gz",  # sudo is opaque and asks, as ``sudo cp`` does
+    "gzip -dS.x ~/.bashrc.x",
+    "xz -d --files=list",
+    "xz -d --files0=list",
+    "xz -d --files list",
+]
+DECOMPRESSED_SILENT = [
+    "gunzip f.gz",
+    "cd work && gunzip f.gz",
+    "xz -d build/x.xz",
+    "zstd -d x.zst -o x",
+    "gunzip -c e.gz",
+    "gzip -dc ~/.claude/cobot.rules.gz",
+    "gzip -t ~/.claude/cobot.rules.gz",
+    "gzip -l ~/.claude/cobot.rules.gz",
+    "xz -l x.xz",
+    "gzip f",
+    "bzip2 -k f",
+    "zstd x",
+    "zstd --filelist l",
+    "zstd -d --output-dir-flat out x.zst",
+    "gzip --std -d ~/.claude/cobot.rules.gz",
+    "brotli -d --out=out ~/.claude/cobot.rules.br",
+    "gzip -qd f.gz",
+    "zstd -dT0 x.zst",
+    "xz --files=list",
+]
+
+
+def test_story7_manyDecompressedOperands_askWithinTheHookTimeout(rules):
+    """T08 review: 5000 operands took 10.9 s, past the hook's 10 s; past LANDING_WORDS_MAX they ask
+    (5000 now take about 7 s, of which the plain word loop, as for ``cat``, is about 6)."""
+    command = "gunzip " + " ".join(f"~/x/f{i}.gz" for i in range(300))
+    started = time.monotonic()
+    verdict = decide(rules, command)
+    assert time.monotonic() - started < 5
+    assert verdict == "ask"
+
+
+@pytest.mark.parametrize("command", DECOMPRESSED_REFUSED)
+def test_story7_decompressionOntoAnOwnerFile_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", DECOMPRESSED_ASKED)
+def test_story7_decompressionOntoAnAskRowOrUnknownName_asks(rules, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", DECOMPRESSED_SILENT)
+def test_story7_decompressionElsewhere_staysSilent(rules, command):
     assert decide(rules, command) is None
 
 

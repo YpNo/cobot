@@ -240,10 +240,13 @@ All notable changes to this project are documented here. The format follows
   New friction: `pax -r` asks everywhere; `aria2c -i` asks.
 - **Taking the config dir away or locking it is refused or asked (F-62).**
   - Refused, as `rm -r` is: `tar --remove-files`, `zip -m`, `7z -sdel`, a recursive compressor,
-    `rclone purge|delete|rmdirs`, a `mount` or FUSE mount over it, and a link to a folder holding
-    it (`ln -s ~ x`, `cp -rs ~ x`).
+    `rclone purge|delete|rmdirs`, a `mount` or FUSE mount over it, and a link or bind mount of a
+    folder holding it (`ln -s ~ x`, `cp -rs ~ x`, `mount --bind ~ x`).
   - Asked: `chmod`, `chown`, `chgrp`, `setfacl`, `chattr` on it or a folder holding it (the mode
-    is not read, so `chmod 700 ~` asks), and a `bwrap` cover.
+    is not read, so `chmod 700 ~` asks), and every `bwrap` command, as `unshare` already did:
+    `bwrap --bind / / rm -rf ~/.claude` had no decision.
+  - A literal refusal on cobot's owner files is no longer softened to an ask by a landing in a
+    customization root elsewhere in the command (`cp x ~/.agents/; cp x ~/.claude/cobot.rules`).
   - A config dir reached through a symlink is protected at its real path, and re-pointing a link
     above it is refused.
 - **A shell variable no longer hides a protected file (F-55).**

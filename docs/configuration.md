@@ -131,9 +131,10 @@ Where a file lands (spec gate-f56-f60):
   everywhere, as `cpio -i` does.
 - Taking the config dir away is refused like removing it (F-62): `tar --remove-files`, `zip -m`,
   `7z -sdel`, a recursive `gzip`/`zstd`, `rclone purge|delete`, a `mount` or FUSE mount over it,
-  and a link to a folder holding it (`ln -s ~ /tmp/h`, `cp -rs ~ x`). `chmod`, `chown`, `chgrp`,
-  `setfacl` and `chattr` on it or a folder holding it ask, since the mode is not read (so
-  `chmod 700 ~` asks), and so does a `bwrap` cover, which only its child sees.
+  and a second name for a folder holding it (`ln -s ~ /tmp/h`, `cp -rs ~ x`, `mount --bind ~
+  /mnt/h`). `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on it or a folder holding it ask,
+  since the mode is not read (so `chmod 700 ~` asks). `bwrap` asks, as `unshare` and `firejail`
+  do: the gate does not read the command it runs.
 - A config dir reached through a symlink (`CLAUDE_CONFIG_DIR` set to a link, or `~/.claude`
   linked into a dotfiles folder) is protected at its real path too, and re-pointing a link above
   it (`ln -sfn x ~` with HOME a link) is refused. With that dotfiles layout, `git -C ~/dotfiles …`

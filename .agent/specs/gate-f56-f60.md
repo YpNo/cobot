@@ -375,4 +375,9 @@ T07 to T11 were built, each gate task with a bypass-aimed review folded before t
 and F-62 are closed. Q3 was built on its recommended default (a lock asks); the owner may reverse
 it at review. Two build decisions: a mount's source is not covered, only its mount point (T11,
 found by an agy row: a bind of HOME elsewhere shows it, it does not hide it); the lock check reads
-the folders of `never` rows only, so `chmod 700 ~/.ssh` stays silent (T09 review).
+the folders of `never` rows only, so `chmod 700 ~/.ssh` stays silent (T09 review). Wrap folded
+the code and security reviews: `bwrap` became opaque (it asks, as `unshare` does, since
+`bwrap --bind / / rm -rf ~/.claude` had no decision), so a `bwrap` cover asks by that route too;
+a bind mount's source is a second name, refused as a link is; and `owner_hit` leaves out a
+segment a customization root flags, so a landing in `~/.agents` no longer softens a literal deny
+elsewhere in the command (an older class the new landing tables had widened).

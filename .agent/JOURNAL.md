@@ -287,3 +287,11 @@ Why: ADR-0007; the docs listed F-61 and F-62 as not covered.
 Proof: focused suites 562 passed; ruff, markdownlint, check-plugin clean; cobot-memory check exit 0 (brief 5195 chars).
 Next: /cobot:wrap stories 7 and 8.
 verified: tree 777007cc7306ff0ce4566c34ee82ffa16c1508d6 · focused tests, ruff, markdownlint, check-plugin, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60 stories 7 and 8: reviews folded, F-61 and F-62 closed
+Changed: wrap code review (mount's joined -o values and per-mounter value letters, unzstd --filelist, lz4 and lrzip -l, ar --output value, dpkg -R, lock_hit and locked_words tidied); wrap security review (bwrap opaque, bind-mount sources as second names, owner_hit leaves out a segment a customization root flags, so a landing in ~/.agents no longer softens a literal deny elsewhere: a class older than this spec that the new tables widened); docs and CHANGELOG to match.
+Why: /cobot:wrap.
+Proof: full suite 5319 passed; with coverage 98.33 %, its one failure the known flaky glob-deadline test under load (file passes alone); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean.
+Open: F-57, F-58, F-59 (accepted), F-50, F-51; LOW, cd into an unknown folder then ln -sfn .claude gets none (rm -rf .claude asks); Q3 built on its default (a lock asks), for the owner at review.
+Next: the orchestrator verifies, pushes to PR 83 and updates its body.
+verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · full suite with and without coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents

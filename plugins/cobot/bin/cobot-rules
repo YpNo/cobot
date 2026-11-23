@@ -125,7 +125,7 @@ OPAQUE = frozenset(
     # launchers, terminal multiplexers and job queues
     "parallel sem niceload parset env_parallel rush xe watch entr watchexec hyperfine "
     "setsid taskset chrt unbuffer strace dbus-run-session pkexec run0 systemd-run unshare firejail "
-    "script tmux screen pueue tsp nq".split()
+    "bwrap script tmux screen pueue tsp nq".split()  # bwrap: wrap security review, stories 7 and 8
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -3292,6 +3292,7 @@ FOLDER_OPTIONS = {
 EXTRACTOR_ALIASES = {"bsdunzip": "unzip", "bsdcpio": "cpio"}  # libarchive's twins take the same options
 UNAR_FOLDER = ("-o", "-output-directory", "--output-directory")  # unar's long options take one dash
 DPKG_EXTRACTING = frozenset("-x --extract -X --vextract -R --raw-extract".split())  # then: deb, folder
+DPKG_RECURSIVE = frozenset({"-R", "--raw-extract"})  # for dpkg itself, -R is --recursive (wrap review)
 # options naming where a copy or a download lands (spec gate-f56-f60, story 1, F-60): per
 # program, (short letter, long name, kind). A ``folder`` is judged as ``cp -t DIR`` is, a
 # relocating word; a ``file`` as a path word. Read from coreutils ``cp``, ``mv``, ``ln`` and
@@ -3381,7 +3382,9 @@ FUSE_MOUNTERS = frozenset(
 RCLONE_MOUNTING = frozenset({"mount", "nfsmount"})
 
 
-MOUNT_VALUE_SHORTS = frozenset("otOLUNT")  # mount(8) and the FUSE mounters' ``-o OPTS``
+# short options that take a value, per mounter (mount(8), bindfs 1.17, sshfs 3.7); others: -o
+MOUNT_VALUE_SHORTS = {"mount": "otOLUNT", "bindfs": "ougpmM", "sshfs": "opF"}
+MOUNT_VALUE_DEFAULT = "o"
 MOUNT_VALUE_LONGS = frozenset(
     "--types --options --test-opts --fstab --label --uuid --namespace --source --target-prefix".split()
 )
@@ -3398,7 +3401,15 @@ def covered_folders(argv: list[str]) -> list[str]:
         return [w for w in argv[verb + 1 :] if not w.startswith("-")] if verb is not None else []
     if head != "mount" and not head.startswith("mount.") and head not in FUSE_MOUNTERS:
         return []
-    targets, operands, i = [], [], 1
+    targets, operands, _ = mount_operands(argv)
+    return [t for t in targets if t] + operands[-1:]
+
+
+def mount_operands(argv: list[str]) -> tuple[list[str], list[str], str]:
+    """A mounter's ``--target`` values, its operands past option values, and its option text
+    (every ``-o`` value and short cluster, to find ``bind``)."""
+    takers = MOUNT_VALUE_SHORTS.get(argv[0], MOUNT_VALUE_DEFAULT)
+    targets, operands, options, i = [], [], [], 1
     while i < len(argv):
         word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
         name, eq, value = word.partition("=")
@@ -3406,13 +3417,30 @@ def covered_folders(argv: list[str]) -> list[str]:
             targets.append(value if eq else following)
             i += 1 if eq else 2
         elif word.startswith("--"):
+            options.append(word)
             i += 2 if name in MOUNT_VALUE_LONGS and not eq else 1
         elif word.startswith("-") and len(word) > 1:
-            i += 2 if word[-1] in MOUNT_VALUE_SHORTS else 1
+            # the cluster ends at its first value letter: ``-oremount,ro`` holds its value
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in takers), None)
+            options.append(word + (" " + following if taker == len(word) - 1 else ""))
+            i += 2 if taker == len(word) - 1 else 1
         else:
             operands.append(word)
             i += 1
-    return [t for t in targets if t] + operands[-1:]
+    return targets, operands, " ".join(options)
+
+
+BIND_OPTIONS_RE = re.compile(r"(?:^|\s)(?:--r?bind\b|-[A-Za-z]*[BR]\b|-o\s*(?:\S*,)?r?bind\b)")
+
+
+def bind_sources(argv: list[str]) -> list[str]:
+    """The source of a bind mount (``mount --bind|--rbind|-B|-R|-o bind``, ``bindfs``): a second
+    name for a folder, like a link to it (wrap security review, story 8)."""
+    head = argv[0] if argv else ""
+    if head not in ("mount", "bindfs"):
+        return []
+    _, operands, options = mount_operands(argv)
+    return operands[:-1] if head == "bindfs" or BIND_OPTIONS_RE.search(options) else []
 
 
 def other_extraction_folders(head: str, argv: list[str]) -> list[str]:
@@ -3426,7 +3454,8 @@ def other_extraction_folders(head: str, argv: list[str]) -> list[str]:
         return [w for w in argv[1:] if not w.startswith("-")][-1:]
     if head not in ("dpkg-deb", "dpkg"):
         return []
-    action = next((i for i, word in enumerate(argv) if word.split("=", 1)[0] in DPKG_EXTRACTING), None)
+    actions = DPKG_EXTRACTING - DPKG_RECURSIVE if head == "dpkg" else DPKG_EXTRACTING
+    action = next((i for i, word in enumerate(argv) if word.split("=", 1)[0] in actions), None)
     if action is None:
         return []
     operands = [w for w in argv[action + 1 :] if not w.startswith("-")]
@@ -3538,8 +3567,9 @@ def taken_away(argv: list[str]) -> list[int]:
 
 
 def rclone_verb(argv: list[str], verbs: frozenset[str]) -> int | None:
-    """The index of one of rclone's ``verbs``, the first word that is one: a global flag's value
-    (``--config x``) is not the verb (T09 review)."""
+    """The index of the first word that is one of rclone's ``verbs``. rclone's flags take values
+    the gate has no table for, so the first bare word may be one (``--config x purge``; T09
+    review); a value spelled like a verb is read as one, which can only add a decision."""
     if argv[:1] != ["rclone"]:
         return None
     return next((i for i, w in enumerate(argv[1:], 1) if w in verbs), None)
@@ -3555,11 +3585,10 @@ def linked_holder(argv: list[str]) -> bool:
     """``ln``, ``cp -s`` and ``cp -l``: a link (or a tree of hard links) to a folder holding the
     config dir reaches it under another name the rows do not read (challenger, T09 review)."""
     head = argv[0] if argv else ""
-    if head == "ln":
-        return True
+    if head != "cp":
+        return head == "ln"
     longs = ("--symbolic-link", "--link")
-    linking = {"s", "l"} & option_letters(argv) or any(long_prefix(w, o, 5) for w in argv for o in longs)
-    return head == "cp" and bool(linking)
+    return bool({"s", "l"} & option_letters(argv)) or any(long_prefix(w, o, 5) for w in argv for o in longs)
 
 
 def moved_sources(argv: list[str]) -> set[str]:
@@ -3570,6 +3599,8 @@ def moved_sources(argv: list[str]) -> set[str]:
     gio = head == "gio" and argv[1:2] in (["move"], ["mv"], ["rename"])
     if linked_holder(argv):
         return set(merge_parts(argv[1:])[1])
+    if bind_sources(argv):
+        return set(bind_sources(argv))
     if head not in MOVERS and not gio and not (head == "git" and copy_verb(argv) is not None):
         return set()
     _, sources, _ = merge_parts(argv[(copy_verb(argv) or 0) + 1 :])
@@ -4255,7 +4286,7 @@ def protected_file_touched(
         if command and not landed:
             landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
         if command and not landed:
-            landed = lock_hit(segment, bases, protected, anchors)
+            landed = lock_hit(segment, bases, protected)
         if command and not landed and protected:
             landed = relinked_ancestor(segment, bases)
         if landed and not unsure_landing(landed):
@@ -4356,7 +4387,7 @@ def download_hit(
     protected: list[Rule],
     anchors: frozenset[str],
     budget: GlobBudget,
-    unknown: Dirs | bool = False,
+    unknown: bool = False,
 ) -> str | None:
     """A download or decompression that lands on a protected file, or whose names are unknown in a
     folder that is protected (the folder itself) or holds a protected folder (``<folder>/*``, which
@@ -4404,7 +4435,8 @@ DECOMPRESS_FLAG = frozenset(
     "gzip xz lzma zstd zstdmt bzip2 pbzip2 lbzip2 lz4 brotli lzip plzip lzop pigz compress p7zip "
     "lrzip".split()
 )
-NOT_WRITING_LETTERS = frozenset("ctl")
+NOT_WRITING_LETTERS = "ctl"  # stdout, test, list; lz4's -l is its legacy format, lrzip's is LZO
+NOT_WRITING_BY = {"lz4": "ct", "unlz4": "ct", "lrzip": "t", "lrunzip": "t"}
 NOT_WRITING_LONGS = ("--stdout", "--to-stdout", "--test", "--list")
 NOT_WRITING_PREFIX = 4  # getopt's shortest unique prefix among them: gzip's ``--std`` (T08 review)
 SUFFIX_TAKERS = frozenset("gzip gunzip pigz unpigz xz unxz lzma unlzma brotli".split())  # -S, --suffix
@@ -4426,8 +4458,7 @@ DECOMPRESS_VALUE_LONGS = frozenset(
     "--path".split()
 )
 FILE_LISTS = {
-    "zstd": "--filelist",
-    "zstdmt": "--filelist",
+    **dict.fromkeys(("zstd", "zstdmt", "unzstd"), "--filelist"),
     **dict.fromkeys(("xz", "unxz", "lzma", "unlzma"), "--files"),
 }
 GZIP_SUFFIXES = ("-gz", "_z", "-z")  # gzip's other suffixes; ``.z`` and ``.Z`` strip as an extension
@@ -4484,7 +4515,7 @@ def decompress_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | 
         return None
     letters, longs = decompress_options(argv)
     quiet = any(long_prefix(w, o, NOT_WRITING_PREFIX) for w in longs for o in NOT_WRITING_LONGS)
-    if letters & NOT_WRITING_LETTERS or quiet:
+    if letters & set(NOT_WRITING_BY.get(head, NOT_WRITING_LETTERS)) or quiet:
         return None
     inputs, suffix, output = decompress_operands(argv)
     multiple = "m" in letters or any(long_prefix(w, "--multiple", 5) for w in longs)
@@ -4580,7 +4611,7 @@ def extracts(argv: list[str]) -> bool:
     return head in SEVEN_ZIPS and verb.casefold() in ("x", "e")  # 7z takes switches before its verb
 
 
-AR_VALUE_LONGS = frozenset({"--plugin", "--target", "--record-libdeps"})
+AR_VALUE_LONGS = frozenset({"--plugin", "--target", "--record-libdeps", "--output"})
 AR_OPERATIONS = frozenset("dmpqrstx")
 
 
@@ -4684,20 +4715,29 @@ def locked_words(argv: list[str]) -> list[str]:
     itself excepted: it covers nothing)."""
     head = argv[0] if argv else ""
     if head in LOCKERS:
-        operands, skip, ended = [], False, False
-        for word in argv[1:]:
-            if skip:
-                skip = False
-            elif ended or not word.startswith("-") or (head == "chmod" and CHMOD_MINUS_MODE.fullmatch(word)):
-                operands.append(word)
-            elif word == "--":
-                ended = True
-            elif head == "setfacl" and word in SETFACL_VALUES:
-                skip = True
-        first = head in MODE_FIRST and not any(w.startswith("--reference") for w in argv)
-        return [w for w in operands[1 if first else 0 :] if not w.startswith(("+", "="))]  # chattr +i
-    if head != "bwrap":
-        return []
+        return locker_operands(argv)
+    return bwrap_destinations(argv) if head == "bwrap" else []
+
+
+def locker_operands(argv: list[str]) -> list[str]:
+    """The paths of a chmod-family command, past its mode or owner unless ``--reference``."""
+    head = argv[0]
+    operands, skip, ended = [], False, False
+    for word in argv[1:]:
+        if skip:
+            skip = False
+        elif ended or not word.startswith("-") or (head == "chmod" and CHMOD_MINUS_MODE.fullmatch(word)):
+            operands.append(word)
+        elif word == "--":
+            ended = True
+        elif head == "setfacl" and word in SETFACL_VALUES:
+            skip = True
+    first = head in MODE_FIRST and not any(w.startswith("--reference") for w in argv)
+    return [w for w in operands[1 if first else 0 :] if not w.startswith(("+", "="))]  # chattr +i
+
+
+def bwrap_destinations(argv: list[str]) -> list[str]:
+    """``bwrap``'s mount destinations, up to its command; a folder bound on itself covers nothing."""
     dests, i = [], 1
     while i < len(argv) and argv[i].startswith("--"):
         count = 0 if argv[i] in BWRAP_FLAGS else BWRAP_DESTS.get(argv[i]) or BWRAP_VALUES.get(argv[i], 1)
@@ -4711,7 +4751,7 @@ def locked_words(argv: list[str]) -> list[str]:
     return dests
 
 
-def lock_hit(segment: list[str], bases: list[str], protected: list[Rule], anchors) -> str | None:
+def lock_hit(segment: list[str], bases: list[str], protected: list[Rule]) -> str | None:
     """A lock on a protected folder or a folder holding one, as ``<folder>/*``, which asks (Q3:
     the mode is not read, so the owner may approve a harmless one; a ``bwrap`` cover only the
     child sees); ``zip -m -@`` removes names read from stdin."""
@@ -6151,11 +6191,17 @@ def owner_hit(
 ) -> str | None:
     """The word on cobot's owner files, a literal one first: a hole in one segment must not hide a
     literal hit in another (``cat ${!N}; cp x ~/.claude/cobot.rules``; wrap security review)."""
-    hits = [protected_file_touched([p], cwd, owner_rows, [], reached.visited) for p in placed]
-    hits.append(protected_file_touched([], cwd, owner_rows, reached.paths, reached.visited))
-    found = [h for h in hits if h]
-    literal = [h for h in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
-    return (literal or found or [None])[0]
+    jobs = [([p], []) for p in placed] + [([], reached.paths)]
+    hits = [protected_file_touched(job, cwd, owner_rows, paths, reached.visited) for job, paths in jobs]
+    # a customization root (``.agents``) is flagged with no rule at all: that segment's hit is not
+    # on the owner files, and it must not soften another segment's (wrap security review)
+    found = [
+        (h, i)
+        for i, h in enumerate(hits)
+        if h and not protected_file_touched(jobs[i][0], cwd, [], jobs[i][1], reached.visited)
+    ]
+    literal = [h for h, _ in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
+    return (literal or [h for h, _ in found] or [None])[0]
 
 
 def protected_verdict(
@@ -6171,13 +6217,12 @@ def protected_verdict(
     line written there by a script would widen the gate. A word with a hole or a glob keeps the
     ask, since it only might name them."""
     owner_rows = [r for r in rules if sealed(r)]
-    hit = owner_rows and owner_hit(placed, cwd, owner_rows, reached)
+    hit = owner_hit(placed, cwd, owner_rows, reached) if owner_rows else None
     # a whole-word variable is a merge's source of unknown content into a literal folder (``cp -r $X ~``)
     whole_variable = bool(hit) and shell.kind_of(hit) == "variable"
     plain_hit = whole_variable or not shell.has_sentinel(hit or "")
     literal = hit and plain_hit and not any(c in hit for c in GLOB_CHARS)
-    # a customization root (``.agents``) is flagged with no rule at all: not an owner-file hit
-    if literal and not protected_file_touched(placed, cwd, [], reached.paths, reached.visited):
+    if literal:  # owner_hit has left out the segments a customization root flags
         return Verdict(DENY, None, f"shell access to cobot's owner files '{show(hit, holes)[:60]}'")
     return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
 

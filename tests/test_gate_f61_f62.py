@@ -415,16 +415,13 @@ TAKEN_SILENT = [
     "gzip -r logs/",
     "gzip f",
     "mount --bind /tmp/a /tmp/b",
-    "mount --bind ~ /mnt/home",
-    "bindfs ~/.claude /mnt/c",
     "sshfs h:/x mnt -o reconnect",
+    "mount --bind /srv/a /mnt/b",
+    "mount -o remount,ro /mnt/b",
     "mount",
     "sshfs h:/x mnt",
     "rclone mount r: mnt",
     "rclone delete r:old",
-    "bwrap --bind / / sh",
-    "bwrap --ro-bind / / --tmpfs /tmp sh",
-    "bwrap --ro-bind ~ ~ sh",
     "ln -s ~/proj/x ~/bin/x",
     "ln -s ../lib lib",
     "cp -s a b",
@@ -434,8 +431,50 @@ TAKEN_SILENT = [
     "chmod 644 src/*.py",
     "rclone --config x copy a r:b",
     "cp -l a b",
-    "bwrap --unshare-all --ro-bind / / sh",
+    "lz4 -d -c x.lz4",
 ]
+TAKEN_REFUSED += [
+    # wrap reviews: a joined -o value, unzstd's list, lz4's and lrzip's -l, bindfs values after the
+    # operands, a bind mount's source (a second name, as a link is)
+    "mount -oremount,ro ~/.claude",
+    "lz4 -d -l ~/.claude/cobot.rules.lz4",
+    "lrzip -d -l ~/.claude/cobot.rules.lrz",
+    "bindfs src ~/.claude -u me",
+    "mount --bind ~ /mnt/home",
+    "mount --bind ~/.claude /tmp/y",
+    "mount -o bind ~/.claude /tmp/y",
+    "mount -obind ~/.claude /tmp/y",
+    "mount --rbind /home /tmp/y",
+    "bindfs ~/.claude /mnt/c",
+    # wrap security review: a customization-root landing elsewhere does not soften a literal deny
+    "aria2c -d ~/.agents http://x/y; cp x ~/.claude/cobot.rules",
+    "gh release download v1 -D ~/.agents; cp x ~/.claude/cobot.rules",
+    "ditto /tmp/x ~/.agents; rm -rf ~/.claude",
+    "sftp h:x ~/.agents; cp x ~/.claude/cobot.rules",
+    "cp x ~/.agents/; cp x ~/.claude/cobot.rules",
+]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "unzstd --filelist l",
+        "ar --output d xP lib.a",
+        "bwrap --bind / / rm -rf ~/.claude",
+        "bwrap --bind / / sh",
+        "bwrap --ro-bind ~ ~ sh",
+        "bwrap --unshare-all --ro-bind / / make",
+    ],
+)
+def test_wrap_reviewForms_ask(rules, command):
+    """Wrap reviews: unzstd's list; ar's --output value; bwrap runs a command the gate does not
+    read, so it asks as unshare and firejail do (it was silent, and ran ``rm -rf ~/.claude``)."""
+    assert decide(rules, command) == "ask"
+
+
+def test_wrap_dpkgRecursive_isNoExtraction(rules):
+    """Wrap code review: for dpkg itself, -R is --recursive, not dpkg-deb's --raw-extract."""
+    assert decide(rules, "dpkg -i -R pkgs out") is None
 
 
 # ---------------------------------------------------------------- story 8, T10: the config dir's real path
@@ -550,7 +589,7 @@ def test_story8_linksBesideTheConfigDir_staySilent(rules, linked_home, command):
         ("tar --remove-files -cf a.tar ~/.gemini", "force_ask"),
         ("chmod -R 000 ~/.gemini/config", "force_ask"),
         # a cover is judged as a folder option, as ``tar -C`` on the same folder is
-        ("mount --bind /tmp ~/.gemini/config", "force_ask"),
+        ("mount --bind /srv/x ~/.gemini/config", "force_ask"),  # HOME is under /tmp here
         ("tar -C ~/.gemini/config -xf e.tar", "force_ask"),
         ("gunzip ~/.claude/cobot.rules.gz", "deny"),
         ("gzip -r ~/.claude", "deny"),

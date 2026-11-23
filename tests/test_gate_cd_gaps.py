@@ -1,7 +1,8 @@
 """A ``cd`` before the word (spec gate-f56-f60, story 9).
 
 Gap 1: after ``cd ~/.claude`` (a literal target the gate resolves) a relative operand got an ask
-where the literal path is refused. Each row is measured on ``c9304bc``.
+where the literal path is refused. Gap 2: after a ``cd`` the gate cannot follow,
+``ln -sfn /tmp/o .claude`` reached no decision. Each row is measured on ``c9304bc``.
 """
 
 from __future__ import annotations
@@ -112,11 +113,82 @@ def test_gap1_literalCd_staysAnAskWhereTheFolderIsLeftOrUnknown(rules, home, com
         "cd ~ && ls",
         "cd ~/proj && rm -r build",
         "cd ~/missing && rm x",
-        'cd ~; cd "$X"; cd .claude; rm -r cobot',  # T12 review: as on c9304bc
     ],
 )
 def test_gap1_literalCdElsewhere_staysSilent(rules, home, command):
     assert decide(rules, command) is None
+
+
+# ---------------------------------------------------------------- gap 2: a cd the gate cannot follow
+
+UNKNOWN_CD_ASKED = [
+    'cd "$X" && ln -sfn /tmp/o .claude',  # c9304bc: none
+    'cd "$X" && ln -s /tmp/o .claude',
+    'cd "$X" && rm -r .claude',
+    'cd "$X" && rm -r ./.claude/',
+    'cd "$X" && rm -r .Claude',
+    'cd "$X" && mv .claude /tmp/y',
+    'cd "$X" && rm -r .claude/cobot',
+    'cd "$X" && cp e x/.claude/cobot/y',
+    'cd "$(pwd)/x" && ln -sfn /tmp/o .claude',
+    "cd - && ln -sfn /tmp/o .claude",
+    "popd && ln -sfn /tmp/o .claude",
+    'cd ~/.claude && cd "$X" && ln -sfn /tmp/o .claude',
+    # T13 review: option values, and a cd into the name
+    'cd "$X" && mv --target-directory=.claude /tmp/o',
+    'cd "$X" && cp --target-directory=.claude/cobot /tmp/o',
+    'cd "$X" && cp -t.claude/cobot /tmp/o',
+    'cd "$X" && tar -xf a.tar -C .claude',
+    'cd "$X" && tar -xf a.tar --directory=.claude',
+    'cd "$X" && unzip a.zip -d .claude',
+    'cd "$X" && cd .claude && ln -sfn /tmp/o cobot',
+    'cd "$X"/.claude && ln -sfn /tmp/o cobot',
+    'cd "$X" && pushd .claude && ln -sfn /tmp/o cobot',
+    'cd ~; cd "$X"; cd .claude; rm -r cobot',  # none on c9304bc and after T12
+]
+
+
+@pytest.mark.parametrize("command", UNKNOWN_CD_ASKED)
+def test_gap2_unknownCdThenTheConfigDirsName_asks(rules, home, command):
+    """An ask, not a deny: the unknown folder may be a project with its own ``.claude``."""
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'cd "$X" && ls .claude',
+        'cd "$X" && cat .claude/notes.md',
+        'cd "$X" && rm -r build',
+        'cd "$X" && ln -s a b',
+        'cd "$X" && rm -r .claude-old',
+        "ln -sfn /tmp/o .claude",  # the working directory is known, and not HOME
+        "cd ~/proj && ln -sfn /tmp/o .claude",  # the owner pass knows the folder (story 9)
+        "cd ~/proj && rm -r .claude",
+        'cd "$X" && cd .claude && ls',
+        'cd "$X" && cd .claude && mkdir -p agents',
+        'cd "$X" && ls -la .claude',
+    ],
+)
+def test_gap2_unknownCdElsewhere_staysSilent(rules, home, command):
+    assert decide(rules, command) is None
+
+
+def test_gap2_movedConfigDir_isReadByItsOwnName(rules, home, tmp_path, monkeypatch):
+    (tmp_path / "cc" / "cobot").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cc"))
+    assert decide(rules, 'cd "$X" && ln -sfn /tmp/o cc') == "ask"
+    assert decide(rules, 'cd "$X" && rm -r cc/cobot') == "ask"
+
+
+def test_gap2_paddedName_isJudgedInTimeAndALaterDenyStands(rules, home):
+    """T13 review: a word of 1000 ``.claude`` parts took 37 s (a check per part), so the hook
+    timed out before the literal deny after it; one check per word now."""
+    padded = ".claude/" * 1000 + "z"
+    started = time.monotonic()
+    verdict = decide(rules, f'cd "$X" && ls {padded}; rm -f ~/.claude/cobot.rules')
+    assert time.monotonic() - started < 5
+    assert verdict == "deny"
 
 
 def test_gap1_longChainOfCds_isJudgedWithinTheHookTimeout(rules, home):
@@ -138,6 +210,7 @@ def test_gap1_longChainOfCds_isJudgedWithinTheHookTimeout(rules, home):
         ("cd ~/.claude && rm -r cobot", "deny"),
         ("cd ~/.claude && tar -xf e.tar", "deny"),
         ("cd ~/.gemini/config && tar -xf e.tar", "force_ask"),
+        ('cd "$X" && ln -sfn /tmp/o .claude', "force_ask"),
         ("cd ~/proj && rm -r build", "allow"),
     ],
 )

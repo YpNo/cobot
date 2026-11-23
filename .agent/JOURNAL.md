@@ -310,3 +310,11 @@ Proof: full suite green; story 9 file 48 passed; ruff clean. Bypass review folde
 Open: accepted false denies on shapes the owner pass does not model (||, if, functions, pipes, a quoted ~, HOME reassigned); cd ~/.claude/cobot alone denies naming the word cd; pre-existing, 100 cds into distinct ~ folders take about 38 s on c9304bc too.
 Next: lower gap 2, an unknown cd then ln -sfn .claude.
 verified: tree 6e104155ffd7cf9108e26f6032e41757578956b1 · full suite, story 9 tests, ruff
+
+## 2026-11-23 — gate-f56-f60 T13: after an unknown cd, the config dir's name asks (story 9)
+Changed: config_tail reads a relative word through a part named as the config dir (from its last such part) under the config dir's parent while the folder is unknown to the walk and the owner pass; a hit asks as <unknown working directory>/*. It covers plain words, option values (=, a joined short option) and folder options; lost_cd_reach gives the ask pass the folder a relative cd through that name reached. Tests in tests/test_gate_cd_gaps.py.
+Why: lower gap 2 of the wrap; cd "$X" && ln -sfn /tmp/o .claude reached no decision.
+Proof: full suite green (its one failure, a row T13 meant to change, moved to the ask list; story 9 file then passes); ruff clean. Bypass review folded: a word of 1000 .claude parts took 37 s and hid a later deny past the hook timeout (now 0.5 s, deny); option values, folder options and a cd into .claude after an unknown cd.
+Open: accepted, cp -r .claude /tmp/backup after an unknown cd asks; reading by name only, so mv . /tmp/x or mv shell-snapshots /tmp after an unknown cd reach none, as on c9304bc.
+Next: docs and CHANGELOG, then wrap reviews.
+verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · full suite, story 9 tests, ruff

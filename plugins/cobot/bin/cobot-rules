@@ -4258,15 +4258,21 @@ def protected_file_touched(
     budget = GlobBudget.fresh()
     fallback: str | None = None
     jobs = [(segment, dirs, True) for segment, dirs in placed]
+    segments = [segment for segment, _ in placed]
+    latest = home_cd_reach(segments) + [frozenset()]
+    guessed = lost_cd_reach(segments) + [frozenset()]
     if paths:
         jobs.append((paths, union(visited, start), False))
-    for segment, dirs, command in jobs:
+    for job, (segment, dirs, command) in enumerate(jobs):
+        # a folder unknown to the walk but not to the owner pass: a ``~`` cd, read by name (story 9)
+        lost = dirs is None and not (latest[job] or homes)
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
         earlier = homes if dirs is None else frozenset()  # a later known cd leaves them (story 9)
         reached = homed | earlier
+        reached |= guessed[job] if lost else frozenset()  # ``cd "$X"/.claude``: ask pass only (T13)
         bases = sorted({str(d) for d in (dirs or start)} | reached)  # unknown: the payload cwd, and by name
         folders = folder_options(segment) if command else []
         if len(folders) > FOLDER_OPTIONS_MAX:
@@ -4278,6 +4284,8 @@ def protected_file_touched(
                     word_touches(form, base, protected, False, anchors, True, budget, True) for base in origin
                 ):
                     return folder
+                if lost and not fallback:
+                    fallback = config_tail(form, protected, anchors, (False, True, True), budget)
             homed_folder = os.path.expanduser(home_forms(folder)[-1])
             joined.update(
                 os.path.normpath(os.path.join(b, homed_folder)) for b in origin
@@ -4328,6 +4336,10 @@ def protected_file_touched(
                 for base in bases
             ):
                 return token  # ``sort -o~/x``, ``curl -sD~/x``: a short option's joined path (F-60 review)
+            short = token[2:] if token[:1] == "-" and token[1:2] != "-" else ""  # ``-t.claude``
+            attached = value or (joined.group(1) if joined else short)
+            if lost and attached and not fallback:  # ``--target-directory=.claude`` (T13 review)
+                fallback = config_tail(attached, protected, anchors, (relocating, False, False), budget)
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):
@@ -4343,7 +4355,41 @@ def protected_file_touched(
                     return token
                 if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
                     return token
+                if lost and not anchored and not fallback:
+                    acting = (relocating, destroying, entering)
+                    fallback = config_tail(form, protected, anchors, acting, budget)
     return fallback
+
+
+def config_tail(
+    form: str, protected: list[Rule], anchors: frozenset[str], acting: tuple[bool, bool, bool], budget
+) -> str | None:
+    """After a ``cd`` the gate cannot follow, a relative word through a folder named as the config
+    dir (``.claude``, ``.claude/cobot``) may be on it: read from the config dir's parent, a hit
+    asks (``<unknown working directory>/*``). Not a deny: a project has its own ``.claude``
+    (spec gate-f56-f60, story 9, T13)."""
+    if shell.has_sentinel(form):
+        return None
+    candidate = config_named(os.path.normpath(form).split("/"))
+    relocating, destroying, entering = acting
+    parent = os.path.dirname(config_literal())
+    if candidate and word_touches(
+        candidate, parent, protected, relocating, anchors, destroying, budget, entering
+    ):
+        return "<unknown working directory>/*"
+    return None
+
+
+def config_named(parts: list[str]) -> str | None:
+    """The path from the last of ``parts`` named as the config dir on, read under the config dir's
+    parent (``x/.claude/cobot`` is ``~/.claude/cobot``); None without one. The last only: one
+    check per word, never one per part (T13 review: 1000 ``.claude`` parts took 37 s)."""
+    config = config_literal()
+    name = os.path.basename(config).casefold()
+    named = [i for i, part in enumerate(parts) if part.casefold() == name]
+    if not named or any(shell.has_sentinel(part) for part in parts[named[-1] :]):
+        return None
+    return os.path.normpath(os.path.join(os.path.dirname(config), *parts[named[-1] :]))
 
 
 def landing_option_hit(
@@ -4915,6 +4961,29 @@ def home_cd_step(argv: list[str] | None, current: frozenset[str]) -> frozenset[s
     if word.startswith("~"):
         return frozenset({os.path.normpath(os.path.expanduser(word))})
     return frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
+
+
+def lost_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
+    """After each segment, the folder a relative cd through a part named as the config dir may
+    have reached, read under the config dir's parent (``cd "$X"/.claude``, ``cd "$X" && cd
+    .claude``; T13 review). For the ask pass only: the owner pass never reads it, since the
+    unknown folder may be a project's own ``.claude``."""
+    current: frozenset[str] = frozenset()
+    reach = []
+    for segment in segments:
+        argv = directory_verb(segment)
+        if argv:
+            operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
+            word = home_forms(operands[0])[-1] if argv[0] in ("cd", "pushd") and len(operands) == 1 else "/"
+            named = None if word.startswith(("~", "/")) else config_named(word.split("/"))
+            if named:
+                current = frozenset({named})
+            elif shell.has_sentinel(word) or word.startswith(("-", "~", "/")):
+                current = frozenset()
+            else:
+                current = frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
+        reach.append(current)
+    return reach
 
 
 def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = True) -> bool:

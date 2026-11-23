@@ -332,3 +332,7 @@ decision re-run on `f433a0a`). Folded into revision 2:
   import needs a planted module). Seen, out of scope, **F-65**: loader variables of any program
   (`LD_PRELOAD`, `JAVA_TOOL_OPTIONS`). A string or comment naming an `fs` writer denies, as
   Python's rule does.
+- T06: the agy rows (story 8, one per story) landed with T01 in `tests/test_gate_f57.py`;
+  `docs/configuration.md` says what asks, what is refused and what is not covered; CHANGELOG
+  Security entry; FINDINGS F-57 closed, F-63 (editors and debuggers), F-64 (the splitter) and
+  F-65 (loader variables) open.

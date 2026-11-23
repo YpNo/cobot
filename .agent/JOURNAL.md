@@ -381,3 +381,10 @@ Proof: full suite green; tests/test_gate_f57.py 426 passed; ruff clean. Bypass r
 Open: accepted, the planted-module class (NODE_PATH, RUBYLIB, PERL5LIB, PYTHONPATH, PYTHONWARNINGS); a destructured or computed fs writer keeps the ask; a string naming an fs writer denies, as Python's rule does.
 Next: T06, docs, CHANGELOG and FINDINGS F-57 closed.
 verified: tree 7e07079b9834f81b314477338434c6b740419209 · full suite, F-57 file, ruff
+
+## 2026-11-23 — gate-f57 T06: docs, CHANGELOG, FINDINGS (story 8)
+Changed: docs/configuration.md says what asks (inline code in any option form, stdin, a script outside the project, python -m, launchers, awk and sed, the environment), what is refused (Node and Python inline writes, an awk or sed write to an owner file) and what is not covered; CHANGELOG Security entry; FINDINGS F-57 closed. The agy rows (one per story) landed with T01.
+Why: plan item T06; ADR-0007, both runtimes share the judge.
+Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync.
+Next: wrap, a code review over T01 to T05, then the full suite with coverage.
+verified: tree 7e07079b9834f81b314477338434c6b740419209 · markdownlint, check-plugin, sync-agents

@@ -407,3 +407,11 @@ Proof: full suite with coverage exit 0, 98.21 % (fail-under 85); ruff 0.17.6 che
 Open: CLAUDE_ENV_FILE row dropped (absent from the Bash environment, hook environment not shown); cat ~/.bashrc asks like cat ~/.claude.json; the sealed reason still says cobot's owner files; F-56 residuals (cp e/.bashrc ~/).
 Next: T03, agy rows, CHANGELOG, FINDINGS, design doc.
 verified: tree 8f4e07be2fd6396fa49f197f18795c1487e28097 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f55 T03: both runtimes and the docs
+Changed: tests/test_gate_f55.py story 3 rows under agy (run_command); CHANGELOG Security entry for F-55; docs/architecture.md and docs/configuration.md say how a variable is read and which sourced files are sealed; FINDINGS F-55 closed; spec T03 ticked, Converge written.
+Why: ADR-0007 (both runtimes) and the docs that said a variable stays text.
+Proof: full suite with coverage exit 0; ruff 0.17.6 check and format clean; markdownlint-cli2 0.24.2 clean; claude plugin validate --strict passes twice; check-plugin ok; sync-agents in sync.
+Open: JOURNAL.md over 400 lines (cobot-memory check warns); wrap next.
+Next: /cobot:wrap gate-f55.
+verified: tree bec21d7486603297e34a126914113c661e57aee0 · full suite with coverage, ruff, markdownlint, validators

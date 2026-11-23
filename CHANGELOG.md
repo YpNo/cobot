@@ -217,6 +217,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **A shell variable no longer hides a protected file (F-55).**
+  - Before, the gate read `$X` as text, so `cp x ~/.claude/$X` got no decision past the refusals
+    on cobot's owner files. Now a variable is read by how the command sets it:
+    - a literal assignment is put in: `X=cobot.rules; cp x ~/.claude/$X` is refused, and
+      `X=delete; gh repo $X o/r` is judged as `gh repo delete`;
+    - a computed or nested value asks;
+    - an inherited name is spared as a whole word, as `$(…)` is (F-59, accepted).
+  - Claude Code's shell snapshots and SessionStart env files, which it sources into each Bash
+    call, are now refused to scripts and the file tools.
+  - The shell start files and `~/.curlrc`/`~/.wgetrc` ask, and so does a command that sets
+    `BASH_ENV`, `ZDOTDIR`, `HOME`, `PS4` or a related variable.
+  - New friction: `cat ~/.bashrc` asks, as `cat ~/.claude.json` does; an inherited variable asks
+    where `$(…)` asks (`rm "$f"`, `git commit -m "$MSG"`); a variable inside a `sh -c` string
+    asks.
 - **MCP registration asks, and the Google Cloud CLI server is refused (decision 37).**
   `claude mcp add`, `add-json`, `remove`, `reset-project-choices`, `claude --mcp-config` and
   `--settings`, an Edit or Write of `~/.claude.json` or the repository's `.mcp.json`, and a

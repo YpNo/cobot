@@ -190,6 +190,32 @@ SOURCED_ASKED = [
 ]
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("X=cobot.rules; cp x ~/.claude/$X", "deny"),
+        ("X=config; cp x ~/.gemini/$X/settings.json", "force_ask"),
+        ("cp x ~/.gemini/config/$X", "force_ask"),
+        ("tee -a ~/.bashrc", "force_ask"),
+        ("BASH_ENV=e/x bash -c true", "force_ask"),
+        ("cp x $DEST", "allow"),
+    ],
+)
+def test_story3_agy_sameJudgement(rules, tmp_path, monkeypatch, command, expected):
+    """Story 3 (ADR-0007): under agy, run_command reaches the same judgement; ``allow`` there is
+    no opinion."""
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    home = tmp_path / "home"
+    (home / ".gemini" / "config").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    workspace = tmp_path / "ws"
+    (workspace / ".agent").mkdir(parents=True)
+    (workspace / ".agent" / "cobot.rules").write_text("")
+    call = {"id": "t1", "name": "run_command", "args": {"CommandLine": command}}
+    body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(workspace)]}
+    assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == expected
+
+
 @pytest.mark.parametrize("command", SOURCED_REFUSED)
 def test_story2_sessionSnapshotsAndEnvFiles_areRefused(rules, command):
     assert decide(rules, command) == "deny"

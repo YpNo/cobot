@@ -187,7 +187,7 @@ and the gate dry run. Each one gets a bypass-aimed review before its commit.
 |---|---|---|---|---|
 | T01 ✅ | variable holes, operator alternatives, assignments, the `$`-text sites, differential rows (`_cobot_shell.py`, `cobot-rules`, tests) | gate | auth | — |
 | T02 ✅ | session-env and `CLAUDE_ENV_FILE` never rows, start-file and rc-file ask rows, the `BASH_ENV`/`ENV`/`ZDOTDIR` ask | gate | auth | T01 |
-| T03 | agy rows, CHANGELOG, FINDINGS, design doc | gate | — | T01, T02 |
+| T03 ✅ | agy rows, CHANGELOG, FINDINGS, design doc | gate | — | T01, T02 |
 
 The tasks run in order, in one lane: T01 and T02 both edit `cobot-rules`.
 
@@ -265,4 +265,5 @@ the folds are the revision 1 to 3 challenger answers, kept for the spec that tak
 
 ## Converge
 
-pending: the owner decides F-59 (spare or ask) and gives the go for `/cobot:build gate-f55`.
+2026-11-23: F-59 spared (owner: "Spare, then build"). T01 to T03 were built, each with a
+bypass-aimed review folded before the next task. Wrap follows; nothing is pushed.

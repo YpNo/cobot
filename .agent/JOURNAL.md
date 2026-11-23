@@ -318,3 +318,10 @@ Proof: full suite green (its one failure, a row T13 meant to change, moved to th
 Open: accepted, cp -r .claude /tmp/backup after an unknown cd asks; reading by name only, so mv . /tmp/x or mv shell-snapshots /tmp after an unknown cd reach none, as on c9304bc.
 Next: docs and CHANGELOG, then wrap reviews.
 verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · full suite, story 9 tests, ruff
+
+## 2026-11-23 — gate-f56-f60: docs and CHANGELOG for story 9
+Changed: configuration.md says how a cd before the word is read (the latest ~ cd, and the ask after an unknown cd) and what it costs; its Not covered list gains the words with no config-dir part after an unknown cd; CHANGELOG Security entry for T12 and T13.
+Why: the orchestrator asked for docs and CHANGELOG lines for both lower gaps, in both runtimes (the gate is shared; the agy rows are in tests/test_gate_cd_gaps.py).
+Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync; cobot-memory check, brief 5350 chars.
+Next: wrap reviews (bypass and code) of T12 and T13.
+verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · markdownlint, check-plugin, sync-agents, cobot-memory check

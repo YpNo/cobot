@@ -139,13 +139,25 @@ Where a file lands (spec gate-f56-f60):
   linked into a dotfiles folder) is protected at its real path too, and re-pointing a link above
   it (`ln -sfn x ~` with HOME a link) is refused. With that dotfiles layout, `git -C ~/dotfiles …`
   and copies into `~/dotfiles` are refused, as `git -C ~` is.
+- A `cd` before the word gets the written-out path's decision: `cd ~/.claude && rm -r cobot`
+  and `cd ~/.claude && tar -xf e.tar` are refused, as `rm -r ~/.claude/cobot` and `tar -C
+  ~/.claude -xf e.tar` are, in both runtimes. The gate follows the latest `~` cd (a relative
+  cd moves it; `cd -`, a variable, `popd` or a known folder ends it). Since the split words show
+  neither quoting nor the shell's structure, `cd ~/.claude || rm -r cobot` and a quoted
+  `cd "~/.claude" && …` are refused too, and `cd ~/.claude/cobot` alone is refused, as
+  `ls ~/.claude/cobot` is.
+- After a `cd` the gate cannot follow (`cd "$X"`, `cd -`, `popd`), a word through a folder named
+  as the config dir asks: `ln -sfn /tmp/o .claude`, `rm -r .claude/cobot`, `tar -C .claude`,
+  `cd .claude && ln -sfn /tmp/o cobot`. It asks rather than refuses, since the folder may be a
+  project with its own `.claude`; reads (`ls .claude`) stay silent, a copy out of it asks.
 
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), an inherited variable
 or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell
 profile, a link created between the check and the run, archive members (the gate never opens an
 archive), a client's own command language (`sftp -b`, `lftp -c`), sandboxes other than `bwrap`
 (`firejail`, `proot`, `systemd-run`), `rar`, aria2c's hooks and RPC, `dpkg --root`, a symlinked
-`~/.gemini` under agy, and `busybox find`.
+`~/.gemini` under agy, `busybox find`, and after a `cd` the gate cannot follow, a word with no
+part named as the config dir (`mv . /tmp/x`, `mv shell-snapshots /tmp`).
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,

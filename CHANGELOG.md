@@ -249,6 +249,14 @@ All notable changes to this project are documented here. The format follows
     customization root elsewhere in the command (`cp x ~/.agents/; cp x ~/.claude/cobot.rules`).
   - A config dir reached through a symlink is protected at its real path, and re-pointing a link
     above it is refused.
+- **A `cd` before the word no longer softens the decision.**
+  - After `cd ~/.claude` (or `cd ~ && cd .claude`, `pushd`), a relative word gets the
+    written-out path's decision: `cd ~/.claude && rm -r cobot` and `cd ~/.claude && tar -xf
+    e.tar` are refused where they asked. This holds in both runtimes.
+  - After a `cd` the gate cannot follow (`cd "$X"`, `cd -`, `popd`), a word through a folder
+    named as the config dir asks. Before, `cd "$X" && ln -sfn /tmp/o .claude` had no decision.
+  - New friction: `cd ~/.claude/cobot` alone is refused. So are `cd ~/.claude || rm -r cobot`
+    and a quoted `cd "~/.claude" && …`. After an unknown `cd`, `cp -r .claude x` asks.
 - **A shell variable no longer hides a protected file (F-55).**
   - Before, the gate read `$X` as text, so `cp x ~/.claude/$X` got no decision past the refusals
     on cobot's owner files. Now a variable is read by how the command sets it:

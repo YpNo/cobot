@@ -3300,7 +3300,7 @@ def folder_options(segment: list[str]) -> list[str]:
     head = EXTRACTOR_ALIASES.get(argv[0], argv[0]) if argv else ""
     if head == "cpio" and ("p" in option_letters(argv) or "--pass-through" in argv):
         found += [w for w in argv[1:] if not w.startswith("-")][-1:]  # copy-pass: its destination folder
-    found += other_extraction_folders(head, argv)
+    found += other_extraction_folders(head, argv) + covered_folders(argv)
     if head not in FOLDER_OPTIONS or (head == "jar" and not extracts(argv)):
         return [value for value in found if value]
     shorts, longs = FOLDER_OPTIONS[head]
@@ -3332,6 +3332,30 @@ def folder_options(segment: list[str]) -> list[str]:
         else:
             i += 2 if head == "git" and word in GIT_VALUE_OPTIONS else 1
     return [value for value in found if value]
+
+
+FUSE_MOUNTERS = frozenset(
+    "sshfs bindfs fuse-overlayfs archivemount squashfuse s3fs gocryptfs encfs mergerfs unionfs "
+    "unionfs-fuse guestmount".split()
+)
+RCLONE_MOUNTING = frozenset({"mount", "nfsmount"})
+
+
+def covered_folders(argv: list[str]) -> list[str]:
+    """The operands of ``mount``, a FUSE mounter or ``rclone mount``, and ``--target``'s value: a
+    mount over a folder hides it from every process, as removing it would (story 8). Every operand
+    counts, so the mount point is read wherever the options put it; an option's value read as one
+    is a relative word and meets no anchor."""
+    head = argv[0] if argv else ""
+    args = argv[1:]
+    if head == "rclone":
+        verb = rclone_verb(argv, RCLONE_MOUNTING)
+        args = argv[verb + 1 :] if verb is not None else []
+    elif head != "mount" and not head.startswith("mount.") and head not in FUSE_MOUNTERS:
+        return []
+    targets = [w.split("=", 1)[1] for w in args if w.startswith("--target=")]
+    targets += [args[i + 1] for i, w in enumerate(args[:-1]) if w == "--target"]
+    return targets + [w for w in args if not w.startswith("-")]
 
 
 def other_extraction_folders(head: str, argv: list[str]) -> list[str]:
@@ -3415,6 +3439,9 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
         or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
     ):
         return frozenset(range(at + 1, len(segment)))
+    taken = taken_away(argv)
+    if taken:  # removed after archiving, or every file under it replaced (story 8)
+        return frozenset(at + i for i in taken)
     moved = moved_sources(argv)
     if moved:  # a folder moved away is gone from its place: as removed for the anchors (story 5)
         return frozenset(at + i for i, word in enumerate(argv) if i > 0 and word in moved)
@@ -3428,13 +3455,64 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
 
 
 MOVERS = frozenset({"mv", "rename"})
+# story 8 (F-62): GNU tar 1.35 ``--remove-files``, Info-ZIP ``zip -m``, 7-Zip ``-sdel`` and
+# ``rclone`` 1.69's removal verbs, read 2026-11-23
+RCLONE_REMOVING = frozenset({"purge", "delete", "deletefile", "rmdir", "rmdirs"})
+
+
+def taken_away(argv: list[str]) -> list[int]:
+    """The indexes of the words a command removes or rewrites with what is under them: the
+    sources of ``tar --remove-files``, ``zip -m``, ``7z -sdel`` and a recursive compressor, and
+    the paths of rclone's removal verbs (story 8)."""
+    head = argv[0] if argv else ""
+    words = list(range(1, len(argv)))
+    if head in TAR_FAMILY and any(long_prefix(w, "--remove-files", 5) for w in argv[1:]):
+        return words
+    if head == "zip" and zip_moves(argv):
+        return words
+    if head in SEVEN_ZIPS and any(w.casefold().startswith("-sdel") for w in argv):
+        return words
+    if head in DECOMPRESS_FLAG or head in DECOMPRESSING:
+        letters, longs = decompress_options(argv)
+        if "r" in letters or any(long_prefix(w, "--recursive", 5) for w in longs):
+            return words
+    verb = rclone_verb(argv, RCLONE_REMOVING)
+    return list(range(verb + 1, len(argv))) if verb is not None else []
+
+
+def rclone_verb(argv: list[str], verbs: frozenset[str]) -> int | None:
+    """The index of one of rclone's ``verbs``, the first word that is one: a global flag's value
+    (``--config x``) is not the verb (T09 review)."""
+    if argv[:1] != ["rclone"]:
+        return None
+    return next((i for i, w in enumerate(argv[1:], 1) if w in verbs), None)
+
+
+def zip_moves(argv: list[str]) -> bool:
+    """``zip -m``, in any cluster (``-rm@``), or ``--move`` and its prefixes."""
+    clusters = [w for w in argv[1:] if w.startswith("-") and not w.startswith("--")]
+    return any("m" in w[1:] for w in clusters) or any(long_prefix(w, "--move", 5) for w in argv)
+
+
+def linked_holder(argv: list[str]) -> bool:
+    """``ln``, ``cp -s`` and ``cp -l``: a link (or a tree of hard links) to a folder holding the
+    config dir reaches it under another name the rows do not read (challenger, T09 review)."""
+    head = argv[0] if argv else ""
+    if head == "ln":
+        return True
+    longs = ("--symbolic-link", "--link")
+    linking = {"s", "l"} & option_letters(argv) or any(long_prefix(w, o, 5) for w in argv for o in longs)
+    return head == "cp" and bool(linking)
 
 
 def moved_sources(argv: list[str]) -> set[str]:
-    """The sources of a move (``mv``, ``rename``, ``git mv``, ``gio move|mv|rename``): moving a
-    folder that holds the config dir carries it away (``mv /home x``; spec gate-f56-f60, story 5)."""
+    """The sources of a move (``mv``, ``rename``, ``git mv``, ``gio move|mv|rename``) or a link
+    (``ln``, ``cp -s``): moving or linking a folder that holds the config dir carries it away or
+    reaches it (``mv /home x``, ``ln -s ~ /tmp/h``; spec gate-f56-f60, stories 5 and 8)."""
     head = argv[0] if argv else ""
     gio = head == "gio" and argv[1:2] in (["move"], ["mv"], ["rename"])
+    if linked_holder(argv):
+        return set(merge_parts(argv[1:])[1])
     if head not in MOVERS and not gio and not (head == "git" and copy_verb(argv) is not None):
         return set()
     _, sources, _ = merge_parts(argv[(copy_verb(argv) or 0) + 1 :])
@@ -4118,6 +4196,8 @@ def protected_file_touched(
             landed = download_hit(segment, bases, protected, anchors, budget, away)
         if command and not landed:
             landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
+        if command and not landed:
+            landed = lock_hit(segment, bases, protected, anchors)
         if landed and not unsure_landing(landed):
             return landed
         # an ask-tier landing (a glob, an unknown folder) must not hide a literal hit after it, in
@@ -4512,6 +4592,101 @@ def extraction_hit(
         if holds_an_anchor(os.path.normpath(base), anchors):
             return f"{name.rstrip('/')}/*"
     return None
+
+
+# locks (story 8, Q3): coreutils chmod, chown, chgrp, acl's setfacl, e2fsprogs chattr and
+# bubblewrap 0.11's mount options, read 2026-11-23
+LOCKERS = frozenset({"chmod", "chown", "chgrp", "setfacl", "chattr"})
+MODE_FIRST = frozenset({"chmod", "chown", "chgrp"})  # the first operand is a mode, an owner or a group
+SETFACL_VALUES = frozenset({"-m", "-x", "-M", "-X", "--modify", "--remove", "--set", "--set-file"})
+BWRAP_DESTS = {  # option: how many words it takes, the last one its destination
+    **dict.fromkeys(
+        "--bind --bind-try --dev-bind --dev-bind-try --ro-bind --ro-bind-try --bind-fd --ro-bind-fd "
+        "--file --bind-data --ro-bind-data --symlink --chmod".split(),
+        2,
+    ),
+    **dict.fromkeys("--remount-ro --tmp-overlay --ro-overlay --proc --dev --tmpfs --mqueue --dir".split(), 1),
+    "--overlay": 3,
+}
+BWRAP_VALUES = {"--setenv": 2, "--perms": 1, "--size": 1, "--overlay-src": 1}  # any other --x takes one
+BWRAP_FLAGS = frozenset(  # options that take no value (T09 review)
+    "--unshare-all --unshare-user --unshare-user-try --unshare-ipc --unshare-pid --unshare-net "
+    "--unshare-uts --unshare-cgroup --unshare-cgroup-try --share-net --clearenv --new-session "
+    "--die-with-parent --as-pid-1 --disable-userns --assert-userns-disabled --level-prefix".split()
+)
+CHMOD_MINUS_MODE = re.compile(r"-[ugoa]*[rwxXst]+")  # ``chmod -w f``: GNU reads it as a mode
+LOCK_WORDS_MAX = 256  # paths one lock may name; past it the lock asks (the hook's 10 s)
+
+
+def locked_words(argv: list[str]) -> list[str]:
+    """The paths a lock names: chmod-family operands (past the mode or owner unless
+    ``--reference``), and ``bwrap``'s mount destinations up to its command (a folder bound on
+    itself excepted: it covers nothing)."""
+    head = argv[0] if argv else ""
+    if head in LOCKERS:
+        operands, skip, ended = [], False, False
+        for word in argv[1:]:
+            if skip:
+                skip = False
+            elif ended or not word.startswith("-") or (head == "chmod" and CHMOD_MINUS_MODE.fullmatch(word)):
+                operands.append(word)
+            elif word == "--":
+                ended = True
+            elif head == "setfacl" and word in SETFACL_VALUES:
+                skip = True
+        first = head in MODE_FIRST and not any(w.startswith("--reference") for w in argv)
+        return [w for w in operands[1 if first else 0 :] if not w.startswith(("+", "="))]  # chattr +i
+    if head != "bwrap":
+        return []
+    dests, i = [], 1
+    while i < len(argv) and argv[i].startswith("--"):
+        count = 0 if argv[i] in BWRAP_FLAGS else BWRAP_DESTS.get(argv[i]) or BWRAP_VALUES.get(argv[i], 1)
+        values = argv[i + 1 : i + 1 + count]
+        if argv[i] not in BWRAP_DESTS and any(v.startswith("--") for v in values):
+            count = 0  # an unknown flag with no value: the next option is not its value
+            values = []
+        if argv[i] in BWRAP_DESTS and values and not (count == 2 and values[0] == values[-1]):
+            dests.append(values[-1])
+        i += 1 + count
+    return dests
+
+
+def lock_hit(segment: list[str], bases: list[str], protected: list[Rule], anchors) -> str | None:
+    """A lock on a protected folder or a folder holding one, as ``<folder>/*``, which asks (Q3:
+    the mode is not read, so the owner may approve a harmless one; a ``bwrap`` cover only the
+    child sees); ``zip -m -@`` removes names read from stdin."""
+    if not protected:
+        return None
+    argv = program_of(segment)
+    if argv[:1] == ["zip"] and "@" in "".join(w for w in argv[1:] if w.startswith("-")) and zip_moves(argv):
+        return "<names on stdin>/*"
+    words = locked_words(argv)
+    if len(words) > LOCK_WORDS_MAX:
+        return "<too many lock paths>/*"
+    # the folders of never rows only: an ask row (``~/.ssh/rc``) must not make ``chmod 700 ~/.ssh`` ask
+    sealed_anchors = protected_anchors([r for r in protected if r.decision == "never"])
+    holders = sealed_anchors | {parent for a in sealed_anchors for parent in folder_parents(a)}
+    for word in words:
+        for form in home_forms(word):
+            for base in bases:
+                if shell.has_sentinel(form):  # a glob or a substitution: it may name a holder
+                    pattern = os.path.normpath(os.path.join(base, os.path.expanduser(path_glob(form)[0])))
+                    if any(globs_meet(pattern.casefold(), h) for h in holders):
+                        return f"{word}/*"
+                    continue
+                place = os.path.normpath(os.path.join(base, os.path.expanduser(form)))
+                if place.casefold() in sealed_anchors or holds_an_anchor(place, sealed_anchors):
+                    return f"{tilde_form(place).rstrip('/')}/*"
+    return None
+
+
+def folder_parents(folder: str) -> list[str]:
+    """Every folder above ``folder``, up to ``/``."""
+    parents = []
+    while folder not in ("/", ""):
+        folder = os.path.dirname(folder)
+        parents.append(folder)
+    return parents
 
 
 def unsure_landing(word: str) -> bool:

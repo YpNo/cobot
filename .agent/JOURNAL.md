@@ -264,3 +264,11 @@ Proof: full suite with coverage, 98.30 %, one failure: the known flaky glob-dead
 Open: pre-existing, a followed cd into an owner folder asks where the literal path denies (touch too); 5000 plain words take about 6 s in the word loop (cat too).
 Next: T09 removal, cover, link and lock verbs.
 verified: tree 970927fb5011b00c138b661e0571bfa4348307d3 · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T09: removing, covering, linking and locking the config dir (F-62)
+Changed: taken_away (tar --remove-files, zip -m, 7z -sdel, a recursive compressor, rclone removal verbs) in deleted_words; ln, cp -s and cp -l sources as moved holders; covered_folders (mount, mount.*, FUSE mounters, rclone mount|nfsmount) as folder options; lock_hit asks for chmod, chown, chgrp, setfacl, chattr on a never-row folder or its holder, bwrap destinations (a self-bind excepted) and zip -m -@.
+Why: F-62.
+Proof: full suite with coverage exit 0, 98.32 %; ruff clean. Bypass review folded: rclone verbs behind valued flags, cp -l and long prefixes, bwrap no-value flags, chmod -w modes, globs, -m@, chmod 700 ~/.ssh silent (never rows only), more mounters, a lock cap.
+Open: cd ~ then a relative operand asks where the literal denies (rm -rf .claude too).
+Next: T10 the config dir's real path.
+verified: tree e47c2b8ec324bc4aa4b177009f98e5251c31c589 · full suite with coverage, ruff

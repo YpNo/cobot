@@ -297,3 +297,161 @@ def test_story7_downloaderWithServerNamesInAHolder_asks(rules, command):
 @pytest.mark.parametrize("command", DOWNLOADER_SILENT)
 def test_story7_downloaderElsewhere_staysSilent(rules, command):
     assert decide(rules, command) is None
+
+
+# ---------------------------------------------------------------- story 8, T09: remove, cover, link, lock
+
+TAKEN_REFUSED = [
+    # the sources are removed, as rm -r
+    "tar --remove-files -cf a.tar ~/.claude",
+    "tar --remove-files -cf a.tar ~",
+    "tar -cf a.tar --remove-files /home",
+    "tar --rem -cf a.tar ~/.claude",
+    "tar -czf a.tgz --remove-files ~",
+    "zip -rm a.zip ~/.claude",
+    "zip -r -m a.zip ~",
+    "zip -mr a.zip ~/.claude",
+    "zip --move -r a.zip ~/.claude",
+    "7z a -sdel a.7z ~/.claude",
+    "7z a -SDEL a.7z ~",
+    "rclone purge ~/.claude",
+    "rclone delete ~/.claude",
+    "rclone rmdirs ~",
+    "rclone -v deletefile ~/.claude/cobot.rules",
+    # every file under it is replaced
+    "gzip -r ~/.claude",
+    "gunzip -r ~",
+    "zstd -r --rm ~/.claude",
+    "gzip --recursive ~",
+    # covered for every process
+    "mount --bind /tmp ~/.claude",
+    "mount -o bind /tmp/x ~/.claude",
+    "mount -t tmpfs t ~",
+    "mount -B /tmp ~/.claude",
+    "mount --target=~/.claude /tmp",
+    "mount --target ~/.claude /tmp",
+    "sshfs h:/x ~/.claude",
+    "sshfs -o allow_other h:/x ~",
+    "bindfs /tmp/x ~/.claude",
+    "rclone mount r: ~/.claude",
+    "rclone mount r: ~/.claude --daemon",
+    "fuse-overlayfs -o lowerdir=/a,upperdir=/b,workdir=/c ~/.claude",
+    "archivemount a.tar ~/.claude",
+    "squashfuse a.sqfs ~",
+    # a link to a folder holding the config dir reaches it
+    "ln -s ~ /tmp/h; cp e/cobot.rules /tmp/h/.claude/cobot.rules",
+    "ln -s /home /tmp/h && rm -r /tmp/h/u/.claude",
+    "ln -s ~ /tmp/h",
+    "ln -sT ~/ /tmp/h",
+    "cp -rs ~ /tmp/h",
+    "cp --symbolic-link -r ~ /tmp/h",
+    # T09 bypass review: rclone flags with values, hard-link trees, long prefixes, other mounters
+    "rclone --config /dev/null purge ~/.claude",
+    "rclone --log-level DEBUG purge ~",
+    "rclone -q --log-file /tmp/l purge ~",
+    "rclone --config x mount r: ~/.claude",
+    "rclone nfsmount r: ~/.claude",
+    "cp -rl ~ /tmp/h",
+    "cp -l -r ~ /tmp/h",
+    "cp --sym -r ~ /tmp/h",
+    "cp --link -r ~ /tmp/h",
+    "mount.cifs //h/s ~/.claude",
+    "s3fs b ~/.claude",
+    "gocryptfs c ~",
+    "mergerfs /a:/b ~/.claude",
+]
+LOCK_ASKED = [
+    "chmod -R 000 ~/.claude",
+    "chmod 000 ~/.claude",
+    "chmod -R a-r ~",
+    "chmod 700 ~",
+    "chown -R nobody ~/.claude",
+    "chown nobody: ~/.claude",
+    "chgrp -R x ~/.claude",
+    "setfacl -R -m u:x:0 ~/.claude",
+    "chattr -R +i ~/.claude",
+    "chmod --reference=x ~/.claude",
+    "chmod -R 000 /home",
+    # only the child sees a bwrap cover
+    "bwrap --bind /tmp ~/.claude sh",
+    "bwrap --tmpfs ~/.claude sh",
+    "bwrap --ro-bind /tmp/x /home sh",
+    "bwrap --ro-bind / / --tmpfs ~ sh",
+    "bwrap --symlink /tmp/x ~/.claude sh",
+    "bwrap --overlay a b ~/.claude sh",
+    "bwrap --setenv A b --tmpfs ~ sh",
+    # names from stdin, removed
+    "zip -m -@ a.zip",
+    # T09 bypass review: bwrap flags with no value, chmod's -w modes, globs, @ in a cluster
+    "bwrap --unshare-all --tmpfs ~/.claude sh",
+    "bwrap --die-with-parent --ro-bind / / --tmpfs /home sh",
+    "bwrap --new-session --bind /tmp ~ sh",
+    "bwrap --ro-bind / / --unshare-net --tmpfs ~/.claude sh",
+    "bwrap --frobnicate --tmpfs ~/.claude sh",
+    "chmod -w ~/.claude",
+    "chmod -rwx ~/.claude",
+    "chmod -R -w ~",
+    "chmod -- -w ~/.claude",
+    "chmod 000 /home/*",
+    "chmod 000 ~/.cl*",
+    "zip -m@ /tmp/a.zip",
+    "zip -rm@ /tmp/a.zip",
+    "find ~ -name x | zip -m@ /tmp/a.zip",
+]
+TAKEN_SILENT = [
+    "chmod -R u+w build/",
+    "chmod +x script.sh",
+    "chmod 600 ~/.ssh/id_x",
+    "chmod -R u+w ~/.claude/projects",
+    "chown -R me build",
+    "tar --remove-files -cf a.tar logs/",
+    "tar -cf a.tar ~/.claude",
+    "zip -rm a.zip old/",
+    "zip -r a.zip ~/.claude",
+    "7z a a.7z ~/.claude",
+    "gzip -r logs/",
+    "gzip f",
+    "mount --bind /tmp/a /tmp/b",
+    "mount",
+    "sshfs h:/x mnt",
+    "rclone mount r: mnt",
+    "rclone delete r:old",
+    "bwrap --bind / / sh",
+    "bwrap --ro-bind / / --tmpfs /tmp sh",
+    "bwrap --ro-bind ~ ~ sh",
+    "ln -s ~/proj/x ~/bin/x",
+    "ln -s ../lib lib",
+    "cp -s a b",
+    "zip -@ a.zip",
+    "chmod 700 ~/.ssh",
+    "chmod -w build/x",
+    "chmod 644 src/*.py",
+    "rclone --config x copy a r:b",
+    "cp -l a b",
+    "bwrap --unshare-all --ro-bind / / sh",
+]
+
+
+def test_story8_manyLockedPaths_askWithinTheHookTimeout(rules):
+    """T09 review: 6000 operands took 10.2 s; past LOCK_WORDS_MAX the lock asks."""
+    command = "chmod 000 " + " ".join(f"x{i}" for i in range(300))
+    started = time.monotonic()
+    verdict = decide(rules, command)
+    assert time.monotonic() - started < 5
+    assert verdict == "ask"
+
+
+@pytest.mark.parametrize("command", TAKEN_REFUSED)
+def test_story8_removingCoveringOrLinkingTheConfigDir_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", LOCK_ASKED)
+def test_story8_lockingTheConfigDirOrAChildCover_asks(rules, command):
+    """Q3: the gate does not read modes, so a lock asks; a bwrap cover is the child's only."""
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", TAKEN_SILENT)
+def test_story8_everydayPermissionsArchivesAndMounts_staySilent(rules, command):
+    assert decide(rules, command) is None

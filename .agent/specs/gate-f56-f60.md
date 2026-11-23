@@ -300,15 +300,18 @@ For the owner at review. The stories carry the recommended defaults.
 12. **T12, a literal `cd` (story 9):** `home_cd_reach` follows the latest `~` folder through the
     script (`cd ~/x` puts it there, a relative cd moves it, any other directory change clears
     it); `owner_hit` gives each one-segment job its folder, read while the segment's folder is
-    unknown; the ask pass reads up to `HOME_TARGETS_MAX` of the folders a relative cd reached;
+    unknown; the ask pass reads the same folder for that segment only (wrap review: a set for the
+    whole command timed a 3 KB command out);
     `extraction_hit` judges them before its unknown-folder ask; in `judge_bash` a literal owner
     hit outranks `protected_cwd`.
 13. **T13, an unknown `cd` (story 9):** `config_tail` reads a relative word through a part named
     as the config dir from the config dir's parent (from the last such part: one check per word)
     while the folder is unknown to both the walk and the owner pass; a hit asks
     (`<unknown working directory>/*`). It reads plain words, option values (`=`, a joined short
-    option) and folder options. `lost_cd_reach` gives the ask pass the folder a relative cd
-    through that name reached (`cd "$X"/.claude`, `cd "$X" && cd .claude`).
+    option, from the name on in a short cluster: `-vt.claude`) and folder options.
+    `lost_cd_reach` gives the ask pass the folder a relative cd through that name reached
+    (`cd "$X"/.claude`, `cd "$X" && cd .claude`), kept through a `cd -`, `popd`, `~` or absolute
+    cd that may lead back to it (wrap review).
 
 Each task is test first (its rows fail on `a5db3f8`, or on `6022fa6` from T07), then the code,
 then the focused tests, ruff and the gate dry run, with a bypass-aimed review before its commit.
@@ -438,3 +441,10 @@ build that read it there broke two differential rows, a `~` folder made in the s
 `HOME` reassigned, and the runner opacity a test holds), so the owner pass reads the `~` folder
 instead; and that pass follows the latest cd rather than collecting every one (the review's
 false denies, `cd ~ && cd proj && rm -r .claude`). The T03 build note at the top no longer holds.
+T13 built with its review folded (a padded word that timed the hook out, option values, a cd
+into `.claude`). Wrap folded the code review (a short option cluster `-vt.claude`, a left folder
+named in an extraction's reason, `pushd +1`, one `cd_operand` parser) and the bypass review (a
+global set of reached folders that timed a 3 KB command out, now per segment; a guess lost on
+`cd -` or `popd`). Accepted: `protected_file_touched` stays long (it was before story 9); a
+case-insensitive match denies `cd ~ && cd .CLAUDE && rm -r cobot`, as names are compared
+elsewhere.

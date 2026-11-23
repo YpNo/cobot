@@ -79,6 +79,14 @@ def test_gap1_literalCd_keepsTheLiteralPathsAsk(rules, home):
     assert decide(rules, "cd ~/.claude && chmod -R 700 .") == "ask"
 
 
+def test_gap1_extractionAfterLeavingTheConfigDir_asksNamingNoLeftFolder(rules, home):
+    """Wrap code review: after ``cd ~/.claude && cd ~/proj`` the reason named ``~/.claude``."""
+    loaded, _, _ = rules.load_rules(None)
+    verdict = rules.judge_bash("cd ~/.claude && cd ~/proj && tar -xf e.tar", loaded, None, None)[0]
+    assert verdict.decision == "ask"
+    assert "'~/.claude'" not in verdict.note
+
+
 @pytest.mark.parametrize("command", ["cd ~ && tar -xf e.tar", "cd ~ && unzip x.zip"])
 def test_gap1_extractionInHome_stillAsks(rules, home, command):
     """Q1 (owner): a working directory that only holds the config dir asks, where ``tar -C ~``
@@ -97,6 +105,7 @@ def test_gap1_extractionInHome_stillAsks(rules, home, command):
         "cd ~/.claude; cd -; rm -r cobot",
         "pushd ~/.claude; popd; rm -r cobot",
         'cd ~/.claude && cd "$X" && rm -r cobot',
+        "cd ~/.claude && pushd +1 && rm -r cobot",  # wrap code review: the stack, not a folder
         "cd ~/.cache && tar -xf e.tar",  # the walk keeps a ``~`` cd unknown, as on c9304bc
         "cd ~ && make",  # runners stay opaque after it
     ],
@@ -145,6 +154,14 @@ UNKNOWN_CD_ASKED = [
     'cd "$X"/.claude && ln -sfn /tmp/o cobot',
     'cd "$X" && pushd .claude && ln -sfn /tmp/o cobot',
     'cd ~; cd "$X"; cd .claude; rm -r cobot',  # none on c9304bc and after T12
+    # wrap code review: a short option cluster with the value joined
+    'cd "$X" && cp -vt.claude/cobot evil',
+    'cd "$X" && ln -sfnt.claude /tmp/o',
+    # wrap bypass review: a guess kept through a cd that may lead back
+    'cd "$X"/.claude && (cd ~) && rm -r cobot',
+    'cd "$X"/.claude && cd /tmp && cd - && rm -r cobot',
+    'cd "$X"/.claude && pushd /tmp && popd && rm -r cobot',
+    'cd "$X"/.claude && cd ~/nonexist; rm -r cobot',
 ]
 
 
@@ -168,6 +185,7 @@ def test_gap2_unknownCdThenTheConfigDirsName_asks(rules, home, command):
         'cd "$X" && cd .claude && ls',
         'cd "$X" && cd .claude && mkdir -p agents',
         'cd "$X" && ls -la .claude',
+        'cd "$X" && cp -vt.cache x',
     ],
 )
 def test_gap2_unknownCdElsewhere_staysSilent(rules, home, command):
@@ -191,10 +209,24 @@ def test_gap2_paddedName_isJudgedInTimeAndALaterDenyStands(rules, home):
     assert verdict == "deny"
 
 
+def test_gaps_relativeCdsBeforeALiteralDeny_judgedWithinTheHookTimeout(rules, home):
+    """Wrap bypass review: folders a relative cd reached were read for every segment, so a 3 KB
+    command took 13.3 s and the hook's timeout let the ``rm`` run (c9304bc: 4.8 s). Measured
+    against the same command without the ``~`` cd, so the bound holds under coverage's load:
+    the global set cost about 3x per segment."""
+    body = " ".join(f"cd a && cd b && cd c && cd d && cd .. && x q{i};" for i in range(30))
+    started = time.monotonic()
+    assert decide(rules, f"cd /tmp && {body} rm -r ~/.claude/cobot") == "deny"
+    baseline = time.monotonic() - started
+    started = time.monotonic()
+    assert decide(rules, f"cd ~ && {body} rm -r ~/.claude/cobot") == "deny"
+    assert time.monotonic() - started < 2 * baseline + 1
+
+
 def test_gap1_longChainOfCds_isJudgedWithinTheHookTimeout(rules, home):
     """A first build rebuilt the reached folders per segment and joined every relative cd: 200
-    cds took 44 s. One pass following the latest cd, and HOME_TARGETS_MAX, keep it under the
-    hook's 10 s (about 2x the c9304bc time)."""
+    cds took 44 s. One pass following the latest cd keeps it under the hook's 10 s (about 2x the
+    c9304bc time)."""
     command = "cd ~ && " + " && ".join(["cd a"] * 200) + " && rm x"
     started = time.monotonic()
     decide(rules, command)

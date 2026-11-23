@@ -325,3 +325,11 @@ Why: the orchestrator asked for docs and CHANGELOG lines for both lower gaps, in
 Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync; cobot-memory check, brief 5350 chars.
 Next: wrap reviews (bypass and code) of T12 and T13.
 verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · markdownlint, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60 story 9: reviews folded
+Changed: code review (a short option cluster -vt.claude now asks; an extraction's reason no longer names a folder a later cd left; pushd +1 clears the ~ folder; one cd_operand parser for both reach functions); bypass review (HIGH: the folders relative cds reached were a set for the whole command, read by every segment, so a 3 KB command took 13.3 s and the hook timeout let a literal rm run; now each segment reads only the folder the cds before it reached, HOME_TARGETS_MAX removed; LOW: the .claude guess is kept through cd -, popd, ~ and absolute cds); each fold a test row; spec Converge.
+Why: /cobot:wrap for T12 and T13.
+Proof: full suite with coverage 98.34 %, 5400 passed, 2 failed under load: the new relative-timing test (rewritten as a ratio to the same command without the ~ cd; story 9 file 93 passed under coverage) and the known glob-deadline class (test_gcp_mcp_gate cat */README.md, passes alone); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; brief 4942 chars. The padded 3 KB command: 5.6 s (c9304bc 4.8 s).
+Open: accepted, protected_file_touched stays long; cd ~ && cd .CLAUDE && rm -r cobot denies (names compared without case); false denies on ||, if, functions, pipes, quoted ~. Pre-existing: 100 cds into distinct ~ folders take about 38 s on c9304bc too (a hook timeout).
+Next: Part 2, spec F-57 on security/gate-f57.
+verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check

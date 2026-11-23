@@ -3320,7 +3320,6 @@ GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env
 
 TAR_PROGRAMS = frozenset({"tar", "bsdtar", "gtar"})
 FOLDER_OPTIONS_MAX = 8  # folder options one segment may name; past it the segment asks
-HOME_TARGETS_MAX = 4  # folders relative cds under ``~`` add to the ask pass; past it none
 TAR_VALUE_LETTERS = frozenset("fCbTXgNKVHL")  # old-style letters that take the next word
 LONG_PREFIX_MIN = 5  # getopt takes a unique prefix of a long option: ``--dir`` is ``--directory``
 GIT_FOLDER_VARIABLES = ("GIT_WORK_TREE=", "GIT_DIR=")
@@ -4270,9 +4269,12 @@ def protected_file_touched(
         relocating = command and relocates(segment)
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
-        earlier = homes if dirs is None else frozenset()  # a later known cd leaves them (story 9)
+        # the ``~`` folder the cds before this segment reached, only while the walk lost it: a later
+        # known cd leaves it, and no other segment pays for it (story 9; wrap review: a global set
+        # timed a 3 KB command out)
+        earlier = homes | latest[job] if dirs is None else frozenset()
         reached = homed | earlier
-        reached |= guessed[job] if lost else frozenset()  # ``cd "$X"/.claude``: ask pass only (T13)
+        reached |= guessed[job] if dirs is None else frozenset()  # ``cd "$X"/.claude``: ask pass only (T13)
         bases = sorted({str(d) for d in (dirs or start)} | reached)  # unknown: the payload cwd, and by name
         folders = folder_options(segment) if command else []
         if len(folders) > FOLDER_OPTIONS_MAX:
@@ -4297,7 +4299,8 @@ def protected_file_touched(
         if command and not landed:
             landed = download_hit(segment, bases, protected, anchors, budget, away)
         if command and not landed:
-            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None, reached)
+            here = earlier  # the latest, not a folder a later cd left
+            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None, here)
         if command and not landed:
             landed = lock_hit(segment, bases, protected)
         if command and not landed and protected:
@@ -4336,7 +4339,7 @@ def protected_file_touched(
                 for base in bases
             ):
                 return token  # ``sort -o~/x``, ``curl -sD~/x``: a short option's joined path (F-60 review)
-            short = token[2:] if token[:1] == "-" and token[1:2] != "-" else ""  # ``-t.claude``
+            short = config_joined(token) if lost else ""  # ``-t.claude``, ``-vt.claude`` (wrap review)
             attached = value or (joined.group(1) if joined else short)
             if lost and attached and not fallback:  # ``--target-directory=.claude`` (T13 review)
                 fallback = config_tail(attached, protected, anchors, (relocating, False, False), budget)
@@ -4378,6 +4381,16 @@ def config_tail(
     ):
         return "<unknown working directory>/*"
     return None
+
+
+def config_joined(token: str) -> str:
+    """A single-dash cluster's joined value from where the config dir's name starts in it
+    (``-vt.claude/cobot`` is ``.claude/cobot``): which letter takes the value is per program, so
+    the name is the anchor. Empty when there is none."""
+    if token[:1] != "-" or token[1:2] == "-":
+        return ""
+    found = token.casefold().find(os.path.basename(config_literal()).casefold())
+    return token[found:] if found > 1 else ""
 
 
 def config_named(parts: list[str]) -> str | None:
@@ -4903,8 +4916,8 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
     ``~``, ``$HOME`` or ``${HOME}`` (read as HOME), a bare ``cd`` (HOME), and a relative operand
     under each ``CDPATH`` entry the command assigns or the hook inherits. The walk keeps them
     unknown so runners stay opaque after them; the protected check also reads every word in them,
-    which can only add asks (``cd ~/.gemini && rm -r config``); and, up to HOME_TARGETS_MAX, the
-    folders a relative cd under one reaches (``cd ~ && cd .claude``, story 9)."""
+    which can only add asks (``cd ~/.gemini && rm -r config``). A relative cd under one is
+    ``home_cd_reach``'s, per segment (story 9)."""
     cdpath = [
         entry
         for segment in segments
@@ -4929,8 +4942,7 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
                 folders.add(os.path.normpath(os.path.expanduser(homed)))
             elif not os.path.isabs(homed) and not homed.startswith(("./", "../")):
                 folders.update(os.path.normpath(os.path.join(root, homed)) for root in roots)
-    moved = {folder for current in home_cd_reach(segments) for folder in current} - folders
-    return folders | set(sorted(moved)[:HOME_TARGETS_MAX])
+    return folders
 
 
 def home_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
@@ -4946,18 +4958,24 @@ def home_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
     return reach
 
 
+def cd_operand(argv: list[str]) -> str | None:
+    """The one operand of a ``cd`` or ``pushd``, in its ``~`` form; "" when it has none; None for
+    another directory verb or more than one operand."""
+    operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
+    if argv[0] not in ("cd", "pushd") or len(operands) > 1:
+        return None
+    return home_forms(operands[0])[-1] if operands else ""
+
+
 def home_cd_step(argv: list[str] | None, current: frozenset[str]) -> frozenset[str]:
     """``current`` after one segment's directory verb (``home_cd_reach``)."""
     if not argv:
         return current
-    operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
-    if argv[0] not in ("cd", "pushd") or len(operands) > 1:
-        return frozenset()
-    if not operands:
-        return frozenset({os.path.expanduser("~")}) if argv[0] == "cd" else frozenset()
-    word = home_forms(operands[0])[-1]
-    if shell.has_sentinel(word) or word.startswith("-") or os.path.isabs(word):
-        return frozenset()
+    word = cd_operand(argv)
+    if not word:  # another directory verb, or a bare ``cd`` (HOME) or ``pushd`` (a swap)
+        return frozenset({os.path.expanduser("~")}) if word == "" and argv[0] == "cd" else frozenset()
+    if shell.has_sentinel(word) or word.startswith(("-", "+")) or os.path.isabs(word):
+        return frozenset()  # ``-``, ``+1``: OLDPWD or the stack (wrap review)
     if word.startswith("~"):
         return frozenset({os.path.normpath(os.path.expanduser(word))})
     return frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
@@ -4973,13 +4991,12 @@ def lost_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
     for segment in segments:
         argv = directory_verb(segment)
         if argv:
-            operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
-            word = home_forms(operands[0])[-1] if argv[0] in ("cd", "pushd") and len(operands) == 1 else "/"
+            word = cd_operand(argv) or "/"  # none, or another directory verb: the folder is lost
             named = None if word.startswith(("~", "/")) else config_named(word.split("/"))
             if named:
                 current = frozenset({named})
-            elif shell.has_sentinel(word) or word.startswith(("-", "~", "/")):
-                current = frozenset()
+            elif shell.has_sentinel(word) or word.startswith(("-", "+", "~", "/")):
+                pass  # kept: ``cd -``, ``popd`` or a cd that fails may lead back (wrap review)
             else:
                 current = frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
         reach.append(current)

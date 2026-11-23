@@ -26,7 +26,7 @@ layers empty:
 | F-60 | `cp --target-directory=/home/u/.claude cobot.rules` · `cp -t$HOME/.claude …` · `cp --t=~/.claude …` · `mv`, `ln`, `install` with `--target-directory=` · `curl -o~/.claude/cobot.rules u` · `wget -O~/.claude/cobot.rules u` · `curl --output-dir=~/.claude -O u/x` · `7z x -o$HOME/.claude e.7z` | none | deny, as each separate form is |
 | F-56 | `cp e/.claude.json ~/` · `cp e/.claude.json ~` · `cp -t ~ e/.claude.json` · `mv`, `ln -s`, `install` and `rsync` of it into `~` · `rsync -rt e/.claude.json ~/` · `scp h:/x/.claude.json ~/` · `cp e/.bashrc ~/` | none | ask (the landing file is an ask row) |
 | F-56 | `scp h:/x/cobot.rules ~/.claude` · `docker cp c:/x/cobot.rules ~/.claude/` · `rclone copy r:x/cobot.rules ~/.claude/ --transfers 4` · `cp --parents .claude/cobot.rules ~` · `rsync -R .claude/cobot.rules ~/` | none | deny |
-| F-56 | `cd ~/.claude && tar -xf e.tar` · `cd ~/.claude && unzip e.zip` · `cd ~/.claude && curl -OJ u` | none | ask, as `cd ~/.claude && tar -C . -xf e.tar` did before this spec (build note, T03: the customization-root check reads the relative `.`; deny stays for a literal `~/.claude`) |
+| F-56 | `cd ~/.claude && tar -xf e.tar` · `cd ~/.claude && unzip e.zip` · `cd ~/.claude && curl -OJ u` | none | ask, as `cd ~/.claude && tar -C . -xf e.tar` did before this spec (build note, T03: the customization-root check reads the relative `.`; deny stays for a literal `~/.claude`). Story 9 (T12) makes it deny, as the literal path |
 | F-56 | `cd ~ && tar -xf e.tar` · `cd ~ && unzip x.zip` | none | ask (the working directory holds the config dir) |
 | F-56 | `tar -xPf e.tar` · `cpio -i < e.cpio` · `unzip -: e.zip` · `curl -K e/cfg` · `wget -e dir_prefix=~ u` · `wget -x -nH -P ~ https://h/.claude/cobot.rules` | none | ask (the landing place is unknown) |
 | F-56 | `curl --output-dir ~ -O https://h/.claude.json` · `wget -P ~ https://h/.claude.json` · `cd ~ && curl -O https://h/.claude.json` | none | ask |
@@ -188,6 +188,33 @@ rows must stay silent.
    Friction accepted: `chmod 700 ~` asks; `ln -s ~ x` denies; `ditto x ~` denies (a contents
    copy, as `rclone copy r:x ~`); with `~/.claude` linked into `~/dotfiles`, `git -C ~/dotfiles …`
    and `tar -C ~/dotfiles …` deny, as `git -C ~` does today.
+9. **A `cd` before the word gets the written-out path's decision (the wrap's lower gaps).**
+   Measured on `c9304bc`, in a HOME that holds `~/.claude/cobot`:
+
+   | command | today | after |
+   |---|---|---|
+   | `cd ~/.claude && rm -r cobot` · `cd ~/.claude && cat cobot/x` · `cd ~/.claude/cobot && rm x` · `cd ~/.claude/shell-snapshots && rm s.sh` · `cd ~/.claude/cobot && ls` · `pushd ~/.claude && rm -r cobot` · `cd ~ && cd .claude && rm -r cobot` | ask | deny, as `rm -r ~/.claude/cobot` (and the others written out) |
+   | `cd ~/.claude && tar -xf e.tar` · `… && unzip e.zip` · `… && curl -OJ u` · `… && jar xf e.jar` · `… && ar x e.a` · `… && unar e.rar` · `… && bsdunzip e.zip` | ask | deny, as `tar -C ~/.claude -xf e.tar` (story 4's T03 build note no longer holds) |
+   | `cd ~/.claude && cd /tmp && rm -r cobot` | ask | ask (a later known cd leaves the folder) |
+
+   The cause: the owner pass reads one segment at a time, so the `~` folder a `cd` before it
+   reached (`home_cd_targets`) was never among its folders; and a protected working directory's
+   ask was chosen before a deny. The owner pass now gives each segment the `~` folder the latest
+   cd before it reached (no CDPATH guess; a later `cd -`, variable, `popd` or known folder clears
+   it) while its folder is unknown, and a literal owner hit outranks the working-directory ask. The walk itself still keeps a `~` cd unknown (quoting is
+   not visible in the split words, and `HOME` may be reassigned), so runners stay opaque after it
+   (`cd ~ && make` asks). A `cd` the gate cannot follow (a variable, `-`, a `popd`, a CDPATH name)
+   is as it was.
+
+   Friction guard, silent: `cd ~/.claude && ls`, `cd ~/.claude && touch x`, `cd ~ && ls`,
+   `cd ~/proj && rm -r build`, `cd ~/missing && rm x`. Unchanged asks: `cd ~ && tar -xf e.tar`
+   (Q1), `cd ~/.claude && chmod -R 700 .` (Q3), `cd ~/.cache && tar -xf e.tar` (an unknown
+   folder, as on `c9304bc`). Friction accepted: `cd ~/.claude/cobot` alone is refused, as
+   `ls ~/.claude/cobot` is, its reason naming the word `cd`; refused too, since the owner pass
+   reads the cds in order but not the shell's structure: `cd ~/.claude || rm -r cobot`,
+   `if false; then cd ~/.claude; fi; rm -r cobot`, a cd in a function, a pipe or the background,
+   a quoted `cd "~/.claude" && …` and `HOME=/tmp; cd ~/.claude && …` (T12 review: each one is a
+   false deny on a shape an agent has no reason to write; none is a way past the gate).
 
 ## Trust boundaries
 
@@ -262,6 +289,12 @@ For the owner at review. The stories carry the recommended defaults.
     `config_dir()` when it is, or sits under, a symlink.
 11. **T11, both runtimes and docs:** agy rows; CHANGELOG; FINDINGS F-61 and F-62 closed;
     `docs/configuration.md`.
+12. **T12, a literal `cd` (story 9):** `home_cd_reach` follows the latest `~` folder through the
+    script (`cd ~/x` puts it there, a relative cd moves it, any other directory change clears
+    it); `owner_hit` gives each one-segment job its folder, read while the segment's folder is
+    unknown; the ask pass reads up to `HOME_TARGETS_MAX` of the folders a relative cd reached;
+    `extraction_hit` judges them before its unknown-folder ask; in `judge_bash` a literal owner
+    hit outranks `protected_cwd`.
 
 Each task is test first (its rows fail on `a5db3f8`, or on `6022fa6` from T07), then the code,
 then the focused tests, ruff and the gate dry run, with a bypass-aimed review before its commit.
@@ -281,8 +314,10 @@ then the focused tests, ruff and the gate dry run, with a bypass-aimed review be
 | T09 ✅ | removal, cover, link and lock verbs | gate | auth | T05 |
 | T10 ✅ | the config dir's real path | gate | auth | T05 |
 | T11 ✅ | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T07–T10 |
+| T12 ✅ | the owner pass reads earlier `~` cds; a literal owner hit outranks the cwd ask | gate | auth | T04 |
 
-Stories 7 and 8 are tested in `tests/test_gate_f61_f62.py`, so the story 1–6 file stays readable.
+Stories 7 and 8 are tested in `tests/test_gate_f61_f62.py`, so the story 1–6 file stays readable;
+story 9 in `tests/test_gate_cd_gaps.py`, in a HOME of its own (its rows need `~/.claude` there).
 
 One lane: every task edits `protected_file_touched` or its helpers, so the tasks run in order.
 
@@ -381,3 +416,10 @@ the code and security reviews: `bwrap` became opaque (it asks, as `unshare` does
 a bind mount's source is a second name, refused as a link is; and `owner_hit` leaves out a
 segment a customization root flags, so a landing in `~/.agents` no longer softens a literal deny
 elsewhere in the command (an older class the new landing tables had widened).
+
+2026-11-23, story 9 (owner: Q3 kept as ask; the two lower gaps the wrap left): T12 built with a
+bypass-aimed review folded. Two build decisions: the walk still keeps a `~` cd unknown (a first
+build that read it there broke two differential rows, a `~` folder made in the same command and
+`HOME` reassigned, and the runner opacity a test holds), so the owner pass reads the `~` folder
+instead; and that pass follows the latest cd rather than collecting every one (the review's
+false denies, `cd ~ && cd proj && rm -r .claude`). The T03 build note at the top no longer holds.

@@ -177,11 +177,7 @@ DOWNLOAD_ASKED += [
     "cd ~ && wget 'https://h/a/.bashrc;x'",
     "wget --default-page=.bashrc -P ~ https://h/",
 ]
-DOWNLOAD_ASKED += [
-    # through the working directory a sealed folder asks, as ``cd ~/.claude && tar -C . -xf`` did
-    # before this spec: the customization-root check reads the relative ``.`` (build note, T03)
-    "cd ~/.claude && curl -OJ https://h/x",
-]
+# ``cd ~/.claude && curl -OJ`` is refused since lower gap 1, in tests/test_gate_cd_gaps.py
 DOWNLOAD_REFUSED = [
     "curl --output-dir ~/.claude -O https://h/cobot.rules",
     "wget -P ~/.claude https://h/cobot.rules",
@@ -211,8 +207,7 @@ EXTRACTION_ASKED = [
     "cd ~ && unzip x.zip",
     "cd ~ && cpio -idv < e.cpio",
     "cd ~ && 7z x e.7z",
-    "cd ~/.claude && tar -xf e.tar",
-    "cd ~/.claude && unzip e.zip",
+    # ``cd ~/.claude && tar -xf`` is refused since lower gap 1 (tests/test_gate_cd_gaps.py)
     # landings the gate cannot place
     "tar -xPf e.tar",
     "tar --absolute-names -xf e.tar",

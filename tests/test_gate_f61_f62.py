@@ -102,11 +102,7 @@ WRITER_REFUSED = [
     "aria2c -O 1=$HOME/.claude/cobot.rules a.torrent",
 ]
 WRITER_ASKED = [
-    "cd ~/.claude && jar xf e.jar",
-    "cd ~/.claude && jar -xf e.jar",
-    "cd ~/.claude && ar x e.a",
-    "cd ~/.claude && unar e.rar",
-    "cd ~/.claude && bsdunzip e.zip",
+    # ``cd ~/.claude && jar xf`` and the others are refused since lower gap 1 (test_gate_cd_gaps.py)
     "cd ~ && unar e.rar",
     "cd ~ && jar xf e.jar",
     # member names the gate cannot place
@@ -117,8 +113,6 @@ WRITER_ASKED = [
     "ar xP e.a",
     "bsdcpio -i --insecure < e.cpio",
     # T07 bypass review: ar's separate dashed key words and --plugin; pax -rw -s
-    "cd ~/.claude && ar -v -x a.a",
-    "cd ~/.claude && ar --plugin p x a.a",
     "ar -v -xP a.a",
     "ar --plugin p xP a.a",
     "pax -rw -s ',^a$,../cobot.rules,' a ~/.claude/x",

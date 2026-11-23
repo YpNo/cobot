@@ -3320,6 +3320,7 @@ GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env
 
 TAR_PROGRAMS = frozenset({"tar", "bsdtar", "gtar"})
 FOLDER_OPTIONS_MAX = 8  # folder options one segment may name; past it the segment asks
+HOME_TARGETS_MAX = 4  # folders relative cds under ``~`` add to the ask pass; past it none
 TAR_VALUE_LETTERS = frozenset("fCbTXgNKVHL")  # old-style letters that take the next word
 LONG_PREFIX_MIN = 5  # getopt takes a unique prefix of a long option: ``--dir`` is ``--directory``
 GIT_FOLDER_VARIABLES = ("GIT_WORK_TREE=", "GIT_DIR=")
@@ -4240,6 +4241,7 @@ def protected_file_touched(
     rules: list[Rule],
     paths: list[str] | None = None,
     visited: Dirs = frozenset(),
+    homes: frozenset[str] = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
     Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
@@ -4247,7 +4249,8 @@ def protected_file_touched(
     gcp-mcp-opt-in), or that moves or links a customization root or a protected folder. Each word
     is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
     redirection and runner targets) are checked word by word, never read as a command, in every
-    directory the script visits. Either way the verdict is an ask (``protected_verdict``)."""
+    directory the script visits. Either way the verdict is an ask (``protected_verdict``).
+    ``homes``: the ``~`` folders earlier cds reached, for the owner pass's one-segment jobs."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision in ("never", ASK) and not r.agent]
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
@@ -4262,7 +4265,9 @@ def protected_file_touched(
         relocating = command and relocates(segment)
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
-        bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        earlier = homes if dirs is None else frozenset()  # a later known cd leaves them (story 9)
+        reached = homed | earlier
+        bases = sorted({str(d) for d in (dirs or start)} | reached)  # unknown: the payload cwd, and by name
         folders = folder_options(segment) if command else []
         if len(folders) > FOLDER_OPTIONS_MAX:
             return folders[-1]  # past the cap the segment asks rather than judge every folder
@@ -4284,7 +4289,7 @@ def protected_file_touched(
         if command and not landed:
             landed = download_hit(segment, bases, protected, anchors, budget, away)
         if command and not landed:
-            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
+            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None, reached)
         if command and not landed:
             landed = lock_hit(segment, bases, protected)
         if command and not landed and protected:
@@ -4666,16 +4671,25 @@ def extraction_unplaced(argv: list[str]) -> bool:
 
 
 def extraction_hit(
-    segment: list[str], bases: list[str], protected: list[Rule], anchors, budget, followed: bool = True
+    segment: list[str],
+    bases: list[str],
+    protected: list[Rule],
+    anchors,
+    budget,
+    followed: bool = True,
+    homes: set[str] | frozenset[str] = frozenset(),
 ) -> str | None:
     """An extraction with no folder option lands in the working directory (spec gate-f56-f60,
     story 4): a protected one by its ``~`` name, one that only holds a protected folder as
     ``<cwd>/*``, which asks (Q1: the owner may approve it; a deny could not be). After a ``cd``
-    the gate cannot follow, the working directory is unknown, so it asks (T04 review)."""
+    the gate cannot follow, the working directory is unknown, so it asks (T04 review), unless a
+    ``~`` folder a cd reached is protected itself (``cd ~/.claude && tar -xf``, story 9)."""
     if not protected or folder_options(segment) or not extracts(program_of(segment)):
         return None
     if not followed:
-        return "<unknown working directory>/*"
+        named = (tilde_form(os.path.normpath(home)) for home in sorted(homes))
+        hit = next((n for n in named if word_touches(n, n, protected, True, anchors, False, budget)), None)
+        return hit or "<unknown working directory>/*"
     for base in bases:
         name = tilde_form(os.path.normpath(base))
         if word_touches(name, name, protected, True, anchors, False, budget):
@@ -4843,7 +4857,8 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
     ``~``, ``$HOME`` or ``${HOME}`` (read as HOME), a bare ``cd`` (HOME), and a relative operand
     under each ``CDPATH`` entry the command assigns or the hook inherits. The walk keeps them
     unknown so runners stay opaque after them; the protected check also reads every word in them,
-    which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    which can only add asks (``cd ~/.gemini && rm -r config``); and, up to HOME_TARGETS_MAX, the
+    folders a relative cd under one reaches (``cd ~ && cd .claude``, story 9)."""
     cdpath = [
         entry
         for segment in segments
@@ -4868,7 +4883,38 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
                 folders.add(os.path.normpath(os.path.expanduser(homed)))
             elif not os.path.isabs(homed) and not homed.startswith(("./", "../")):
                 folders.update(os.path.normpath(os.path.join(root, homed)) for root in roots)
-    return folders
+    moved = {folder for current in home_cd_reach(segments) for folder in current} - folders
+    return folders | set(sorted(moved)[:HOME_TARGETS_MAX])
+
+
+def home_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
+    """The ``~`` folder the script is in after each segment, as far as the cds before it say
+    (the owner pass, spec gate-f56-f60, story 9): ``cd ~/x`` (or a bare ``cd``) puts it there,
+    a relative cd moves it, any other directory change (``-``, a variable, an absolute folder the
+    walk follows, ``popd``) leaves none. No CDPATH guess: a deny reads only what is written."""
+    current: frozenset[str] = frozenset()
+    reach = []
+    for segment in segments:
+        current = home_cd_step(directory_verb(segment), current)
+        reach.append(current)
+    return reach
+
+
+def home_cd_step(argv: list[str] | None, current: frozenset[str]) -> frozenset[str]:
+    """``current`` after one segment's directory verb (``home_cd_reach``)."""
+    if not argv:
+        return current
+    operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
+    if argv[0] not in ("cd", "pushd") or len(operands) > 1:
+        return frozenset()
+    if not operands:
+        return frozenset({os.path.expanduser("~")}) if argv[0] == "cd" else frozenset()
+    word = home_forms(operands[0])[-1]
+    if shell.has_sentinel(word) or word.startswith("-") or os.path.isabs(word):
+        return frozenset()
+    if word.startswith("~"):
+        return frozenset({os.path.normpath(os.path.expanduser(word))})
+    return frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
 
 
 def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = True) -> bool:
@@ -6192,13 +6238,19 @@ def owner_hit(
     """The word on cobot's owner files, a literal one first: a hole in one segment must not hide a
     literal hit in another (``cat ${!N}; cp x ~/.claude/cobot.rules``; wrap security review)."""
     jobs = [([p], []) for p in placed] + [([], reached.paths)]
-    hits = [protected_file_touched(job, cwd, owner_rows, paths, reached.visited) for job, paths in jobs]
+    # each segment in the ``~`` folders the cds before it reached (story 9): one at a time, the
+    # job would not see them (``cd ~/.claude && rm -r cobot``)
+    homes = home_cd_reach([segment for segment, _ in placed]) + [frozenset()]
+    hits = [
+        protected_file_touched(job, cwd, owner_rows, paths, reached.visited, homes[i])
+        for i, (job, paths) in enumerate(jobs)
+    ]
     # a customization root (``.agents``) is flagged with no rule at all: that segment's hit is not
     # on the owner files, and it must not soften another segment's (wrap security review)
     found = [
         (h, i)
         for i, h in enumerate(hits)
-        if h and not protected_file_touched(jobs[i][0], cwd, [], jobs[i][1], reached.visited)
+        if h and not protected_file_touched(jobs[i][0], cwd, [], jobs[i][1], reached.visited, homes[i])
     ]
     literal = [h for h, _ in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
     return (literal or [h for h, _ in found] or [None])[0]
@@ -6254,10 +6306,10 @@ def judge_bash(
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     in_protected = protected_cwd(directories, rules)
-    if in_protected:
-        best = in_protected
-    elif touched:
+    if touched:
         best = protected_verdict(touched, holes, placed, cwd, rules, reached)
+    if in_protected and best.decision != DENY:  # a literal owner hit there is refused (lower gap 1)
+        best = in_protected
     asks = [best] if best.decision == ASK else []
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)

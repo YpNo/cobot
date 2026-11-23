@@ -302,3 +302,11 @@ Why: the owner kept Q3 as ask at review (relayed 2026-11-23); it is no longer a 
 Proof: spec only; no code changed; tree stamp unchanged.
 Next: lower gap 1, a literal cd into an owner folder gets the literal path's decision.
 verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · spec text only
+
+## 2026-11-23 — gate-f56-f60 T12: a literal cd gets the written-out path's decision (story 9)
+Changed: home_cd_reach follows the latest ~ folder through the script (cd ~/x sets it, a relative cd moves it, cd -, a variable, popd or a known folder clears it); owner_hit gives each one-segment job that folder while its own is unknown; home_cd_targets adds up to HOME_TARGETS_MAX folders a relative cd reached; extraction_hit judges them before its unknown-folder ask; a literal owner deny outranks protected_cwd's ask. Tests in tests/test_gate_cd_gaps.py, in a HOME of their own; the HOME-dependent cd ~/.claude ask rows moved there as denies.
+Why: lower gap 1 of the wrap; the owner asked that cd ~/.claude && rm -r cobot be refused as rm -r ~/.claude/cobot is.
+Proof: full suite green; story 9 file 48 passed; ruff clean. Bypass review folded: the owner pass collected every cd (cd ~ && cd proj && rm -r .claude denied), now it follows the latest. A first build reading ~ in the walk broke two differential rows and was dropped. 200 chained cds: 3.5 s (c9304bc 1.8 s; a first build 44 s).
+Open: accepted false denies on shapes the owner pass does not model (||, if, functions, pipes, a quoted ~, HOME reassigned); cd ~/.claude/cobot alone denies naming the word cd; pre-existing, 100 cds into distinct ~ folders take about 38 s on c9304bc too.
+Next: lower gap 2, an unknown cd then ln -sfn .claude.
+verified: tree 6e104155ffd7cf9108e26f6032e41757578956b1 · full suite, story 9 tests, ruff

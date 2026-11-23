@@ -3257,7 +3257,7 @@ LANDING_OPTIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
 }
 # any short option with a path joined to it, for programs outside the table: the path after the
 # letters is a path word, as it is with a space (``wget -o~/log``, ``gcc -o~/x``, ``curl -c~/j``)
-JOINED_PATH_RE = re.compile(r"-[A-Za-z]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")
+JOINED_PATH_RE = re.compile(r"-[A-Za-z0-9#:]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")  # curl -#o~/x
 LANDING_PREFIX_MIN = 3  # getopt takes any unambiguous prefix: ``cp --t=DIR`` is ``--target-directory``
 EXACT_LONG_NAMES = frozenset({"curl"})  # curl takes no abbreviated long option
 GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
@@ -3341,7 +3341,7 @@ def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
                 found.append((value if eq else following, kind))
                 step = 1 if eq else 2
         elif word.startswith("-") and letters:
-            cluster = re.fullmatch(rf"-([a-zA-Z]*?)([{''.join(letters)}])(.*)", word)
+            cluster = re.fullmatch(rf"-([a-zA-Z0-9#:]*?)([{''.join(letters)}])(.*)", word)
             if cluster:
                 found.append((cluster.group(3) or following, letters[cluster.group(2)]))
                 step = 1 if cluster.group(3) else 2
@@ -3713,7 +3713,20 @@ COPY_VALUE_LONGS = {
     "docker": frozenset(),
     "podman": frozenset(),
 }
-KEEP_PATH_OPTIONS = frozenset({"--parents", "-R", "--relative"})  # the source's path is kept
+COPY_TARGETS_MAX = 16  # targets tried when an option is unknown; past it the copy asks
+LANDING_WORDS_MAX = 256  # landing words one segment may make; past it the copy asks
+
+
+def keeps_path(head: str, args: list[str]) -> bool:
+    """Whether a copy keeps the source's path: ``cp --parents``; ``rsync -R``/``--relative``, also
+    in a short cluster (``-aR``). For ``cp``, ``-R`` is only recursive (wrap code review)."""
+    if head == "cp":
+        return "--parents" in args
+    return head == "rsync" and (
+        "--relative" in args or any(re.fullmatch(r"-[A-Za-z]*R[A-Za-z]*", w) for w in args)
+    )
+
+
 CONTAINER_COPIERS = frozenset({"docker", "podman", "kubectl"})
 REMOTE_COPIERS = CONTAINER_COPIERS | {"scp", "rsync", "rclone"}  # where ``host:path`` is remote
 # copies whose sources are a folder's contents or a list the gate does not read (T02 review)
@@ -3734,7 +3747,7 @@ def copy_parts(argv: list[str]) -> list[Copy]:
     if (head in RELOCATING and head != "rsync") or (head in ("gio", "git") and verb is not None):
         args = argv[verb + 1 :] if verb is not None else argv[1:]
         target, sources, contents = merge_parts(args)
-        return [(target, sources, contents, bool(KEEP_PATH_OPTIONS & set(args)) and head == "cp")]
+        return [(target, sources, contents, keeps_path(head, args))]
     if head in CONTAINER_COPIERS and verb is not None:
         args = argv[verb + 1 :]
     elif head == "rclone" and verb is not None:
@@ -3746,7 +3759,7 @@ def copy_parts(argv: list[str]) -> list[Copy]:
     else:
         return []
     positionals, known = copy_positionals(head, args)
-    keep = head == "rsync" and bool(KEEP_PATH_OPTIONS & set(args))
+    keep = keeps_path(head, args)
     if not known:
         return every_target(positionals, keep)
     return [(positionals[-1], positionals[:-1], False, keep)] if len(positionals) >= 2 else []
@@ -3798,7 +3811,9 @@ def copy_positionals(head: str, args: list[str]) -> tuple[list[str], bool]:
 
 
 def every_target(positionals: list[str], keep: bool) -> list[Copy]:
-    return [(p, [q for q in positionals if q is not p], False, keep) for p in positionals]
+    return [
+        (p, [q for j, q in enumerate(positionals) if j != i], False, keep) for i, p in enumerate(positionals)
+    ]
 
 
 def landing_words(segment: list[str]) -> list[str]:
@@ -3863,7 +3878,10 @@ def download_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | No
     globbed = head == "curl" and not {"-g", "--globoff"} & set(argv) and any(set(u) & set("{[") for u in urls)
     numbered = head == "curl" and any(re.search(r"#\d", f) for f in files)
     unplaced = named_long or bool(set(letters) & shorts) or globbed or numbered
-    named = head == "wget" and not files or bool(REMOTE_NAME_OPTIONS & set(argv)) or "O" in shorts
+    # wget names every download from its URL unless -O; curl only with -O (wget's -O is a file)
+    named = (head == "wget" and not files) or (
+        head == "curl" and (bool(REMOTE_NAME_OPTIONS & set(argv)) or "O" in shorts)
+    )
     names = [n for u in urls for n in url_names(u, head, default_page(argv))] if named else []
     words = [os.path.join(folder, name) for folder in folders for name in names]
     if head == "curl":  # wget ignores -P with -O; curl writes a relative -o into --output-dir
@@ -3988,6 +4006,7 @@ def protected_file_touched(
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
     budget = GlobBudget.fresh()
+    fallback: str | None = None
     jobs = [(segment, dirs, True) for segment, dirs in placed]
     if paths:
         jobs.append((paths, union(visited, start), False))
@@ -4017,8 +4036,11 @@ def protected_file_touched(
         landed = landed or (download_hit(segment, bases, protected, anchors, budget) if command else None)
         if command and not landed:
             landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
-        if landed:
+        if landed and not unsure_landing(landed):
             return landed
+        # an ask-tier landing (a glob, an unknown folder) must not hide a literal hit after it, in
+        # this segment or a later one (wrap security review): it is returned only if none is found
+        fallback = fallback or landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         if FILES_FROM in deleted:
             return "-files0-from"
@@ -4063,7 +4085,7 @@ def protected_file_touched(
                     return token
                 if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
                     return token
-    return None
+    return fallback
 
 
 def landing_option_hit(
@@ -4085,8 +4107,17 @@ def landing_option_hit(
 def landing_hit(
     segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
 ) -> str | None:
-    """The landing word of a copy that names a protected file or folder (spec gate-f56-f60)."""
-    for word in landing_words(segment):
+    """The landing word of a copy that names a protected file or folder (spec gate-f56-f60). Past
+    COPY_TARGETS_MAX candidate targets or LANDING_WORDS_MAX words the copy asks rather than judge
+    every pair: the gate must answer within the hook's timeout (wrap code review)."""
+    if not protected:
+        return None
+    if len(copy_parts(program_of(segment))) > COPY_TARGETS_MAX:
+        return "<too many copy paths>/*"
+    words = landing_words(segment)
+    if len(words) > LANDING_WORDS_MAX:
+        return "<too many copy paths>/*"
+    for word in words:
         for form in home_forms(word):
             anchored = os.path.isabs(form) or form.startswith("~")
             if any(
@@ -4115,7 +4146,7 @@ def download_hit(
                 for base in bases[: 1 if anchored else None]
             ):
                 return word
-    if not unplaced:
+    if not unplaced or not protected:  # the rule-less customization-root pass must not meet it
         return None
     for folder in folders:
         for form in home_forms(folder):
@@ -4186,7 +4217,7 @@ def extraction_hit(
     story 4): a protected one by its ``~`` name, one that only holds a protected folder as
     ``<cwd>/*``, which asks (Q1: the owner may approve it; a deny could not be). After a ``cd``
     the gate cannot follow, the working directory is unknown, so it asks (T04 review)."""
-    if folder_options(segment) or not extracts(program_of(segment)):
+    if not protected or folder_options(segment) or not extracts(program_of(segment)):
         return None
     if not followed:
         return "<unknown working directory>/*"
@@ -4197,6 +4228,11 @@ def extraction_hit(
         if holds_an_anchor(os.path.normpath(base), anchors):
             return f"{name.rstrip('/')}/*"
     return None
+
+
+def unsure_landing(word: str) -> bool:
+    """A landing the gate names only as a could-be: a glob (``~/*``) or an unknown folder."""
+    return word.startswith("<") or shell.has_sentinel(word) or any(c in word for c in GLOB_CHARS)
 
 
 def tilde_form(path: str) -> str:

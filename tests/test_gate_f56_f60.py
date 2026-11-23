@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import pytest
 
@@ -302,6 +303,51 @@ def test_story5_movingAGlobThatCouldNameTheHolder_asks(rules, moved_config, comm
 )
 def test_story5_ordinaryMoves_staySilent(rules, command):
     assert decide(rules, command) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cd dist && tar -xf e.tar; cp x ~/.claude/cobot.rules",
+        'cd "$D" && unzip e.zip; mv ~/.claude /tmp/x',
+        "cd dist && tar -xf e.tar; rm -rf ~/.claude",
+        "cp x ~/.claude/cobot.rules; cd ~ && unzip e.zip",
+        "cd ~ && tar -xf e.tar ~/.claude/cobot.rules",
+        "cd ~ && tar -xf e.tar --exclude-from ~/.claude/cobot.rules",
+        "cd ~ && 7z x ~/.claude/cobot.rules",
+        "wget -P ~ -i urls.txt; cp x ~/.claude/cobot.rules",
+    ],
+)
+def test_wrap_anAskTierLanding_neverHidesALiteralOwnerDeny(rules, command):
+    """Wrap security review: a glob or unknown-folder landing came back first and turned these
+    refusals into an ask; on main (a5db3f8) each one denied."""
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["cp -R /tmp/x/.bashrc ~/", "curl -#o~/.bashrc https://h/x", "rsync -aR e/./.bashrc ~/"],
+)
+def test_wrap_codeReviewForms_ask(rules, command):
+    """Wrap code review: cp's -R is recursive only; curl's -# and -: before a joined path."""
+    assert decide(rules, command) == "ask"
+
+
+def test_wrap_wgetOutputDocument_isNoRemoteName(rules):
+    """wget's -O is a file: the download does not land at <folder>/<url name> (no cd here, since
+    after a cd any word naming a protected file asks, an older rule)."""
+    assert decide(rules, "wget -O out.txt -P ~ http://h/.bashrc") is None
+
+
+@pytest.mark.parametrize("program", ["rsync --zz", "rclone copy"])
+def test_wrap_manyPositionals_askWithinTheHookTimeout(rules, program):
+    """Past COPY_TARGETS_MAX targets the copy asks rather than judge every pair (the PreToolUse
+    hook has 10 s; 100 positionals took 14 s before the cap)."""
+    command = program + " " + " ".join(f"a{i}" for i in range(200)) + "; rm -rf ~/.claude"
+    started = time.monotonic()
+    verdict = decide(rules, command)
+    assert time.monotonic() - started < 5
+    assert verdict == "deny"
 
 
 # ---------------------------------------------------------------- story 6: both runtimes

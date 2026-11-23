@@ -232,3 +232,11 @@ Proof: full suite with coverage exit 0, 98.28 %; ruff 0.17.6 check and format cl
 Open: the brief is at its budget; a compact or a shorter project line in MEMORY is the next housekeeping.
 Next: /cobot:wrap gate-f56-f60.
 verified: tree 90a7a619c638d5936e4e7fc8b470205433028e74 · full suite with coverage, ruff, markdownlint, check-plugin, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60: reviews folded, F-56 and F-60 closed
+Changed: protected_file_touched keeps an ask-tier landing (a glob, an unknown folder) as a fallback, so it never hides a literal owner-file deny in the same or a later segment; the landing checks return none in the rule-less customization-root pass; landing_hit asks past 16 candidate targets or 256 landing words; keeps_path per program (cp --parents only; rsync -R, --relative and -aR); curl's -# and -: before a joined path; wget -O is no remote name; every_target by index; tests for each.
+Why: wrap security review (BLOCKER: an extraction anywhere in a command turned a literal owner-file deny into an ask, also under agy) and code review (3 MAJOR: 100 positionals took 14 s past the 10 s hook timeout, cp -R read as keeping the path, curl -#o~/x silent; 2 MINOR).
+Proof: full suite with coverage exit 0, 98.27 % (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean; markdownlint-cli2 0.24.2 clean; claude plugin validate --strict passes twice; check-plugin ok; sync-agents in sync; cobot-deps check --fresh: no supported lockfile; 200 positionals judged in under 5 s.
+Open: F-57, F-58, F-59 (accepted), F-61, F-62 and the older F-50, F-51; MINOR tiers: cd ~/.claude asks where cd /home/u/.claude denies, a cd into a missing folder asks before an extraction; cp -t $H/.claude with an inherited H stays silent (F-59 class); the brief is at its budget.
+Next: the owner reviews security/gate-f56-f60 and decides push and PR.
+verified: tree 44ef46d45f07037134dab963f997bf679224f049 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents

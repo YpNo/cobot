@@ -307,3 +307,17 @@ decision re-run on `f433a0a`). Folded into revision 2:
   its source is not; corepack refuses a URL unless `COREPACK_ENABLE_UNSAFE_CUSTOM_URLS`); pdm and
   hatch scripts named in pyproject.toml are judged as the command word they look like; friction,
   `conda run -nbase` (an attached value) asks.
+- T04 build: `read_program` in `_cobot_inline.py` reads awk (gawk, mawk, nawk, original-awk,
+  busybox) and sed (gsed, busybox). awk: options letter by letter and long names by unique
+  prefix; the program scanned with strings, regexes (a `/` after an operator or a keyword such as
+  `print`, bracket expressions kept whole) and comments set aside. sed: options read after
+  operands too (GNU getopt), each command parsed after its address. Asks through
+  `opaque_as_read`; literal write targets join `reached.paths`, so an owner file denies; `-f`
+  program files go through `outside_script`. `is_opaque` takes only this reading for awk, sed and
+  the interpreters (its verb-skipping readings dropped `--sandbox`). The gawk options page stayed
+  unread (rate-limited): an option outside the tables makes every awk operand a program. Bypass
+  review (2 BLOCKER, 6 MAJOR, 1 MINOR), each a test row. Found on the way, older than this branch:
+  the command splitter (`shell_items`) turns a newline inside quotes into ` ; ` and a quoted
+  `\` and newline into a blank, so the sed reader takes ` ; ` and `\ ` as possible line ends (a
+  false ask at worst); the splitter itself is **F-64**. Friction: `awk '{print > ($1 ".txt")}'`
+  (a computed target), `awk '{… | "sort"}'` ask.

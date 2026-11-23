@@ -365,3 +365,11 @@ Proof: full suite: only stories 6, 7 and 8 rows of tests/test_gate_f57.py fail, 
 Open: accepted, corepack pnpm@<url> (its source unread), pdm and hatch scripts in pyproject.toml judged as the word they look like; friction, conda run -nbase asks.
 Next: T04, awk and sed.
 verified: tree db61d5c988db2278665b606772576bd979f7f015 · full suite, stories 1 to 5, ruff
+
+## 2026-11-23 — gate-f57 T04: awk and sed programs (story 6)
+Changed: read_program in _cobot_inline.py reads awk (gawk, mawk, nawk, original-awk, busybox) and sed (gsed, busybox): awk options letter by letter and long names by unique prefix, its program scanned with strings, regexes and comments set aside (system, |&, | getline, @load, @include, indirect calls, print into |, a computed print target ask; -l, -i, -f or -W exec from stdin ask); sed options read after operands too, each command parsed after its address (e and the e flag ask; w, W and the w flag are write targets). Literal write targets join reached.paths, so an owner file denies; -f program files go through outside_script; is_opaque takes only this reading for awk, sed and the interpreters. FINDINGS F-64 (the splitter rewrites quoted newlines).
+Why: F-57 rows 10 and 11, F-55 Q3 b.
+Proof: full suite: only stories 7 and 8 rows of tests/test_gate_f57.py fail, not built yet; stories 1 to 6 379 passed; ruff clean. Bypass review (2 BLOCKER, 6 MAJOR, 1 MINOR), each a test row.
+Open: gawk's options page unread (rate-limited): an unknown awk option makes every operand a program; friction, a computed awk print target and print into a sort pipe ask.
+Next: T05, Node inline writes and the environment variables.
+verified: tree 44393cc5808227d1285a48ac5296379918b13c52 · full suite, stories 1 to 6, ruff

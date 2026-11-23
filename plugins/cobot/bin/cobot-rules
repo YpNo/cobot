@@ -2185,6 +2185,8 @@ def is_opaque(plain: list[str]) -> bool:
     any reading past the options before its verb (``uv -q run …``)."""
     if gh_unknown_command(plain):
         return True
+    if plain and (inline.family(plain[0]) or inline.read_program(plain) is not None):
+        return opaque_as_read(plain)  # their options are read in full: ``sed --sandbox`` is no verb skip
     return opaque_as_read(plain) or any(opaque_as_read(r) for r in readings(plain) if r != plain)
 
 
@@ -2214,6 +2216,9 @@ def opaque_as_read(plain: list[str]) -> bool:
         return bool(sub) and hidden
     reading = inline.read_argv(plain)
     if reading is not None and (reading.asks() or inline.pip_argv(plain)):  # gate-f57: pip expands
+        return True
+    program = inline.read_program(plain)
+    if program is not None and program.why:  # awk or sed running a command (gate-f57, story 6)
         return True
     if head in OPAQUE_SUBCOMMANDS:
         verb = canonical_package_manager(strip_global_options(plain))
@@ -5969,6 +5974,16 @@ def judge_segment(
     return best
 
 
+def program_writes(segments: list[list[str]], holes: dict) -> list[str]:
+    """The literal files awk's ``print > "f"`` and sed's ``w f`` write, as written (``$HOME`` kept),
+    judged with the redirect targets (spec gate-f57, story 6)."""
+    found = []
+    for segment in segments:
+        program = inline.read_program([show(token, holes) for token in program_of(segment)])
+        found += program.writes if program else []
+    return found
+
+
 def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) -> str | None:
     """A script an interpreter runs from outside the project root asks, as ``bash /tmp/s.sh`` does
     (spec gate-f57, story 4, Q1): a file there may come from ``curl -o`` or ``cp``, never from Edit
@@ -5976,18 +5991,29 @@ def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) ->
     the walk says the segment runs in, and one the gate cannot place (an unknown folder, an
     expansion) asks. A symlink is followed. The same holds for the words an unknown option may have
     taken for the script, for the files a preload, include or config option names, and from the
-    folder ``ruby -C`` or ``bun --cwd`` changes into (bypass review of T02)."""
-    reading = inline.read_argv(argv)
-    if reading is None or reading.asks() or own_tool_run(argv) is not None:  # cobot's own bin/ tools
-        return None
-    if reading.script and installed_plugin_file(reading.script):
+    folder ``ruby -C`` or ``bun --cwd`` changes into (bypass review of T02), and for an awk or sed
+    program file (``-f``; T04 review)."""
+    words, base = script_words(argv)
+    if not words or own_tool_run(argv) is not None:  # cobot's own bin/ tools
         return None
     root = Path(cwd or os.getcwd()).resolve()
-    bases = placed_bases(reading.base, dirs, root)
-    for word in [*filter(None, [reading.script]), *reading.candidates, *reading.loads]:
+    bases = placed_bases(base, dirs, root)
+    for word in words:
         if not word_inside(word, bases, root):
             return f"a script outside the project, not written with Edit or Write: '{show(word, holes)[:60]}'"
     return None
+
+
+def script_words(argv: list[str]) -> tuple[list[str], str | None]:
+    """The files an interpreter, awk or sed runs or loads, and the folder it changes into first;
+    none when it already asks for its inline code or runs an installed plugin's file."""
+    reading = inline.read_argv(argv)
+    if reading is None:
+        program = inline.read_program(argv)
+        return (program.files if program and not program.why else []), None
+    if reading.asks() or (reading.script and installed_plugin_file(reading.script)):
+        return [], None
+    return [*filter(None, [reading.script]), *reading.candidates, *reading.loads], reading.base
 
 
 def installed_plugin_file(word: str) -> bool:
@@ -6534,6 +6560,7 @@ def judge_bash(
     placed = [(segment, dirs) for segment, _, _, dirs in entries]
     homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
+    reached.paths.extend(program_writes([segment for segment, _ in placed], holes))
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     in_protected = protected_cwd(directories, rules)
     if touched:

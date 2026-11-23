@@ -531,6 +531,36 @@ AWK_SED_ASK = [
     "sed -n -f /proc/self/fd/0 f",
     "busybox sed 's/x/y/e' f",
     "gsed 's/x/y/e' f",
+    # bypass review of T04: sed reads options after operands
+    "sed in.txt -e '1e x'",
+    "sed -n p in.txt -s -e '1e x'",
+    "sed in.txt --expression='1e x'",
+    "sed in.txt -f /dev/stdin",
+    # a / after a keyword opens a regex; a / inside brackets stays in it
+    "awk '{print /#/; system(\"x\")}' f",
+    "awk '{print /#/; print | \"sh\"}' f",
+    "awk 'function f(){return /#/;}BEGIN{f(); system(\"x\")}'",
+    "awk '/[/]=/{system(\"x\")}#/' f",
+    # sed labels end at a blank; an escaped backslash ends a/i/c text
+    "sed ':a e x' f",
+    "sed 't x\ne x\n:x' f",
+    "sed '1a foo\\\\\n1e x' f",
+    "sed '1a x\n1e x' f",  # the splitter turns the quoted newline into " ; "
+    # abbreviated long options, gawk clusters
+    "mawk --ex /dev/stdin",
+    "sed --expr='1e x' f",
+    "sed --fil=/dev/stdin f",
+    "gawk --lo /tmp/x.so 'BEGIN{}'",
+    "gawk --inc /tmp/x.awk 'BEGIN{}'",
+    "gawk --exe /dev/stdin",
+    "gawk --sou='BEGIN{system(\"x\")}'",
+    "gawk --unknown-long=x 'BEGIN{}'",
+    "gawk -bl /tmp/x.so 'BEGIN{}'",
+    "gawk -bE /dev/stdin",
+    # a program file from outside the project
+    "awk -f /tmp/x.awk f",
+    "sed -f /tmp/x.sed f",
+    "mawk -W exec /tmp/p.awk",
 ]
 AWK_SED_FRICTION = [
     "awk '{print $1}' f",
@@ -560,6 +590,20 @@ AWK_SED_FRICTION = [
     "sed 's/a/b/w out.txt' f",
     "sed -E 's/(e)/\\1/' f",
     "sed '/e/d' f",
+    "sed 's#a#b#g' f",
+    "sed '/^#/d;/^$/d' f",
+    "sed -n '1~2p' f",
+    "sed '$a\\\nend' f",
+    "sed 'l 80' f",
+    "sed ':a;N;$!ba;s/\\n/ /g' f",
+    "sed f.txt -e 's/a/b/'",
+    "sed --quiet -e p f",
+    "awk '{print /a/ ? 1 : 0}' f",
+    "awk '/[/]/' f",
+    "awk '{for (k in a) print k}' f",
+    "awk 'BEGIN{while ((getline line < \"f\") > 0) n++}'",
+    "awk -f scripts/x.awk f",
+    "gawk -b '{print}' f",
 ]
 
 
@@ -583,6 +627,12 @@ def test_story6_writeToAnOwnerFile_isDenied(rules, project):
         f"sed 'w {rules_file}' f",
         f"sed 's/a/b/w {rules_file}' f",
         f"sed -n '/a/W {rules_file}' f",
+        # bypass review of T04
+        f"sed in.txt -e 'w {rules_file}'",
+        'sed in.txt -e "w $HOME/.claude/cobot.rules"',
+        f"awk '{{print /#/; print 1 > \"{rules_file}\"}}' f",
+        f"sed ':a w {rules_file}' f",
+        f"sed '1a foo\\\\\nw {rules_file}' f",
     ):
         assert decide(rules, command) == "deny", command
 

@@ -499,3 +499,386 @@ def looks_like_file(word: str) -> bool:
 def remote(word: str) -> bool:
     """A URL or an inline module; schemes are read without case (``DATA:`` loads too)."""
     return word.lower().startswith(REMOTE_PREFIXES)
+
+
+# ---------------------------------------------------------------- awk and sed (story 6)
+# gawk manual (I/O functions, redirection), mawk 1.3.4 manual and ``mawk -W usage``, GNU sed 4.9
+# ``info sed`` (Extended Commands; Multiple commands: ``e``, ``r``, ``w`` and their kin take the
+# rest of the line, a ``;`` included), read 2026-11-23. gawk's option page was rate-limited: an
+# option outside these tables makes every operand a program to scan.
+
+AWK_NAMES = frozenset({"awk", "gawk", "mawk", "nawk", "original-awk"})
+SED_NAMES = frozenset({"sed", "gsed"})
+AWK_VALUE_OPTIONS = frozenset({"-v", "-F", "--assign", "--field-separator"})
+AWK_PROGRAM_FILES = frozenset({"-f", "--file", "-E", "--exec"})
+AWK_SOURCE_OPTIONS = frozenset({"-e", "--source"})
+AWK_LOADERS = frozenset({"-l", "--load", "-i", "--include"})  # gawk: an extension or an awk library
+AWK_TAKES_VALUE = AWK_VALUE_OPTIONS | AWK_PROGRAM_FILES | AWK_SOURCE_OPTIONS | AWK_LOADERS | {"-W"}
+AWK_LONG = {
+    "--assign": "-v",
+    "--field-separator": "-F",
+    "--file": "-f",
+    "--exec": "-E",
+    "--source": "-e",
+    "--load": "-l",
+    "--include": "-i",
+}
+# gawk's flags (no value or an attached one), read as flags so an abbreviation stays unique
+AWK_LONG_FLAGS = frozenset(
+    "--characters-as-bytes --traditional --copyright --debug --dump-variables --gen-pot --help "
+    "--lint --lint-old --bignum --use-lc-numeric --non-decimal-data --optimize --no-optimize "
+    "--profile --posix --re-interval --sandbox --version --pretty-print --csv --persist".split()
+)
+AWK_FLAGS = frozenset(f"-{letter}" for letter in "bcCdDghLMnNoOpPrsStVY") | AWK_LONG_FLAGS
+AWK_RUNS_RE = re.compile(r"\bsystem\s*\(|\|&|\|\s*getline\b|@\s*(?:load|include)\b|@\w+\s*\(")
+AWK_REGEX_AFTER = frozenset("(,~!{};&|^?:\n=") | {""}  # a ``/`` after these opens a regex, else divides
+AWK_REGEX_KEYWORDS = frozenset({"print", "printf", "return", "in", "getline", "case", "do", "else"})
+AWK_STATEMENT_RE = re.compile(r"[;{}\n]")
+AWK_PRINT_RE = re.compile(r"\bprintf?\b")
+AWK_PIPE_RE = re.compile(r"(?<!\|)\|(?!\|)")
+AWK_REDIRECT_RE = re.compile(r">>?\s*(.*)$", re.S)
+AWK_STRING_RE = re.compile(r'"(\d+)"')
+SED_SCRIPT_LETTERS = {"e": "script", "f": "file", "l": "value"}
+SED_LONG_OPTIONS = {
+    "--expression": "script",
+    "--file": "file",
+    "--sandbox": "sandbox",
+    "--line-length": "value",
+}
+SED_LONG_FLAGS = frozenset(
+    "--quiet --silent --debug --posix --separate --unbuffered --null-data --zero-terminated "
+    "--regexp-extended --in-place --follow-symlinks --help --version".split()
+)
+SED_PLAIN_COMMANDS = frozenset("=dDgGhHlnNpPxzFqQLv")
+SED_ADDRESS_RE = re.compile(r"\s*(?:\d+|\$|/(?:\\.|[^/\\\n])*/[IM]*|\\(.)(?:\\.|(?!\1).)*\1[IM]*)?")
+SED_STEP_RE = re.compile(r"\s*(?:,\s*(?:\d+|\$|/(?:\\.|[^/\\\n])*/[IM]*|[+~]\d+)|~\d+)?\s*!?\s*")
+SED_S_FLAGS = frozenset("gpiImMe0123456789w")
+SED_LABEL_RE = re.compile(r"[ \t]*[^\s;]*")
+STD_STREAMS = frozenset({"/dev/stdout", "/dev/stderr"})
+
+
+@dataclass
+class Program:
+    """What an awk or sed program does beyond its text: a ``why`` to ask, and the literal files it
+    writes (judged as redirect targets are)."""
+
+    why: str | None = None
+    writes: list[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)  # program files (``-f``): judged where they lie
+
+    def write(self, target: str) -> None:
+        """sed and awk take ``~`` literally: a folder named ``~`` where the command runs."""
+        target = target.strip()
+        if target and target not in STD_STREAMS:
+            self.writes.append(f"./{target}" if target.startswith("~") else target)
+
+
+def read_program(argv: list[str]) -> Program | None:
+    """The awk or sed program in ``argv`` (``busybox awk`` too), else None for any other command."""
+    words = argv[1:] if argv and os.path.basename(argv[0]) == "busybox" else argv
+    name = os.path.basename(words[0]).lower() if words else ""
+    if name in AWK_NAMES:
+        return read_awk(words[1:])
+    if name in SED_NAMES:
+        return read_sed(words[1:])
+    return None
+
+
+def read_awk(words: list[str]) -> Program:
+    """awk's options, then its program: the first operand unless ``-f``, ``-e`` or ``-E`` gave one.
+    An option the gate does not know may take a value, so every operand is then scanned."""
+    program, texts, index, unsure, from_file = Program(), [], 0, False, False
+    while index < len(words) and words[index].startswith("-") and words[index] not in ("-", "--"):
+        options, taken = awk_options(words, index)
+        for name, value in options:
+            if name == "-W" and "exec".startswith(value or "-"):  # mawk ``-W exec file``: the last option
+                value, taken = next_word(words, index + taken - 1), taken + 1
+                name = "-E"
+            if name in AWK_LOADERS and value != "inplace":  # ``-i inplace`` edits in place, judged apart
+                program.why = f"awk {name} loads code the gate does not read"
+            elif name in AWK_PROGRAM_FILES:
+                from_file = True
+                awk_program_file(value, program)
+            elif name in AWK_SOURCE_OPTIONS:
+                texts.append(value)
+            elif name.startswith("--") and value:  # an unknown long option with a value
+                program.why = program.why or f"awk {name[:30]} is an option the gate does not read"
+            elif name not in AWK_TAKES_VALUE and name not in AWK_FLAGS:
+                unsure = True
+        index += taken
+    operands = words[index + (words[index : index + 1] == ["--"]) :]
+    if unsure:
+        texts += operands
+    elif operands and not texts and not from_file:
+        texts.append(operands[0])
+    for text in texts:
+        scan_awk(text, program)
+    return program
+
+
+def awk_program_file(path: str, program: Program) -> None:
+    """``-f``, ``-E`` or ``-W exec``: stdin asks, a file is judged where it lies (as a script is)."""
+    if stdin_file(path):
+        program.why = program.why or "awk reads its program from stdin"
+    else:
+        program.files.append(path)
+
+
+def awk_options(words: list[str], index: int) -> tuple[list[tuple[str, str]], int]:
+    """The options a word holds, as (short or long name, value), and the words they take: a long
+    name by unique prefix (``--sou=…`` is ``--source``, as getopt reads it), a cluster letter by
+    letter (``-bl x`` is ``-b -l x``)."""
+    word, following = words[index], next_word(words, index)
+    if word.startswith("--"):
+        name, eq, value = word.partition("=")
+        full = long_name(name, AWK_LONG.keys() | AWK_LONG_FLAGS)
+        short = AWK_LONG.get(full or "")
+        if short is None:
+            return [(full or name, value)], 1
+        return ([(short, value)], 1) if eq else ([(short, following)], 2)
+    options: list[tuple[str, str]] = []
+    for position, letter in enumerate(word[1:], start=1):
+        name, rest = f"-{letter}", word[position + 1 :]
+        if name in AWK_TAKES_VALUE:
+            return [*options, (name, rest or following)], 1 if rest else 2
+        options.append((name, ""))
+    return options, 1
+
+
+def long_name(name: str, known: frozenset[str] | set[str]) -> str | None:
+    """The long option a name is, or uniquely abbreviates; None when unknown or ambiguous."""
+    if name in known:
+        return name
+    matches = [option for option in known if option.startswith(name)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def stdin_file(path: str) -> bool:
+    return path == "-" or path.startswith(STDIN_PATHS)
+
+
+def scan_awk(text: str, program: Program) -> None:
+    """Strings, regexes and comments set aside, an awk program that calls ``system``, pipes into or
+    out of a command, loads code or makes an indirect call asks; ``print > "file"`` writes the file,
+    a computed target asks."""
+    code, strings = strip_awk(text)
+    if AWK_RUNS_RE.search(code):
+        program.why = program.why or "awk runs a command or loads code"
+    for statement in AWK_STATEMENT_RE.split(code):
+        found = AWK_PRINT_RE.search(statement)
+        if found:
+            print_target(statement[found.end() :], strings, program)
+
+
+def strip_awk(text: str) -> tuple[str, list[str]]:
+    """The program with each string as ``"N"`` (its index in the list), each regex as ``/R/`` and
+    comments gone, so ``"|"`` and ``/a|b/`` read as no pipe."""
+    out, strings, index, last, word = [], [], 0, "", ""
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            end = closing(text, index, '"')
+            strings.append(text[index + 1 : end])
+            out.append(f'"{len(strings) - 1}"')
+            index, last, word = end + 1, '"', ""
+        elif char == "/" and (last in AWK_REGEX_AFTER or word in AWK_REGEX_KEYWORDS):
+            index, last, word = closing(text, index, "/") + 1, "/", ""
+            out.append("/R/")
+        elif char == "#":
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline
+        else:
+            out.append(char)
+            index += 1
+            if char not in " \t":
+                word = word + char if char.isalnum() or char == "_" else ""
+                last = char
+    return "".join(out), strings
+
+
+def closing(text: str, start: int, quote: str) -> int:
+    """The index of the quote that closes the one at ``start``: backslash escapes skipped, and for a
+    regex its bracket expressions too (``/[/]/``: mawk and nawk take the ``/`` inside)."""
+    index = start + 1
+    while index < len(text) and text[index] != quote:
+        if quote == "/" and text[index] == "[":
+            index = bracket_end(text, index)
+            continue
+        index += 2 if text[index] == "\\" else 1
+    return min(index, len(text))
+
+
+def bracket_end(text: str, start: int) -> int:
+    """The index after a bracket expression (``[]x]`` and ``[^]x]`` hold their first ``]``)."""
+    index = start + 1
+    index += text[index : index + 1] == "^"
+    index += text[index : index + 1] == "]"
+    while index < len(text) and text[index] != "]":
+        index += 2 if text[index] == "\\" else 1
+    return index + 1
+
+
+def print_target(rest: str, strings: list[str], program: Program) -> None:
+    """After ``print``: into ``|`` asks; into ``>`` or ``>>`` a single string is a write target and
+    anything else asks. A ``>`` inside parentheses is a comparison."""
+    top = top_level(rest)
+    if AWK_PIPE_RE.search(top):
+        program.why = program.why or "awk prints into a command"
+        return
+    redirect = AWK_REDIRECT_RE.search(top)
+    if not redirect:
+        return
+    literal = AWK_STRING_RE.fullmatch(redirect.group(1).strip())
+    if literal:
+        program.write(strings[int(literal.group(1))])
+    else:
+        program.why = program.why or "awk prints into a file it computes"
+
+
+def top_level(statement: str) -> str:
+    """The statement with everything inside parentheses blanked."""
+    depth, out = 0, []
+    for char in statement:
+        depth += char == "("
+        out.append(char if depth == 0 else " ")
+        depth -= char == ")" and depth > 0
+    return "".join(out)
+
+
+def read_sed(words: list[str]) -> Program:
+    """sed's options (``-e``, ``-f``, ``--expression``, ``--file``, clusters), then its script: the
+    first operand unless one was given. ``--sandbox`` refuses ``e``, ``r`` and ``w``: silent."""
+    program, scripts, operands, index, given = Program(), [], [], 0, False
+    while index < len(words):  # GNU getopt reads options after operands too (T04 review)
+        word = words[index]
+        if word == "--":
+            operands += words[index + 1 :]
+            break
+        if not word.startswith("-") or word == "-":
+            operands.append(word)
+            index += 1
+            continue
+        kind, value, taken = sed_option(words, index)
+        if kind == "sandbox":
+            return Program()
+        if kind == "script":
+            scripts.append(value)
+        elif kind == "file" and stdin_file(value):
+            program.why = program.why or "sed reads its script from stdin"
+        elif kind == "file":
+            program.files.append(value)
+        given = given or kind in ("script", "file")
+        index += taken
+    if not given and operands:
+        scripts.append(operands[0])
+    for script in scripts:
+        scan_sed(script, program)
+    return program
+
+
+def sed_option(words: list[str], index: int) -> tuple[str, str, int]:
+    """An option's kind (``script``, ``file``, ``sandbox``, ``value`` or ``flag``), value and words."""
+    word, following = words[index], next_word(words, index)
+    if word.startswith("--"):
+        name, eq, value = word.partition("=")
+        kind = SED_LONG_OPTIONS.get(long_name(name, SED_LONG_OPTIONS.keys() | SED_LONG_FLAGS) or "", "flag")
+        return kind, value or following, 1 if eq or kind in ("flag", "sandbox") else 2
+    for position, letter in enumerate(word[1:], start=1):
+        if letter in SED_SCRIPT_LETTERS:
+            rest = word[position + 1 :]
+            return SED_SCRIPT_LETTERS[letter], rest or following, 1 if rest else 2
+        if letter == "i":  # ``-i[SUFFIX]``: the rest is the suffix
+            break
+    return "flag", "", 1
+
+
+def scan_sed(script: str, program: Program) -> None:
+    """Each command after its address: ``e`` (the command or the flag of ``s``) asks; ``w``, ``W``
+    and the ``w`` flag write the rest of the line. An unknown command asks."""
+    position = 0
+    while position < len(script):
+        position = SED_STEP_RE.match(script, SED_ADDRESS_RE.match(script, position).end()).end()
+        if position >= len(script):
+            return
+        command = script[position]
+        position = sed_command(command, script, position + 1, program)
+        if position < 0:
+            return
+
+
+def sed_command(command: str, script: str, position: int, program: Program) -> int:
+    """The position after one command, or -1 once the script cannot be read further."""
+    if command in "{};\n" or command in SED_PLAIN_COMMANDS:
+        return position
+    if command == "e":
+        program.why = program.why or "sed runs a command (e)"
+        return line_end(script, position)
+    if command in "wW":
+        end = line_end(script, position)
+        program.write(script[position:end])
+        return end
+    if command in "aic":
+        return text_end(script, position)
+    if command in "rR#":
+        return line_end(script, position)
+    if command in ":btTv":
+        return label_end(script, position)
+    if command in "sy":
+        return sed_parts(command, script, position, program)
+    program.why = program.why or f"sed command '{command}' the gate does not read"
+    return -1
+
+
+def sed_parts(command: str, script: str, position: int, program: Program) -> int:
+    """``s`` or ``y`` with any delimiter; then ``s``'s flags: ``e`` asks, ``w`` writes the rest of
+    the line."""
+    delimiter = script[position : position + 1]
+    if not delimiter or delimiter in "\\\n":
+        program.why = program.why or f"sed {command} with a delimiter the gate does not read"
+        return -1
+    position = part_end(script, part_end(script, position + 1, delimiter) + 1, delimiter) + 1
+    while command == "s" and position < len(script) and script[position] in SED_S_FLAGS:
+        flag = script[position]
+        position += 1
+        if flag == "e":
+            program.why = program.why or "sed runs the pattern space as a command (the e flag)"
+        if flag == "w":
+            end = line_end(script, position)
+            program.write(script[position:end])
+            return end
+    return position
+
+
+def part_end(script: str, position: int, delimiter: str) -> int:
+    """The index of the delimiter that ends one part of ``s`` or ``y`` (escapes skipped)."""
+    while position < len(script) and script[position] != delimiter:
+        position += 2 if script[position] == "\\" else 1
+    return min(position, len(script))
+
+
+def line_end(script: str, position: int) -> int:
+    """The end of the line: a newline, or ``" ; "``, which is what the gate's command splitter leaves
+    of a newline inside quotes (``shell_items``), so a command after it is still read."""
+    ends = [index for index in (script.find("\n", position), script.find(" ; ", position)) if index >= 0]
+    return min(ends) if ends else len(script)
+
+
+def text_end(script: str, position: int) -> int:
+    """``a``, ``i`` and ``c`` text: to the end of the line, and on past each line ending in an odd
+    run of ``\\`` (``foo\\\\`` ends the text). A ``\\`` before a blank may be what the splitter left
+    of ``\\`` and a newline, so the text ends there too: a false ask at worst."""
+    end = line_end(script, position)
+    while end < len(script) and odd_backslashes(script[:end]):
+        end = line_end(script, end + 1)
+    escaped = script.find("\\ ", position, end)
+    return escaped + 2 if escaped >= 0 else end
+
+
+def odd_backslashes(text: str) -> bool:
+    return (len(text) - len(text.rstrip("\\"))) % 2 == 1
+
+
+def label_end(script: str, position: int) -> int:
+    """A label (``b``, ``t``, ``T``, ``:``) or ``v``'s version: blanks before it skipped, then up to
+    a blank, a ``;`` or the line's end (``:a e x`` runs ``e x``: T04 review)."""
+    return SED_LABEL_RE.match(script, position).end()

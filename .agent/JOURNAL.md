@@ -240,3 +240,11 @@ Proof: full suite with coverage exit 0, 98.27 % (fail-under 85); ruff 0.17.6 che
 Open: F-57, F-58, F-59 (accepted), F-61, F-62 and the older F-50, F-51; MINOR tiers: cd ~/.claude asks where cd /home/u/.claude denies, a cd into a missing folder asks before an extraction; cp -t $H/.claude with an inherited H stays silent (F-59 class); the brief is at its budget.
 Next: the owner reviews security/gate-f56-f60 and decides push and PR.
 verified: tree 44ef46d45f07037134dab963f997bf679224f049 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-23 — brief headroom: CONTEXT trimmed, open finding rows shortened
+Changed: CONTEXT.md head compacted (one verified date for the command table, Stack and Environment shortened); F-59, F-61 and F-62 rows point at their specs instead of listing every shape.
+Why: the brief sat at its 6000-char budget (owner: the nit).
+Proof: cobot-memory check exit 0, brief 5280 chars before this entry.
+Open: F-61 and F-62 become stories 7 and 8 of spec gate-f56-f60.
+Next: measure F-61 and F-62 on 6022fa6, extend the spec.
+verified: tree 44ef46d45f07037134dab963f997bf679224f049 · cobot-memory check, brief size

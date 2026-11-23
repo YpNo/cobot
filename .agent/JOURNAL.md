@@ -295,3 +295,10 @@ Proof: full suite 5319 passed; with coverage 98.33 %, its one failure the known 
 Open: F-57, F-58, F-59 (accepted), F-50, F-51; LOW, cd into an unknown folder then ln -sfn .claude gets none (rm -rf .claude asks); Q3 built on its default (a lock asks), for the owner at review.
 Next: the orchestrator verifies, pushes to PR 83 and updates its body.
 verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · full suite with and without coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-23 — gate-f56-f60: Q3 confirmed by the owner
+Changed: spec Clarify Q3 carries the owner's answer (lock verbs ask, not deny); Converge says so.
+Why: the owner kept Q3 as ask at review (relayed 2026-11-23); it is no longer a default the owner may reverse.
+Proof: spec only; no code changed; tree stamp unchanged.
+Next: lower gap 1, a literal cd into an owner folder gets the literal path's decision.
+verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · spec text only

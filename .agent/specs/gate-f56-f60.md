@@ -210,10 +210,10 @@ For the owner at review. The stories carry the recommended defaults.
   `tar -xf x.tar` and `unzip x.zip` ask, or deny as `tar -C ~` does today? → recommended: ask.
   The archive's members are unknown, and a deny cannot be approved or granted (decision 34) →
   **answer:** ask (owner, 2026-11-23: "Yes, then build")
-- Q3 (stories 7 and 8, built on the recommended default; the owner may reverse it at review)
-  Should `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on the config dir or a folder holding it
-  deny, as `rm -r` does? → recommended: ask. The gate does not read modes, so `chmod 700 ~/.claude`
-  would be refused with no way to approve it; a removal or a cover (`mount`, `bwrap`) denies.
+- Q3 (stories 7 and 8) Should `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on the config
+  dir or a folder holding it deny, as `rm -r` does? → recommended: ask. The gate does not read
+  modes, so `chmod 700 ~/.claude` would be refused with no way to approve it; a removal or a cover
+  (`mount`, `bwrap`) denies → **answer:** ask (owner, 2026-11-23, confirmed at review)
 - Q2 Should a download with no output folder land in the working directory
   (`cd ~ && curl -O https://h/.claude.json`)? → recommended: yes, as the cwd already counts for a
   relative path word; it costs a few lines → **answer:** yes (owner, 2026-11-23: "Yes, then build")
@@ -372,8 +372,8 @@ spec. Wrap follows; nothing is pushed.
 
 2026-11-23, stories 7 and 8 (owner: "Work on the nit + F-61 and F-62 on the same branch/PR"):
 T07 to T11 were built, each gate task with a bypass-aimed review folded before the next. F-61
-and F-62 are closed. Q3 was built on its recommended default (a lock asks); the owner may reverse
-it at review. Two build decisions: a mount's source is not covered, only its mount point (T11,
+and F-62 are closed. Q3 was built on its recommended default (a lock asks), which the owner
+confirmed at review the same day. Two build decisions: a mount's source is not covered, only its mount point (T11,
 found by an agy row: a bind of HOME elsewhere shows it, it does not hide it); the lock check reads
 the folders of `never` rows only, so `chmod 700 ~/.ssh` stays silent (T09 review). Wrap folded
 the code and security reviews: `bwrap` became opaque (it asks, as `unshare` does, since

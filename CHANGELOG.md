@@ -217,6 +217,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **A copy, a download or an extraction is judged where it lands (F-56, F-60).**
+  - An option value joined to its option now gets the separate form's decision:
+    `cp --target-directory=~/.claude cobot.rules`, `cp -t$HOME/.claude …`, `curl -o~/…`,
+    `wget -P~/…`, `7z x -o~/.claude`.
+  - Each source of a copy is checked where it lands, `<target>/<basename>`. So
+    `cp e/.claude.json ~/` asks, and `scp`, `docker cp` and `rclone copy` into `~/.claude` are
+    refused.
+  - A download is checked at `<folder>/<url name>`, in the working directory when no folder is
+    given.
+  - An extraction with no folder option lands in the working directory, and asks where that holds
+    the config dir.
+  - A config dir moved outside HOME keeps its protection, and moving a folder that holds the config
+    dir (`mv /home x`) is refused.
+  - New friction:
+    - in a session started in HOME, every extraction asks;
+    - `cpio -i` asks without `--no-absolute-filenames`;
+    - `curl -K` asks.
+  - Kept out: F-61 (other writers) and F-62 (taking the config dir away by permissions, mounts or
+    removing archivers).
 - **A shell variable no longer hides a protected file (F-55).**
   - Before, the gate read `$X` as text, so `cp x ~/.claude/$X` got no decision past the refusals
     on cobot's owner files. Now a variable is read by how the command sets it:

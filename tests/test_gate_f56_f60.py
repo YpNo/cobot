@@ -7,6 +7,7 @@ directory and a config dir outside HOME reached no decision.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -301,6 +302,41 @@ def test_story5_movingAGlobThatCouldNameTheHolder_asks(rules, moved_config, comm
 )
 def test_story5_ordinaryMoves_staySilent(rules, command):
     assert decide(rules, command) is None
+
+
+# ---------------------------------------------------------------- story 6: both runtimes
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cp --target-directory=~/.gemini/config x", "force_ask"),
+        ("cp e/settings.json ~/.gemini/config/", "force_ask"),
+        ("curl --output-dir ~/.gemini/config -O https://h/settings.json", "force_ask"),
+        ("cd ~/.gemini && tar -xf e.tar", "force_ask"),
+        ("cp --target-directory=~/.claude cobot.rules", "deny"),
+        ("cp a dist/", "allow"),
+        ("tar -xf x.tar", "allow"),
+    ],
+)
+def test_story6_agy_sameJudgement(rules, tmp_path, monkeypatch, command, expected):
+    """ADR-0007: under agy, run_command reaches the same judgement; ``allow`` there is no opinion."""
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    home = tmp_path / "home"
+    (home / ".gemini" / "config").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    workspace = tmp_path / "ws"
+    (workspace / ".agent").mkdir(parents=True)
+    (workspace / ".agent" / "cobot.rules").write_text("")
+    call = {"id": "t1", "name": "run_command", "args": {"CommandLine": command}}
+    body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(workspace)]}
+    assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == expected
+
+
+def test_story6_sessionGrant_neverCoversALandingVerdict(rules):
+    loaded, _, _ = rules.load_rules(None)
+    verdict = rules.judge_bash("cp e/.claude.json ~/", loaded, None)[0]
+    assert verdict.decision == "ask" and verdict.rule is None
 
 
 @pytest.mark.parametrize("command", EXTRACTION_REFUSED)

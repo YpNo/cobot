@@ -105,11 +105,31 @@ like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hype
 `taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
 `script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
+
+Where a file lands (spec gate-f56-f60):
+
+- An option value is read in every form: `cp -t`/`--target-directory` (joined, `=`, a long
+  prefix such as `--t=`), `curl -o`/`--output-dir`, `wget -O`/`-P`, `7z -o`, `cpio -D`, and a
+  path joined to any short option (`sort -o~/x`).
+- Each source of a copy is judged where it lands: `<target>/<basename>`, or the full path for
+  `cp --parents` and `rsync -R`. This covers `cp`, `mv`, `ln`, `install`, `rsync`, `scp`,
+  `docker`/`podman`/`kubectl cp`, `rclone`, `gio` and `git mv`. So `cp e/.claude.json ~/` asks.
+- A download lands at `<folder>/<url name>`, in the working directory when it names no folder.
+  Names the gate cannot know (`curl -J`, URL globbing, `wget -i`, `-r`) ask in a folder that holds
+  the config dir. `curl -K`, `wget --config` and a `wget -e` that moves output ask.
+- An extraction with no folder option lands in the working directory, and asks there when that
+  is or holds the config dir. So does a session started in HOME (owner's choice). `tar -P`,
+  `cpio -i` without `--no-absolute-filenames`, `unzip -:`, `7z -spf`, and `TAR_OPTIONS` or `UNZIP`
+  set in the command ask.
+- A config dir moved outside HOME keeps its folder protection. Moving a folder that holds the
+  config dir is refused like removing it (`mv /home x`).
+
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), an inherited variable
-or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell profile, a link created between
-the check and the run, archive members not written on the command line, folder options of
-other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
-`busybox find`.
+or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell
+profile, a link created between the check and the run, archive members (the gate never opens an
+archive), writers whose output folder it does not read (F-61: `pax`, `ditto`, `sftp`, `aria2c`,
+`gh … download -D`, decompression in place), taking the config dir away by `tar --remove-files`,
+`zip -m`, `chmod`, `mount --bind` or a symlinked `CLAUDE_CONFIG_DIR` (F-62), and `busybox find`.
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,

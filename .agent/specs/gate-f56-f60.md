@@ -190,12 +190,12 @@ and the gate dry run, with a bypass-aimed review before its commit.
 
 | id | task | lane | risk | deps |
 |---|---|---|---|---|
-| T01 | `LANDING_OPTIONS` in every form; `7z -o`, `cpio -D` folder options | gate | auth | — |
-| T02 | `landing_words` per copier, the positional fallback, `--parents`/`-R`, relocating copiers | gate | auth | T01 |
-| T03 | curl and wget landings, the asks on unplaceable forms, `-K`, `-e` | gate | auth | T01 |
-| T04 | extraction into the tracked cwd (deny inside, ask on a holder), the unplaceable forms | gate | auth | — |
-| T05 | anchors up to a moved `config_dir()`; moving a folder that holds an anchor | gate | auth | — |
-| T06 | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T01–T05 |
+| T01 ✅ | `LANDING_OPTIONS` in every form; `7z -o`, `cpio -D` folder options | gate | auth | — |
+| T02 ✅ | `landing_words` per copier, the positional fallback, `--parents`/`-R`, relocating copiers | gate | auth | T01 |
+| T03 ✅ | curl and wget landings, the asks on unplaceable forms, `-K`, `-e` | gate | auth | T01 |
+| T04 ✅ | extraction into the tracked cwd (deny inside, ask on a holder), the unplaceable forms | gate | auth | — |
+| T05 ✅ | anchors up to a moved `config_dir()`; moving a folder that holds an anchor | gate | auth | — |
+| T06 ✅ | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T01–T05 |
 
 One lane: every task edits `protected_file_touched` or its helpers, so the tasks run in order.
 
@@ -245,4 +245,7 @@ One lane: every task edits `protected_file_touched` or its helpers, so the tasks
 
 ## Converge
 
-pending: the owner answers Q1 and Q2, then starts `/cobot:build gate-f56-f60`.
+2026-11-23: Q1 ask and Q2 yes (owner: "Yes, then build"). T01 to T06 were built, each with a
+bypass-aimed review folded before the next task. F-56 and F-60 are closed; F-61 and F-62 hold what
+stays out. One build decision: a sealed folder reached through `cd` asks, as it did before this
+spec. Wrap follows; nothing is pushed.

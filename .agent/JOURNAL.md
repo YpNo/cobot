@@ -224,3 +224,11 @@ Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 che
 Open: F-62; inside HOME, cd ~ && mv .claude z asks where mv ~/.claude y denies (pre-existing, MINOR).
 Next: T06, agy rows, CHANGELOG, FINDINGS, docs.
 verified: tree ff787bc156c9012aafbf2d99617d915116175647 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T06: both runtimes and the docs
+Changed: tests story 6 (agy run_command rows; a grant never covers a landing verdict); CHANGELOG Security entry; docs/configuration.md says where a file lands and what is not covered (F-59, F-61, F-62); FINDINGS F-56 and F-60 closed; spec tasks ticked, Converge written.
+Why: ADR-0007 and the docs that listed 7z -o, cpio -D and extraction after a cd as not covered.
+Proof: full suite with coverage exit 0, 98.28 %; ruff 0.17.6 check and format clean; markdownlint-cli2 0.24.2 clean; check-plugin ok; cobot-memory check exit 0 (brief at its 6000-char budget).
+Open: the brief is at its budget; a compact or a shorter project line in MEMORY is the next housekeeping.
+Next: /cobot:wrap gate-f56-f60.
+verified: tree 90a7a619c638d5936e4e7fc8b470205433028e74 · full suite with coverage, ruff, markdownlint, check-plugin, cobot-memory check

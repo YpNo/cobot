@@ -250,7 +250,12 @@ def read_argv(argv: list[str]) -> Reading | None:
 def pip_argv(argv: list[str]) -> list[str] | None:
     """``python -m pip …`` as the ``pip …`` it runs, else None."""
     reading = read_argv(argv)
-    module = reading.module if reading else None
+    return pip_command(reading) if reading else None
+
+
+def pip_command(reading: Reading) -> list[str] | None:
+    """A reading's ``-m pip`` (or ``pip.__main__``) as the ``pip …`` it runs, else None."""
+    module = reading.module
     return ["pip", *module[1:]] if module and package(module[0]) == "pip" else None
 
 
@@ -295,7 +300,9 @@ def read_options(words: list[str], table: Table, reading: Reading) -> None:
 def floor_word(word: str, table: Table) -> bool:
     """After an option the table lacks, its value may have been read as the script: any later word
     that is one of the family's code options asks (bypass review of T01: ``node
-    --unhandled-rejections strict -p x``), so a missing entry costs friction, never a hole."""
+    --unhandled-rejections strict -p x``), so a missing entry costs friction, never a hole. A
+    cluster is read in its first three letters only: further on sits an attached value
+    (``-Wignore::DeprecationWarning`` holds a ``c``), so ``-bbbc`` is a residual."""
     if word in FLOOR_WORDS:
         return True
     name = word.split("=", 1)[0]
@@ -477,18 +484,17 @@ def bun_words(words: list[str], reading: Reading) -> list[str] | None:
             reading.stdin = True
             return None
         script = next((word for word in tail if not word.startswith("-")), "")
-        return tail if looks_like_file(script) else settled(reading)
+        if looks_like_file(script):
+            return tail
+        reading.settled = True  # a package script: judged as a runner elsewhere
+        return None
     if not head or head in BUN_SUBCOMMANDS:
-        return settled(reading)
+        reading.settled = True
+        return None
     if not looks_like_file(head):  # bypass review of T01: ``bun dev``
         reading.why = f"bun {head[:40]} runs a package.json script or a package's binary"
         return None
     return words
-
-
-def settled(reading: Reading) -> None:
-    """Nothing to walk: the reading runs no code of its own."""
-    reading.settled = True
 
 
 def looks_like_file(word: str) -> bool:
@@ -530,6 +536,10 @@ AWK_LONG_FLAGS = frozenset(
     "--profile --posix --re-interval --sandbox --version --pretty-print --csv --persist".split()
 )
 AWK_FLAGS = frozenset(f"-{letter}" for letter in "bcCdDghLMnNoOpPrsStVY") | AWK_LONG_FLAGS
+AWK_ATTACHED_LETTERS = frozenset("dDLop")  # gawk ``-d[file]``, ``-o[file]``, ``-p[file]``: an attached value
+# gawk flags whose ``=value`` is a file it writes (a dump, a profile, a pretty-printed program)
+AWK_WRITING_FLAGS = frozenset({"--dump-variables", "--profile", "--pretty-print", "--debug"})
+AWK_WRITING_LETTERS = {"-d": "--dump-variables", "-p": "--profile", "-o": "--pretty-print", "-D": "--debug"}
 AWK_RUNS_RE = re.compile(r"\bsystem\s*\(|\|&|\|\s*getline\b|@\s*(?:load|include)\b|@\w+\s*\(")
 AWK_REGEX_AFTER = frozenset("(,~!{};&|^?:\n=") | {""}  # a ``/`` after these opens a regex, else divides
 AWK_REGEX_KEYWORDS = frozenset({"print", "printf", "return", "in", "getline", "case", "do", "else"})
@@ -550,7 +560,9 @@ SED_LONG_FLAGS = frozenset(
     "--regexp-extended --in-place --follow-symlinks --help --version".split()
 )
 SED_PLAIN_COMMANDS = frozenset("=dDgGhHlnNpPxzFqQLv")
-SED_ADDRESS_RE = re.compile(r"\s*(?:\d+|\$|/(?:\\.|[^/\\\n])*/[IM]*|\\(.)(?:\\.|(?!\1).)*\1[IM]*)?")
+# the two branches inside a custom-delimiter address exclude each other, so a run of backslashes
+# reads in linear time (wrap code review: ``\x`` and 34 backslashes outran the hook's timeout)
+SED_ADDRESS_RE = re.compile(r"\s*(?:\d+|\$|/(?:\\.|[^/\\\n])*/[IM]*|\\(.)(?:\\.|(?!\1)[^\\])*\1[IM]*)?")
 SED_STEP_RE = re.compile(r"\s*(?:,\s*(?:\d+|\$|/(?:\\.|[^/\\\n])*/[IM]*|[+~]\d+)|~\d+)?\s*!?\s*")
 SED_S_FLAGS = frozenset("gpiImMe0123456789w")
 SED_LABEL_RE = re.compile(r"[ \t]*[^\s;]*")
@@ -594,14 +606,19 @@ def read_awk(words: list[str]) -> Program:
             if name == "-W" and "exec".startswith(value or "-"):  # mawk ``-W exec file``: the last option
                 value, taken = next_word(words, index + taken - 1), taken + 1
                 name = "-E"
-            if name in AWK_LOADERS and value != "inplace":  # ``-i inplace`` edits in place, judged apart
+            elif name == "-W" and value:  # gawk ``-W source=…``: the POSIX form of a long option
+                name, value = awk_options([f"--{value}"], 0)[0][0]
+            name = AWK_WRITING_LETTERS.get(name, name) if value else name
+            if name in AWK_WRITING_FLAGS:
+                program.write(value)  # a dump or a profile lands in the file it names
+            elif name in AWK_LOADERS and value != "inplace":  # ``-i inplace`` edits in place, judged apart
                 program.why = f"awk {name} loads code the gate does not read"
             elif name in AWK_PROGRAM_FILES:
                 from_file = True
                 awk_program_file(value, program)
             elif name in AWK_SOURCE_OPTIONS:
                 texts.append(value)
-            elif name.startswith("--") and value:  # an unknown long option with a value
+            elif name.startswith("--") and value and name not in AWK_LONG_FLAGS:  # unknown, with a value
                 program.why = program.why or f"awk {name[:30]} is an option the gate does not read"
             elif name not in AWK_TAKES_VALUE and name not in AWK_FLAGS:
                 unsure = True
@@ -641,6 +658,8 @@ def awk_options(words: list[str], index: int) -> tuple[list[tuple[str, str]], in
         name, rest = f"-{letter}", word[position + 1 :]
         if name in AWK_TAKES_VALUE:
             return [*options, (name, rest or following)], 1 if rest else 2
+        if letter in AWK_ATTACHED_LETTERS:  # ``-pprof``: the rest is the file, not more letters
+            return [*options, (name, rest)], 1
         options.append((name, ""))
     return options, 1
 
@@ -859,8 +878,10 @@ def part_end(script: str, position: int, delimiter: str) -> int:
 def line_end(script: str, position: int) -> int:
     """The end of the line: a newline, or ``" ; "``, which is what the gate's command splitter leaves
     of a newline inside quotes (``shell_items``), so a command after it is still read."""
-    ends = [index for index in (script.find("\n", position), script.find(" ; ", position)) if index >= 0]
-    return min(ends) if ends else len(script)
+    newline = script.find("\n", position)
+    newline = len(script) if newline < 0 else newline
+    split = script.find(" ; ", position, newline)  # bounded: linear over a long script (wrap review)
+    return newline if split < 0 else split
 
 
 def text_end(script: str, position: int) -> int:
@@ -868,14 +889,18 @@ def text_end(script: str, position: int) -> int:
     run of ``\\`` (``foo\\\\`` ends the text). A ``\\`` before a blank may be what the splitter left
     of ``\\`` and a newline, so the text ends there too: a false ask at worst."""
     end = line_end(script, position)
-    while end < len(script) and odd_backslashes(script[:end]):
+    while end < len(script) and odd_backslashes(script, end):
         end = line_end(script, end + 1)
     escaped = script.find("\\ ", position, end)
     return escaped + 2 if escaped >= 0 else end
 
 
-def odd_backslashes(text: str) -> bool:
-    return (len(text) - len(text.rstrip("\\"))) % 2 == 1
+def odd_backslashes(text: str, end: int) -> bool:
+    """An odd run of backslashes just before ``end``, counted back without copying the text."""
+    start = end
+    while start > 0 and text[start - 1] == "\\":
+        start -= 1
+    return (end - start) % 2 == 1
 
 
 def label_end(script: str, position: int) -> int:

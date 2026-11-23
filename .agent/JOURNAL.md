@@ -388,3 +388,11 @@ Why: plan item T06; ADR-0007, both runtimes share the judge.
 Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync.
 Next: wrap, a code review over T01 to T05, then the full suite with coverage.
 verified: tree 7e07079b9834f81b314477338434c6b740419209 · markdownlint, check-plugin, sync-agents
+
+## 2026-11-24 — wrap gate-f57: code review folded
+Changed: SED_ADDRESS_RE's custom-delimiter branches exclude each other (a run of backslashes after \x backtracked exponentially: 34 outran the hook timeout, a bypass); gawk's attached-value letters (-pprof, -ofoo) and -W long-option=value read; --profile=, --dump-variables=, --pretty-print=, --debug= and their letters are write targets; line_end and text_end linear on long scripts; --lint=fatal silent; pip_command reads once; docstrings; each fold a test row, with a time-bound test.
+Why: /cobot:wrap of spec gate-f57 T01 to T06.
+Proof: full suite with coverage 98.32 %, 5836 passed (an earlier run under load had the known glob-deadline flake, cat */README.md, which passed on the re-run); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; cobot-memory check, brief 5394 chars before this entry.
+Open: kept, the floor reads a cluster's first three letters; is_opaque reads awk and sed twice. F-63, F-64, F-65 open; F-58 parked next.
+Next: the owner verifies and pushes security/gate-f57 (after PR 83); then F-58.
+verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check

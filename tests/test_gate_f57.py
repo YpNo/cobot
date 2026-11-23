@@ -557,6 +557,12 @@ AWK_SED_ASK = [
     "gawk --unknown-long=x 'BEGIN{}'",
     "gawk -bl /tmp/x.so 'BEGIN{}'",
     "gawk -bE /dev/stdin",
+    # wrap code review: gawk's attached-value letters, -W long-option forms
+    "gawk -pprof 'BEGIN{system(\"x\")}' f",
+    "gawk -ofoo 'BEGIN{system(\"x\")}' f",
+    "gawk -W source='BEGIN{system(\"x\")}'",
+    "gawk -Wsource='BEGIN{system(\"x\")}'",
+    "gawk -W load=x 'BEGIN{}'",
     # a program file from outside the project
     "awk -f /tmp/x.awk f",
     "sed -f /tmp/x.sed f",
@@ -604,7 +610,23 @@ AWK_SED_FRICTION = [
     "awk 'BEGIN{while ((getline line < \"f\") > 0) n++}'",
     "awk -f scripts/x.awk f",
     "gawk -b '{print}' f",
+    "gawk --lint=fatal '{print}' f",
+    "gawk --profile=prof.txt '{print}' f",
 ]
+
+
+def test_story6_longScripts_readInLinearTime(project):
+    """Wrap code review: a custom-delimiter address with a run of backslashes backtracked
+    exponentially (34 outran the hook's timeout); long scripts slice no prefix per line."""
+    import time
+
+    import _cobot_inline as inline
+
+    started = time.monotonic()
+    inline.read_program(["sed", "\\x" + "\\" * 60 + "a", "f"])
+    inline.read_program(["sed", "wa\n" * 30000, "f"])
+    inline.read_program(["sed", "a\\\n" * 30000, "f"])
+    assert time.monotonic() - started < 2
 
 
 @pytest.mark.parametrize("command", AWK_SED_ASK)
@@ -633,6 +655,10 @@ def test_story6_writeToAnOwnerFile_isDenied(rules, project):
         f"awk '{{print /#/; print 1 > \"{rules_file}\"}}' f",
         f"sed ':a w {rules_file}' f",
         f"sed '1a foo\\\\\nw {rules_file}' f",
+        # wrap code review: gawk writes its profile, dump or pretty-printed program to a file
+        f"gawk --profile={rules_file} '{{print}}' f",
+        f"gawk -p{rules_file} '{{print}}' f",
+        f"gawk --dump-variables={rules_file} '{{print}}' f",
     ):
         assert decide(rules, command) == "deny", command
 

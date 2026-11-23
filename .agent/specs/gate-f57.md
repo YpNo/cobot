@@ -336,3 +336,12 @@ decision re-run on `f433a0a`). Folded into revision 2:
   `docs/configuration.md` says what asks, what is refused and what is not covered; CHANGELOG
   Security entry; FINDINGS F-57 closed, F-63 (editors and debuggers), F-64 (the splitter) and
   F-65 (loader variables) open.
+- 2026-11-24, wrap: code review (1 BLOCKER, 2 MAJOR, 7 MINOR), each fold a test row. BLOCKER:
+  `SED_ADDRESS_RE` backtracked exponentially on a run of backslashes after `\x` (34 outran the
+  hook timeout, a bypass); its two branches now exclude each other, with a time-bound test.
+  MAJOR: gawk's attached-value letters (`-pprof`, `-ofoo`) and `-W long-option=value` are read;
+  `--profile=`, `--dump-variables=`, `--pretty-print=`, `--debug=` and their letters are write
+  targets. MINOR: `line_end` and `text_end` linear on long scripts; `--lint=fatal` silent; one
+  `pip_command` reading; docstrings. Kept: the floor reads a cluster's first three letters (an
+  attached value further on would ask: `-Wignore::DeprecationWarning`), so `-bbbc` is a residual;
+  `is_opaque` reads an awk or sed program twice (9 ms on 6000 words).

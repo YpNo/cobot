@@ -2215,7 +2215,7 @@ def opaque_as_read(plain: list[str]) -> bool:
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
     reading = inline.read_argv(plain)
-    if reading is not None and (reading.asks() or inline.pip_argv(plain)):  # gate-f57: pip expands
+    if reading is not None and (reading.asks() or inline.pip_command(reading)):  # gate-f57: pip expands
         return True
     program = inline.read_program(plain)
     if program is not None and program.why:  # awk or sed running a command (gate-f57, story 6)
@@ -6081,8 +6081,9 @@ SCRIPT_WRITES_RE = {
 
 
 def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
-    """Whether a segment edits files through an interpreter: a Python script read from stdin or
-    ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
+    """Whether a segment edits files through an interpreter: a Python, Node, tsx, ts-node or Bun
+    script read from stdin or inline whose code writes a file (``SCRIPT_WRITES_RE``), or ``perl
+    -i``. The protocol asks for Edit or Write, whose
     diff the owner sees and whose path the rules judge; a script is opaque to both, whatever the
     host suggests. A script that only reads keeps its ask."""
     reading = inline.read_argv(strip_wrappers(segment))

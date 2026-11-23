@@ -3381,21 +3381,38 @@ FUSE_MOUNTERS = frozenset(
 RCLONE_MOUNTING = frozenset({"mount", "nfsmount"})
 
 
+MOUNT_VALUE_SHORTS = frozenset("otOLUNT")  # mount(8) and the FUSE mounters' ``-o OPTS``
+MOUNT_VALUE_LONGS = frozenset(
+    "--types --options --test-opts --fstab --label --uuid --namespace --source --target-prefix".split()
+)
+
+
 def covered_folders(argv: list[str]) -> list[str]:
-    """The operands of ``mount``, a FUSE mounter or ``rclone mount``, and ``--target``'s value: a
-    mount over a folder hides it from every process, as removing it would (story 8). Every operand
-    counts, so the mount point is read wherever the options put it; an option's value read as one
-    is a relative word and meets no anchor."""
+    """The mount point of ``mount`` or a FUSE mounter (its last operand, past option values, and
+    ``--target``'s value), and every operand of ``rclone mount`` (its source is a remote, its
+    flags' values are unknown): a mount over a folder hides it from every process, as removing it
+    would (story 8). A mount's source is not covered: it is shown elsewhere, not hidden."""
     head = argv[0] if argv else ""
-    args = argv[1:]
     if head == "rclone":
         verb = rclone_verb(argv, RCLONE_MOUNTING)
-        args = argv[verb + 1 :] if verb is not None else []
-    elif head != "mount" and not head.startswith("mount.") and head not in FUSE_MOUNTERS:
+        return [w for w in argv[verb + 1 :] if not w.startswith("-")] if verb is not None else []
+    if head != "mount" and not head.startswith("mount.") and head not in FUSE_MOUNTERS:
         return []
-    targets = [w.split("=", 1)[1] for w in args if w.startswith("--target=")]
-    targets += [args[i + 1] for i, w in enumerate(args[:-1]) if w == "--target"]
-    return targets + [w for w in args if not w.startswith("-")]
+    targets, operands, i = [], [], 1
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        if name == "--target":
+            targets.append(value if eq else following)
+            i += 1 if eq else 2
+        elif word.startswith("--"):
+            i += 2 if name in MOUNT_VALUE_LONGS and not eq else 1
+        elif word.startswith("-") and len(word) > 1:
+            i += 2 if word[-1] in MOUNT_VALUE_SHORTS else 1
+        else:
+            operands.append(word)
+            i += 1
+    return [t for t in targets if t] + operands[-1:]
 
 
 def other_extraction_folders(head: str, argv: list[str]) -> list[str]:

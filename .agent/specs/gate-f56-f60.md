@@ -280,7 +280,7 @@ then the focused tests, ruff and the gate dry run, with a bypass-aimed review be
 | T08 ✅ | in-place decompression | gate | auth | T03 |
 | T09 ✅ | removal, cover, link and lock verbs | gate | auth | T05 |
 | T10 ✅ | the config dir's real path | gate | auth | T05 |
-| T11 | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T07–T10 |
+| T11 ✅ | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T07–T10 |
 
 Stories 7 and 8 are tested in `tests/test_gate_f61_f62.py`, so the story 1–6 file stays readable.
 
@@ -369,3 +369,10 @@ Every point was folded:
 bypass-aimed review folded before the next task. F-56 and F-60 are closed; F-61 and F-62 hold what
 stays out. One build decision: a sealed folder reached through `cd` asks, as it did before this
 spec. Wrap follows; nothing is pushed.
+
+2026-11-23, stories 7 and 8 (owner: "Work on the nit + F-61 and F-62 on the same branch/PR"):
+T07 to T11 were built, each gate task with a bypass-aimed review folded before the next. F-61
+and F-62 are closed. Q3 was built on its recommended default (a lock asks); the owner may reverse
+it at review. Two build decisions: a mount's source is not covered, only its mount point (T11,
+found by an agy row: a bind of HOME elsewhere shows it, it does not hide it); the lock check reads
+the folders of `never` rows only, so `chmod 700 ~/.ssh` stays silent (T09 review).

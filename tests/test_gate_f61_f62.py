@@ -8,6 +8,7 @@ locking the config dir, and reaching it through a symlink. Each row reached no d
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -332,6 +333,8 @@ TAKEN_REFUSED = [
     "mount --target ~/.claude /tmp",
     "sshfs h:/x ~/.claude",
     "sshfs -o allow_other h:/x ~",
+    "sshfs h:/x ~/.claude -o reconnect",
+    "mount -t tmpfs -o size=1m t ~/.claude",
     "bindfs /tmp/x ~/.claude",
     "rclone mount r: ~/.claude",
     "rclone mount r: ~/.claude --daemon",
@@ -412,6 +415,9 @@ TAKEN_SILENT = [
     "gzip -r logs/",
     "gzip f",
     "mount --bind /tmp/a /tmp/b",
+    "mount --bind ~ /mnt/home",
+    "bindfs ~/.claude /mnt/c",
+    "sshfs h:/x mnt -o reconnect",
     "mount",
     "sshfs h:/x mnt",
     "rclone mount r: mnt",
@@ -530,6 +536,41 @@ def test_story8_repointingALinkAboveTheConfigDir_isRefused(rules, linked_home, c
 @pytest.mark.parametrize("command", ["ln -sf /tmp/o ~/x", "ln -sfn /tmp/o ~/bin/tool", "ln -s a b"])
 def test_story8_linksBesideTheConfigDir_staySilent(rules, linked_home, command):
     assert decide(rules, command.format(**linked_home)) is None
+
+
+# ---------------------------------------------------------------- story 6 extended: both runtimes
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("gh release download v1 -D ~/.gemini/config", "force_ask"),
+        ("ditto e ~/.gemini/config", "force_ask"),
+        ("gunzip ~/.gemini/config/settings.json.gz", "force_ask"),
+        ("tar --remove-files -cf a.tar ~/.gemini", "force_ask"),
+        ("chmod -R 000 ~/.gemini/config", "force_ask"),
+        # a cover is judged as a folder option, as ``tar -C`` on the same folder is
+        ("mount --bind /tmp ~/.gemini/config", "force_ask"),
+        ("tar -C ~/.gemini/config -xf e.tar", "force_ask"),
+        ("gunzip ~/.claude/cobot.rules.gz", "deny"),
+        ("gzip -r ~/.claude", "deny"),
+        ("gunzip f.gz", "allow"),
+        ("chmod -R u+w build/", "allow"),
+    ],
+)
+def test_story6_agy_storiesSevenAndEight_sameJudgement(rules, tmp_path, monkeypatch, command, expected):
+    """ADR-0007: under agy, run_command reaches the same judgement; ``allow`` there is no opinion."""
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    home = tmp_path / "home"
+    (home / ".gemini" / "config").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    workspace = tmp_path / "ws"
+    (workspace / ".agent").mkdir(parents=True)
+    (workspace / ".agent" / "cobot.rules").write_text("")
+    call = {"id": "t1", "name": "run_command", "args": {"CommandLine": command}}
+    body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(workspace)]}
+    assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == expected
 
 
 def test_story8_manyLockedPaths_askWithinTheHookTimeout(rules):

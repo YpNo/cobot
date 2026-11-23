@@ -280,3 +280,10 @@ Proof: full suite with coverage, 98.33 %, one failure: the flaky glob-deadline t
 Open: accepted, a literal $HOME in CLAUDE_CONFIG_DIR is not expanded (nor by Claude Code, as far as known); mkdir under a dangling config link; a link loop holds no files.
 Next: T11 agy rows, docs, findings.
 verified: tree 8a2446442a7becaf2bb3fb0f269cce656dc3806d · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T11: both runtimes, docs, F-61 and F-62 closed
+Changed: agy rows for stories 7 and 8; covered_folders reads a mount's mount point only (its last operand past option values, or --target; rclone mount keeps every operand), found by an agy row where a source under HOME's parent denied; CHANGELOG Security entries; configuration.md says where the other writers land and what taking the config dir away costs; FINDINGS F-61 and F-62 closed; spec Converge.
+Why: ADR-0007; the docs listed F-61 and F-62 as not covered.
+Proof: focused suites 562 passed; ruff, markdownlint, check-plugin clean; cobot-memory check exit 0 (brief 5195 chars).
+Next: /cobot:wrap stories 7 and 8.
+verified: tree 777007cc7306ff0ce4566c34ee82ffa16c1508d6 · focused tests, ruff, markdownlint, check-plugin, cobot-memory check

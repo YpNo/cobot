@@ -123,13 +123,28 @@ Where a file lands (spec gate-f56-f60):
   set in the command ask.
 - A config dir moved outside HOME keeps its folder protection. Moving a folder that holds the
   config dir is refused like removing it (`mv /home x`).
+- The other writers are read the same way (F-61): `aria2c -d`/`-o`, `gh release|run download
+  -D`/`-O` (server-chosen names ask in a folder that holds the config dir; `aria2c -i` and
+  `--conf-path` ask), `sftp`, `pax -rw` and `ditto` copies, `jar x`, `ar x`, `unar`, `bsdunzip`,
+  `bsdcpio`, `dpkg-deb -x` extractions, and decompression in place: `gunzip
+  ~/.claude/cobot.rules.gz` lands at `~/.claude/cobot.rules` and is refused. `pax -r` asks
+  everywhere, as `cpio -i` does.
+- Taking the config dir away is refused like removing it (F-62): `tar --remove-files`, `zip -m`,
+  `7z -sdel`, a recursive `gzip`/`zstd`, `rclone purge|delete`, a `mount` or FUSE mount over it,
+  and a link to a folder holding it (`ln -s ~ /tmp/h`, `cp -rs ~ x`). `chmod`, `chown`, `chgrp`,
+  `setfacl` and `chattr` on it or a folder holding it ask, since the mode is not read (so
+  `chmod 700 ~` asks), and so does a `bwrap` cover, which only its child sees.
+- A config dir reached through a symlink (`CLAUDE_CONFIG_DIR` set to a link, or `~/.claude`
+  linked into a dotfiles folder) is protected at its real path too, and re-pointing a link above
+  it (`ln -sfn x ~` with HOME a link) is refused. With that dotfiles layout, `git -C ~/dotfiles …`
+  and copies into `~/dotfiles` are refused, as `git -C ~` is.
 
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), an inherited variable
 or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell
 profile, a link created between the check and the run, archive members (the gate never opens an
-archive), writers whose output folder it does not read (F-61: `pax`, `ditto`, `sftp`, `aria2c`,
-`gh … download -D`, decompression in place), taking the config dir away by `tar --remove-files`,
-`zip -m`, `chmod`, `mount --bind` or a symlinked `CLAUDE_CONFIG_DIR` (F-62), and `busybox find`.
+archive), a client's own command language (`sftp -b`, `lftp -c`), sandboxes other than `bwrap`
+(`firejail`, `proot`, `systemd-run`), `rar`, aria2c's hooks and RPC, `dpkg --root`, a symlinked
+`~/.gemini` under agy, and `busybox find`.
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,

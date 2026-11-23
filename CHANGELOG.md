@@ -234,8 +234,18 @@ All notable changes to this project are documented here. The format follows
     - in a session started in HOME, every extraction asks;
     - `cpio -i` asks without `--no-absolute-filenames`;
     - `curl -K` asks.
-  - Kept out: F-61 (other writers) and F-62 (taking the config dir away by permissions, mounts or
-    removing archivers).
+- **The other writers are judged where they land (F-61).** `aria2c` and `gh … download`, `sftp`,
+  `pax -rw` and `ditto` copies, `jar`, `ar`, `unar`, `bsdunzip`, `bsdcpio` and `dpkg-deb`
+  extractions, and decompression in place (`gunzip ~/.claude/cobot.rules.gz` is refused).
+  New friction: `pax -r` asks everywhere; `aria2c -i` asks.
+- **Taking the config dir away or locking it is refused or asked (F-62).**
+  - Refused, as `rm -r` is: `tar --remove-files`, `zip -m`, `7z -sdel`, a recursive compressor,
+    `rclone purge|delete|rmdirs`, a `mount` or FUSE mount over it, and a link to a folder holding
+    it (`ln -s ~ x`, `cp -rs ~ x`).
+  - Asked: `chmod`, `chown`, `chgrp`, `setfacl`, `chattr` on it or a folder holding it (the mode
+    is not read, so `chmod 700 ~` asks), and a `bwrap` cover.
+  - A config dir reached through a symlink is protected at its real path, and re-pointing a link
+    above it is refused.
 - **A shell variable no longer hides a protected file (F-55).**
   - Before, the gate read `$X` as text, so `cp x ~/.claude/$X` got no decision past the refusals
     on cobot's owner files. Now a variable is read by how the command sets it:

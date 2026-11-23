@@ -3486,8 +3486,7 @@ def enters(segment: list[str]) -> bool:
 def relocates(segment: list[str]) -> bool:
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    gio = head == "gio" and bool(argv[1:2]) and argv[1] in GIO_MOVING
-    return head in RELOCATING or (head == "git" and "mv" in argv[1:3]) or gio
+    return head in RELOCATING or head == "scp" or copy_verb(argv) is not None
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -3608,7 +3607,22 @@ def merges_into_an_anchor(segment: list[str], base: str, anchors: frozenset[str]
     copies a folder's contents (a trailing ``/`` or ``/.``, ``-T``, a variable, a hole, find's
     ``{}``). The target is ``-t``/``--target-directory`` when given, else the last word.
     ``cp a ~`` stays silent."""
-    target, sources, contents = merge_parts(program_of(segment)[1:])
+    argv = program_of(segment)
+    # rclone copies a folder's contents; ``--files-from`` names sources the gate does not read
+    listed = bool(argv) and (argv[0] in CONTENTS_COPIERS or any(w.startswith("--files-from") for w in argv))
+    return next(
+        (
+            found
+            for target, sources, contents, _ in copy_parts(argv)
+            if (found := merged_source(target, sources or ["."] * listed, contents or listed, base, anchors))
+        ),
+        None,
+    )
+
+
+def merged_source(
+    target: str | None, sources: list[str], contents: bool, base: str, anchors: frozenset[str]
+) -> str | None:
     if target is None or not sources:
         return None
     folder = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1]))).casefold()
@@ -3632,7 +3646,8 @@ def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
     while i < len(args):
         word = args[i]
         following = args[i + 1] if i + 1 < len(args) else None
-        if word.startswith("--target-directory"):
+        name = word.split("=", 1)[0]
+        if len(name) >= LANDING_PREFIX_MIN and "--target-directory".startswith(name):
             target, i = (word.split("=", 1)[1], i + 1) if "=" in word else (following, i + 2)
             continue
         if word in ("-T", "--no-target-directory") or re.fullmatch(r"-[a-zA-Z]*T[a-zA-Z]*", word):
@@ -3647,6 +3662,135 @@ def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
     if target is None and len(sources) >= 2:
         target = sources.pop()
     return target, sources, contents
+
+
+# copiers whose sources land in a target folder (spec gate-f56-f60, story 2), and the options of
+# each that take a value: rsync's ``-t`` keeps times, it names no target. Read from ``rsync
+# --help`` 3.4, ``scp`` (OpenSSH 10), ``docker cp --help``, ``kubectl cp --help`` and ``rclone
+# copy --help`` on 2026-11-23. An option outside a table may take a value, so every positional
+# is then tried as the target.
+COPY_VALUE_SHORTS = {"rsync": "eBfMT@", "scp": "cDFiJlPoSX", "kubectl": "cn", "docker": "", "podman": ""}
+COPY_VALUE_LONGS = {
+    "rsync": frozenset(
+        "--rsh --rsync-path --filter --exclude --include --exclude-from --include-from --files-from "
+        "--temp-dir --partial-dir --log-file --log-file-format --password-file --chmod --chown "
+        "--backup-dir --suffix --compare-dest --copy-dest --link-dest --timeout --contimeout "
+        "--bwlimit --max-size --min-size --modify-window --out-format --info --debug --iconv "
+        "--usermap --groupmap --port --sockopts --outbuf --max-delete --block-size --remote-option "
+        "--skip-compress --checksum-choice --compress-choice --compress-level --stop-after --stop-at".split()
+    ),
+    "kubectl": frozenset("--container --namespace --retries --context --kubeconfig".split()),
+    "scp": frozenset(),
+    "docker": frozenset(),
+    "podman": frozenset(),
+}
+KEEP_PATH_OPTIONS = frozenset({"--parents", "-R", "--relative"})  # the source's path is kept
+CONTAINER_COPIERS = frozenset({"docker", "podman", "kubectl"})
+REMOTE_COPIERS = CONTAINER_COPIERS | {"scp", "rsync", "rclone"}  # where ``host:path`` is remote
+# copies whose sources are a folder's contents or a list the gate does not read (T02 review)
+CONTENTS_COPIERS = frozenset({"rclone"})
+RCLONE_COPYING = frozenset({"copy", "move", "sync", "copyto", "moveto"})
+REMOTE_RE = re.compile(r"^[^/~.$][^/]*:")  # ``host:path``, ``container:path``, ``remote:path``
+
+
+Copy = tuple[str | None, list[str], bool, bool]  # target, sources, into the target itself, path kept
+
+
+def copy_parts(argv: list[str]) -> list[Copy]:
+    """The readings of a copy as (target, sources, ``-T``, path kept): one for the coreutils and
+    ``gio``, from ``merge_parts``; one for rsync, scp and the container copiers while their options
+    are known, and else one per positional as the target."""
+    head = argv[0] if argv else ""
+    verb = copy_verb(argv)
+    if (head in RELOCATING and head != "rsync") or (head in ("gio", "git") and verb is not None):
+        args = argv[verb + 1 :] if verb is not None else argv[1:]
+        target, sources, contents = merge_parts(args)
+        return [(target, sources, contents, bool(KEEP_PATH_OPTIONS & set(args)) and head == "cp")]
+    if head in CONTAINER_COPIERS and verb is not None:
+        args = argv[verb + 1 :]
+    elif head == "rclone" and verb is not None:
+        if argv[verb] in ("copyto", "moveto"):
+            return []  # the target is the file itself, a word of the segment already
+        return every_target([w for w in argv[verb + 1 :] if not w.startswith("-")], False)
+    elif head in ("scp", "rsync"):
+        args = argv[1:]
+    else:
+        return []
+    positionals, known = copy_positionals(head, args)
+    keep = head == "rsync" and bool(KEEP_PATH_OPTIONS & set(args))
+    if not known:
+        return every_target(positionals, keep)
+    return [(positionals[-1], positionals[:-1], False, keep)] if len(positionals) >= 2 else []
+
+
+def copy_verb(argv: list[str]) -> int | None:
+    """The index of a copying verb behind a program's global options: ``cp`` for the container
+    tools (``docker --context x cp``, ``docker container cp``), rclone's copy verbs, ``git mv``,
+    and ``gio copy|move`` (T02 bypass review: global options pushed it out of reach)."""
+    head = argv[0] if argv else ""
+    verbs = {
+        "docker": {"cp"},
+        "podman": {"cp"},
+        "kubectl": {"cp"},
+        "rclone": RCLONE_COPYING,
+        "git": {"mv"},
+        "gio": GIO_MOVING,
+    }.get(head)
+    if not verbs:
+        return None
+    if head == "gio":
+        return 1 if argv[1:2] and argv[1] in verbs else None
+    if head == "git":
+        return next((i for i in (1, 2) if argv[i : i + 1] == ["mv"]), None)  # as ``relocates`` reads it
+    return next((i for i, word in enumerate(argv[1:], 1) if word in verbs), None)
+
+
+def copy_positionals(head: str, args: list[str]) -> tuple[list[str], bool]:
+    """A copier's positionals, and whether every option was one its table knows."""
+    shorts, longs = COPY_VALUE_SHORTS.get(head, ""), COPY_VALUE_LONGS.get(head, frozenset())
+    positionals, known, i = [], True, 0
+    while i < len(args):
+        word = args[i]
+        if word == "--":
+            positionals += args[i + 1 :]
+            break
+        if word.startswith("--"):
+            takes = word.split("=", 1)[0] in longs and "=" not in word
+            known = known and (word.split("=", 1)[0] in longs or "=" in word or head in ("scp",))
+            i += 2 if takes else 1
+            continue
+        if word.startswith("-") and len(word) > 1:
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in shorts), None)
+            i += 2 if taker is not None and taker == len(word) - 1 else 1
+            continue
+        positionals.append(word)
+        i += 1
+    return positionals, known
+
+
+def every_target(positionals: list[str], keep: bool) -> list[Copy]:
+    return [(p, [q for q in positionals if q is not p], False, keep) for p in positionals]
+
+
+def landing_words(segment: list[str]) -> list[str]:
+    """Where each source of a copy lands: ``<target>/<basename>``, or ``<target>/<source>`` when
+    the copy keeps the path (spec gate-f56-f60, story 2). A remote source counts by its path; a
+    remote target, ``-T`` and a word with a hole (judged elsewhere) add none."""
+    words: list[str] = []
+    argv = program_of(segment)
+    remote = bool(argv) and argv[0] in REMOTE_COPIERS  # for cp, ``x:`` is a local folder
+    for target, sources, contents, keep in copy_parts(argv):
+        if target is None or contents or (remote and REMOTE_RE.match(target)) or shell.has_sentinel(target):
+            continue
+        for source in sources:
+            if shell.has_sentinel(source) or source == target:
+                continue
+            path = source.split(":", 1)[1] if remote and REMOTE_RE.match(source) else source
+            kept = path.rsplit("/./", 1)[-1] if "/./" in path else path.lstrip("/")  # rsync -R's marker
+            rest = kept if keep else os.path.basename(path.rstrip("/"))
+            if rest not in ("", ".", ".."):
+                words.append(os.path.join(target, rest))
+    return words
 
 
 def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
@@ -3746,6 +3890,7 @@ def protected_file_touched(
             )  # linear, never compounded
         bases = sorted({*bases, *joined})
         landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
+        landed = landed or (landing_hit(segment, bases, protected, anchors, budget) if relocating else None)
         if landed:
             return landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
@@ -3808,6 +3953,21 @@ def landing_option_hit(
                 for base in bases[: 1 if anchored else None]
             ):
                 return value
+    return None
+
+
+def landing_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+) -> str | None:
+    """The landing word of a copy that names a protected file or folder (spec gate-f56-f60)."""
+    for word in landing_words(segment):
+        for form in home_forms(word):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, True, anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return word
     return None
 
 

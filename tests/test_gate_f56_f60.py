@@ -7,6 +7,8 @@ directory and a config dir outside HOME reached no decision.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -69,4 +71,88 @@ def test_story1_joinedLandingOption_isRefusedAsTheSeparateForm(rules, command):
 
 @pytest.mark.parametrize("command", LANDING_OPTION_SILENT)
 def test_story1_landingOptionOutsideAProtectedFolder_staysSilent(rules, command):
+    assert decide(rules, command) is None
+
+
+# ---------------------------------------------------------------- story 2: landing words per copier
+
+LANDING_ASKED = [
+    "cp e/.claude.json ~/",
+    "cp e/.claude.json ~",
+    "cp -t ~ e/.claude.json",
+    "mv e/.claude.json ~",
+    "ln -s e/.claude.json ~",
+    "install e/.claude.json ~",
+    "rsync e/.claude.json ~/",
+    "rsync -rt e/.claude.json ~/",
+    "scp h:/x/.claude.json ~/",
+    "scp -P 22 h:/x/.claude.json ~",
+    "cp e/.bashrc ~/",
+    "cp -t ~ .bashrc",
+    "cp x/.zshenv y/.profile ~/",
+]
+LANDING_REFUSED = [
+    "scp h:/x/cobot.rules ~/.claude",
+    "scp -r h:/x/cobot ~/.claude/",
+    "docker cp c:/x/cobot.rules ~/.claude/",
+    "podman cp c:/x/cobot.rules ~/.claude",
+    "kubectl cp ns/pod:/x/cobot.rules ~/.claude/",
+    "rclone copy r:x/cobot.rules ~/.claude/",
+    "rclone copy r:x/cobot.rules ~/.claude/ --transfers 4",
+    "cp --parents .claude/cobot.rules ~",
+    "rsync -R .claude/cobot.rules ~/",
+    "rsync --relative .claude/cobot.rules ~/",
+    "cp e/cobot.rules ~/.claude/shell-snapshots/",
+]
+LANDING_SILENT = [
+    "cp a ~",
+    "cp README.md ~/",
+    "cp report /tmp/",
+    "cp a.txt ~/notes/",
+    "mv build dist/",
+    "cp -t dist a.js",
+    "rsync -rt src/ dist/",
+    "rsync -a src/ dist/",
+    "scp h:/x/report.txt .",
+    "docker cp c:/app/log.txt .",
+    "rclone copy r:photos ~/Pictures",
+    'cp "$f" dist/',
+    "cp -T a.txt ~/b.txt",
+]
+
+
+LANDING_ASKED += [
+    # T02 bypass review: verbs behind global options, git mv, rsync -R's /./ marker
+    "docker --log-level debug --context x cp c:/.bashrc ~",
+    "podman --remote --url x cp c:/.bashrc ~",
+    "git mv e/.bashrc ~",
+    "git mv -k e/.bashrc ~",
+    "rsync -R e/./.bashrc ~/",
+]
+LANDING_REFUSED += [
+    "rclone -v copy r:cobot.rules ~/.claude/",
+    "rclone copy r:dir ~",
+    "rsync -a --files-from=l h: ~/",
+]
+LANDING_SILENT += ["rclone copy . r:backup", "git mv a b", "docker cp ./x c:/root/", "scp file h:~/"]
+
+
+@pytest.mark.parametrize("command", ["cp e/.bashrc x:/../..", "cp -t x:/../.. e/.bashrc", "cp e/.bashrc ../"])
+def test_story2_colonIsALocalFolderForCp_landingIsJudged(rules, command):
+    """For cp, ``x:`` is a folder: from ``~/proj`` the file lands at ``~/.bashrc`` (T02 review)."""
+    assert decide(rules, command, cwd=os.path.expanduser("~/proj")) == "ask"
+
+
+@pytest.mark.parametrize("command", LANDING_ASKED)
+def test_story2_copyLandingOnAnAskRowFile_asks(rules, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", LANDING_REFUSED)
+def test_story2_copyLandingOnASealedFile_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", LANDING_SILENT)
+def test_story2_copyLandingElsewhere_staysSilent(rules, command):
     assert decide(rules, command) is None

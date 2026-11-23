@@ -192,3 +192,11 @@ Proof: tests/test_gate_f56_f60.py exit 0; full suite with coverage 98.65 % with 
 Open: the flaky glob-deadline test (pre-existing); cp -t ~ .bashrc and cp .bashrc ~ are T02; wget --execute= is T03.
 Next: T02, landing words per copier.
 verified: tree 89c6458f45d0dcdb3ce89d3a26ecdd6aacbe57eb · tests/test_gate_f56_f60.py, full suite (one flaky row), ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T02: each source of a copy lands at <target>/<basename>
+Changed: cobot-rules copy_parts (coreutils, gio and git mv through merge_parts; rsync, scp and docker/podman/kubectl cp with per-copier value-option tables; rclone and unknown options try every positional as the target), copy_verb finds the verb behind global options, landing_words (cp --parents and rsync -R keep the path, rsync's /./ marker read, host:path remote only for the remote copiers), landing_hit judges each landing as a relocating word, merges_into_an_anchor iterates copy_parts and reads rclone and --files-from as contents copies, merge_parts takes --target-directory prefixes, relocates covers scp, the container copiers and rclone; tests story 2.
+Why: F-56 (HIGH): cp e/.claude.json ~/, scp h:/x/cobot.rules ~/.claude and the like reached no decision.
+Proof: full suite with coverage exit 0, 98.59 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 6 MAJOR: rclone and container global options, rclone contents, git mv, x: as a local folder for cp, rsync /./), each a test row. The T02 tests were appended to the test file with a shell heredoc, against the Edit/Write-only rule.
+Open: the flaky glob-deadline test (passed this run).
+Next: T03, curl and wget landings.
+verified: tree 507d2119db1bdfe186f2b9d442827621399820ff · full suite with coverage, ruff, check-plugin

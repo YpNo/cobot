@@ -25,7 +25,7 @@ layers empty:
 | F-60 | `cp --target-directory=/home/u/.claude cobot.rules` · `cp -t$HOME/.claude …` · `cp --t=~/.claude …` · `mv`, `ln`, `install` with `--target-directory=` · `curl -o~/.claude/cobot.rules u` · `wget -O~/.claude/cobot.rules u` · `curl --output-dir=~/.claude -O u/x` · `7z x -o$HOME/.claude e.7z` | none | deny, as each separate form is |
 | F-56 | `cp e/.claude.json ~/` · `cp e/.claude.json ~` · `cp -t ~ e/.claude.json` · `mv`, `ln -s`, `install` and `rsync` of it into `~` · `rsync -rt e/.claude.json ~/` · `scp h:/x/.claude.json ~/` · `cp e/.bashrc ~/` | none | ask (the landing file is an ask row) |
 | F-56 | `scp h:/x/cobot.rules ~/.claude` · `docker cp c:/x/cobot.rules ~/.claude/` · `rclone copy r:x/cobot.rules ~/.claude/ --transfers 4` · `cp --parents .claude/cobot.rules ~` · `rsync -R .claude/cobot.rules ~/` | none | deny |
-| F-56 | `cd ~/.claude && tar -xf e.tar` · `cd ~/.claude && unzip e.zip` | none | deny, as `tar -C ~/.claude -xf e.tar` is |
+| F-56 | `cd ~/.claude && tar -xf e.tar` · `cd ~/.claude && unzip e.zip` · `cd ~/.claude && curl -OJ u` | none | ask, as `cd ~/.claude && tar -C . -xf e.tar` did before this spec (build note, T03: the customization-root check reads the relative `.`; deny stays for a literal `~/.claude`) |
 | F-56 | `cd ~ && tar -xf e.tar` · `cd ~ && unzip x.zip` | none | ask (the working directory holds the config dir) |
 | F-56 | `tar -xPf e.tar` · `cpio -i < e.cpio` · `unzip -: e.zip` · `curl -K e/cfg` · `wget -e dir_prefix=~ u` · `wget -x -nH -P ~ https://h/.claude/cobot.rules` | none | ask (the landing place is unknown) |
 | F-56 | `curl --output-dir ~ -O https://h/.claude.json` · `wget -P ~ https://h/.claude.json` · `cd ~ && curl -O https://h/.claude.json` | none | ask |

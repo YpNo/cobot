@@ -39,6 +39,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -3793,6 +3794,100 @@ def landing_words(segment: list[str]) -> list[str]:
     return words
 
 
+# downloads (spec gate-f56-f60, story 3): read from ``curl --help all`` and ``wget --help`` on
+# 2026-11-23. A name taken from the URL lands in the output folder; these forms take it from the
+# server, a list or a tree instead, so the landing is unknown.
+REMOTE_NAME_OPTIONS = frozenset({"-O", "--remote-name", "--remote-name-all"})
+DOWNLOAD_UNPLACED = {
+    "curl": (frozenset({"-J", "--remote-header-name"}), "J"),
+    "wget": (
+        frozenset(
+            "-i --input-file -r --recursive -m --mirror -x --force-directories --content-disposition "
+            "--trust-server-names".split()
+        ),
+        "irmx",
+    ),
+}
+CONFIG_READERS = {"curl": (("-K", "--config"), "K"), "wget": (("-e", "--execute", "--config"), "e")}
+# wgetrc commands a ``wget -e`` may run that move where a download lands or what it reads
+# (wget 1.25 manual, "Wgetrc Commands", read 2026-11-23); ``-e robots=off`` stays silent
+WGETRC_LANDING_RE = re.compile(
+    r"(?i)^(?:dir_?prefix|output_?document|default_?page|logfile|input|base|cut_?dirs|mirror|recursive"
+    r"|content_?disposition|trust_?server_?names|dirstruct|add_?hostdir|protocol_?directories|"
+    r"no_?parent|backups|timestamping)\s*="
+)
+
+
+def download_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | None:
+    """A curl or wget download's output folders (``.``, the working directory, when none is
+    given; every one, since ``curl --next`` gives each URL its own), the words it lands at, and
+    whether its names are unknown (spec gate-f56-f60, story 3)."""
+    head = argv[0] if argv else ""
+    if head not in DOWNLOAD_UNPLACED:
+        return None
+    values = landing_option_values(argv)
+    folders = [value for value, kind in values if kind == "folder"] or ["."]
+    files = [value for value, kind in values if kind == "file"]
+    longs, letters = DOWNLOAD_UNPLACED[head]
+    shorts = {c for w in argv[1:] if re.fullmatch(r"-[A-Za-z]+", w) for c in w[1:]}
+    named_long = any(long_named_option(head, w, longs) for w in argv[1:] if w.startswith("--"))
+    urls = [w for w in argv[1:] if "/" in w and not w.startswith("-") and w not in folders + files]
+    globbed = head == "curl" and not {"-g", "--globoff"} & set(argv) and any(set(u) & set("{[") for u in urls)
+    numbered = head == "curl" and any(re.search(r"#\d", f) for f in files)
+    unplaced = named_long or bool(set(letters) & shorts) or globbed or numbered
+    named = head == "wget" and not files or bool(REMOTE_NAME_OPTIONS & set(argv)) or "O" in shorts
+    names = [n for u in urls for n in url_names(u, head, default_page(argv))] if named else []
+    words = [os.path.join(folder, name) for folder in folders for name in names]
+    if head == "curl":  # wget ignores -P with -O; curl writes a relative -o into --output-dir
+        words += [os.path.join(d, f) for d in folders if d != "." for f in files if not os.path.isabs(f)]
+    return folders, words, unplaced
+
+
+def long_named_option(head: str, word: str, longs) -> bool:
+    """A long word that names one of ``longs``, exactly or by a prefix getopt takes."""
+    return long_landing(head, word.split("=", 1)[0], tuple(("", n, "named") for n in longs)) is not None
+
+
+def url_names(url: str, head: str, page: str) -> list[str]:
+    """The names a download may take from its URL: the path's last part with the query dropped,
+    and for wget also decoded and with ``;params`` dropped (``%2Ebashrc`` is ``.bashrc``); a URL
+    ending in ``/`` takes wget's ``--default-page``."""
+    path = re.split(r"[?#]", url.split("://", 1)[-1], maxsplit=1)[0]
+    raw = os.path.basename(path) if "/" in path else ""
+    names = {raw}
+    if head == "wget":
+        names |= {urllib.parse.unquote(raw).split(";", 1)[0], raw.split(";", 1)[0]}
+        names |= {page} if path.endswith("/") and page else set()
+    return [name for name in names if name]
+
+
+def default_page(argv: list[str]) -> str:
+    values = [w.split("=", 1)[1] for w in argv if w.split("=", 1)[0].startswith("--default-p") and "=" in w]
+    return values[-1] if values else ""
+
+
+def config_reader(argv: list[str]) -> bool:
+    """``curl -K`` and ``wget -e`` read options the gate does not see (spec gate-f56-f60, story 3)."""
+    head = argv[0] if argv else ""
+    if head not in CONFIG_READERS:
+        return False
+    longs, letter = CONFIG_READERS[head]
+    cluster = re.compile(rf"-[A-Za-z]*?{letter}(.*)")  # ``-K cfg``, ``-sKcfg``, ``-eoutput_document=…``
+    for i, word in enumerate(argv[1:], 1):
+        following = argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        long = word.startswith("--") and long_named_option(head, word, longs)
+        joined = None if word.startswith("--") else cluster.fullmatch(word)
+        if not long and not joined:
+            continue
+        if head == "curl" or (long and "--config".startswith(name) and not "--execute".startswith(name)):
+            return True  # curl -K, wget --config: a file of options
+        command = value if long and eq else (joined.group(1) if joined and joined.group(1) else following)
+        if WGETRC_LANDING_RE.match(command):
+            return True
+    return False
+
+
 def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
     """Whether a folder holds a protected folder's parent: HOME and ``/`` hold ``~/.gemini``, so
     deleting them deletes it (``rm -r ~``, ``find ~ -delete``)."""
@@ -3891,6 +3986,7 @@ def protected_file_touched(
         bases = sorted({*bases, *joined})
         landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
         landed = landed or (landing_hit(segment, bases, protected, anchors, budget) if relocating else None)
+        landed = landed or (download_hit(segment, bases, protected, anchors, budget) if command else None)
         if landed:
             return landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
@@ -3969,6 +4065,44 @@ def landing_hit(
             ):
                 return word
     return None
+
+
+def download_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+) -> str | None:
+    """A download that lands on a protected file, or whose names are unknown in a folder that is
+    protected (the folder itself) or holds a protected folder (``<folder>/*``, which asks: the
+    owner may approve a download into HOME). The working directory when it names no folder (Q2)."""
+    parts = download_landings(program_of(segment))
+    if parts is None:
+        return None
+    folders, words, unplaced = parts
+    for word in words:
+        for form in home_forms(word):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return word
+    if not unplaced:
+        return None
+    for folder in folders:
+        for form in home_forms(folder):
+            places = [os.path.normpath(os.path.join(b, os.path.expanduser(form))) for b in bases]
+            named = [tilde_form(p) for p in places]  # the cwd by its ``~/`` name, as T01 reads a folder
+            for name in named:
+                if word_touches(name, name, protected, True, anchors, False, budget):
+                    return name
+            if any(holds_an_anchor(p, anchors) for p in places):
+                return f"{folder.rstrip('/')}/*"
+    return None
+
+
+def tilde_form(path: str) -> str:
+    """An absolute path under HOME written from ``~``, the form the rules and their checks read."""
+    home = os.path.expanduser("~")
+    return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path
 
 
 def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
@@ -5420,6 +5554,8 @@ def judge_bash(
         hass = hass_verdict(command, segment, dirs, cwd, agent)
         if hass and outranks(hass, verdict):
             verdict = hass
+        if config_reader(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
+            verdict = Verdict(ASK, None, "curl -K or wget -e reads options the gate does not see")
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

@@ -200,3 +200,11 @@ Proof: full suite with coverage exit 0, 98.59 % (fail-under 85); ruff 0.17.6 che
 Open: the flaky glob-deadline test (passed this run).
 Next: T03, curl and wget landings.
 verified: tree 507d2119db1bdfe186f2b9d442827621399820ff · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T03: a download is judged where it lands
+Changed: cobot-rules download_landings (every output folder, the working directory when none, per Q2; <folder>/<url name> for curl -O and always for wget unless -O; a relative curl -o joined to --output-dir; unknown names for curl -J, URL globbing and -o '#1', wget -i -r -m -x --content-disposition --trust-server-names by prefix), url_names (wget decoded and ;params dropped, --default-page), download_hit (a sealed folder by its ~ name, a folder holding one as <folder>/*, which asks), config_reader (curl -K and --config; wget --config, and -e/--execute only for wgetrc commands that move output) asking in judge_bash; tests story 3; spec Goal row: a sealed folder reached through cd asks, as cd ~/.claude && tar -C . -xf did before.
+Why: F-56 (HIGH): curl --output-dir ~ -O https://h/.claude.json and wget -P ~ reached no decision.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 5 MAJOR: --next folders, wget prefixes, wget --config, URL globbing, decoded names; MINOR: --default-page, the cwd tier), each a test row; friction kept silent: wget -e robots=off -r -P mirror.
+Open: through the working directory a sealed folder asks, not denies (the customization-root check on a relative '.'; pre-existing).
+Next: T04, extraction into the working directory.
+verified: tree 56b60223a057494a34fe314fe9f1b1cfd8979021 · full suite with coverage, ruff, check-plugin

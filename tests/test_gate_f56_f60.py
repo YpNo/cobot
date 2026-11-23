@@ -143,6 +143,84 @@ def test_story2_colonIsALocalFolderForCp_landingIsJudged(rules, command):
     assert decide(rules, command, cwd=os.path.expanduser("~/proj")) == "ask"
 
 
+# ---------------------------------------------------------------- story 3: downloads
+
+DOWNLOAD_ASKED = [
+    "curl --output-dir ~ -O https://h/.claude.json",
+    "curl -O --output-dir ~ https://h/.claude.json",
+    "curl --output-dir ~ -o .claude.json https://h/x",
+    "curl -fsSLO --output-dir ~ https://h/.bashrc",
+    "wget -P ~ https://h/.claude.json",
+    "wget -P ~ 'https://h/.bashrc?x=1'",
+    "wget -P ~ -i urls.txt",
+    "wget -r -P ~ https://h/",
+    "curl -OJ --output-dir ~ https://h/x",
+    "curl -K e/cfg",
+    "curl --config=e/cfg https://h/x",
+    "wget -e dir_prefix=~ https://h/x",
+    "wget --execute=output_document=~/.claude/cobot.rules https://h/x",
+    "wget -x -nH -P ~ https://h/.claude/cobot.rules",
+]
+DOWNLOAD_ASKED += [
+    # T03 bypass review: every --next folder, wget prefixes, --config, globbing, decoded names
+    "curl --output-dir ~ -O https://h/.bashrc --next --output-dir /tmp -O https://h/x",
+    "cd ~ && wget --input-file=x",
+    "cd ~ && wget --mirr https://h/",
+    "cd ~ && wget --trust https://h/x",
+    "cd ~ && wget --config=e/rc https://h/x",
+    "cd ~ && curl -O 'https://h/{.bashrc}'",
+    "cd ~ && curl -O 'https://h/.bash[r]c'",
+    "cd ~ && curl -o '#1' 'https://h/{.bashrc,x}'",
+    "cd ~ && wget https://h/%2Ebashrc",
+    "cd ~ && wget 'https://h/a/.bashrc;x'",
+    "wget --default-page=.bashrc -P ~ https://h/",
+]
+DOWNLOAD_ASKED += [
+    # through the working directory a sealed folder asks, as ``cd ~/.claude && tar -C . -xf`` did
+    # before this spec: the customization-root check reads the relative ``.`` (build note, T03)
+    "cd ~/.claude && curl -OJ https://h/x",
+]
+DOWNLOAD_REFUSED = [
+    "curl --output-dir ~/.claude -O https://h/cobot.rules",
+    "wget -P ~/.claude https://h/cobot.rules",
+    "wget -P ~/.claude -i urls.txt",
+]
+DOWNLOAD_SILENT = [
+    "curl -O https://h/x.tar.gz",
+    "curl -sSL https://h/x",
+    "curl -oout.json https://h/x",
+    "wget https://h/x.tar.gz",
+    "curl --output-dir dl -O https://h/x",
+    "wget -P dl -i urls.txt",
+    "wget -qO- https://h/x",
+    "wget -e robots=off -r -P mirror https://h/",
+    "curl -g -O 'https://h/x[1]'",
+    "wget -O x.json -P ~ https://h/x",
+]
+
+
+@pytest.mark.parametrize("command", DOWNLOAD_ASKED)
+def test_story3_downloadLandingOnAProtectedFileOrUnknown_asks(rules, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", DOWNLOAD_REFUSED)
+def test_story3_downloadIntoASealedFolder_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", DOWNLOAD_SILENT)
+def test_story3_downloadElsewhere_staysSilent(rules, command):
+    assert decide(rules, command) is None
+
+
+def test_story3_downloadWithNoFolder_landsInTheWorkingDirectory(rules):
+    """Q2 (owner, 2026-11-23): a download with no output folder lands in the working directory."""
+    assert decide(rules, "cd ~ && curl -O https://h/.claude.json") == "ask"
+    assert decide(rules, "cd ~ && wget https://h/.bashrc") == "ask"
+    assert decide(rules, "cd ~/.claude && curl -O https://h/cobot.rules") == "deny"
+
+
 @pytest.mark.parametrize("command", LANDING_ASKED)
 def test_story2_copyLandingOnAnAskRowFile_asks(rules, command):
     assert decide(rules, command) == "ask"

@@ -199,6 +199,73 @@ DOWNLOAD_SILENT = [
 ]
 
 
+# ---------------------------------------------------------------- story 4: extraction into the cwd
+
+EXTRACTION_ASKED = [
+    # Q1 (owner, 2026-11-23): a working directory that only holds the config dir asks
+    "cd ~ && tar -xf e.tar",
+    "cd ~ && tar xf e.tar",
+    "cd ~ && bsdtar -xf e.tar",
+    "cd ~ && unzip x.zip",
+    "cd ~ && cpio -idv < e.cpio",
+    "cd ~ && 7z x e.7z",
+    "cd ~/.claude && tar -xf e.tar",
+    "cd ~/.claude && unzip e.zip",
+    # landings the gate cannot place
+    "tar -xPf e.tar",
+    "tar --absolute-names -xf e.tar",
+    "tar xPf e.tar",
+    "cpio -i < e.cpio",
+    "unzip -: e.zip",
+]
+EXTRACTION_ASKED += [
+    # T04 bypass review: long prefixes, --one-top-level, option variables, 7-Zip forms, unknown cd
+    "cd ~ && tar --ext -f e.tar",
+    "cd ~ && cpio --extr < e.cpio",
+    "cd ~ && tar --one-top-level -xf .claude.tar",
+    "TAR_OPTIONS=-C$HOME/.claude tar -xf e.tar",
+    "export TAR_OPTIONS=-C$HOME/.claude; tar -xf e.tar",
+    "UNZIP=-d$HOME/.claude unzip x.zip",
+    "7z x -spf x.7z",
+    "cd ~ && 7z -y x x.7z",
+    "cd ~ && 7z X x.7z",
+    "cd $D && tar -xf e.tar",
+]
+EXTRACTION_REFUSED = ["cpio -p ~/.claude < list", "cpio -pd ~ < list"]
+EXTRACTION_SILENT = [
+    "tar -xf x.tar.gz",
+    "cd /tmp && tar -xf x.tar",
+    "unzip x.zip",
+    "unzip -l x.zip",
+    "tar -tf x.tar",
+    "tar -czf out.tgz src",
+    "cpio -i --no-absolute-filenames < e.cpio",
+    "7z l e.7z",
+    "cd plugins && tar -xf ../x.tar",  # an existing folder: a cd into a missing one is unknown, so asks
+]
+
+
+@pytest.mark.parametrize("command", EXTRACTION_ASKED)
+def test_story4_extractionInAHolderOrUnplaced_asks(rules, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", EXTRACTION_REFUSED)
+def test_story4_copyPassIntoAProtectedFolder_isRefused(rules, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", EXTRACTION_SILENT)
+def test_story4_extractionElsewhere_staysSilent(rules, command):
+    assert decide(rules, command) is None
+
+
+def test_story4_sessionStartedInHome_asksOnAnExtraction(rules):
+    """Friction the owner accepted (Q1): in a session whose working directory is HOME, every
+    extraction asks, since the archive could hold the config dir."""
+    assert decide(rules, "tar -xf x.tar", cwd=os.path.expanduser("~")) == "ask"
+
+
 @pytest.mark.parametrize("command", DOWNLOAD_ASKED)
 def test_story3_downloadLandingOnAProtectedFileOrUnknown_asks(rules, command):
     assert decide(rules, command) == "ask"

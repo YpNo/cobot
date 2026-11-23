@@ -208,3 +208,11 @@ Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 che
 Open: through the working directory a sealed folder asks, not denies (the customization-root check on a relative '.'; pre-existing).
 Next: T04, extraction into the working directory.
 verified: tree 56b60223a057494a34fe314fe9f1b1cfd8979021 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T04: an extraction lands in the working directory
+Changed: cobot-rules extracts (tar family, unzip, cpio, 7-Zip, long prefixes, 7z switches before the verb), extraction_unplaced (tar -P, cpio without --no-absolute-filenames, unzip -:, 7z -spf) asking in judge_bash, extraction_hit (a protected cwd by its ~ name, a cwd holding one as <cwd>/*, an untracked cd as unknown, all asking per Q1), folder_options reads cpio -p's destination and tar --one-top-level with no value; TAR_OPTIONS, UNZIP and UNZIPOPT join START_VARIABLES; tests story 4; FINDINGS F-61 widened (other unpackers, decompression in place).
+Why: F-56 (HIGH): cd ~ && tar -xf e.tar and cd ~/.claude && unzip e.zip reached no decision.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 6 MAJOR: long prefixes, --one-top-level, option variables, 7-Zip forms, untracked cd, cpio -p), each a test row. A first run failed 18 tests: a new short_letters shadowed the kubectl helper of the same name; renamed option_letters.
+Open: a cd into a missing folder leaves the cwd unknown, so an extraction after it asks; cpio -i asks anywhere without --no-absolute-filenames (accepted friction); payload cwd ~/.claude denies where cd ~/.claude asks (MINOR).
+Next: T05, moved config dir and moved holders.
+verified: tree 555a3d3a927f6ce0c13f3c6fcfbc059d1bb5cf0c · full suite with coverage, ruff, check-plugin

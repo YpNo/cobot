@@ -3284,6 +3284,8 @@ def folder_options(segment: list[str]) -> list[str]:
     found = [w.split("=", 1)[1] for w in segment if w.startswith(GIT_FOLDER_VARIABLES)]
     argv = program_of(segment)
     head = argv[0] if argv else ""
+    if head == "cpio" and ("p" in option_letters(argv) or "--pass-through" in argv):
+        found += [w for w in argv[1:] if not w.startswith("-")][-1:]  # copy-pass: its destination folder
     if head not in FOLDER_OPTIONS:
         return [value for value in found if value]
     shorts, longs = FOLDER_OPTIONS[head]
@@ -3298,6 +3300,9 @@ def folder_options(segment: list[str]) -> list[str]:
         if head == "git" and not word.startswith("-"):
             break  # the verb: what follows is its own options
         if word.startswith("--") and long_named(word, longs):
+            if "=" not in word and long_prefix(word, "--one-top-level", LONG_PREFIX_MIN):
+                i += 1  # no value: tar extracts into a folder named after the archive, in the cwd
+                continue
             found.append(word.split("=", 1)[1] if "=" in word else following)
             i += 1 if "=" in word else 2
             continue
@@ -3987,6 +3992,8 @@ def protected_file_touched(
         landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
         landed = landed or (landing_hit(segment, bases, protected, anchors, budget) if relocating else None)
         landed = landed or (download_hit(segment, bases, protected, anchors, budget) if command else None)
+        if command and not landed:
+            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
         if landed:
             return landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
@@ -4096,6 +4103,76 @@ def download_hit(
                     return name
             if any(holds_an_anchor(p, anchors) for p in places):
                 return f"{folder.rstrip('/')}/*"
+    return None
+
+
+# extractions (spec gate-f56-f60, story 4): read from GNU tar 1.35, bsdtar 3.7, UnZip 6, GNU cpio
+# 2.15 and 7-Zip 24 help on 2026-11-23
+TAR_FAMILY = frozenset({"tar", "bsdtar", "gtar"})
+SEVEN_ZIPS = frozenset({"7z", "7za", "7zz", "7zr"})
+UNZIP_NOT_WRITING = frozenset("ltvZpcz")  # list, test, verbose, zipinfo, pipe, cat, comment
+
+
+def option_letters(argv: list[str]) -> set[str]:
+    return {c for w in argv[1:] if re.fullmatch(r"-[A-Za-z:]+", w) for c in w[1:]}
+
+
+def extracts(argv: list[str]) -> bool:
+    """Whether a segment unpacks an archive into a folder (the working directory, without one)."""
+    head = argv[0] if argv else ""
+    letters = option_letters(argv)
+    extract_long = any(long_prefix(w, "--extract", 5) or long_prefix(w, "--get", 4) for w in argv[1:])
+    if head in TAR_FAMILY:
+        old = bool(argv[1:2]) and argv[1][:1].isalpha() and "x" in argv[1]
+        return old or "x" in letters or extract_long
+    if head == "unzip":
+        return not UNZIP_NOT_WRITING & letters
+    if head == "cpio":
+        return "i" in letters or extract_long
+    verb = next((w for w in argv[1:] if not w.startswith("-")), "")
+    return head in SEVEN_ZIPS and verb.casefold() in ("x", "e")  # 7z takes switches before its verb
+
+
+def long_prefix(word: str, option: str, shortest: int) -> bool:
+    """A long word that is ``option`` or a prefix of it at least ``shortest`` characters long."""
+    name = word.split("=", 1)[0]
+    return name.startswith("--") and len(name) >= shortest and option.startswith(name)
+
+
+def extraction_unplaced(argv: list[str]) -> bool:
+    """An extraction whose members may land outside its folder: ``tar -P``, ``cpio -i`` without
+    ``--no-absolute-filenames`` (GNU cpio keeps absolute names by default), ``unzip -:``."""
+    head = argv[0] if argv else ""
+    if not extracts(argv):
+        return False
+    letters = option_letters(argv)
+    if head in TAR_FAMILY:
+        old = bool(argv[1:2]) and argv[1][:1].isalpha() and "P" in argv[1]
+        return old or "P" in letters or any(w.startswith("--absolute-n") for w in argv)
+    if head == "cpio":
+        return "--no-absolute-filenames" not in argv
+    if head in SEVEN_ZIPS:
+        return any(w.casefold().startswith("-spf") for w in argv)  # 7-Zip keeps absolute paths
+    return head == "unzip" and ":" in letters
+
+
+def extraction_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors, budget, followed: bool = True
+) -> str | None:
+    """An extraction with no folder option lands in the working directory (spec gate-f56-f60,
+    story 4): a protected one by its ``~`` name, one that only holds a protected folder as
+    ``<cwd>/*``, which asks (Q1: the owner may approve it; a deny could not be). After a ``cd``
+    the gate cannot follow, the working directory is unknown, so it asks (T04 review)."""
+    if folder_options(segment) or not extracts(program_of(segment)):
+        return None
+    if not followed:
+        return "<unknown working directory>/*"
+    for base in bases:
+        name = tilde_form(os.path.normpath(base))
+        if word_touches(name, name, protected, True, anchors, False, budget):
+            return name
+        if holds_an_anchor(os.path.normpath(base), anchors):
+            return f"{name.rstrip('/')}/*"
     return None
 
 
@@ -5556,6 +5633,8 @@ def judge_bash(
             verdict = hass
         if config_reader(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "curl -K or wget -e reads options the gate does not see")
+        if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
+            verdict = Verdict(ASK, None, "the extraction keeps absolute paths: it may land anywhere")
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
@@ -5581,7 +5660,9 @@ def judge_bash(
 # or XDG_CONFIG_HOME moves every start file, curl and wget read CURL_HOME and WGETRC, and PS4,
 # SHELLOPTS, BASHOPTS, PROMPT_COMMAND and exported functions run text (spec gate-f55, story 2)
 START_VARIABLES = (
-    "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND".split()
+    "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND "
+    # options an extractor reads from its environment (spec gate-f56-f60, T04 review)
+    "TAR_OPTIONS UNZIP UNZIPOPT".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"

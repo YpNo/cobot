@@ -272,3 +272,11 @@ Proof: full suite with coverage exit 0, 98.32 %; ruff clean. Bypass review folde
 Open: cd ~ then a relative operand asks where the literal denies (rm -rf .claude too).
 Next: T10 the config dir's real path.
 verified: tree e47c2b8ec324bc4aa4b177009f98e5251c31c589 · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T10: the config dir's real path (F-62)
+Changed: resolved_config (cached realpath of the config dir) twins every config row and anchors outside HOME; sealed_paths cached and covering it; config_literal normalizes CLAUDE_CONFIG_DIR (.. and ~); relinked_ancestor refuses ln -n|-T on a symlink above the config dir (HOME a link).
+Why: F-62, a symlinked CLAUDE_CONFIG_DIR or ~/.claude (dotfile layout) left the real folder unread.
+Proof: full suite with coverage, 98.33 %, one failure: the flaky glob-deadline test, whose file passes alone; ruff clean. Bypass review folded: .. in CLAUDE_CONFIG_DIR, ln -sfn on HOME's link. Caching sealed paths cut the focused run from 16 s to 14 s.
+Open: accepted, a literal $HOME in CLAUDE_CONFIG_DIR is not expanded (nor by Claude Code, as far as known); mkdir under a dangling config link; a link loop holds no files.
+Next: T11 agy rows, docs, findings.
+verified: tree 8a2446442a7becaf2bb3fb0f269cce656dc3806d · full suite with coverage, ruff

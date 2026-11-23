@@ -29,6 +29,7 @@ from __future__ import annotations
 import difflib
 import fcntl
 import fnmatch
+import functools
 import hashlib
 import itertools
 import json
@@ -513,13 +514,15 @@ def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -
     if not path.is_file():
         return
     moved = moved_config()
+    resolved = resolved_config()
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         rule = parse_rule(line, layer, number, warnings)
         if rule:
             rules.append(rule)
-            twin = moved and config_twin(rule, moved)
-            if twin:
-                rules.append(twin)
+            for root in (moved, resolved):
+                twin = root and config_twin(rule, root)
+                if twin:
+                    rules.append(twin)
             zdot = zdotdir_twin(rule)
             if zdot:
                 rules.append(zdot)
@@ -540,8 +543,40 @@ def zdotdir_twin(rule: Rule) -> Rule | None:
 
 def moved_config() -> str | None:
     """The config dir when ``CLAUDE_CONFIG_DIR`` moves it away from ``~/.claude``, else None."""
-    moved = str(config_dir())
+    moved = config_literal()
     return None if moved == os.path.expanduser(HOME_CONFIG) else moved
+
+
+def config_literal() -> str:
+    """The config dir as written, with ``~`` and ``..`` resolved lexically: ``/x/a/../cc`` is
+    ``/x/cc``, the form an operand names (T10 review)."""
+    return os.path.normpath(os.path.expanduser(str(config_dir())))
+
+
+@functools.lru_cache(maxsize=8)
+def linked_ancestors(literal: str) -> frozenset[str]:
+    """The folders on the config dir's path that are symlinks (HOME itself, ``/home``): ``ln -sfn``
+    on one re-points the config dir to a folder the agent filled (T10 review)."""
+    found, folder = set(), literal
+    while folder not in ("/", ""):
+        if os.path.islink(folder):
+            found.add(folder.casefold())
+        folder = os.path.dirname(folder)
+    return frozenset(found)
+
+
+def resolved_config() -> str | None:
+    """The config dir's real path when it is, or sits under, a symlink (``CLAUDE_CONFIG_DIR`` set
+    to a link, or ``~/.claude`` linked into a dotfiles folder): the files live there, under a
+    name the rows do not read (story 8, T10). A link loop leaves the path as it is. Read once per
+    environment: ``sealed`` asks for it on every rule."""
+    return resolved_path(config_literal())
+
+
+@functools.lru_cache(maxsize=8)
+def resolved_path(literal: str) -> str | None:
+    real = os.path.realpath(literal)
+    return None if real == literal else real
 
 
 def config_twin(rule: Rule, moved: str) -> Rule | None:
@@ -559,8 +594,13 @@ def config_twin(rule: Rule, moved: str) -> Rule | None:
 
 def sealed(rule: Rule) -> bool:
     """A never file row on cobot's owner files, in either config dir form."""
-    paths = {f"{root}/{name}" for root in (HOME_CONFIG, str(config_dir())) for name in SEALED}
-    return rule.decision == "never" and rule.pattern in paths
+    return rule.decision == "never" and rule.pattern in sealed_paths(config_literal(), resolved_config())
+
+
+@functools.lru_cache(maxsize=8)
+def sealed_paths(moved: str, resolved: str | None) -> frozenset[str]:
+    """cobot's owner files under each form of the config dir; built once per form (T10)."""
+    return frozenset(f"{root}/{name}" for root in (HOME_CONFIG, moved, resolved) if root for name in SEALED)
 
 
 def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
@@ -3636,8 +3676,7 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
     """The folders holding an absolute protected pattern, and their parents below HOME: moving or
     linking one carries the protected files with it (``mv ~/.gemini/config x``)."""
     home, anchors = os.path.expanduser("~"), set()
-    moved = moved_config()
-    outside = moved if moved and not moved.startswith(home + "/") else None
+    outsides = [p for p in (moved_config(), resolved_config()) if p and not p.startswith(home + "/")]
     for rule in protected:
         pattern = os.path.expanduser(rule.pattern)
         if not os.path.isabs(pattern):
@@ -3647,7 +3686,9 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
         while folder not in (home, "/", "") and folder.startswith(home + "/"):
             anchors.add(folder.casefold())  # compared without case (F-30)
             folder = os.path.dirname(folder)
-        # a config dir moved outside HOME: its folders up to and including it (spec gate-f56-f60, story 5)
+        # a config dir moved outside HOME, or its real path there: its folders up to and including
+        # it (spec gate-f56-f60, stories 5 and 8)
+        outside = next((p for p in outsides if folder == p or folder.startswith(p + "/")), None)
         while outside and (folder == outside or folder.startswith(outside + "/")):
             anchors.add(folder.casefold())
             folder = os.path.dirname(folder)
@@ -4198,6 +4239,8 @@ def protected_file_touched(
             landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None)
         if command and not landed:
             landed = lock_hit(segment, bases, protected, anchors)
+        if command and not landed and protected:
+            landed = relinked_ancestor(segment, bases)
         if landed and not unsure_landing(landed):
             return landed
         # an ask-tier landing (a glob, an unknown folder) must not hide a literal hit after it, in
@@ -4677,6 +4720,25 @@ def lock_hit(segment: list[str], bases: list[str], protected: list[Rule], anchor
                 place = os.path.normpath(os.path.join(base, os.path.expanduser(form)))
                 if place.casefold() in sealed_anchors or holds_an_anchor(place, sealed_anchors):
                     return f"{tilde_form(place).rstrip('/')}/*"
+    return None
+
+
+def relinked_ancestor(segment: list[str], bases: list[str]) -> str | None:
+    """``ln -n`` or ``-T`` replacing a symlink on the config dir's path (``ln -sfn /tmp/o ~`` with
+    HOME a link): the config dir then resolves into another folder. Refused as moving it is."""
+    argv = program_of(segment)
+    if argv[:1] != ["ln"]:
+        return None
+    longs = ("--no-dereference", "--no-target-directory")
+    replacing = {"n", "T"} & option_letters(argv) or any(long_prefix(w, o, 5) for w in argv for o in longs)
+    target = merge_parts(argv[1:])[0] if replacing else None
+    linked = linked_ancestors(config_literal())
+    if not target or not linked or shell.has_sentinel(target):
+        return None
+    for base in bases:
+        place = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1])))
+        if place.casefold() in linked:
+            return target
     return None
 
 

@@ -432,6 +432,106 @@ TAKEN_SILENT = [
 ]
 
 
+# ---------------------------------------------------------------- story 8, T10: the config dir's real path
+
+LINKED_REFUSED = [
+    "mv {real} /tmp/y",
+    "rm -r {real}",
+    "cp e/cobot.rules {real}/",
+    "cp e/x {real}/cobot.rules",
+    "tar -C {real} -xf e.tar",
+    "mv {root} /tmp/y",
+    "rm -r {root}",
+    "ln -sfn /tmp/other {link}",
+    "cp e/cobot.rules {link}/",
+]
+LINKED_SILENT = ["ls {real}", "cp report {root}/x/", "cat {real}/projects/a.json"]
+
+
+@pytest.fixture
+def linked_config(tmp_path, monkeypatch):
+    """CLAUDE_CONFIG_DIR set to a symlink ``{link}`` whose target is ``{real}``, outside HOME."""
+    root = tmp_path / "outside"
+    (root / "real").mkdir(parents=True)
+    (root / "x").mkdir()
+    (tmp_path / "link").symlink_to(root / "real")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "link"))
+    return {"link": str(tmp_path / "link"), "real": str(root / "real"), "root": str(root)}
+
+
+@pytest.mark.parametrize("command", LINKED_REFUSED)
+def test_story8_configDirThroughASymlink_keepsItsRealPathProtected(rules, linked_config, command):
+    assert decide(rules, command.format(**linked_config)) == "deny"
+
+
+@pytest.mark.parametrize("command", LINKED_SILENT)
+def test_story8_configDirThroughASymlink_friction_staysSilent(rules, linked_config, command):
+    assert decide(rules, command.format(**linked_config)) is None
+
+
+@pytest.fixture
+def dotfiles_home(tmp_path, monkeypatch):
+    """``~/.claude`` a symlink to ``~/dotfiles/claude``, a dotfile manager's layout."""
+    home = tmp_path / "home"
+    (home / "dotfiles" / "claude").mkdir(parents=True)
+    (home / ".claude").symlink_to(home / "dotfiles" / "claude")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    return home
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -r ~/dotfiles/claude",
+        "mv ~/dotfiles/claude /tmp/x",
+        "mv ~/dotfiles /tmp/x",
+        "cp e/cobot.rules ~/dotfiles/claude/",
+        "cp e/x ~/dotfiles/claude/cobot/y",
+        "rm -r ~/dotfiles",
+    ],
+)
+def test_story8_symlinkedHomeConfig_keepsItsRealPathProtected(rules, dotfiles_home, command):
+    assert decide(rules, command) == "deny"
+
+
+@pytest.mark.parametrize("command", ["ls ~/dotfiles/claude", "cp a ~/notes/", "cat ~/dotfiles/claude/x.json"])
+def test_story8_symlinkedHomeConfig_friction_staysSilent(rules, dotfiles_home, command):
+    assert decide(rules, command) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["cp e/x {cc}/cobot.rules", "mv {cc}/cobot /tmp/y", "cp e/cobot.rules {cc}/"],
+)
+def test_story8_configDirWithDotDot_isReadInItsCleanForm(rules, tmp_path, monkeypatch, command):
+    """T10 review: ``CLAUDE_CONFIG_DIR=/x/cc/../cc`` named no operand's form."""
+    (tmp_path / "cc").mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cc" / ".." / "cc"))
+    assert decide(rules, command.format(cc=tmp_path / "cc")) == "deny"
+
+
+@pytest.fixture
+def linked_home(tmp_path, monkeypatch):
+    """HOME itself a symlink: ``{home}`` points at ``{real}``."""
+    (tmp_path / "real" / ".claude").mkdir(parents=True)
+    (tmp_path / "home").symlink_to(tmp_path / "real")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    return {"home": str(tmp_path / "home"), "real": str(tmp_path / "real")}
+
+
+@pytest.mark.parametrize("command", ["ln -sfn /tmp/o ~", "ln -snf /tmp/o {home}", "ln -sfT /tmp/o {home}"])
+def test_story8_repointingALinkAboveTheConfigDir_isRefused(rules, linked_home, command):
+    """T10 review: ``ln -n`` replaces HOME's link, so ``~/.claude`` resolves into another folder."""
+    assert decide(rules, command.format(**linked_home)) == "deny"
+
+
+@pytest.mark.parametrize("command", ["ln -sf /tmp/o ~/x", "ln -sfn /tmp/o ~/bin/tool", "ln -s a b"])
+def test_story8_linksBesideTheConfigDir_staySilent(rules, linked_home, command):
+    assert decide(rules, command.format(**linked_home)) is None
+
+
 def test_story8_manyLockedPaths_askWithinTheHookTimeout(rules):
     """T09 review: 6000 operands took 10.2 s; past LOCK_WORDS_MAX the lock asks."""
     command = "chmod 000 " + " ".join(f"x{i}" for i in range(300))

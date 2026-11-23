@@ -341,3 +341,11 @@ Proof: challenger SOUND WITH CHANGES (1 CRITICAL, 9 MAJOR, 5 MINOR), all folded;
 Open: Q1 to Q5 for the owner; Ruby, tsx, gawk options and sed's e pages unread (rate limits, a 404, TLS), each a build checkpoint.
 Next: the owner answers Q1 to Q5; then T01.
 verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · spec text and findings only
+
+## 2026-11-23 — gate-f57 T01: interpreter options read from a table (stories 1 and 2)
+Changed: new plugins/cobot/bin/_cobot_inline.py reads each interpreter family's argv (python, node and tsx, perl, ruby, php, ts-node, bun, deno subcommands): code letters in clusters and attached, value options, the script operand, remote and inline preloads, perl -M expressions, php -z and -d loaders, and code on stdin (a bare interpreter, -, a /dev or /proc operand); after an option the table lacks, any later code option of the family asks. The gate calls it from opaque_as_read, whole_segment_is_zone and writes_by_script (perl -i read in clusters: perl -Mstrict -e no longer denies). INTERPRETERS, INLINE_CODE_FLAGS and PYTHON_RE removed. Tests in tests/test_gate_f57.py.
+Why: the owner answered Q1 to Q5 as recommended and asked to build F-57.
+Proof: full suite green on the first cut (the new file aside); stories 1 and 2 162 passed after the folds; test_cobot_rules, differential, f55 and agy files green; ruff clean. Bypass review SOUND WITH CHANGES (4 MAJOR, 1 MINOR, none a regression), each a test row.
+Open: perl -c keeps its ask (BEGIN blocks); tsx's own -e and -p are not documented, read as node's.
+Next: T02, scripts outside the project.
+verified: tree 064eb30892a1e7515ffe49b4e84229190e29cc09 · stories 1 and 2, gate test files, full suite (first cut), ruff

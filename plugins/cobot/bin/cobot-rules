@@ -52,6 +52,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_agy as agy  # noqa: E402
+import _cobot_inline as inline  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_secrets as secrets  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
@@ -242,7 +243,6 @@ PWD_UNKNOWN_RE = re.compile(
     r"|\b(?:printf|read|declare|typeset|export|local|readonly|mapfile|readarray|getopts|unset|let)\b"
 )
 ANYWHERE = ""  # key of the directories any part of a script may run in (a sentinel is never empty)
-INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
 # mise tasks are resolved from the config (closest folder first, local files first)
 MISE_CONFIGS = (
     "mise.local.toml",
@@ -277,7 +277,6 @@ MAKE_FLAGS = frozenset(
     "--warn-undefined-variables -h --help -j --jobs".split()
 )
 MAKE_NAMES = frozenset({"make", "gmake"})
-INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
 # global options of known binaries: options that take a value, and flags without a value
 GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "git": (
@@ -2210,6 +2209,9 @@ def opaque_as_read(plain: list[str]) -> bool:
             return False
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
+    reading = inline.read_argv(plain)
+    if reading is not None and reading.asks():  # inline code, stdin or a remote module (gate-f57)
+        return True
     if head in OPAQUE_SUBCOMMANDS:
         verb = canonical_package_manager(strip_global_options(plain))
         sub = verb[1] if len(verb) > 1 else ""
@@ -2218,8 +2220,6 @@ def opaque_as_read(plain: list[str]) -> bool:
         if head in SCRIPT_SHORTHAND:  # `pnpm typecheck` runs the package.json script
             return bool(sub) and not sub.startswith("-") and sub not in SCRIPT_SHORTHAND[head]
         return head == "npm" and sub in NPM_SCRIPT_ALIASES
-    if head in INTERPRETERS:
-        return any(token in INLINE_CODE_FLAGS for token in plain[1:])
     if head in WRAPPER_PARSERS:  # opaque until expand_segments resolves the inner command
         return WRAPPER_PARSERS[head](plain) != NOTHING_HIDDEN
     return False
@@ -5602,7 +5602,7 @@ def whole_segment_is_zone(plain: list[str]) -> bool:
     """A head whose arguments an expander, an interpreter or a canonicaliser reads anywhere, decided
     by name; or a segment that is opaque with its verb as written (``docker exec``, ``npm test``)."""
     head = plain[0]
-    if any(head in group for group in (SHELLS, OPAQUE, INTERPRETERS, MAKE_NAMES, WHOLE_WRAPPERS)):
+    if any(head in group for group in (SHELLS, OPAQUE, MAKE_NAMES, WHOLE_WRAPPERS)) or inline.family(head):
         return True
     if is_opaque(plain):
         return True
@@ -5876,7 +5876,6 @@ def judge_segment(
 
 
 WRITING_SCRIPT = "a script that writes files: edit them with Edit or Write, not a script (cobot protocol)"
-PYTHON_RE = re.compile(r"python(?:\d+(?:\.\d+)?)?")
 # what a Python script calls to write a file: open() or .open() with a writing mode, the pathlib
 # writers, and the moves and copies of os and shutil
 PYTHON_WRITES_RE = re.compile(
@@ -5893,18 +5892,15 @@ def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
     ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
     diff the owner sees and whose path the rules judge; a script is opaque to both, whatever the
     host suggests. A script that only reads keeps its ask."""
-    argv = strip_wrappers(segment)
-    if not argv:
+    reading = inline.read_argv(strip_wrappers(segment))
+    if reading is None:
         return False
-    head = argv[0].lower()
-    if head == "perl":
-        return any(re.fullmatch(r"-[a-zA-Z]*i\S*", word) for word in argv[1:] if not word.startswith("--"))
-    if not PYTHON_RE.fullmatch(head):
+    if reading.family == "perl":
+        return reading.in_place  # read in clusters: ``-Mstrict`` holds an i, and is not ``-i``
+    if reading.family != "python":
         return False
-    words = argv[1:]
-    code = [show(words[words.index("-c") + 1], holes)] if "-c" in words[:-1] else []
-    reads_stdin = "-" in words or not [w for w in words if not w.startswith("-")]
-    if reads_stdin and not code:
+    code = [show(text, holes) for text in reading.code]
+    if reading.stdin and not code:
         code = [doc.body for doc in unit.heredocs]
     return any(PYTHON_WRITES_RE.search(text) for text in code)
 

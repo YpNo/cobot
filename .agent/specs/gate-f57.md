@@ -99,10 +99,12 @@ friction rows stay silent.
    subcommands that evaluate (`deno eval`, `deno repl --eval`). A code letter takes the rest of
    its cluster as its value (`-cprint(1)`, `-eputs`; perl's `-ie` is `-i` with suffix `e`). The
    parser stops at the script operand, so `python3 s.py -c x` is the script's argument (row 15).
-   Floor: an option the table does not know keeps today's rule (any later word that is `-c`,
-   `-e` or `-` asks), so no ask that works today is lost (challenger finding 2). Perl `-M`/`-m`
-   with `;` or `=` asks (code in the import list); the in-place check reads clusters, so only a
-   real `-i` denies (row 13). Families: `python`, `python3`, `python3.N`, `python3.Nt`, `pypy`,
+   Floor: after an option the table does not know (a long name, or a letter read on as a
+   flag), any later word that is `-c`, `-e`, `-` or one of the family's own code options asks,
+   so a missing entry costs friction, never a hole (challenger finding 2; T01 review). Perl
+   `-M`/`-m` asks unless its value is a module name with an optional `=a,b` word list (a `use`
+   list is an expression run at BEGIN); the in-place check reads clusters, so only a real `-i`
+   denies (row 13). Families: `python`, `python3`, `python3.N`, `python3.Nt`, `pypy`,
    `pypy3`; `node`, `nodejs`; `perl`, `perl5.N`; `php`, `php8.N`; `ruby`; `deno`; `bun`; `tsx`;
    `ts-node`. A `deno run` or `bun` operand that is a URL, `data:`, `npm:` or `jsr:` asks.
 2. **Code on stdin asks (row 3).** A bare interpreter (no operand and no info flag such as
@@ -265,4 +267,17 @@ decision re-run on `f433a0a`). Folded into revision 2:
 
 ## Converge
 
-(pending: the owner's answers to Q1–Q5; no build until then)
+- 2026-11-23, the owner: **Q1–Q5 as recommended** (scripts outside the project root ask; the
+  named `-m` modules ask; story 1's families only; a Node inline write is refused; setting
+  `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `PYTHONSTARTUP` or `PYTHONINSPECT` asks). Build
+  T01–T06.
+- T01 build: `plugins/cobot/bin/_cobot_inline.py` holds the tables and the walk; the gate calls
+  it from `opaque_as_read`, `whole_segment_is_zone` and `writes_by_script`. The walk decides
+  stdin as it reads (a bare interpreter, `-`, a `/dev/` or `/proc/` operand), so story 2 lands
+  with T01; T02 adds the scripts outside the project. Ruby (ruby.1, master) and tsx's docs were
+  read first; tsx is read with node's table (a drop-in, its own `-e`/`-p` not documented, so
+  they ask). Bypass review (SOUND WITH CHANGES, 4 MAJOR, 1 MINOR, none a regression), each a
+  test row: the floor reads the family's code options; an unknown cluster letter reads on; perl
+  `-M` with an expression asks, `-Mlib=lib` stays silent; deno's `--frozen`, `--lock`,
+  `--node-modules-dir`, `--vendor` take no second word; schemes without case, `node22`,
+  `deno x` and `bun <script>` ask. `perl -c` keeps its ask (BEGIN blocks), a documented friction.

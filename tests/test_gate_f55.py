@@ -9,6 +9,7 @@ pathlike), and an inherited name or run-time data is spared as a whole word, as 
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -42,6 +43,15 @@ def decide(rules, command, agent=None):
         "for D in ~/.claude/cobot.rules; do cp x $D; done",
         "HOME=~/.claude; cp x ~/cobot.rules",
         "X=delete; gh repo $X o/r",
+        # wrap reviews: nothing falls below the text reading, a literal hit wins, words split
+        "cat ${!N}; cp x ~/.claude/cobot.rules",
+        'f() { cp x "$1"; }; f ~/.claude/cobot.rules',
+        "cp x ~/.claude/cobot/$D",
+        "cp x ~/.claude/$D ~/.claude/cobot.rules",
+        "D=1; cd ~; cp x D=$D/../.claude/cobot.rules",
+        "cp /tmp/a ${D:-/tmp ~/.claude/cobot.rules}",
+        "HOME=~/.claude; cp x ~/cobot.rules ${A:-a} ${A:-b} ${A:-c} ${A:-d} ${A:-e} ${A:-f}",
+        "F=--force; git push $F origin ${A:-a} ${A:-b} ${A:-c} ${A:-d} ${A:-e} ${A:-f}",
     ],
 )
 def test_story1_valueInTheCommand_isPutInAndRefused(rules, command):
@@ -133,6 +143,16 @@ def test_story1_runnerBodyVariable_isAFullHole(rules, tmp_path):
     assert rules.judge_bash("npm run g", loaded, None, str(tmp_path))[0].decision in ("ask", "deny")
 
 
+@pytest.mark.parametrize("piece", ["((a ", "export a b c ", "read x x x ", "a=$b; "])
+def test_story1_longHostileCommand_staysBoundedAndNeverSilentOnSetters(rules, piece):
+    """The gate reads every Bash call: a 5 000-character command must not stall it (wrap code
+    review: ``((a `` repeated ran past two minutes before the patterns were bounded)."""
+    started = time.monotonic()
+    verdict = decide(rules, piece * (5000 // len(piece)))
+    assert time.monotonic() - started < 30
+    assert verdict == "ask" or piece == "a=$b; "
+
+
 def test_story1_sessionGrant_neverCoversTheNewVerdicts(rules):
     loaded, _, _ = rules.load_rules(None)
     verdict = rules.judge_bash("cp x ~/.claude/$X", loaded, None)[0]
@@ -185,6 +205,8 @@ SOURCED_ASKED = [
     "PS4='$(id)' bash -x -c true",
     "env SHELLOPTS=xtrace bash -c true",
     'ENV=/tmp/e "bash" -i',
+    "declare -n h=BASH_ENV; h=/tmp/x; bash -c :",
+    "typeset -n h=HOME; h=/tmp/x; bash -lc :",
     "cp x ~/.ssh/rc",
     "cp x ~/.config/environment.d/x.conf",
 ]

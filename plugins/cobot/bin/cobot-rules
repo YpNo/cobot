@@ -3813,18 +3813,27 @@ def assignment_forms(name: str) -> tuple[re.Pattern, re.Pattern]:
     ``printf -v``, ``let``, ``((…))``, ``${NAME:=…}``, ``declare``-family, ``unset``), and the
     run-time ones (``read``, ``mapfile``, ``getopts``)."""
     word = re.escape(name)
-    plain = rf"(?:^|[\s;&|(`'\"]){word}(?:\[[^\]]*\])?\+?="
+    span = f"{{0,{ASSIGNER_SPAN}}}"  # bounded: the gate reads every command, hostile ones too
+    plain = rf"(?:^|[\s;&|(`'\"]){word}(?:\[[^\]]{span}\])?\+?="
     other = (
-        rf"(?:for|select)\s+{word}\b|printf\s+(?:-\S+\s+)*-v\s*{word}\b|\blet\b[^;&|\n]*\b{word}\b"
-        rf"|\(\([^)]*\b{word}\b|\$\{{{word}:?=|(?:declare|typeset|local|export|readonly|unset)\b[^;&|\n]*\b{word}\b"
+        rf"(?:for|select)\s+{word}\b|printf\s+(?:-\S+\s+){span}-v\s*{word}\b|\blet\b[^;&|\n]{span}\b{word}\b"
+        rf"|\(\([^)]{span}\b{word}\b|\$\{{{word}:?="
+        rf"|(?:declare|typeset|local|export|readonly|unset)\b[^;&|\n]{span}\b{word}\b"
     )
-    runtime = rf"\b{RUNTIME_ASSIGNERS}\b[^;&|\n]*\b{word}\b"
+    runtime = rf"\b{RUNTIME_ASSIGNERS}\b[^;&|\n]{span}\b{word}\b"
     return re.compile(f"{plain}|{other}"), re.compile(runtime)
 
 
+ASSIGNER_SPAN = 512  # characters a setter's arguments may span before the name; a longer one asks
 INDIRECT_ASSIGNER_RE = re.compile(  # an assigner whose name is not literal: any name may be set
-    r"(?:printf\s+(?:-[^\s;&|]+\s+)*-v\s*|(?:declare|typeset|local|export|readonly)\s+(?:-[^\s;&|]+\s+)*"
-    r"|(?:read|mapfile|readarray|getopts)\s+(?:[^\s;&|<>]+\s+)*)[\"']?" + shell.SENTINEL_RE.pattern
+    r"(?:printf\s+(?:-[^\s;&|]+\s+){0,16}-v\s*"
+    r"|(?:declare|typeset|local|export|readonly)\s+(?:-[^\s;&|]+\s+){0,16}"
+    rf"|{RUNTIME_ASSIGNERS}\s+(?:[^\s;&|<>]+\s+){{0,256}})[\"']?" + shell.SENTINEL_RE.pattern
+)
+# a setter longer than the bounded patterns read: every name it could set is read as assigned
+LONG_SETTER_RE = re.compile(
+    rf"(?:\blet\b|\(\(|declare|typeset|local|export|readonly|unset|printf|{RUNTIME_ASSIGNERS})"
+    rf"[^;&|\n]{{{ASSIGNER_SPAN},}}"
 )
 OPENERS = frozenset({"if", "while", "until", "for", "select", "case", "{", "("})
 CLOSERS = frozenset({"fi", "done", "esac", "}", ")"})
@@ -3841,7 +3850,10 @@ class Variables:
     split_changed: bool
     indirect: bool
     own_keys: frozenset[str]  # the variable holes of the command itself, not of a runner body
+    positions: dict[str, int]  # each hole's place in the outer text
     cache: dict = field(default_factory=dict)
+    counts: dict = field(default_factory=dict)
+    gate_names: list[str] | None = None
 
 
 def variables_of(command: str, scanned: shell.Scan) -> Variables:
@@ -3851,9 +3863,26 @@ def variables_of(command: str, scanned: shell.Scan) -> Variables:
         bool(SHELL_HEAD_RE.search(command)),
         bool(ARGV_SETTERS_RE.search(command)),
         bool(assignment_forms("IFS")[0].search(command)),
-        bool(INDIRECT_ASSIGNER_RE.search(scanned.outer)),
+        bool(INDIRECT_ASSIGNER_RE.search(scanned.outer) or LONG_SETTER_RE.search(command)),
         frozenset(own_holes(scanned)),
+        outer_positions(scanned),
     )
+
+
+def outer_positions(scanned: shell.Scan) -> dict[str, int]:
+    """Where each hole stands in the outer text: a hole inside a substitution body at the place of
+    the substitution, so "before its use" holds for a use inside ``$(…)`` too."""
+    positions: dict[str, int] = {}
+
+    def place(scan: shell.Scan, at: int | None) -> None:
+        for key, hole in scan.holes.items():
+            where = at if at is not None else scanned.outer.find(key)
+            positions.setdefault(key, where)
+            if hole.body is not None:
+                place(hole.body, where)
+
+    place(scanned, None)
+    return positions
 
 
 def own_holes(scanned: shell.Scan) -> set[str]:
@@ -3889,11 +3918,11 @@ def classify_literally(name: str, ctx: Variables) -> tuple[str, list[str]]:
         return FULL, []
     if name.isdigit() or name in ("@", "*"):
         return (FULL, []) if ctx.nested_shell or ctx.argv_set else (SPARE, [])
-    assigned, runtime = assignment_forms(name)
-    found = assigned.findall(ctx.command)
+    _, runtime = assignment_forms(name)
+    found = assignment_count(name, ctx)
     if not found:
         return SPARE, []  # inherited, or run-time data only (F-59)
-    if ctx.nested_shell or len(found) > 1 + declared(name, ctx):
+    if ctx.nested_shell or found > 1 + declared(name, ctx):
         return FULL, []
     loop = re.search(
         rf"(?:^|[;\n&|]|\bdo|\bthen)\s*(?:for|select)\s+{name}\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b", ctx.outer
@@ -3907,6 +3936,12 @@ def classify_literally(name: str, ctx: Variables) -> tuple[str, list[str]]:
             return SPARE, []  # a list from ``$(…)``: run-time data, as the substitution is (F-59)
         return ("each", words) if words else (FULL, [])
     return literal_assignment(name, ctx)
+
+
+def assignment_count(name: str, ctx: Variables) -> int:
+    if name not in ctx.counts:
+        ctx.counts[name] = len(assignment_forms(name)[0].findall(ctx.command))
+    return ctx.counts[name]
 
 
 def declared(name: str, ctx: Variables) -> bool:
@@ -3925,8 +3960,8 @@ def literal_assignment(name: str, ctx: Variables) -> tuple[str, list[str]]:
     nested = kinds & {"variable", FULL, "glob"}
     if not match or nested or depth_at(ctx.outer, match.start()):
         return FULL, []  # a value with another variable in it is not followed; a substitution is put in
-    uses = [ctx.outer.find(k) for k, h in shell.REGISTRY.items() if h.kind == "variable" and h.name == name]
-    if any(at != -1 and at < match.end() for at in uses):
+    uses = [at for k, at in ctx.positions.items() if (h := shell.REGISTRY.get(k)) and h.name == name]
+    if any(at < match.end() for at in uses):  # a use before it (or at -1, not found) reads another value
         return FULL, []
     value = match.group(1)
     text = value[1:-1] if value[:1] in "'\"" and len(value) > 1 else value
@@ -3946,16 +3981,21 @@ def hole_readings(hole: shell.Hole, ctx: Variables) -> list[list[str] | None]:
     if shell.has_sentinel(word) or set(word) & set("$`"):
         return own + [None]
     try:
-        text = "".join(shlex.split(word)) if word else ""
+        fields = shlex.split(word) if word else []
     except ValueError:
         return own + [None]
-    return own + [[text] if text else []]
+    if hole.quoted:  # one word, quotes removed: ``"${x:-a b}"`` is ``a b``
+        return own + [[" ".join(fields)] if fields else []]
+    if ctx.split_changed or any(GLOB_VALUE_CHARS & set(f) for f in fields):
+        return own + [None]
+    return own + [fields]  # bash splits an unquoted word: ``${x:-/tmp ~/.claude/a}`` is two
 
 
 def own_reading(hole: shell.Hole, ctx: Variables) -> list[list[str] | None]:
     kind, values = name_reading(hole.name, ctx)
     if hole.name == CONFIG_VARIABLE:
-        extra = [] if kind == SPARE else [None] if kind == FULL else [split_value(values[0], hole, ctx)]
+        assigned = [split_value(v, hole, ctx) for v in values]
+        extra = [] if kind == SPARE else [None] if kind == FULL else assigned
         return [[str(config_dir())], *extra]
     if kind == SPARE:
         return [[hole.key]]
@@ -3979,7 +4019,8 @@ def split_value(value: str, hole: shell.Hole, ctx: Variables) -> list[str] | Non
 def segment_readings(segment: list[str], ctx: Variables) -> list[list[str]]:
     """The segment once for every reading of its variables (``X=a; gh repo $X`` is ``gh repo a``);
     a full hole stands where the command computes a value. Past MAX_READINGS, every variable is a
-    full hole in one reading."""
+    full hole in one more reading. The base reading, each variable written back as its text, is
+    always kept, so no reading of a variable judges a command below how the text alone was."""
     readings = [list(segment)]
     for key in [k for token in segment for k in shell.sentinels(token)]:
         hole = shell.REGISTRY.get(key)
@@ -3987,18 +4028,34 @@ def segment_readings(segment: list[str], ctx: Variables) -> list[list[str]]:
             continue
         readings = [splice(r, key, fields, hole) for r in readings for fields in hole_readings(hole, ctx)]
         if len(readings) > MAX_READINGS:
-            return [all_full(segment)]
-    return [assigned_home(r, ctx) for r in readings] if home_assigned(ctx) else readings
+            readings = readings[:MAX_READINGS] + [all_full(segment)]
+            break
+    if home_assigned(ctx):
+        readings = [assigned_home(r, ctx) for r in readings]
+    base = text_reading(segment)
+    return readings + ([base] if base != segment else [])
+
+
+def text_reading(segment: list[str]) -> list[str]:
+    """The segment with every variable hole written back as its text: how the gate read it before
+    variables were holes (spec gate-f55, wrap security review)."""
+
+    def text(match: re.Match) -> str:
+        hole = shell.REGISTRY.get(match.group())
+        return hole.span if hole is not None and hole.kind == "variable" else match.group()
+
+    return [shell.SENTINEL_RE.sub(text, word) for word in segment]
 
 
 def self_reference(segment: list[str], key: str, hole: shell.Hole, ctx: Variables) -> bool:
     """``PATH=$PATH:x`` in the name's only assignment: the value read is the inherited one, spared."""
     if hole.operator or not re.fullmatch(r"[A-Za-z_]\w*", hole.name):
         return False
-    owner = [word for word in segment if key in word and re.match(rf"{hole.name}\+?=", word)]
-    return bool(owner) and len(assignment_forms(hole.name)[0].findall(ctx.command)) <= 1 + bool(
-        re.search(rf"(?:export|readonly|declare)\b[^;&|\n]*\b{hole.name}=", ctx.command)
-    )
+    declaring = segment[:1] and segment[0] in ("export", "readonly", "declare", "local")
+    words = segment[1:] if declaring else segment
+    leading = list(itertools.takewhile(lambda w: re.match(r"[A-Za-z_]\w*\+?=", w), words))
+    owner = [word for word in leading if key in word and re.match(rf"{hole.name}\+?=", word)]
+    return bool(owner) and assignment_count(hole.name, ctx) <= 1 + declared(hole.name, ctx)
 
 
 def splice(words: list[str], key: str, fields: list[str] | None, hole: shell.Hole) -> list[str]:
@@ -4035,12 +4092,15 @@ GATE_PREFIXES = {"HOME": ("~", "$HOME", "${HOME}"), "PWD": ("$PWD", "${PWD}", "~
 
 
 def assigned_gate_names(ctx: Variables) -> list[str]:
-    """HOME and PWD when the command assigns them, by any form, run-time or indirect included."""
-    return [
-        name
-        for name in GATE_PREFIXES
-        if ctx.indirect or any(form.search(ctx.command) for form in assignment_forms(name))
-    ]
+    """HOME and PWD when the command assigns them, by any form, run-time or indirect included;
+    read once per command."""
+    if ctx.gate_names is None:
+        ctx.gate_names = [
+            name
+            for name in GATE_PREFIXES
+            if ctx.indirect or any(form.search(ctx.command) for form in assignment_forms(name))
+        ]
+    return ctx.gate_names
 
 
 def home_assigned(ctx: Variables) -> bool:
@@ -5035,6 +5095,18 @@ def runner_writes(plain: list[str]) -> bool:
     )
 
 
+def owner_hit(
+    placed: list[tuple[list[str], Dirs]], cwd: str | None, owner_rows: list[Rule], reached: Reached
+) -> str | None:
+    """The word on cobot's owner files, a literal one first: a hole in one segment must not hide a
+    literal hit in another (``cat ${!N}; cp x ~/.claude/cobot.rules``; wrap security review)."""
+    hits = [protected_file_touched([p], cwd, owner_rows, [], reached.visited) for p in placed]
+    hits.append(protected_file_touched([], cwd, owner_rows, reached.paths, reached.visited))
+    found = [h for h in hits if h]
+    literal = [h for h in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
+    return (literal or found or [None])[0]
+
+
 def protected_verdict(
     touched: str,
     holes: dict[str, shell.Hole],
@@ -5048,7 +5120,7 @@ def protected_verdict(
     line written there by a script would widen the gate. A word with a hole or a glob keeps the
     ask, since it only might name them."""
     owner_rows = [r for r in rules if sealed(r)]
-    hit = owner_rows and protected_file_touched(placed, cwd, owner_rows, reached.paths, reached.visited)
+    hit = owner_rows and owner_hit(placed, cwd, owner_rows, reached)
     # a whole-word variable is a merge's source of unknown content into a literal folder (``cp -r $X ~``)
     whole_variable = bool(hit) and shell.kind_of(hit) == "variable"
     plain_hit = whole_variable or not shell.has_sentinel(hit or "")
@@ -5133,14 +5205,16 @@ START_VARIABLES = (
     "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
-START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+)*?"
+START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
 
 
 def sets_start_variable(text: str, name: str) -> bool:
+    """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``)."""
     word = re.escape(name)
     return bool(
         re.search(rf"(?:^|[\s;&|(`]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
-        or re.search(rf"printf\s+(?:-[^\s;&|]+\s+)*-v\s*{word}\b", text)
+        or re.search(rf"printf\s+(?:-[^\s;&|]+\s+){{0,16}}-v\s*{word}\b", text)
+        or re.search(rf"\b(?:declare|typeset|local)\b[^;&|\n]{{0,{ASSIGNER_SPAN}}}=\s*{word}\b", text)
     )
 
 
@@ -5152,6 +5226,8 @@ def shell_start_variable(command: str) -> Verdict:
     found = next((name for name in names if sets_start_variable(text, name)), None)
     if found is None and re.search(r"BASH_FUNC_\w+%%", text):
         found = "BASH_FUNC_"
+    if found is None and LONG_SETTER_RE.search(text):
+        found = "a setter too long to read"
     if found is None:
         return Verdict(None, None, "no rule matched")
     return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")

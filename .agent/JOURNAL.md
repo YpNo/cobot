@@ -415,3 +415,11 @@ Proof: full suite with coverage exit 0; ruff 0.17.6 check and format clean; mark
 Open: JOURNAL.md over 400 lines (cobot-memory check warns); wrap next.
 Next: /cobot:wrap gate-f55.
 verified: tree bec21d7486603297e34a126914113c661e57aee0 · full suite with coverage, ruff, markdownlint, validators
+
+## 2026-11-23 — wrap gate-f55: reviews folded, F-55 closed
+Changed: cobot-rules keeps the text reading of every segment (no variable reading judges below how the text alone was), owner_hit prefers a literal hit over a hole in another segment, unquoted alternative words split, a for-list config dir read word by word, uses inside $(…) placed at the substitution, self_reference limited to assignment words, a nameref on a start variable asks, assignment patterns bounded (ASSIGNER_SPAN 512) with a too-long setter read as assigned, HOME/PWD assignment read once per command; tests for each, a 5 000-character timing guard.
+Why: wrap code review (3 MAJOR: a ((a input ran past 120 s, multi-word alternatives joined, nameref past the start-variable check) and security review (2 MAJOR: deny turned ask when a hole hid a literal hit, and a hole in a sealed path; 2 MINOR: the readings cap).
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean; markdownlint-cli2 0.24.2 clean; claude plugin validate --strict passes twice; check-plugin ok; sync-agents in sync; cobot-memory check ok; cobot-deps check --fresh: no supported lockfile; 5 000-char hostile commands 1.1 to 3.5 s.
+Open: F-59 accepted residual (with whole-word $(…)); F-60 joined target option (pre-existing, for the F-56 spec); F-56 to F-58 parked; MINOR: cp x $D/.bashrc silent where $D/.claude.json asks; sealed reason says cobot's owner files for snapshots; JOURNAL.md over 400 lines (compact in a housekeeping PR); spec tick edits were made twice with sed against the Edit-only rule.
+Next: the owner reviews branch security/gate-f55 and decides push and PR; then F-56, F-57, F-58 one at a time.
+verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check

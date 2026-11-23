@@ -1,7 +1,8 @@
-# Spec — where a copy, a download or an extraction lands (F-56, F-60)
+# Spec — where a copy, a download or an extraction lands (F-56, F-60, F-61, F-62)
 
-size: medium · profile: library · owner: YpNo · date: 2026-11-23 · revision 2 (challenger folded)
-· base `main` `a5db3f8` (PR 82, F-55, merged)
+size: medium · profile: library · owner: YpNo · date: 2026-11-23 · revision 3 (stories 7 and 8
+added for F-61 and F-62, owner: "Work on the nit + F-61 and F-62 on the same branch/PR") · base
+`main` `a5db3f8` (PR 82, F-55, merged); stories 7 and 8 measured on `6022fa6`
 
 ## Goal
 
@@ -136,9 +137,57 @@ rows must stay silent.
      (`holds_an_anchor`, applied to `mv`/`rename` sources): `mv /home x`, `mv /tmp /x` with the
      config dir in `/tmp/cc`.
    - The rows run with `CLAUDE_CONFIG_DIR` set in the test's environment to a folder outside HOME.
-6. **Both runtimes (ADR-0007).** Under agy (`run_command`), stories 1 to 5 reach the same
+6. **Both runtimes (ADR-0007).** Under agy (`run_command`), stories 1 to 8 reach the same
    judgement on `~/.gemini/config` paths. Accept: rows in `tests/test_gate_f56_f60.py` through
    `gate_agy`.
+7. **The other writers' landings are read (F-61).** Measured on `6022fa6`, owner and project layers
+   empty. The T01–T05 machinery is reused; no new rows.
+
+   | command | today | after |
+   |---|---|---|
+   | `aria2c -d ~/.claude https://h/x` · `aria2c --dir=~/.claude …` · `aria2c -d~/.claude …` · `gh release download v1 -D ~/.claude` · `gh run download 1 --dir=~/.claude` | none | deny (a folder landing option, as `curl --output-dir`) |
+   | `gh release download v1 -D ~` · `cd ~ && gh run download 1` · `aria2c -d ~ https://h/x` | none | ask (the names come from the server, in a folder that holds the config dir) |
+   | `ditto e/cobot.rules ~/.claude/` · `ditto -x -k e.zip ~/.claude` · `pax -rw src ~/.claude` · `sftp h:/x/cobot.rules ~/.claude/` | none | deny (copiers: the target is the last positional) |
+   | `dpkg-deb -x e.deb ~/.claude` · `dpkg -x e.deb ~/.claude` · `bsdunzip -d ~/.claude e.zip` · `unar -o ~/.claude e.rar` · `unar e.rar -o ~/.claude` · `ar x --output=~/.claude e.a` · `jar xf e.jar -C ~/.claude` | none | deny (folder options and dpkg-deb's folder operand) |
+   | `cd ~/.claude && jar xf e.jar` · `… && ar x e.a` · `… && unar e.rar` · `… && bsdunzip e.zip` | none | ask, as `cd ~/.claude && tar -xf` (story 4) |
+   | `pax -r -f e.pax` · `pax -r < e.pax` · `jar xPf e.jar` · `ar xP e.a` · `bsdcpio -i --insecure < e.cpio` | none | ask (absolute or rewritten member names: the landing is unknown) |
+   | `gunzip ~/.claude/cobot.rules.gz` · `gzip -d …` · `xz -d`, `unxz`, `zstd -d`, `unzstd`, `bunzip2`, `bzip2 -d`, `lzma -d`, `lz4 -d`, `brotli -d`, `p7zip -d` on `~/.claude/cobot.rules.<ext>` · `cd ~/.claude && gunzip cobot.rules.gz` | none | deny (in-place decompression lands at the name without its suffix) |
+   | `gunzip ~/.claude.json.gz` · `cd ~ && gunzip .claude.json.gz` | none | ask (an ask row) |
+   | `gunzip -N ~/.claude/x.gz` | none | deny (`-N` restores a stored name: unknown, in a protected folder) |
+
+   Already closed, kept as rows: `curl --create-dirs -o ~/.claude/cobot/x u` (T01), `gh release
+   download v1 -O ~/.claude/cobot.rules`, `zstd -d e.zst -o ~/.claude/cobot.rules` (path words).
+
+   Friction guard, silent: `gunzip f.gz`, `cd work && gunzip f.gz`, `xz -d build/x.xz`, `zstd -d
+   x.zst -o x`, `gunzip -c e.gz > out`, `gh release download v1 -D dist/`, `gh run download 1 -D
+   artifacts`, `aria2c -d dl https://h/x`, `dpkg-deb -x e.deb out`, `jar xf e.jar`, `unar e.rar`,
+   `ar x e.a`, `ditto src dst`, `pax -w -f out.pax ~/.claude` (an archive of it is a read).
+   Friction accepted: `pax -r` asks everywhere, as `cpio -i` does (pax keeps absolute names).
+8. **Taking the config dir away or locking it is refused or asked (F-62).**
+
+   | command | today | after |
+   |---|---|---|
+   | `tar --remove-files -cf a.tar ~/.claude` (also `~`, `/home/u/.claude`, `--rem`) · `zip -rm a.zip ~/.claude` · `zip -r -m a.zip ~` · `7z a -sdel a.7z ~/.claude` | none | deny (the sources are removed, as `rm -r`) |
+   | `gzip -r ~/.claude` · `gunzip -r ~` · `zstd -r --rm ~/.claude` | none | deny (every file under it is replaced) |
+   | `rclone purge ~/.claude` · `rclone delete ~/.claude` · `rclone rmdirs ~` | none | deny (as `rm -r`) |
+   | `mount --bind /tmp ~/.claude` · `mount -o bind /tmp/x ~/.claude` · `mount -t tmpfs t ~` · `mount --target=~/.claude …` · `sshfs h:/x ~/.claude` · `bindfs /tmp/x ~/.claude` · `rclone mount r: ~/.claude` | none (`sudo mount` asks) | deny (the config dir is covered for every process) |
+   | `ln -s ~ /tmp/h; cp e/cobot.rules /tmp/h/.claude/` · `ln -s /home /tmp/h && rm -r /tmp/h/u/.claude` · `cp -rs ~ /tmp/h` | none | deny (a link to a holder, as a move of it) |
+   | `bwrap --bind /tmp ~/.claude sh` · `bwrap --tmpfs ~/.claude sh` · `bwrap --ro-bind /tmp/x /home sh` · `bwrap --ro-bind / / --tmpfs ~ sh` | none | ask (only the child sees the cover) |
+   | `chmod -R 000 ~/.claude` · `chmod 000 ~/.claude` · `chmod -R a-r ~` · `chown -R nobody ~/.claude` · `chgrp -R x ~/.claude` · `setfacl -R -m u:x:0 ~/.claude` · `chattr -R +i ~/.claude` | none | ask (a lock; the mode is not read, so the owner may approve a harmless one) |
+   | `CLAUDE_CONFIG_DIR=/x/link`, a symlink to `/x/real`: `mv /x/real /y` · `rm -r /x/real` · `cp e/cobot.rules /x/real/` | none | deny (the config dir's real path is protected too) |
+   | the same with `~/.claude` a symlink to `/data/claude` (a dotfile manager's layout) | none | deny |
+
+   Already closed, kept as rows: `ln -sfn /tmp/other /x/link` (T05), `zip -m a.zip
+   ~/.claude/cobot.rules`, `chmod 000 ~/.claude/cobot.rules` and `chown nobody
+   ~/.claude/cobot.rules` (literal sealed words).
+
+   Friction guard, silent: `chmod -R u+w build/`, `chmod +x script.sh`, `chmod 600 ~/.ssh/id_x`,
+   `chmod -R u+w ~/.claude/projects`, `chown -R me build`, `tar --remove-files -cf a.tar logs/`,
+   `zip -rm a.zip old/`, `gzip -r logs/`, `mount --bind /tmp/a /tmp/b`, `bwrap --bind / / sh`,
+   `bwrap --ro-bind / / --tmpfs /tmp sh` (a bind of a folder on itself covers nothing).
+   Friction accepted: `chmod 700 ~` asks; `ln -s ~ x` denies; `ditto x ~` denies (a contents
+   copy, as `rclone copy r:x ~`); with `~/.claude` linked into `~/dotfiles`, `git -C ~/dotfiles …`
+   and `tar -C ~/dotfiles …` deny, as `git -C ~` does today.
 
 ## Trust boundaries
 
@@ -150,6 +199,8 @@ rows must stay silent.
 | an extraction into a protected working directory, or to absolute member paths | the cwd as a folder option, an ask on unplaceable landings | 4 |
 | a config dir outside HOME, or a folder holding one moved away | anchors up to `config_dir()`, `holds_an_anchor` on moves | 5 |
 | the same commands under Antigravity | the shared judge | 6 |
+| a download, copy, extraction or decompression by another writer | the same landing checks, a table per writer | 7 |
+| removing, covering or locking the config dir, or reaching it through a link | `deleted_words`, a lock check, the real path's twin rows | 8 |
 
 ## Clarify
 
@@ -159,6 +210,10 @@ For the owner at review. The stories carry the recommended defaults.
   `tar -xf x.tar` and `unzip x.zip` ask, or deny as `tar -C ~` does today? → recommended: ask.
   The archive's members are unknown, and a deny cannot be approved or granted (decision 34) →
   **answer:** ask (owner, 2026-11-23: "Yes, then build")
+- Q3 (stories 7 and 8, built on the recommended default; the owner may reverse it at review)
+  Should `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on the config dir or a folder holding it
+  deny, as `rm -r` does? → recommended: ask. The gate does not read modes, so `chmod 700 ~/.claude`
+  would be refused with no way to approve it; a removal or a cover (`mount`, `bwrap`) denies.
 - Q2 Should a download with no output folder land in the working directory
   (`cd ~ && curl -O https://h/.claude.json`)? → recommended: yes, as the cwd already counts for a
   relative path word; it costs a few lines → **answer:** yes (owner, 2026-11-23: "Yes, then build")
@@ -183,8 +238,33 @@ For the owner at review. The stories carry the recommended defaults.
    - FINDINGS: F-56 and F-60 closed, F-61 for the residual extractors;
    - `docs/configuration.md` "Not covered".
 
-Each task is test first (its rows fail on `a5db3f8`), then the code, then the focused tests, ruff
-and the gate dry run, with a bypass-aimed review before its commit.
+7. **T07, other downloaders, copiers and extractors (F-61):** `aria2c` (`-d`, `--dir`, `-o`) and
+   `gh release|run download` (`-D`, `--dir`, `-O`) join `LANDING_OPTIONS` and `download_landings`;
+   their server-named files are unplaced, as `curl -J`; `aria2c -i` and `--conf-path` ask, as
+   `curl -K`. `pax -rw`, `sftp` and `ditto` join the copiers (`ditto` also as a contents copier;
+   `ditto -c` is a read, `ditto -x` extracts into its last operand). `pax -r`, `jar x`, `ar x`,
+   `unar`, `bsdunzip`, `bsdcpio` and `dpkg-deb -x|-X|-R` join `extracts`, `FOLDER_OPTIONS` (ar's
+   `--output`, jar's `-C`/`--dir` in extraction only) or their own folder reading (unar's
+   single-dash longs, dpkg-deb's folder operand), and `extraction_unplaced`.
+8. **T08, in-place decompression (F-61):** `decompress_landings(argv)` returns each input without
+   its suffix (or `-S`), unplaced under `-N`; `download_hit`'s folder logic judges it. zstd's
+   `--output-dir-flat` and `--output-dir-mirror` are folder landing options. `-c`, `-t`, `-l` and
+   an `-o` file add none. `zstd --filelist` with `-d` or `--rm` asks.
+9. **T09, removing, covering and locking (F-62):** `deleted_words` takes the sources of
+   `tar --remove-files`, `zip -m`, `7z -sdel` (any case), a recursive compressor and `rclone
+   purge|delete|deletefile|rmdir|rmdirs`; the target of `mount` and of the FUSE mounters (`sshfs`,
+   `bindfs`, `rclone mount`, `fuse-overlayfs`, `archivemount`, `squashfuse`); and the sources of
+   `ln` and `cp -s` (a link to a folder holding the config dir reaches it). `zip -m -@` asks. A lock
+   check asks (an `<anchor>/*` form) for `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on an
+   anchor or a holder, and for `bwrap`'s mount destinations (a bind of a folder on itself
+   excepted): only the child sees a `bwrap` cover.
+10. **T10, the config dir's real path (F-62):** twin rows and anchors for the resolved
+    `config_dir()` when it is, or sits under, a symlink.
+11. **T11, both runtimes and docs:** agy rows; CHANGELOG; FINDINGS F-61 and F-62 closed;
+    `docs/configuration.md`.
+
+Each task is test first (its rows fail on `a5db3f8`, or on `6022fa6` from T07), then the code,
+then the focused tests, ruff and the gate dry run, with a bypass-aimed review before its commit.
 
 ## Tasks
 
@@ -196,6 +276,13 @@ and the gate dry run, with a bypass-aimed review before its commit.
 | T04 ✅ | extraction into the tracked cwd (deny inside, ask on a holder), the unplaceable forms | gate | auth | — |
 | T05 ✅ | anchors up to a moved `config_dir()`; moving a folder that holds an anchor | gate | auth | — |
 | T06 ✅ | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T01–T05 |
+| T07 ✅ | aria2c, gh; ditto, pax, sftp; jar, ar, unar, bsd*, dpkg-deb | gate | auth | T02–T04 |
+| T08 | in-place decompression | gate | auth | T03 |
+| T09 | removal, cover, link and lock verbs | gate | auth | T05 |
+| T10 | the config dir's real path | gate | auth | T05 |
+| T11 | agy rows, CHANGELOG, FINDINGS, configuration.md | gate | — | T07–T10 |
+
+Stories 7 and 8 are tested in `tests/test_gate_f61_f62.py`, so the story 1–6 file stays readable.
 
 One lane: every task edits `protected_file_touched` or its helpers, so the tasks run in order.
 
@@ -220,9 +307,24 @@ One lane: every task edits `protected_file_touched` or its helpers, so the tasks
 - **A remote-to-remote copy** (`scp h1:a h2:b`, `rclone copy r1: r2:`): nothing lands locally.
 - **An archive's member list** (a member named `.claude.json` extracted in the repository): the
   gate does not open archives. It judges only where the extraction lands.
-- **Other writers, each a row for a later folder-option task, recorded as F-61:** `cpio -p DIR`,
-  `pax -r`, `ditto`, `sftp`, `aria2c -d`, `gh release download -D`, `gh run download -D`, and
-  `curl --create-dirs` with `-o`.
+- **Other writers, recorded as F-61:** taken in by story 7.
+- **A client's own command language** (`sftp -b batch`, `lftp -c`, `ftp`, `smbclient -c`): the
+  commands are text in another language, like inline code (F-57). Story 7 reads `sftp`'s
+  positional form only.
+- **Other sandboxes** (`firejail --private`, `proot -b`, `unshare -m` with a script,
+  `systemd-run -p BindPaths=`, `docker run -v …:…/.claude`): like `bwrap`, they change only the
+  child's view; what the child runs is F-58's (nested Claude Code). Story 8 asks on `bwrap`, the
+  one named in F-62, and denies the covers every process sees (`mount`, the FUSE mounters).
+- **`dpkg --root DIR` / `--instdir DIR` with `-i`:** an install into any folder needs root, and
+  a package's files are its own; `sudo` already asks (T07 review).
+- **aria2c's hooks and RPC** (`--on-download-complete=CMD`, `--enable-rpc`) and its default
+  `~/.aria2/aria2.conf`: a program run after the download is F-57's class, an RPC server takes
+  commands the gate never sees, and the default config file is the owner's.
+- **`rar m`, `rar a -df`:** not free software, rarely installed; the same `deleted_words` line when
+  wanted.
+- **Modes and owners:** story 8 does not read them, so a lock that loosens asks too (Q3).
+- **A symlinked `~/.gemini` under agy:** agy has no config-dir variable; story 8 resolves Claude
+  Code's config dir only.
 - **A link swapped in between the check and the run:** an existing residual (configuration.md).
 - **`git` writing a protected file** (`git -C ~ checkout`): git's folder options are read (F-33);
   a checkout's content is not.
@@ -242,6 +344,24 @@ One lane: every task edits `protected_file_touched` or its helpers, so the tasks
 - an extraction in a cwd that only holds an anchor asks, not denies (story 4, Q1);
 - the `<target>/*` tier was misstated, and `cp "$f" ~/` already denies, so the old Q1 is gone;
 - `7z -o` and `cpio -D` were added, and the other writers became F-61.
+
+2026-11-23, revision 3 (stories 7 and 8): **SOUND WITH CHANGES** (1 CRITICAL, 6 MAJOR, 3 MINOR).
+Every point was folded:
+
+- CRITICAL: a link to a folder holding the config dir, made in the same command (`ln -s ~ /tmp/h;
+  cp e/cobot.rules /tmp/h/.claude/`), reached the owner files; `ln` and `cp -s` sources now count
+  as moved holders (T09);
+- zstd's `--output-dir-flat|-mirror` (T08);
+- `ditto` copies a folder's contents, `-x` extracts, `-c` reads (T07);
+- `aria2c -i` and `--conf-path` ask (T07), and its hooks and RPC are a residual;
+- the FUSE covers a user can mount without root (T09);
+- a `bwrap` cover asks, since only the child sees it (T09; friction row `bwrap --ro-bind / /
+  --tmpfs ~ sh` asks);
+- `rclone purge|delete|rmdirs` (T09);
+- MINOR: under the T10 dotfile layout, `git -C ~/dotfiles …` and `tar -C ~/dotfiles …` deny as
+  `git -C ~` does today: listed as friction; the lock check returns an `<anchor>/*` form so it
+  asks; the missing decompressors, gzip's `-gz` and `_z` suffixes, `-SDEL` in any case, `zip -m
+  -@`, a `dpkg-deb -e` row, and `jar -C` read in extraction only.
 
 ## Converge
 

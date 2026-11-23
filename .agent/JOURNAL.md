@@ -248,3 +248,11 @@ Proof: cobot-memory check exit 0, brief 5280 chars before this entry.
 Open: F-61 and F-62 become stories 7 and 8 of spec gate-f56-f60.
 Next: measure F-61 and F-62 on 6022fa6, extend the spec.
 verified: tree 44ef46d45f07037134dab963f997bf679224f049 · cobot-memory check, brief size
+
+## 2026-11-23 — gate-f56-f60 T07: other downloaders, copiers and extractors (F-61)
+Changed: spec revision 3, stories 7 and 8 for F-61 and F-62 (challenger SOUND WITH CHANGES, all folded; T07 and T08 merged). aria2c and gh release|run download landings, server names unplaced, aria2c -i and --conf-path ask; sftp, pax -rw (path kept) and ditto copiers (contents; -c a read, -x a folder); pax -r, jar x, ar x, unar, bsdunzip, bsdcpio, dpkg-deb -x|-X|-R extractions; tests/test_gate_f61_f62.py.
+Why: F-61; owner: F-61 and F-62 on the same branch and PR.
+Proof: full suite with coverage exit 0, 98.28 %; ruff clean; markdownlint clean; check-plugin ok. Bypass review folded: pax keeps operand paths, aria2c --index-out, ar key words, pax -rw -s asks.
+Open: pre-existing tier, a cd into an owner folder makes a download or extraction ask, not deny (also curl -O and tar xf); dpkg --root is a residual.
+Next: T08 in-place decompression.
+verified: tree f7ca68c759a305e523b1fdff23082218d9b4cbef · full suite with coverage, ruff, markdownlint, check-plugin

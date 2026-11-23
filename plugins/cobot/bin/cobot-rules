@@ -3245,7 +3245,13 @@ FOLDER_OPTIONS = {
     # spec gate-f56-f60, story 1: an extraction folder (7-Zip's ``-o`` is joined: ``-odir``)
     **{name: (("-o",), ()) for name in ("7z", "7za", "7zz", "7zr")},
     "cpio": (("-D",), ("--directory",)),
+    # story 7 (F-61): GNU ar 2.44 (``--output``) and jar (JDK 24, extraction only), read 2026-11-23
+    "ar": ((), ("--output",)),
+    "jar": (("-C",), ("--dir",)),
 }
+EXTRACTOR_ALIASES = {"bsdunzip": "unzip", "bsdcpio": "cpio"}  # libarchive's twins take the same options
+UNAR_FOLDER = ("-o", "-output-directory", "--output-directory")  # unar's long options take one dash
+DPKG_EXTRACTING = frozenset("-x --extract -X --vextract -R --raw-extract".split())  # then: deb, folder
 # options naming where a copy or a download lands (spec gate-f56-f60, story 1, F-60): per
 # program, (short letter, long name, kind). A ``folder`` is judged as ``cp -t DIR`` is, a
 # relocating word; a ``file`` as a path word. Read from coreutils ``cp``, ``mv``, ``ln`` and
@@ -3254,7 +3260,12 @@ LANDING_OPTIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
     **{name: (("t", "--target-directory", "folder"),) for name in ("cp", "mv", "ln", "install")},
     "curl": (("o", "--output", "file"), ("", "--output-dir", "folder")),
     "wget": (("O", "--output-document", "file"), ("P", "--directory-prefix", "folder")),
+    # story 7 (F-61): aria2c 1.37 manual and ``gh release|run download --help`` (gh 2.x), read
+    # 2026-11-23; aria2c writes ``-o`` inside ``-d``. gh's are read for its download verbs only.
+    "aria2c": (("d", "--dir", "folder"), ("o", "--out", "file"), ("O", "--index-out", "indexed")),
+    "gh": (("D", "--dir", "folder"), ("O", "--output", "file")),
 }
+GH_DOWNLOADING = frozenset({"release", "run"})  # ``gh release download``, ``gh run download``
 # any short option with a path joined to it, for programs outside the table: the path after the
 # letters is a path word, as it is with a space (``wget -o~/log``, ``gcc -o~/x``, ``curl -c~/j``)
 JOINED_PATH_RE = re.compile(r"-[A-Za-z0-9#:]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")  # curl -#o~/x
@@ -3283,10 +3294,11 @@ def folder_options(segment: list[str]) -> list[str]:
     clustered short forms, and tar's old-style first word (``tar xfC e.tar dir``)."""
     found = [w.split("=", 1)[1] for w in segment if w.startswith(GIT_FOLDER_VARIABLES)]
     argv = program_of(segment)
-    head = argv[0] if argv else ""
+    head = EXTRACTOR_ALIASES.get(argv[0], argv[0]) if argv else ""
     if head == "cpio" and ("p" in option_letters(argv) or "--pass-through" in argv):
         found += [w for w in argv[1:] if not w.startswith("-")][-1:]  # copy-pass: its destination folder
-    if head not in FOLDER_OPTIONS:
+    found += other_extraction_folders(head, argv)
+    if head not in FOLDER_OPTIONS or (head == "jar" and not extracts(argv)):
         return [value for value in found if value]
     shorts, longs = FOLDER_OPTIONS[head]
     letters = "".join(option[1] for option in shorts)
@@ -3319,6 +3331,24 @@ def folder_options(segment: list[str]) -> list[str]:
     return [value for value in found if value]
 
 
+def other_extraction_folders(head: str, argv: list[str]) -> list[str]:
+    """The folders unar (``-o``, ``-output-directory``) and dpkg-deb (``-x DEB DIR``) extract into
+    (story 7): neither fits the getopt forms ``folder_options`` reads."""
+    if head == "unar":
+        return [argv[i + 1] for i, word in enumerate(argv[:-1]) if word in UNAR_FOLDER] + [
+            w.split("=", 1)[1] for w in argv if w.split("=", 1)[0] in UNAR_FOLDER and "=" in w
+        ]
+    if head == "ditto" and "x" in option_letters(argv):  # ``ditto -x -k e.zip DIR``
+        return [w for w in argv[1:] if not w.startswith("-")][-1:]
+    if head not in ("dpkg-deb", "dpkg"):
+        return []
+    action = next((i for i, word in enumerate(argv) if word.split("=", 1)[0] in DPKG_EXTRACTING), None)
+    if action is None:
+        return []
+    operands = [w for w in argv[action + 1 :] if not w.startswith("-")]
+    return operands[1:2]
+
+
 def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
     """The values of the options that name where a copy or a download lands, with their kind, in
     every form: separate, joined short (``-tDIR``, ``-o~/x``), the end of a short cluster
@@ -3326,6 +3356,8 @@ def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
     characters (spec gate-f56-f60, story 1). An over-read prefix only checks one more word."""
     argv = program_of(segment)
     table = LANDING_OPTIONS.get(argv[0] if argv else "", ())
+    if argv[:1] == ["gh"] and not gh_downloads(argv):
+        table = ()  # gh's other verbs give -D and -O other meanings
     letters = {short: kind for short, _, kind in table if short}
     found: list[tuple[str, str]] = []
     i = 1
@@ -3346,7 +3378,14 @@ def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
                 found.append((cluster.group(3) or following, letters[cluster.group(2)]))
                 step = 1 if cluster.group(3) else 2
         i += step
+    # aria2c's ``--index-out=INDEX=PATH`` names a file after its index (T07 review)
+    found = [(v.split("=", 1)[-1], "file") if k == "indexed" else (v, k) for v, k in found]
     return [(value, kind) for value, kind in found if value and value != "-"]
+
+
+def gh_downloads(argv: list[str]) -> bool:
+    """``gh release download`` or ``gh run download``, behind any global option (``-R o/r``)."""
+    return any(word in GH_DOWNLOADING and argv[i + 1 : i + 2] == ["download"] for i, word in enumerate(argv))
 
 
 def long_landing(program: str, name: str, table: tuple[tuple[str, str, str], ...]) -> str | None:
@@ -3509,7 +3548,7 @@ def enters(segment: list[str]) -> bool:
 def relocates(segment: list[str]) -> bool:
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    return head in RELOCATING or head == "scp" or copy_verb(argv) is not None
+    return head in RELOCATING or head == "scp" or other_copier(argv) or copy_verb(argv) is not None
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
@@ -3698,7 +3737,17 @@ def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
 # --help`` 3.4, ``scp`` (OpenSSH 10), ``docker cp --help``, ``kubectl cp --help`` and ``rclone
 # copy --help`` on 2026-11-23. An option outside a table may take a value, so every positional
 # is then tried as the target.
-COPY_VALUE_SHORTS = {"rsync": "eBfMT@", "scp": "cDFiJlPoSX", "kubectl": "cn", "docker": "", "podman": ""}
+COPY_VALUE_SHORTS = {
+    "rsync": "eBfMT@",
+    "scp": "cDFiJlPoSX",
+    "kubectl": "cn",
+    "docker": "",
+    "podman": "",
+    # story 7 (F-61): sftp (OpenSSH 10), POSIX pax and macOS ditto, read 2026-11-23
+    "sftp": "BbcDFiJloPRSsX",
+    "pax": "bfopsxBEGTU",
+    "ditto": "",
+}
 COPY_VALUE_LONGS = {
     "rsync": frozenset(
         "--rsh --rsync-path --filter --exclude --include --exclude-from --include-from --files-from "
@@ -3712,7 +3761,21 @@ COPY_VALUE_LONGS = {
     "scp": frozenset(),
     "docker": frozenset(),
     "podman": frozenset(),
+    "ditto": frozenset({"--arch", "--bom", "--zlibCompressionLevel"}),
 }
+# copiers whose every option is in their table: an unknown long word is a flag, not a value taker
+OPTIONS_KNOWN = frozenset({"scp", "sftp", "pax", "ditto"})
+
+
+def other_copier(argv: list[str]) -> bool:
+    """Story 7's copiers: ``sftp``, ``pax -rw``, and ``ditto`` unless it archives (``-c``, a read)
+    or extracts (``-x``, judged by its folder operand)."""
+    head = argv[0] if argv else ""
+    if head == "ditto":
+        return not {"c", "x"} & option_letters(argv)
+    return head == "sftp" or (head == "pax" and {"r", "w"} <= option_letters(argv))
+
+
 COPY_TARGETS_MAX = 16  # targets tried when an option is unknown; past it the copy asks
 LANDING_WORDS_MAX = 256  # landing words one segment may make; past it the copy asks
 
@@ -3722,15 +3785,17 @@ def keeps_path(head: str, args: list[str]) -> bool:
     in a short cluster (``-aR``). For ``cp``, ``-R`` is only recursive (wrap code review)."""
     if head == "cp":
         return "--parents" in args
+    if head == "pax":  # POSIX copy mode writes DIR/<operand as written> (T07 review)
+        return True
     return head == "rsync" and (
         "--relative" in args or any(re.fullmatch(r"-[A-Za-z]*R[A-Za-z]*", w) for w in args)
     )
 
 
 CONTAINER_COPIERS = frozenset({"docker", "podman", "kubectl"})
-REMOTE_COPIERS = CONTAINER_COPIERS | {"scp", "rsync", "rclone"}  # where ``host:path`` is remote
+REMOTE_COPIERS = CONTAINER_COPIERS | {"scp", "sftp", "rsync", "rclone"}  # where ``host:path`` is remote
 # copies whose sources are a folder's contents or a list the gate does not read (T02 review)
-CONTENTS_COPIERS = frozenset({"rclone"})
+CONTENTS_COPIERS = frozenset({"rclone", "ditto"})  # ditto copies a folder's contents (challenger, story 7)
 RCLONE_COPYING = frozenset({"copy", "move", "sync", "copyto", "moveto"})
 REMOTE_RE = re.compile(r"^[^/~.$][^/]*:")  # ``host:path``, ``container:path``, ``remote:path``
 
@@ -3754,7 +3819,7 @@ def copy_parts(argv: list[str]) -> list[Copy]:
         if argv[verb] in ("copyto", "moveto"):
             return []  # the target is the file itself, a word of the segment already
         return every_target([w for w in argv[verb + 1 :] if not w.startswith("-")], False)
-    elif head in ("scp", "rsync"):
+    elif head in ("scp", "rsync") or other_copier(argv):
         args = argv[1:]
     else:
         return []
@@ -3762,6 +3827,8 @@ def copy_parts(argv: list[str]) -> list[Copy]:
     keep = keeps_path(head, args)
     if not known:
         return every_target(positionals, keep)
+    if head == "sftp" and len(positionals) == 1 and REMOTE_RE.match(positionals[0]):
+        return [(".", positionals, False, keep)]  # ``sftp h:path`` fetches into the working directory
     return [(positionals[-1], positionals[:-1], False, keep)] if len(positionals) >= 2 else []
 
 
@@ -3798,7 +3865,7 @@ def copy_positionals(head: str, args: list[str]) -> tuple[list[str], bool]:
             break
         if word.startswith("--"):
             takes = word.split("=", 1)[0] in longs and "=" not in word
-            known = known and (word.split("=", 1)[0] in longs or "=" in word or head in ("scp",))
+            known = known and (word.split("=", 1)[0] in longs or "=" in word or head in OPTIONS_KNOWN)
             i += 2 if takes else 1
             continue
         if word.startswith("-") and len(word) > 1:
@@ -3850,7 +3917,12 @@ DOWNLOAD_UNPLACED = {
         ),
         "irmx",
     ),
+    # story 7: aria2c takes a name from Content-Disposition, gh from the release or the run
+    "aria2c": (frozenset("-i --input-file -T --torrent-file -M --metalink-file".split()), "iTM"),
+    "gh": (frozenset(), ""),
 }
+SERVER_NAMED = frozenset({"aria2c", "gh"})  # without an output file, the server names what lands
+INSIDE_FOLDER = frozenset({"curl", "aria2c"})  # a relative output file is written inside the folder
 CONFIG_READERS = {"curl": (("-K", "--config"), "K"), "wget": (("-e", "--execute", "--config"), "e")}
 # wgetrc commands a ``wget -e`` may run that move where a download lands or what it reads
 # (wget 1.25 manual, "Wgetrc Commands", read 2026-11-23); ``-e robots=off`` stays silent
@@ -3866,7 +3938,7 @@ def download_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | No
     given; every one, since ``curl --next`` gives each URL its own), the words it lands at, and
     whether its names are unknown (spec gate-f56-f60, story 3)."""
     head = argv[0] if argv else ""
-    if head not in DOWNLOAD_UNPLACED:
+    if head not in DOWNLOAD_UNPLACED or (head == "gh" and not gh_downloads(argv)):
         return None
     values = landing_option_values(argv)
     folders = [value for value, kind in values if kind == "folder"] or ["."]
@@ -3878,13 +3950,14 @@ def download_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | No
     globbed = head == "curl" and not {"-g", "--globoff"} & set(argv) and any(set(u) & set("{[") for u in urls)
     numbered = head == "curl" and any(re.search(r"#\d", f) for f in files)
     unplaced = named_long or bool(set(letters) & shorts) or globbed or numbered
+    unplaced = unplaced or (head in SERVER_NAMED and not files)
     # wget names every download from its URL unless -O; curl only with -O (wget's -O is a file)
-    named = (head == "wget" and not files) or (
+    named = (head in ("wget", "aria2c") and not files) or (
         head == "curl" and (bool(REMOTE_NAME_OPTIONS & set(argv)) or "O" in shorts)
     )
     names = [n for u in urls for n in url_names(u, head, default_page(argv))] if named else []
     words = [os.path.join(folder, name) for folder in folders for name in names]
-    if head == "curl":  # wget ignores -P with -O; curl writes a relative -o into --output-dir
+    if head in INSIDE_FOLDER:  # wget ignores -P with -O; curl and aria2c write a relative one inside
         words += [os.path.join(d, f) for d in folders if d != "." for f in files if not os.path.isabs(f)]
     return folders, words, unplaced
 
@@ -3915,6 +3988,10 @@ def default_page(argv: list[str]) -> str:
 def config_reader(argv: list[str]) -> bool:
     """``curl -K`` and ``wget -e`` read options the gate does not see (spec gate-f56-f60, story 3)."""
     head = argv[0] if argv else ""
+    if head == "aria2c":  # story 7: a file of options, or a list whose dir= and out= lines move it
+        longs = ("--conf-path", "--input-file")
+        named = any(long_named_option(head, w, longs) for w in argv[1:] if w.startswith("--"))
+        return named or any(re.fullmatch(r"-[A-Za-z]*i.*", w) for w in argv[1:] if not w.startswith("--"))
     if head not in CONFIG_READERS:
         return False
     longs, letter = CONFIG_READERS[head]
@@ -4173,18 +4250,47 @@ def option_letters(argv: list[str]) -> set[str]:
 
 def extracts(argv: list[str]) -> bool:
     """Whether a segment unpacks an archive into a folder (the working directory, without one)."""
-    head = argv[0] if argv else ""
+    head = EXTRACTOR_ALIASES.get(argv[0], argv[0]) if argv else ""
     letters = option_letters(argv)
     extract_long = any(long_prefix(w, "--extract", 5) or long_prefix(w, "--get", 4) for w in argv[1:])
-    if head in TAR_FAMILY:
-        old = bool(argv[1:2]) and argv[1][:1].isalpha() and "x" in argv[1]
+    old = bool(argv[1:2]) and argv[1][:1].isalpha() and "x" in argv[1]  # ``tar xf``, ``jar xf``
+    if head in TAR_FAMILY or head == "jar":
         return old or "x" in letters or extract_long
     if head == "unzip":
         return not UNZIP_NOT_WRITING & letters
     if head == "cpio":
         return "i" in letters or extract_long
+    if head == "pax":  # story 7: -r reads an archive; with -w it is a copy (``pax_copies``)
+        return "r" in letters and "w" not in letters
+    if head == "ar":
+        return "x" in ar_key(argv)
+    if head == "unar":
+        return True
     verb = next((w for w in argv[1:] if not w.startswith("-")), "")
     return head in SEVEN_ZIPS and verb.casefold() in ("x", "e")  # 7z takes switches before its verb
+
+
+AR_VALUE_LONGS = frozenset({"--plugin", "--target", "--record-libdeps"})
+AR_OPERATIONS = frozenset("dmpqrstx")
+
+
+def ar_key(argv: list[str]) -> str:
+    """ar's operation and modifier letters: every dashed short word (``-v -x``), and the first bare
+    word when no operation came before it (``xv``); a long option's value is skipped (T07 review)."""
+    key, i = "", 1
+    while i < len(argv):
+        word = argv[i]
+        if word.startswith("--"):
+            i += 2 if word in AR_VALUE_LONGS else 1
+            continue
+        if word.startswith("-"):
+            key += word[1:]
+        elif AR_OPERATIONS & set(key):
+            break  # the archive
+        else:
+            return key + word
+        i += 1
+    return key
 
 
 def long_prefix(word: str, option: str, shortest: int) -> bool:
@@ -4197,17 +4303,25 @@ def extraction_unplaced(argv: list[str]) -> bool:
     """An extraction whose members may land outside its folder: ``tar -P``, ``cpio -i`` without
     ``--no-absolute-filenames`` (GNU cpio keeps absolute names by default), ``unzip -:``."""
     head = argv[0] if argv else ""
+    if head == "pax" and {"r", "w", "s"} <= option_letters(argv):
+        return True  # ``pax -rw -s`` rewrites each name, ``..`` included (T07 review)
     if not extracts(argv):
         return False
     letters = option_letters(argv)
-    if head in TAR_FAMILY:
-        old = bool(argv[1:2]) and argv[1][:1].isalpha() and "P" in argv[1]
+    old = bool(argv[1:2]) and argv[1][:1].isalpha() and "P" in argv[1]
+    if head in TAR_FAMILY or head == "jar":  # jar -P keeps a leading / and ``..`` (story 7)
         return old or "P" in letters or any(w.startswith("--absolute-n") for w in argv)
+    if head == "bsdcpio":  # libarchive refuses absolute and ``..`` names unless told
+        return "--insecure" in argv
     if head == "cpio":
         return "--no-absolute-filenames" not in argv
+    if head == "pax":  # POSIX pax keeps absolute names, and -s rewrites every name
+        return True
+    if head == "ar":
+        return "P" in ar_key(argv)
     if head in SEVEN_ZIPS:
         return any(w.casefold().startswith("-spf") for w in argv)  # 7-Zip keeps absolute paths
-    return head == "unzip" and ":" in letters
+    return EXTRACTOR_ALIASES.get(head, head) == "unzip" and ":" in letters
 
 
 def extraction_hit(
@@ -5691,9 +5805,9 @@ def judge_bash(
         if hass and outranks(hass, verdict):
             verdict = hass
         if config_reader(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
-            verdict = Verdict(ASK, None, "curl -K or wget -e reads options the gate does not see")
+            verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
-            verdict = Verdict(ASK, None, "the extraction keeps absolute paths: it may land anywhere")
+            verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

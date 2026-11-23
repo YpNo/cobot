@@ -6061,6 +6061,25 @@ PYTHON_WRITES_RE = re.compile(
 )
 
 
+# what a Node script calls to write a file (spec gate-f57, Q4): the fs writers on ``fs``, ``fsp``,
+# ``promises`` or a ``require("fs")`` / ``node:fs`` / ``fs/promises`` result. A destructured or
+# computed name, ``process.binding`` or ``child_process`` keeps the inline-code ask
+NODE_FS_RE = (
+    r"(?:\b(?:fs|fsp|promises)"
+    r"|\brequire\(\s*['\"`](?:node:)?fs(?:/promises)?['\"`]\s*\)(?:\.promises)?)"
+)
+NODE_WRITES_RE = re.compile(
+    NODE_FS_RE + r"\s*\.\s*(?:writeFile|appendFile|copyFile|cp|rename|createWriteStream)\w*\s*\("
+)
+SCRIPT_WRITES_RE = {
+    "python": PYTHON_WRITES_RE,
+    "node": NODE_WRITES_RE,
+    "tsx": NODE_WRITES_RE,
+    "ts-node": NODE_WRITES_RE,
+    "bun": NODE_WRITES_RE,
+}
+
+
 def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
     """Whether a segment edits files through an interpreter: a Python script read from stdin or
     ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
@@ -6071,12 +6090,13 @@ def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
         return False
     if reading.family == "perl":
         return reading.in_place  # read in clusters: ``-Mstrict`` holds an i, and is not ``-i``
-    if reading.family != "python":
+    writes = SCRIPT_WRITES_RE.get(reading.family)
+    if writes is None:
         return False
     code = [show(text, holes) for text in reading.code]
     if reading.stdin and not code:
         code = [doc.body for doc in unit.heredocs]
-    return any(PYTHON_WRITES_RE.search(text) for text in code)
+    return any(writes.search(text) for text in code)
 
 
 # ---------------------------------------------------------------- shell writes (gate-f36-f40-f44, story 6)
@@ -6616,10 +6636,21 @@ def judge_bash(
 START_VARIABLES = (
     "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND "
     # options an extractor reads from its environment (spec gate-f56-f60, T04 review)
-    "TAR_OPTIONS UNZIP UNZIPOPT".split()
+    "TAR_OPTIONS UNZIP UNZIPOPT "
+    # code an interpreter loads or runs before its script (spec gate-f57, Q5; T05 review adds the
+    # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
+    "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
+    "PHP_INI_SCAN_DIR".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
+
+
+# a setter whose variable name holds an expansion or a brace: the name is built when the command
+# runs, so it may be any start variable (spec gate-f57, T05 review)
+COMPUTED_EXPORT_RE = re.compile(
+    r"(?:^|[\s;&|(`])(?:export|declare|typeset|readonly|local)\s+(?:-[a-zA-Z]+\s+)*[^\s=;&|]*[${][^\s;&|]*="
+)
 
 
 def sets_start_variable(text: str, name: str) -> bool:
@@ -6642,6 +6673,8 @@ def shell_start_variable(command: str) -> Verdict:
         found = "BASH_FUNC_"
     if found is None and LONG_SETTER_RE.search(text):
         found = "a setter too long to read"
+    if found is None and COMPUTED_EXPORT_RE.search(text):  # ``export $N=…``, ``export NODE_{OPTIONS,X}=…``
+        found = "an exported name the command computes"
     if found is None:
         return Verdict(None, None, "no rule matched")
     return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")

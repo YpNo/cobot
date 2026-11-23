@@ -321,3 +321,14 @@ decision re-run on `f433a0a`). Folded into revision 2:
   `\` and newline into a blank, so the sed reader takes ` ; ` and `\ ` as possible line ends (a
   false ask at worst); the splitter itself is **F-64**. Friction: `awk '{print > ($1 ".txt")}'`
   (a computed target), `awk '{… | "sort"}'` ask.
+- T05 build: `NODE_WRITES_RE` joins `PYTHON_WRITES_RE` in `writes_by_script` (`SCRIPT_WRITES_RE`
+  per family: node, tsx, ts-node, bun), so a Node inline or stdin script calling an `fs` writer
+  is refused; a write the pattern does not name, a destructured or computed name keeps the ask.
+  `START_VARIABLES` gains Q5's five. Bypass review (2 MAJOR): an exported name the command
+  computes (`export $N=…`, `export NODE_{OPTIONS,X}=…`) now asks for every start variable
+  (`COMPUTED_EXPORT_RE`, older than this branch for `BASH_ENV` too); `BUN_OPTIONS`,
+  `PYTHONHOME` and `PHP_INI_SCAN_DIR` join the list (each runs code directly). Accepted, the
+  planted-module class: `NODE_PATH`, `RUBYLIB`, `PERL5LIB`, `PYTHONPATH`, `PYTHONWARNINGS` (its
+  import needs a planted module). Seen, out of scope, **F-65**: loader variables of any program
+  (`LD_PRELOAD`, `JAVA_TOOL_OPTIONS`). A string or comment naming an `fs` writer denies, as
+  Python's rule does.

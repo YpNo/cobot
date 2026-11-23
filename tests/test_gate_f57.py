@@ -672,12 +672,40 @@ ENV_ASK = [
     "PYTHONSTARTUP=/tmp/x.py python3",
     "PYTHONINSPECT=1 python3 s.py",
     "env NODE_OPTIONS=x node s.js",
+    # bypass review of T05
+    "N=NODE_OPTIONS; export $N=--require=/abs/a.js; node s.js",
+    "export NODE_{OPTIONS,X}=--require=/abs/a.js; node s.js",
+    "declare -x ${N}=x; node s.js",
+    "BUN_OPTIONS=--preload=/abs/p.ts bun s.ts",
+    "PYTHONHOME=/abs/ph python3 s.py",
+    "PHP_INI_SCAN_DIR=/abs php s.php",
 ]
 ENV_FRICTION = [
     "NODE_ENV=production node s.js",
     "PYTHONPATH=src python3 -m pytest",
     "echo $NODE_OPTIONS",
+    "export PATH=/usr/local/bin:/usr/bin",  # a value with $ asks apart (F-55: a variable in a word)
+    "local x=1",
+    "declare -x FOO=bar",
 ]
+
+
+def test_story7_computedExportName_readsTheNameOnly(rules):
+    """The T05 fold asks on an expansion or a brace in the name, never in the value."""
+    pattern = rules.COMPUTED_EXPORT_RE
+    assert pattern.search("export $N=x") and pattern.search("export NODE_{OPTIONS,X}=x")
+    assert not pattern.search("export PATH=$HOME/bin:$PATH") and not pattern.search("local x=${y:-z}")
+
+
+NODE_READS = [
+    'node -e \'console.log(require("fs").readFileSync("x","utf8"))\'',
+    "node -p 'fs.existsSync(\"x\")'",
+]
+
+
+@pytest.mark.parametrize("command", NODE_READS)
+def test_story7_nodeInlineRead_asksNotDenies(rules, project, command):
+    assert decide(rules, command) == "ask"
 
 
 @pytest.mark.parametrize("command", NODE_WRITES)

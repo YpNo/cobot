@@ -373,3 +373,11 @@ Proof: full suite: only stories 7 and 8 rows of tests/test_gate_f57.py fail, not
 Open: gawk's options page unread (rate-limited): an unknown awk option makes every operand a program; friction, a computed awk print target and print into a sort pipe ask.
 Next: T05, Node inline writes and the environment variables.
 verified: tree 44393cc5808227d1285a48ac5296379918b13c52 · full suite, stories 1 to 6, ruff
+
+## 2026-11-23 — gate-f57 T05: Node inline writes and code through the environment (story 7, Q4, Q5)
+Changed: NODE_WRITES_RE joins PYTHON_WRITES_RE in writes_by_script (SCRIPT_WRITES_RE per family: node, tsx, ts-node, bun): a Node inline or stdin script calling an fs writer on fs, fsp, promises or a require("fs") result is refused. START_VARIABLES gains NODE_OPTIONS, PERL5OPT, RUBYOPT, PYTHONSTARTUP, PYTHONINSPECT, BUN_OPTIONS, PYTHONHOME, PHP_INI_SCAN_DIR; COMPUTED_EXPORT_RE asks on an exported name the command builds (export $N=…, export NODE_{OPTIONS,X}=…). FINDINGS F-65 (loader variables of any program).
+Why: the owner's Q4 (refused, as Python's) and Q5 (ask when the command sets one).
+Proof: full suite green; tests/test_gate_f57.py 426 passed; ruff clean. Bypass review (2 MAJOR, no Node write reaching none), each a test row.
+Open: accepted, the planted-module class (NODE_PATH, RUBYLIB, PERL5LIB, PYTHONPATH, PYTHONWARNINGS); a destructured or computed fs writer keeps the ask; a string naming an fs writer denies, as Python's rule does.
+Next: T06, docs, CHANGELOG and FINDINGS F-57 closed.
+verified: tree 7e07079b9834f81b314477338434c6b740419209 · full suite, F-57 file, ruff

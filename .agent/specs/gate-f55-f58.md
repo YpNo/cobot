@@ -1,41 +1,34 @@
 # Spec — what the gate cannot read in a shell command (findings F-55 to F-58)
 
-size: medium-large · profile: library · owner: YpNo · date: 2026-11-23 · revision 2 (challenger
-folded) · base `main` `cc525b7` (PR 81 merged)
+size: medium-large · profile: library · owner: YpNo · date: 2026-11-23 · revision 3 (two
+challenger passes folded) · base `main` `cc525b7` (PR 81 merged)
 
 ## Goal
 
-Close the four gate findings the bypass reviews of PR 81 parked (journal 2026-11-22, "F-52 to
-F-54 closed"), F-55 first. Each one is a command shape the gate reads as plain text, so it reaches
-no decision even when it lands on a protected file or runs hidden code. The challenger found that
-F-55 also rests on files Claude Code sources between Bash calls, so this spec protects them too
-(story 2). Measured 2026-11-23 with `plugins/cobot/bin/cobot-rules check "<cmd>"` on `cc525b7`, with
-the owner and project layers empty:
+Close the gate findings PR 81's bypass reviews parked (journal 2026-11-22), F-55 first: shell
+text the gate reads as plain when bash would not, so it gets no decision on a protected file or
+hidden code. F-55 also rests on files Claude Code sources between calls (story 2). Measured with
+`cobot-rules check "<cmd>"` on `cc525b7`, owner and project layers empty:
 
 | # | command | today | after |
 |---|---|---|---|
 | F-55 | `cp x ~/.claude/$X` · `cp x "$HOME/.claude/${X}"` · `tee ~/$X` · `gh repo $V o/r` | none | ask |
-| F-55 | `X=cobot.rules; cp x ~/.claude/$X` · `D=~/.claude/cobot.rules; cp x $D` · `cp x ${X:+~/.claude/cobot.rules}` | none | deny |
+| F-55 | `X=cobot.rules; cp x ~/.claude/$X` · `D=~/.claude/cobot.rules; cp x $D` · `cp x ${X:+~/.claude/cobot.rules}` · `HOME=~/.claude; cp x ~/cobot.rules` | none | deny |
+| F-55 | `D='e/a ~/.claude.json'; tee $D` · `BASH_ENV=e/x bash -c true` · `ZDOTDIR=e zsh -c true` | none | ask |
 | F-55 | `for D in …; do cp x $D; done` · `read D; cp x $D` · `set -- ~/.claude/cobot.rul; cp x ${1}es` · `ls …; cp x ${_}es` · `A=(…); cp x "${A[0]}"` · `${!N}` · `declare -n` | none | ask |
-| F-55 | `HOME=~/.claude; cp x ~/cobot.rules` | none | deny |
 | F-55 | `cp e/s.sh ~/.claude/session-env/<id>/snapshot-bash-1.sh` · `cp x "$CLAUDE_ENV_FILE"` | none | deny |
-| F-55 | `tee -a ~/.bashrc` · `cp x ~/.zshenv` · `mv x ~/.profile` | none | ask |
+| F-55 | `tee -a ~/.bashrc` · `cp x ~/.zshenv` · `mv x ~/.profile` · `cp x ~/.curlrc` | none | ask |
 | F-56 | `cp e/.claude.json ~/` · `cp -t ~ e/.claude.json` · `mv`, `ln -s`, `install`, `rsync`, `scp`, `docker cp`, `rclone copy` into `~` | none | ask |
 | F-56 | `scp h:/x/cobot.rules ~/.claude` · `cd ~/.claude && tar -xf e.tar` · `cd ~/.claude && unzip e.zip` | none | deny |
-| F-56 | `curl --output-dir ~ -O https://h/.claude.json` · `curl --output-dir ~ -o .claude.json u` · `wget -P ~ https://h/.claude.json` · `wget -P ~ -i urls.txt` | none | ask |
+| F-56 | `curl --output-dir ~ -O https://h/.claude.json` · `curl --output-dir ~ -o .claude.json u` · `wget -P ~ https://h/.claude.json` · `wget -P ~ -i urls.txt` · `tar -xPf e.tar` · `curl -K e/cfg` · `wget -e dir_prefix=~ u` | none | ask |
 | F-56 | with `CLAUDE_CONFIG_DIR=/tmp/cc`: `cp e/cobot.rules /tmp/cc/` · `tar -C /tmp/cc -xf e.tar` · `unzip -d /tmp/cc e.zip` · `ln -sfn e /tmp/cc` | none | deny |
-| F-57 | `node -p …` · `node --eval=…` · `node --import data:…` · `python3 -ic …` · `python3.12 -c …` · `echo … \| python3` · `python3 -m timeit …` · `php -r …` · `bun -e …` · `deno eval …` | none | ask |
-| F-57 | `awk 'BEGIN{system("…")}'` · `sed 's/x/y/e' f` · `vim -c '!…'` | none | ask |
-| F-58 | `claude` with `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, `--setting-sources`, `--bare` or `--safe-mode` · `CLAUDE_CODE_SIMPLE=1 claude -p …` | none | ask |
-| F-58 | `export CLAUDE_CONFIG_DIR=/tmp/c; claude -p …` · `HOME=/tmp/h claude -p …` | none | ask |
+| F-57 | `node -p …` · `node --eval=…` · `node --import data:…` · `python3 -ic …` · `python3.12 -c …` · `echo … \| python3` · `python3 -m timeit …` · `python3 -m pip install x` · `tsx -e …` · `php -r …` · `bun -e …` · `deno eval …` · `awk 'BEGIN{system("…")}'` · `sed 's/x/y/e' f` · `vim -c '!…'` | none | ask |
+| F-58 | `claude` with `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, `--setting-sources`, `--bare` or `--safe-mode` · `CLAUDE_CODE_SIMPLE=1 claude -p …` · `export CLAUDE_CONFIG_DIR=/tmp/c; claude -p …` · `unset CLAUDE_CONFIG_DIR; claude -p …` · `HOME=/tmp/h claude -p …` | none | ask |
 | F-58 | `pnpx x` · `deno x npm:x` · `dx npm:x` · `corepack pnpm x` · `volta run x` · `asdf exec x` · `fnm exec x` · `nvm exec x` · `npm explore x -- …` · `uv tool run x` | none | ask |
-| F-58 | `cp /usr/bin/claude /tmp/c` · `dd if=/usr/bin/claude of=/tmp/c` · a link to Claude Code run by another name | none | ask |
-| F-58 | `tee ~/.cl*.json` (a glob that names the existing `~/.claude.json`) | none | ask |
+| F-58 | `cp /usr/bin/claude /tmp/c` · `cp ~/.local/bin/clau?e /tmp/c` · `dd if=/usr/bin/claude of=/tmp/c` · a link to Claude Code by another name · `tee ~/.cl*.json` (names the existing `~/.claude.json`) | none | ask |
 
-Already asking or denied and unchanged: `cp x ~/.claude/$(…)` (ask), `cp x $HOME/.claude/cobot.rules`
-(deny), `python3 -c`, `perl -e`, `ruby -e`, `npx`, `pnpm dlx`, `npm exec`, `claude mcp add` (also
-behind a `CLAUDE_CONFIG_DIR=` prefix), `rtk git push --force` (deny), copies into `~/.claude`
-(deny), `cp a ~/.gemini/` (ask).
+Unchanged: `cp x ~/.claude/$(…)`, `python3 -c`, `perl -e`, `npx`, `npm exec`, `claude mcp add`,
+`HOME=/tmp true; cp x ~/.claude.json` (ask); `cp x $HOME/.claude/cobot.rules`, copies into `~/.claude` (deny).
 
 Silent and unchanged (the friction guard, each one a test row): `cp x $DEST` and `cat "$f"` with
 `DEST`/`f` never assigned in the command, `D=out; cp a $D`, `for f in *.md; do wc -l "$f"; done`,
@@ -45,22 +38,18 @@ Silent and unchanged (the friction guard, each one a test row): `cp x $DEST` and
 
 ## Principles check
 
-- **Proportionality:** medium-large: two modules (`cobot-rules`, `_cobot_shell.py`), the default
-  layer and the tests. One topic: shell text the gate reads as literal when bash would not.
-- **Rules before autonomy:** every change adds an ask or a deny, or makes an existing row
-  reachable; nothing is silenced. The friction list above is a regression guard, not a relaxation.
-- **Proof, not promises:** every Goal row is a test row in a new `tests/test_gate_f55_f58.py`; the
-  differential corpus (`tests/test_gate_differential.py`) gets the F-55 and F-57 rows bash can
-  run; a bypass-aimed review follows the challenger and every build task.
+- **Proportionality:** medium-large, one topic: `cobot-rules`, `_cobot_shell.py`, the default layer.
+- **Rules before autonomy:** every change adds an ask or a deny; nothing is silenced.
+- **Proof, not promises:** each Goal row is a row in a new `tests/test_gate_f55_f58.py`, and the
+  differential corpus gets the rows bash can run. A bypass-aimed review follows each build task.
 - Governance (`docs/01-decisions.md`): decision 18 (attribution) holds; 20 (one spec, one PR, a
   task per commit) holds; 22 (new dependencies) holds, none; 28 (read-only agents) holds, the new
   asks apply to them too; 31 (one commit per verified change, stamp) holds; 33 (trust boundaries)
   holds, below; 34 (session grants) holds: no grant kind covers a new ask (a test row per story:
   an active grant on the target leaves the verdict unchanged); ADR-0003 holds (the new rows protect
   files, nothing writes them); ADR-0007 (both runtimes) holds, story 10; the others are not relevant.
-- Architecture: plain layering (profile `library`): the scanner says what a word holds, the gate
-  judges. No new module.
-- New dependencies: none (stdlib `os`, `re`, `shutil`, `fnmatch`, `glob`).
+- Architecture: plain layering (`library`); the scanner says what a word holds, the gate judges.
+- New dependencies: none (stdlib only).
 - Experts: shell → `lang-shell` (read; the expansion facts are bash's own, checked by the
   differential corpus); Python → `lang-python`. CONTEXT.md has no `domains:` bullet: an onboard
   refresh is proposed at hand-over.
@@ -83,13 +72,17 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      `${!…}`, a subscript (`${A[0]}`, `${A[@]}`), `$_`, a positional parameter or `$@`/`$*` once the
      command runs `set`, `shift` or a function; and any name with an assignment that is not one
      plain literal assignment: `for NAME in`, `read`, `mapfile`, `printf -v`, `getopts`, `let`,
-     `((…))`, `+=`, an array, `declare -n|-a|-A`, a second assignment, or one in a loop, branch or
-     subshell.
+     `((…))`, `+=`, `${NAME:=…}`/`${NAME=…}`, an array, `declare -n|-a|-A`, a second assignment, or
+     one in a loop, branch, subshell or pipeline part.
    - **Put in:** a name with exactly one plain `NAME=literal` (also after `export`, `readonly` or
-     `declare`/`declare -x`) at the top level of the list, before its use. An in-command assignment
-     to `HOME`, `PWD` or `CLAUDE_CONFIG_DIR` overrides the gate's own value, for `~` too
-     (`HOME=~/.claude; cp x ~/cobot.rules` denies). With none, the gate's values are put in: `HOME`
-     (`home_forms`), `PWD` (`expand_pwd`), `CLAUDE_CONFIG_DIR` (`config_dir()`).
+     `declare`/`declare -x`) at the top level of the list, before its use. A `NAME=v cmd` prefix and
+     the right side of `&&`/`||` do not count. An unquoted use is split on the default IFS and each
+     field judged, glob characters as globs (`D='e/a ~/.claude.json'; tee $D` asks). Any `IFS`
+     assignment makes every unquoted put-in a full hole.
+   - `HOME`, `PWD` and `CLAUDE_CONFIG_DIR`: the gate's own values (`home_forms`, `expand_pwd`,
+     `config_dir()`) are always judged. An in-command assignment *adds* its value and never replaces
+     them, for `~` too: `HOME=~/.claude; cp x ~/cobot.rules` denies, and
+     `HOME=/tmp true; cp x ~/.claude.json` still asks.
    - **Inherited:** a name never assigned in the command, and not one of the above, is read like
      `$(…)` today: spared where it stands for a whole unknown path (`cp x $DEST`). Story 2 is what
      makes that sound.
@@ -99,9 +92,12 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      moved config dir. Its snapshots are sourced into later Bash calls, so a planted line there
      would set an "inherited" variable or run code ungated.
    - `never` on the file `CLAUDE_ENV_FILE` names, read from the gate's environment when set.
-   - `ask` on the shell start files: `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`, `~/.profile`,
-     `~/.zshrc`, `~/.zshenv`, `~/.zprofile`, `~/.zlogin`, `~/.config/fish/config.fish`
-     (decision per Q4).
+   - `ask` on the shell start files: `~/.bashrc`, `~/.bash_aliases`, `~/.bash_profile`,
+     `~/.bash_login`, `~/.profile`, `~/.zshrc`, `~/.zshenv`, `~/.zprofile`, `~/.zlogin`,
+     `~/.config/fish/config.fish`, `~/.config/fish/conf.d/*` (decision per Q4). Also `ask` on the
+     download tools' own config, `~/.curlrc` and `~/.wgetrc`, which steer a later plain `curl` or `wget`.
+   - The build confirms that `CLAUDE_CONFIG_DIR`, `CLAUDE_ENV_FILE` and the session id reach the
+     PreToolUse hook's environment, and that the env file sits under `session-env/`.
    - Before T02 the build checks, with a dated note, that the snapshot is sourced on each call: it
      reads a session's `session-env` folder and the `--debug` output of one Bash call. The rows
      land either way, since a file the agent can plant code in needs no proof that it runs.
@@ -120,6 +116,9 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      or `-r`.
    - Extraction with no `-C`/`-d` (`tar -x`, `bsdtar`, `unzip`, `cpio -i`, `7z x`) lands at
      `<cwd>/*`, the cwd as tracked, and an unknown cwd asks.
+   - Landings the gate cannot place ask: `tar -P|--absolute-names`, `cpio -i` without
+     `--no-absolute-filenames`, `unzip -:`, `curl -K|--config`, `wget -e|--execute`, and a command
+     that assigns `WGETRC` or `CURL_HOME`.
    - Accept: every F-56 copy, download and extraction row.
 4. **A moved config dir keeps its folder protection (F-56).** `protected_anchors` adds the moved
    config dir (`CLAUDE_CONFIG_DIR` outside HOME) as an anchor. Its parents, except `/`, count only
@@ -137,10 +136,13 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      option is unknown (the script operand could be its value); no script operand follows the
      options (stdin, a REPL), or the operand is `-`; a preload names inline code
      (`node --import|--require|--loader data:…`, `perl -M` with anything past a module name); or the
-     command assigns `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT` or `PYTHONSTARTUP`.
-   - Not opaque: a lone info flag (`--version`), and `python -m <module>`, where the module counts
-     as the script, except the modules that run text: `timeit`, `code`, `pdb`, `trace`, `cProfile`,
-     `profile` and `runpy`.
+     command assigns `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `PYTHONSTARTUP`, or (with a shell)
+     `BASH_ENV`, `ENV` or `ZDOTDIR`.
+   - Not opaque: a lone info flag (`--version`). `python -m M args` is read as the command
+     `M args`, so rows and opaque checks apply (`python3 -m pip install x` asks as `pip install`
+     does; `-m pipx run` and `-m uv tool run` are launchers). The modules that run text are opaque:
+     `timeit`, `code`, `pdb`, `trace`, `cProfile`, `profile`, `runpy`.
+   - `tsx` and `ts-node` join the tables, with their `-e`/`-p` code flags.
    - node's known flags include the V8 options of `node --v8-options`, so
      `--max-old-space-size=4096` stays silent. A `--experimental-*` flag counts only when it is
      named in `node --help`.
@@ -169,7 +171,8 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      `--remote-control` and `--teleport`.
    - **Variable check:** a command that sets `CLAUDE_CONFIG_DIR`, `HOME`, `CLAUDE_CODE_SIMPLE` (what
      `--bare` sets) or `CLAUDE_CODE_SAFE_MODE` (what `--safe-mode` sets) in any form (a prefix,
-     `export`, `declare -x`, `env NAME=`) and runs `claude` anywhere asks. The help text names those
+     `export`, `declare -x`, `env NAME=`), or unsets one (`unset`, `export -n`, `env -u`), and runs
+     `claude` anywhere asks. The help text names those
      variables, and the build confirms that each one alone switches the mode.
    - **Launchers** are opaque: `pnpx`, `deno x`, `dx`, `corepack`, `volta run`, `asdf exec`,
      `fnm exec`, `nvm exec|run`, `npm explore`, `npm|pnpm|yarn|bun create`, `npm init <pkg>`,
@@ -181,8 +184,10 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
      match. The test is `os.path.samefile` against `shutil.which("claude")` and its `realpath`,
      which catches a symlink and a hard link.
    - Any other word naming that file asks: a copy, link or install source, `dd if=` or a `cat`
-     input. So does a hole whose body runs `which`, `command -v`, `type -p`, `realpath` or
-     `readlink` on `claude`.
+     input. A glob word is expanded under `GlobBudget` first (`cp ~/.local/bin/clau?e /tmp/c`). As
+     one of those operands, so does a hole whose body runs `which`, `command -v`, `type -p`,
+     `realpath` or `readlink` on `claude`. Friction rows: `which claude`, `claude --version`,
+     `ls -la $(which claude)`.
    - Accept, with a stub `claude` on a test `PATH`: `<link> mcp add x`,
      `cp <stub> /tmp/c` and `dd if=<stub> of=/tmp/c` ask.
    - Residual, named here and in FINDINGS: a copy made by a command that never names the file,
@@ -192,7 +197,8 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
    against the filesystem under `GlobBudget` (as `glob_links` does): a match asks, and so does a
    budget overrun. A glob that only *could* name the file stays silent, as today. Accept, with a
    fixture `~/.claude.json` under a temporary HOME: `tee ~/.cl*.json` asks, the same command
-   without the file stays silent, and `cat .m*.json` asks with `.mcp.json` present.
+   without the file stays silent, and `cat .m*.json` asks with `.mcp.json` present. Friction:
+   `cat **/*.json` stays silent and within budget, since `*` skips dot files as bash does.
 10. **Both runtimes (ADR-0007).** Under agy (`run_command`), stories 1 to 6 and 9 reach the same
     judgement on `~/.gemini/config` paths. Accept: rows in `tests/test_gate_agy.py`, which give a
     deny there for every row that denies under Claude Code.
@@ -212,19 +218,14 @@ rows are the hostile commands of its Goal rows; its friction rows must stay sile
 
 ## Clarify
 
-Asked of the owner at review: the defaults below are written into the stories, and the challenger
-attacked them as written.
+For the owner at review; the stories carry the recommended defaults, as challenged.
 
-- Q1 Where is a variable a hole? → a) in the scanner: `_cobot_shell` emits a `variable` hole
-  for `$NAME`/`${NAME}`, so every sentinel-aware check sees it, and the gate sites that read `$` as
-  text move to the hole · b) in the gate only: path words and the verb positions read `$NAME` text
-  as a hole, and the scanner is untouched → recommended: a), because the scanner's soundness target
-  already names a hole "where some text in its place would change which program runs", and one
-  representation means no later check forgets the text form → **answer:** pending
-- Q2 Put in a single literal assignment, or treat every assigned name as a full hole? → a) put in
-  (`D=~/.claude/cobot.rules; cp x $D` denies, `D=out; cp a $D` stays silent) · b) full hole (every
-  `D=…; cp a $D` asks) → recommended: a), because agents write that shape often and the rule is
-  narrow → **answer:** pending
+- Q1 Where is a variable a hole? → a) the scanner emits a `variable` hole, and the gate's `$`-text
+  sites move to it · b) the gate reads `$NAME` text as a hole, and the scanner is untouched →
+  recommended: a), one representation, as the scanner's soundness target says → **answer:** pending
+- Q2 Put in a single literal assignment (split and globbed as bash does), or treat every assigned
+  name as a full hole (every `D=…; cp a $D` asks)? → recommended: put in, since agents write that
+  shape often → **answer:** pending
 - Q3 Story 6 reaches `vim`, `emacs`, `gdb`: in scope, or a later finding? → a) in scope, the same
   class as F-57 · b) awk and sed only → recommended: a), a few table rows → **answer:** pending
 - Q4 Shell start files (`~/.bashrc` and the rest, story 2): ask or never? → a) ask: the owner edits
@@ -279,20 +280,19 @@ One lane: every task edits `cobot-rules`, so the tasks run in this order.
 
 ## Challenger verdict
 
-2026-11-23, revision 1: **UNSOUND** (2 BLOCKER, 6 MAJOR, 2 MINOR). Every objection was folded into
-revision 2. I reproduced the shapes behind them on `cc525b7`: each got `none`.
+Both passes on 2026-11-23. Every shape behind every objection was reproduced on `cc525b7`, and
+every objection is folded.
 
-- BLOCKERs: the variable hole was too narrow (operator words, positionals, `$_`, arrays, namerefs,
-  `${!…}`), folded into story 1; the agent can set "inherited" variables through the session
-  snapshots, `CLAUDE_ENV_FILE` and the start files, folded into story 2 and Q4.
-- MAJORs: moved-dir parents as copy targets (story 4); `scp`, `docker cp`, `rclone`, extraction
-  into the tracked cwd, `wget -i` (story 3); `CLAUDE_CODE_SIMPLE`, `CLAUDE_CODE_SAFE_MODE`,
-  `--environment` (story 7); an in-command `HOME` (story 1); `python -m timeit|code|pdb|…`
-  (story 5); `dd if=` and `cat` copies of the binary (story 8).
-- MINORs: `uv tool run` (story 7); V8 flags would ask (story 5).
-
-Not re-run on revision 2. A second pass is optional before the build; the bypass-aimed review per
-task is not.
+- Revision 1: **UNSOUND** (2 BLOCKER, 6 MAJOR, 2 MINOR). Story 1: the hole was too narrow, and an
+  in-command `HOME`. Story 2: planted "inherited" variables. Stories 3 and 4: copiers, extraction,
+  parents as targets. Story 5: `-m timeit…`, V8 flags. Story 7: mode variables, `uv tool run`.
+  Story 8: `dd`/`cat` copies.
+- Revision 2: **UNSOUND** (1 BLOCKER, 6 MAJOR, 2 MINOR). Story 1: a put-in value is split and
+  globbed (BLOCKER); `HOME`/`PWD` overrides add a value, never replace it; `${D:=w}`. Story 2:
+  `BASH_ENV`/`ENV`/`ZDOTDIR`, `.bash_aliases`, fish `conf.d`, curl and wget rc files. Story 3:
+  absolute members, `curl -K`, `wget -e`. Story 5: `-m M` read as `M`, `tsx`, `ts-node`. Story 7:
+  unsets. Story 8: glob words, `which` friction. Story 9: dot-file friction.
+- Revision 3 is not challenged again; the bypass-aimed review per build task is the next check.
 
 ## Converge
 

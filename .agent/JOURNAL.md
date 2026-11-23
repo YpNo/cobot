@@ -375,3 +375,11 @@ Proof: every Goal row reproduced with cobot-rules check on cc525b7 (each none to
 Open: Q1 to Q4 for the owner (variable hole in the scanner; put in a literal assignment; vim, emacs and gdb in scope; start files ask or never); the challenger has not re-run on revision 2.
 Next: the owner reviews the spec; then /cobot:build gate-f55-f58, T01 first, a bypass-aimed review per task.
 verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · spec only, cobot-memory check
+
+## 2026-11-23 — spec gate-f55-f58 revision 3: second challenger pass folded
+Changed: .agent/specs/gate-f55-f58.md revision 3 (299 lines): put-in values split and globbed, HOME/PWD/CLAUDE_CONFIG_DIR assignments add a value and never replace one, BASH_ENV/ENV/ZDOTDIR and the curl/wget rc files, absolute archive members and curl -K/wget -e, python -m M read as M, tsx and ts-node, unsetting the config variables, glob words in the identity check, friction rows.
+Why: owner asked for a second challenger pass on revision 2 before review.
+Proof: challenger revision 2 UNSOUND (1 BLOCKER, 6 MAJOR, 2 MINOR); each shape re-probed with cobot-rules check on cc525b7 (none, except HOME=/tmp true; cp x ~/.claude.json, which asks and must keep asking); every point folded.
+Open: Q1 to Q4 for the owner; revision 3 not challenged again.
+Next: the owner reviews; then /cobot:build gate-f55-f58, T01 first, a bypass-aimed review per task.
+verified: tree a0ca10231436b0268b471053ac75fdb07a4f8323 · spec only, cobot-memory check

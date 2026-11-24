@@ -876,8 +876,9 @@ def part_end(script: str, position: int, delimiter: str) -> int:
 
 
 def line_end(script: str, position: int) -> int:
-    """The end of the line: a newline, or ``" ; "``, which is what the gate's command splitter leaves
-    of a newline inside quotes (``shell_items``), so a command after it is still read."""
+    """The end of the line: a newline, or ``" ; "``. The splitter now keeps a quoted newline as it
+    is (spec gate-f63-f65, story 3), so ``" ; "`` is only a guess kept for safety: a false ask at
+    worst."""
     newline = script.find("\n", position)
     newline = len(script) if newline < 0 else newline
     split = script.find(" ; ", position, newline)  # bounded: linear over a long script (wrap review)

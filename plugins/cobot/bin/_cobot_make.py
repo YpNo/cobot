@@ -55,8 +55,18 @@ class Makefile:
 
 
 def join_continuations(text: str) -> list[str]:
-    """A backslash-newline and the indentation after it become one space, as the shell would read it."""
-    return re.sub(r"[ \t]*\\\n[ \t]*", " ", text).split("\n")
+    """A backslash-newline and the indentation after it become one space, as the shell would read it.
+    Only an odd run of backslashes continues the line: ``a\\\\`` then a newline ends it (spec
+    gate-f63-f65, T01 review: the second line was hidden from the rows)."""
+    lines: list[str] = []
+    pending: str | None = None
+    for line in text.split("\n"):
+        line = line if pending is None else pending + " " + line.lstrip(" \t")
+        run = len(line) - len(line.rstrip("\\"))
+        pending = line[:-1].rstrip(" \t") if run % 2 else None
+        if pending is None:
+            lines.append(line)
+    return lines if pending is None else [*lines, pending]
 
 
 def strip_comment(line: str) -> str:

@@ -483,3 +483,11 @@ Proof: claude --model --managed-settings-in-initialize -p x and claude --model -
 Open: Q1 to Q7 for the owner; row 16 is live once the CI pin or a host moves to 2.1.331.
 Next: the owner answers Q1 to Q7; then T01.
 verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text only
+
+## 2026-11-24 — gate-f63-f65 T01: newlines and escapes read as bash reads them (story 3, F-64)
+Changed: shell_items reads newlines in bash_escapes, the pass that tracks quotes: an unquoted newline separates, a quoted one stays in its word, a backslash-newline joins only when the backslash is not escaped, and in double quotes \$ and \` are $ and ` (shlex kept the backslash). _cobot_make.join_continuations continues a line on an odd run of backslashes only. Spec Converge records the owner's answers (All as recommended) and the T01 build.
+Why: the challenger's BLOCKER: echo a\\<nl>rm -rf / reached no decision, the never rows bypassed; an awk comment swallowed the rest of a multi-line program.
+Proof: tests/test_gate_f63_f65.py 26 passed, test_cobot_make and test_cobot_shell green; full suite in parallel green but for timing tests under xdist load, which pass serially; ruff check and format clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 1 MINOR), each a test row.
+Open: a bash -c body holding an ANSI-C quote asks rather than denies (command_parts takes expansion holes only).
+Next: T02, editors, debuggers and launchers.
+verified: tree 105698b37b0de535b8f450cd386c44963e33e784 · focused tests, full suite (parallel), ruff

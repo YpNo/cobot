@@ -494,4 +494,29 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
   is folded as story 7 and Q7. Re-measured: `claude --model --managed-settings-in-initialize -p x`
   and `--initialize-fields` give none (row 16). `--trusted-folder` in a value slot also gives
   none, but commander reads it as the value there, so it is not raw-scanned.
-- Pending: the owner's answers to Q1–Q7.
+- 2026-11-24, the owner (relayed verbatim): "All as recommended".
+  - Q1: every editor run asks.
+  - Q2: every debugger or profiler run asks.
+  - Q3: a search path asks when an entry is outside the project or computed.
+  - Q4: under dotglob, a glob asks when it matches a protected file on disk.
+  - Q5: story 6 goes in as written. The pagers stay out unless checkpoint 4 finds a terminal
+    under agy.
+  - Q6: the launchers become opaque names.
+  - Q7: the 2.1.331 options are classed as story 7 reads them.
+
+  Build T01–T07.
+- T01 build.
+  - `bash_escapes` replaces the two `replace` calls at the top of `shell_items`. It reads
+    newlines in the pass that tracks quotes and escapes, keeps a quoted newline in its word, and
+    joins a backslash-newline only when the backslash is not escaped.
+  - Checkpoint 1: the awk reader ends a comment at `\n`, so row 2 asks now. The sed reader's
+    ` ; ` line end stays as a guess. The inline readers match across newlines.
+  - Bypass review: SOUND WITH CHANGES (no regression against `3e83cc6`; 2 MAJOR, 1 MINOR), each
+    a test row:
+    - a Makefile recipe line ending in `\\` joined the next line (`_cobot_make.join_continuations`,
+      the same blind replace). Only an odd run continues a line now.
+    - In double quotes, `\$` and `` \` `` are `$` and `` ` `` to bash, but shlex kept the
+      backslash, so `bash -c "echo \$'it\\'s'; git push --force …"` reached its reader as one
+      quoted word, and so did an unbalanced quote in backticks. The pass now drops that
+      backslash. Such a body holds an ANSI-C quote or a substitution, so it is opaque and asks.
+      It was silent before.

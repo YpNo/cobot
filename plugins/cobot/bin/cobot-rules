@@ -656,9 +656,44 @@ def mark_literal_semicolons(text: str) -> str:
     return "".join(out)
 
 
+def bash_escapes(text: str) -> str:
+    """Newlines and escapes read in the pass that tracks quotes, as bash reads them (spec
+    gate-f63-f65, story 3, F-64): an unquoted newline is a separator; a quoted one stays in its
+    word; a backslash-newline is removed outside single quotes, and only when the backslash is not
+    itself escaped (``a\\\\<nl>b`` is ``a\\``, then ``b``). A ``replace`` before the pass read the
+    escaped backslash as a continuation and hid the next line from the rows. In double quotes,
+    ``\\$`` and ``\\``` are ``$`` and ````` to bash, which shlex keeps as two characters: a
+    ``bash -c`` string then reached its reader in another form (T01 review: ``bash -c "echo
+    \\$'it\\\\'s'; git push --force …"``)."""
+    out, quote, i = [], "", 0
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            out.append(c)
+            quote = "" if c == "'" else quote
+        elif c == "\\" and i + 1 < len(text):
+            following = text[i + 1]
+            if quote == '"' and following in "$`":
+                out.append(following)
+            elif following != "\n":
+                out.append(text[i : i + 2])
+            i += 2
+            continue
+        elif quote == '"':
+            out.append(c)
+            quote = "" if c == '"' else quote
+        elif c == "\n":
+            out.append(" ; ")
+        else:
+            out.append(c)
+            quote = c if c in "'\"" else ""
+        i += 1
+    return "".join(out)
+
+
 def shell_items(command: str) -> list[str | list[str]]:
     """The argv-like segments of a shell command and the operator tokens between them, in order."""
-    joined = mark_literal_semicolons(command.replace("\\\n", " ").replace("\n", " ; "))
+    joined = mark_literal_semicolons(bash_escapes(command))
     lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment

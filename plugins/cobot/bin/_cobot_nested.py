@@ -120,12 +120,16 @@ ELSEWHERE = frozenset(
     {"--cloud", "--environment", "--remote-control", "--rc", "--remote", "--teleport", "--desktop"}
 )
 NAMES = frozenset({"claude", "claude-code"})
+Folders = list[str] | tuple[str, ...] | None  # where a segment may run; None when unknown
 
 
-def nested_reason(argv: list[str], cwd: str | None = None) -> str | None:
+HERE: tuple[str, ...] = ()  # no folders given: the process's working directory
+
+
+def nested_reason(argv: list[str], folders: Folders = HERE) -> str | None:
     """Why a ``claude`` argv may run a session outside the gate, or past the owner's prompts, or
-    elsewhere; None for any other command and for a session the gate still governs. ``cwd`` is
-    where a relative ``--add-dir`` resolves."""
+    elsewhere; None for any other command and for a session the gate still governs. ``folders``
+    are where the segment may run, where a relative ``--add-dir`` resolves (None: unknown)."""
     if not argv or os.path.basename(argv[0]).lower() not in NAMES:
         return None
     raw = argv[1 : argv.index("--")] if "--" in argv else argv[1:]
@@ -137,12 +141,14 @@ def nested_reason(argv: list[str], cwd: str | None = None) -> str | None:
         word = words[index]
         if word.startswith("-") and len(word) > 1:
             options, taken = read_option(words, index)
-            reason = next(filter(None, (option_reason(name, values, cwd) for name, values in options)), None)
+            reason = next(
+                filter(None, (option_reason(name, values, folders) for name, values in options)), None
+            )
             if reason:
                 return reason
             index += taken
             continue
-        if subcommand is None and index == first_positional(words):
+        if subcommand is None:  # the first word that is not an option or an option's value
             subcommand = word if word in SUBCOMMANDS else ""
             if subcommand and subcommand not in SESSION_SUBCOMMANDS:
                 return subcommand_reason(subcommand, words[index + 1 :])
@@ -150,19 +156,9 @@ def nested_reason(argv: list[str], cwd: str | None = None) -> str | None:
     after = words[index + 1 : index + 2] if index < len(words) else []
     if subcommand is None and after and after[0] in SUBCOMMANDS:  # ``claude -- update`` (T06 review)
         if after[0] in SESSION_SUBCOMMANDS:
-            return nested_reason([argv[0], *words[index + 1 :]], cwd)
+            return nested_reason([argv[0], *words[index + 1 :]], folders)
         return subcommand_reason(after[0], words[index + 2 :])
     return None
-
-
-def first_positional(words: list[str]) -> int:
-    """The index of the first word that is not an option or an option's value."""
-    index = 0
-    while index < len(words) and words[index].startswith("-") and len(words[index]) > 1:
-        if words[index] == "--":
-            return len(words)
-        index += read_option(words, index)[1]
-    return index
 
 
 def subcommand_reason(subcommand: str, rest: list[str]) -> str | None:
@@ -221,7 +217,7 @@ def shaped_values(words: list[str], start: int, shape: str) -> tuple[list[str], 
     return words[start:end], end - start
 
 
-def option_reason(name: str, values: list[str], cwd: str | None = None) -> str | None:
+def option_reason(name: str, values: list[str], folders: Folders = HERE) -> str | None:
     """The ask an option carries, with its name in the reason."""
     if values == ["\0unknown"]:
         return f"claude {name}: an option the gate does not know may switch its hooks off"
@@ -231,7 +227,7 @@ def option_reason(name: str, values: list[str], cwd: str | None = None) -> str |
         return f"claude {name} brings settings, a permission answerer or code from outside the session"
     if widens(name, values):
         return f"claude {name} runs a session past the owner's permission prompts"
-    if name == "--add-dir" and any(protected_folder(value, cwd) for value in values):
+    if name == "--add-dir" and any(protected_folder(value, folders) for value in values):
         return "claude --add-dir opens HOME, the config dir or a .claude folder to a nested session"
     if name in ELSEWHERE:
         return f"claude {name} runs or reaches a session outside this machine's gate"
@@ -253,12 +249,20 @@ def widens(name: str, values: list[str]) -> bool:
     return name == "--agents" and any(mode in value for value in values for mode in WIDE_MODES)
 
 
-def protected_folder(value: str, cwd: str | None = None) -> bool:
+def protected_folder(value: str, folders: Folders = HERE) -> bool:
     """HOME or one of its ancestors, the config dir or a path inside it, or a ``.claude`` folder
-    itself (a project's), resolved from ``cwd``. A folder below a project's ``.claude`` (a worktree
-    in ``.claude/worktrees``) is not one: its config files are protected by their own rows."""
-    text = value.replace("${HOME}", "~").replace("$HOME", "~")
-    path = os.path.realpath(os.path.join(cwd or os.getcwd(), os.path.expanduser(text)))
+    itself (a project's), resolved from each of ``folders``; a relative value where the folder is
+    unknown counts (wrap code review: ``cd ~ && claude --add-dir .``). A folder below a project's
+    ``.claude`` (a worktree in ``.claude/worktrees``) is not one: its files have their own rows."""
+    text = os.path.expanduser(value.replace("${HOME}", "~").replace("$HOME", "~"))
+    if "\0" in text or (folders is None and not os.path.isabs(text)):
+        return True
+    return any(
+        protected_path(os.path.realpath(os.path.join(base, text))) for base in folders or [os.getcwd()]
+    )
+
+
+def protected_path(path: str) -> bool:
     home = os.path.realpath(os.path.expanduser("~"))
     config = os.path.realpath(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude"))
     inside_config = path == config or path.startswith(config + os.sep)

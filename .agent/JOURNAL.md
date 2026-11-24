@@ -451,3 +451,11 @@ Why: the owner's Q7; plan item T06.
 Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 224 passed; ruff, markdownlint (145 files), check-plugin, sync-agents clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 4 MINOR), each a test row or F-69.
 Next: wrap, code and security reviews, full checks.
 verified: tree 22045b3ff7ba24e53e73308e67a8d01d01d74593 · full suite, F-58 file, ruff, markdownlint, check-plugin, sync-agents
+
+## 2026-11-24 — wrap gate-f58: code and security reviews folded
+Changed: code review, a relative --add-dir read from every folder the segment may run in (asks when the walk has none, cd ~); a start variable absent from the text costs nothing (100 KB of exports took 45 s); --lts only the version slot; first_positional dropped; a NUL byte asks. Security review, an escaped quote misread by the blanking hid a start variable (both readings matched now, the stricter kept); the new claude rows made fnmatch backtrack over a long form (2000 options before mcp add: 20.6 s, past the hook timeout), so matches_bash rejects a row whose literal pieces are absent first (4.2 s, de4a125 6.4 s); nvm exec <alias> read both ways. Coverage run: names_meet keeps the on-disk glob check off rows whose last segment cannot meet the glob's (cat */README.md had spent the glob budget). Each fold a test row.
+Why: /cobot:wrap of spec gate-f58 T01 to T06.
+Proof: full suite with coverage 98.35 %, 6067 passed; ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; cobot-memory check.
+Open: F-66 (ANTHROPIC_BASE_URL), F-69 (auth login and logout, rm --discard-unpushed) for the owner; F-67 and F-68 accepted (Q4, Q5); the 2.1.322 option diff and the bypass-mode spike not run.
+Next: the owner verifies and pushes security/gate-f58.
+verified: tree ec3b62d34f8c1ed06203cbd4c1fa9b68ae3f4ec7 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents

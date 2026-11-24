@@ -414,3 +414,23 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   - `setup-token` asks, since it prints a long-lived token into the transcript (a credential,
     beyond Q7's six).
   - Left for the owner, **F-69**: `auth login`/`logout` and `rm --discard-unpushed`.
+- 2026-11-24, wrap, two reviews with every fold a test row.
+  - **Code review** (2 MAJOR, 4 MINOR):
+    - a relative `--add-dir` is read from every folder the segment may run in, and asks when
+      the walk has none (`cd ~ && claude --add-dir .`);
+    - a start variable absent from the text costs nothing (100 KB of exports took 45 s);
+    - `--lts` is only the version slot;
+    - `first_positional` was dropped;
+    - a NUL byte in `--add-dir` asks.
+    - Accepted: `,` and `=` before a start variable's name make a false ask on words such as
+      `--format=CLAUDE_CODE_X=1`.
+  - **Security review** (2 HIGH, 1 LOW), each a weakening against `de4a125`:
+    - an escaped quote (`\'`) misread by the blanking hid a start variable, so both readings are
+      matched now and the stricter kept;
+    - the new `claude` rows made fnmatch backtrack over a long form (2000 options before
+      `mcp add`: 20.6 s, past the hook timeout), so `matches_bash` now rejects a row whose
+      literal pieces are absent first (4.2 s, against 6.4 s on `de4a125`);
+    - `nvm exec <alias> cmd` is read both ways.
+  - **Found by the coverage run:** under coverage, `cat */README.md` asked. An MCP row met the
+    lexical check, so the folder was listed and the glob budget that the `never` rows need ran
+    out. `names_meet` now keeps only rows whose last segment can meet the glob's.

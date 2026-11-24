@@ -196,6 +196,61 @@ NESTED_FRICTION = [
 ]
 
 
+def test_wrap_addDir_unknownOrManyFolders(rules, project):
+    """Wrap code review: after ``cd ~`` the walk has no folder, so a relative value asks; every
+    folder of an ``||`` is read."""
+    assert decide(rules, "cd ~ && claude --add-dir . -p x") == "ask"
+    assert decide(rules, "cd /usr || cd ~ ; claude --add-dir . -p x") == "ask"
+
+
+def test_wrap_longExportCommand_staysInTime(rules, project):
+    """Wrap code review: 100 KB of exports took 45 s; a name absent from the text costs nothing."""
+    import time
+
+    started = time.monotonic()
+    rules.shell_start_variable(" ".join(["export A=1"] * 10000))
+    assert time.monotonic() - started < 3
+
+
+def test_wrap_escapedQuotes_keepTheStartVariableAsk(rules, project):
+    """Wrap security review: ``\\'`` misread as a quote blanked the ``;`` before the name."""
+    for command in (
+        "echo \\';NODE_OPTIONS=--require=/tmp/x.js node app.js;echo \\'",
+        "echo \\';CLAUDE_CODE_SIMPLE=1 claude -p x;echo \\'",
+    ):
+        assert decide(rules, command) == "ask", command
+
+
+def test_wrap_manyOptionsBeforeTheVerb_stayInTime(rules, project):
+    """Wrap security review: 2000 options before ``mcp add`` took 20 s past 41 new rows."""
+    import time
+
+    command = "claude " + "--add-dir a " * 2000 + "plugin disable cobot"
+    assert decide(rules, command) == "deny"
+    loaded, _, _ = rules.load_rules(None)
+    forms = rules.candidates(command.split())
+    started = time.monotonic()  # the row matching alone, where the backtracking was
+    assert any(rules.matches_bash(rule, forms) for rule in loaded if rule.decision == "never")
+    for rule in loaded:
+        rules.matches_bash(rule, forms)
+    assert time.monotonic() - started < 3
+
+
+def test_wrap_nvmAlias_readBothWays(rules, project):
+    assert decide(rules, "nvm exec myalias claude --bare") == "ask"
+
+
+def test_wrap_nvmLts_onlyInTheVersionSlot(rules):
+    assert rules.inner_version_runner("nvm exec 22 rm --lts -rf x".split()) == ["rm --lts -rf x"]
+    assert rules.inner_version_runner("nvm exec --lts node -v".split()) == ["node -v"]
+
+
+def test_wrap_addDir_nulByte_asksWithoutRaising():
+    import _cobot_nested as nested
+
+    assert nested.protected_folder("a\0b", ["/srv"]) is True
+
+
 def test_story2_addDir_resolvesFromTheSegmentsFolder(rules, project):
     """A relative ``--add-dir`` is read from the folder the walk gives (T02 review: ``../..``)."""
     (project / "a" / "b").mkdir(parents=True)

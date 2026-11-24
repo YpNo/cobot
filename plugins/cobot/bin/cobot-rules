@@ -2502,19 +2502,27 @@ def inner_version_runner(plain: list[str]) -> list[str] | None:
     if rest is None or not rest or rest[0] not in verbs:
         return None if rest is None else NOTHING_HIDDEN
     verb = rest[0]
-    words = [w for w in rest[1:] if not (versioned and w.startswith("--lts"))]  # a version
+    words = rest[1:]
+    lts = next((i for i, w in enumerate(words) if not w.startswith("-") or w.startswith("--lts")), None)
+    by_lts = versioned and lts is not None and words[lts].startswith("--lts")  # the version slot only
+    if by_lts:
+        words = [*words[:lts], *words[lts + 1 :]]
     rest = split_options(words, value_options, flags)
     if rest is None:
         return None
     rest = rest[1:] if rest[:1] == ["--"] else rest
+    versioned = versioned and not by_lts  # a version word may still come
     if versioned and rest[:1] and NVM_VERSION_RE.fullmatch(rest[0]):
         rest = rest[1:]
         rest = rest[1:] if rest[:1] == ["--"] else rest  # ``nvm exec 22 -- cmd`` (T04 review)
+        versioned = False
     if rest[1:2] == ["--"] and head == "volta":  # ``volta run <cmd> -- args``: clap drops it
         rest = [rest[0], *rest[2:]]
+    unsure = versioned and len(rest) > 1  # no version read: the first word may be a user alias
+    readings = [rest, rest[1:]] if unsure else [rest]  # ``nvm exec myalias claude``: an alias or a command
     if (head, verb) in NODE_VERBS:
-        rest = ["node", *rest]
-    return [shell.join(rest)] if rest else NOTHING_HIDDEN
+        readings = [["node", *reading] for reading in readings]
+    return [shell.join(reading) for reading in readings] if rest else NOTHING_HIDDEN
 
 
 def inner_corepack(plain: list[str]) -> list[str] | None:
@@ -3354,16 +3362,33 @@ def applies(rule: Rule, tool: str, agent: str | None) -> bool:
     return file_tool_covers(rule, tool)
 
 
+PATTERN_WILDCARDS_RE = re.compile(r"\*|\?|\[[^\]]*\]")
+
+
 def matches_bash(rule: Rule, forms: list[str]) -> bool:
     """never/ask match any form; allow matches only the canonical (last) form, so a method moved
     to the front of ``gh api`` cannot hide behind a read-only prefix pattern. An agent-scoped
     allow whose pattern ends a word with ``*`` (``cat*``, ``git diff*``) matches that word only:
     ``catatonit`` and ``git difftool`` are other programs."""
     candidates_for_rule = forms[-1:] if rule.decision == "allow" else forms
+    head, pieces = pattern_pieces(rule.pattern)
     return any(
-        fnmatch.fnmatchcase(form, rule.pattern) and (rule.decision != "allow" or word_bounded(rule, form))
+        form.startswith(head)
+        and all(piece in form for piece in pieces)  # a cheap no before fnmatch backtracks (wrap review)
+        and fnmatch.fnmatchcase(form, rule.pattern)
+        and (rule.decision != "allow" or word_bounded(rule, form))
         for form in candidates_for_rule
     )
+
+
+@functools.lru_cache(maxsize=4096)
+def pattern_pieces(pattern: str) -> tuple[str, tuple[str, ...]]:
+    """A pattern's literal start and its literal pieces: a form that lacks one cannot match, and
+    saying so costs a substring search where fnmatch on a long form backtracks over every ``*``
+    (spec gate-f58, wrap security review: 2000 words before ``mcp add`` took 20 s)."""
+    pieces = tuple(piece for piece in PATTERN_WILDCARDS_RE.split(pattern) if piece)
+    starts_literal = pieces and pattern.startswith(pieces[0])
+    return (pieces[0] if starts_literal else ""), pieces
 
 
 def word_bounded(rule: Rule, form: str) -> bool:
@@ -4410,6 +4435,14 @@ def with_known_folders(token: str, cwd: str | None) -> str | None:
     return token
 
 
+def names_meet(last: str, pattern: str) -> bool:
+    """Whether a glob's last segment and a row's last segment can name the same file, either way
+    round (``.mc?.json`` and ``.mcp.json``; ``.claude.json.b*`` and ``.claude.json.backup*``).
+    ``*/README.md`` meets no protected file, so its folder is never listed for these rows (wrap:
+    the listing spent the glob budget the ``never`` rows need)."""
+    return globs_meet(last.casefold(), pattern.rsplit("/", 1)[-1].casefold())
+
+
 def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], budget: GlobBudget) -> bool:
     """A glob that could name a file an ``ask`` row protects (``~/.claude.json``, ``.mcp.json``)
     and matches it on disk now asks, as the written-out word does (spec gate-f58, story 6, Q6). The
@@ -4418,7 +4451,7 @@ def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], bu
     last = glob.rstrip("/").rsplit("/", 1)[-1]
     if GLOB_HOLES & set(last) and not last.startswith("."):
         return False  # without dotglob, bash reaches a dotfile only through a leading literal dot
-    asked = [r for r in protected if r.decision == "ask"]
+    asked = [r for r in protected if r.decision == "ask" and names_meet(last, r.pattern)]
     if "/../" not in glob:  # a ``..`` after a hole defeats the lexical check (T05 review)
         asked = [r for r in asked if path_may_match(r, token, cwd, False)]
     if not asked:
@@ -6707,8 +6740,9 @@ def judge_bash(
         outside = outside_script(program_of(segment), dirs, cwd, holes)
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
-        here = next(iter(sorted(dirs)), None) if dirs else None
-        session = nested.nested_reason(program_of(segment), str(here or cwd or os.getcwd()))  # gate-f58
+        # every folder the segment may run in; None when the walk cannot know (``cd ~``)
+        folders = None if dirs is None else [str(d) for d in sorted(dirs)] or [cwd or os.getcwd()]
+        session = nested.nested_reason(program_of(segment), folders)  # a nested Claude Code (gate-f58)
         if session and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, session)
         if origin:
@@ -6776,17 +6810,28 @@ def sets_start_variable(text: str, name: str, prefix: bool = False) -> bool:
     )
 
 
+def start_variable_set(text: str) -> str | None:
+    """The first start variable the text sets, by name or by prefix (``CLAUDE_CODE_*``); a name
+    absent from the text costs nothing (wrap code review: 100 KB of exports took 45 s)."""
+    names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
+    found = next((name for name in names if name in text and sets_start_variable(text, name)), None)
+    if found is None:
+        prefixed = (name for name in START_PREFIXES if name in text and sets_start_variable(text, name, True))
+        found = next((f"{name}*" for name in prefixed), None)
+    return found
+
+
 def shell_start_variable(command: str) -> Verdict:
     """A command that sets a variable naming a file a program will read, or text a shell will run,
     asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too. A
     ``;``, ``&`` or ``|`` inside quotes is no separator, so it is blanked first: ``export X='a;b'
     BASH_ENV`` still exports BASH_ENV (spec gate-f58, T03 review)."""
-    text = QUOTED_RE.sub(lambda quoted: re.sub(r"[;&|]", "_", quoted.group(0)), command)
-    text = re.sub(r"[\\'\"]", "", text)
-    names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
-    found = next((name for name in names if sets_start_variable(text, name)), None)
-    if found is None:
-        found = next((f"{name}*" for name in START_PREFIXES if sets_start_variable(text, name, True)), None)
+    # both readings, the stricter kept: an escaped quote (``\'``) can make the blanking misread a
+    # span and hide a variable the plain reading sees (wrap security review)
+    blanked = QUOTED_RE.sub(lambda quoted: re.sub(r"[;&|]", "_", quoted.group(0)), command)
+    texts = [re.sub(r"[\\'\"]", "", blanked), re.sub(r"[\\'\"]", "", command)]
+    text = texts[1]
+    found = next(filter(None, map(start_variable_set, texts)), None)
     if found is None and re.search(r"BASH_FUNC_\w+%%", text):
         found = "BASH_FUNC_"
     if found is None and LONG_SETTER_RE.search(text):

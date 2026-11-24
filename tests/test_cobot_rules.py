@@ -264,7 +264,9 @@ INSTALL_ROUTES = [
     ("cobot-env detect cargo", None),
     ("cobot-env prefer mise", None),
     ("cobot-env decline rtk", None),
-    ("python3 -I /home/me/.claude/plugins/cobot/bin/cobot-env brief", None),
+    # the installed plugin (spec gate-f57 story 4: a script outside the project asks, the plugin
+    # folders aside); was /home/me/…, a HOME the gate does not know
+    (f"python3 -I {os.path.expanduser('~')}/.claude/plugins/cobot/bin/cobot-env brief", None),
 ]
 
 

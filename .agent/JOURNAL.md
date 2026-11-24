@@ -333,3 +333,66 @@ Proof: full suite with coverage 98.34 %, 5400 passed, 2 failed under load: the n
 Open: accepted, protected_file_touched stays long; cd ~ && cd .CLAUDE && rm -r cobot denies (names compared without case); false denies on ||, if, functions, pipes, quoted ~. Pre-existing: 100 cds into distinct ~ folders take about 38 s on c9304bc too (a hook timeout).
 Next: Part 2, spec F-57 on security/gate-f57.
 verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-23 — spec gate-f57: inline code beyond -c, -e and - (F-57), for the owner
+Changed: .agent/specs/gate-f57.md revision 2: 15 measured Goal rows on f433a0a, eight stories (option tables per interpreter family with today's rule as a floor, code on stdin, python -m, scripts outside the project, launchers, awk and sed scans, Node inline writes, both runtimes), Q1 to Q5 with recommended defaults; FINDINGS F-63 opened (vim, emacs, gdb), per F-55 Q3 b.
+Why: the orchestrator relayed: spec F-57 on a new branch from the gate-f56-f60 tip, challenger, fold, owner questions; no build until the owner answers.
+Proof: challenger SOUND WITH CHANGES (1 CRITICAL, 9 MAJOR, 5 MINOR), all folded; its claims spot-checked with cobot-rules check (perl -Mstrict -e denies today, python3 /tmp/s.py none while bash /tmp/s.sh asks); markdownlint clean; cobot-memory check.
+Open: Q1 to Q5 for the owner; Ruby, tsx, gawk options and sed's e pages unread (rate limits, a 404, TLS), each a build checkpoint.
+Next: the owner answers Q1 to Q5; then T01.
+verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · spec text and findings only
+
+## 2026-11-23 — gate-f57 T01: interpreter options read from a table (stories 1 and 2)
+Changed: new plugins/cobot/bin/_cobot_inline.py reads each interpreter family's argv (python, node and tsx, perl, ruby, php, ts-node, bun, deno subcommands): code letters in clusters and attached, value options, the script operand, remote and inline preloads, perl -M expressions, php -z and -d loaders, and code on stdin (a bare interpreter, -, a /dev or /proc operand); after an option the table lacks, any later code option of the family asks. The gate calls it from opaque_as_read, whole_segment_is_zone and writes_by_script (perl -i read in clusters: perl -Mstrict -e no longer denies). INTERPRETERS, INLINE_CODE_FLAGS and PYTHON_RE removed. Tests in tests/test_gate_f57.py.
+Why: the owner answered Q1 to Q5 as recommended and asked to build F-57.
+Proof: full suite green on the first cut (the new file aside); stories 1 and 2 162 passed after the folds; test_cobot_rules, differential, f55 and agy files green; ruff clean. Bypass review SOUND WITH CHANGES (4 MAJOR, 1 MINOR, none a regression), each a test row.
+Open: perl -c keeps its ask (BEGIN blocks); tsx's own -e and -p are not documented, read as node's.
+Next: T02, scripts outside the project.
+verified: tree 064eb30892a1e7515ffe49b4e84229190e29cc09 · stories 1 and 2, gate test files, full suite (first cut), ruff
+
+## 2026-11-23 — gate-f57 T02: a script outside the project asks (story 4, Q1)
+Changed: outside_script in the gate's segment loop: an interpreter's script operand, the words an unknown option may have taken for it, and the files a preload, include or config option names ask when they lie outside the hook's working directory (relative ones read from each folder the walk gives, ruby -C, bun --cwd and ts-node --cwd moving the base; an unknown folder or an expansion asks; symlinks followed; an owner allow lifts it). perl -S and ruby -S without a / ask. cobot's own tools stay silent (own_tool_run and the plugin install folders); one route row in test_cobot_rules moved from a made-up /home/me to the real config dir.
+Why: the owner's Q1 answer; curl -so /tmp/s.py then python3 /tmp/s.py was two silent steps while bash /tmp/s.sh asks.
+Proof: full suite: the only failures are stories 3, 5, 6 and 7 rows of tests/test_gate_f57.py, not built yet; ruff clean. Bypass review SOUND WITH CHANGES (4 MAJOR, 1 MINOR), each a test row.
+Open: accepted, a script copied, linked or fetched into the project in the same command (paths are resolved as they are at check time), Q1's residual; friction, pushd sub && popd, cd sub &, a script under HOME outside the project.
+Next: T03, python -m and launchers.
+verified: tree 29b5e6a4b4276ffed9e060dc9144ead4850f0bfa · full suite, story 4 rows, ruff
+
+## 2026-11-23 — gate-f57 T03: python -m and the launchers (stories 3 and 5)
+Changed: CODE_MODULES (Q2's named list) asks on a -m module's top package (asyncio.__main__, idlelib.pyshell too); python -m pip (and pip.__main__) expands to pip through expand_runner, so its rows judge it. inner_launcher reads poetry, pdm, hatch (hatch env run, its env: prefix and +py= filters), conda, mamba and micromamba around run; inner_corepack maps the managers and their binaries (pnpx is pnpm dlx), an unknown first word stays opaque; pipx run and runpip, pixi run, exec and x, rye run are opaque.
+Why: F-57 rows 4, 5 and 9: python3 -m timeit x, python3 -m pip install x and poetry run python -c x reached no decision.
+Proof: full suite: only stories 6, 7 and 8 rows of tests/test_gate_f57.py fail, not built yet; stories 1 to 5 268 passed; ruff clean. Bypass review (3 HIGH, 3 MEDIUM, 1 LOW), each a test row.
+Open: accepted, corepack pnpm@<url> (its source unread), pdm and hatch scripts in pyproject.toml judged as the word they look like; friction, conda run -nbase asks.
+Next: T04, awk and sed.
+verified: tree db61d5c988db2278665b606772576bd979f7f015 · full suite, stories 1 to 5, ruff
+
+## 2026-11-23 — gate-f57 T04: awk and sed programs (story 6)
+Changed: read_program in _cobot_inline.py reads awk (gawk, mawk, nawk, original-awk, busybox) and sed (gsed, busybox): awk options letter by letter and long names by unique prefix, its program scanned with strings, regexes and comments set aside (system, |&, | getline, @load, @include, indirect calls, print into |, a computed print target ask; -l, -i, -f or -W exec from stdin ask); sed options read after operands too, each command parsed after its address (e and the e flag ask; w, W and the w flag are write targets). Literal write targets join reached.paths, so an owner file denies; -f program files go through outside_script; is_opaque takes only this reading for awk, sed and the interpreters. FINDINGS F-64 (the splitter rewrites quoted newlines).
+Why: F-57 rows 10 and 11, F-55 Q3 b.
+Proof: full suite: only stories 7 and 8 rows of tests/test_gate_f57.py fail, not built yet; stories 1 to 6 379 passed; ruff clean. Bypass review (2 BLOCKER, 6 MAJOR, 1 MINOR), each a test row.
+Open: gawk's options page unread (rate-limited): an unknown awk option makes every operand a program; friction, a computed awk print target and print into a sort pipe ask.
+Next: T05, Node inline writes and the environment variables.
+verified: tree 44393cc5808227d1285a48ac5296379918b13c52 · full suite, stories 1 to 6, ruff
+
+## 2026-11-23 — gate-f57 T05: Node inline writes and code through the environment (story 7, Q4, Q5)
+Changed: NODE_WRITES_RE joins PYTHON_WRITES_RE in writes_by_script (SCRIPT_WRITES_RE per family: node, tsx, ts-node, bun): a Node inline or stdin script calling an fs writer on fs, fsp, promises or a require("fs") result is refused. START_VARIABLES gains NODE_OPTIONS, PERL5OPT, RUBYOPT, PYTHONSTARTUP, PYTHONINSPECT, BUN_OPTIONS, PYTHONHOME, PHP_INI_SCAN_DIR; COMPUTED_EXPORT_RE asks on an exported name the command builds (export $N=…, export NODE_{OPTIONS,X}=…). FINDINGS F-65 (loader variables of any program).
+Why: the owner's Q4 (refused, as Python's) and Q5 (ask when the command sets one).
+Proof: full suite green; tests/test_gate_f57.py 426 passed; ruff clean. Bypass review (2 MAJOR, no Node write reaching none), each a test row.
+Open: accepted, the planted-module class (NODE_PATH, RUBYLIB, PERL5LIB, PYTHONPATH, PYTHONWARNINGS); a destructured or computed fs writer keeps the ask; a string naming an fs writer denies, as Python's rule does.
+Next: T06, docs, CHANGELOG and FINDINGS F-57 closed.
+verified: tree 7e07079b9834f81b314477338434c6b740419209 · full suite, F-57 file, ruff
+
+## 2026-11-23 — gate-f57 T06: docs, CHANGELOG, FINDINGS (story 8)
+Changed: docs/configuration.md says what asks (inline code in any option form, stdin, a script outside the project, python -m, launchers, awk and sed, the environment), what is refused (Node and Python inline writes, an awk or sed write to an owner file) and what is not covered; CHANGELOG Security entry; FINDINGS F-57 closed. The agy rows (one per story) landed with T01.
+Why: plan item T06; ADR-0007, both runtimes share the judge.
+Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync.
+Next: wrap, a code review over T01 to T05, then the full suite with coverage.
+verified: tree 7e07079b9834f81b314477338434c6b740419209 · markdownlint, check-plugin, sync-agents
+
+## 2026-11-24 — wrap gate-f57: code review folded
+Changed: SED_ADDRESS_RE's custom-delimiter branches exclude each other (a run of backslashes after \x backtracked exponentially: 34 outran the hook timeout, a bypass); gawk's attached-value letters (-pprof, -ofoo) and -W long-option=value read; --profile=, --dump-variables=, --pretty-print=, --debug= and their letters are write targets; line_end and text_end linear on long scripts; --lint=fatal silent; pip_command reads once; docstrings; each fold a test row, with a time-bound test.
+Why: /cobot:wrap of spec gate-f57 T01 to T06.
+Proof: full suite with coverage 98.32 %, 5836 passed (an earlier run under load had the known glob-deadline flake, cat */README.md, which passed on the re-run); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; cobot-memory check, brief 5394 chars before this entry.
+Open: kept, the floor reads a cluster's first three letters; is_opaque reads awk and sed twice. F-63, F-64, F-65 open; F-58 parked next.
+Next: the owner verifies and pushes security/gate-f57 (after PR 83); then F-58.
+verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check

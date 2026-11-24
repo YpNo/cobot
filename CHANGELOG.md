@@ -249,6 +249,24 @@ All notable changes to this project are documented here. The format follows
     customization root elsewhere in the command (`cp x ~/.agents/; cp x ~/.claude/cobot.rules`).
   - A config dir reached through a symlink is protected at its real path, and re-pointing a link
     above it is refused.
+- **Inline code beyond `-c`, `-e` and `-` asks (F-57).**
+  - Each interpreter's options are read from a table: `node -p x`, `python3 -Sc x`, `perl -ne x`,
+    `php -r x`, `deno eval x`, `bun -p x`, `tsx -e x`, code on stdin (`echo x | python3`) and a
+    remote module (`deno run https://…`, `node --import data:…`) ask. Before, only a word that
+    was exactly `-c`, `-e` or `-` did.
+  - A script outside the project asks (`python3 /tmp/s.py`, `node -r /tmp/x.js s.js`), as `bash
+    /tmp/s.sh` does.
+  - `python -m timeit`, `code`, `pdb`, `asyncio` and the other code-running modules ask;
+    `python -m pip` is judged as `pip`. `poetry`, `pdm`, `hatch`, `conda` and `mamba run` and
+    `corepack <pm>` are read as runners; `pipx run`, `pixi run` and `rye run` ask.
+  - awk and sed that run a command ask (`system()`, a command pipe, sed's `e`); their literal
+    write targets are judged, so `sed -n "w $HOME/.claude/cobot.rules"` is refused.
+  - A Node inline script that writes a file is refused, as a Python one is. Setting
+    `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `PYTHONSTARTUP`, `PYTHONINSPECT`, `BUN_OPTIONS`,
+    `PYTHONHOME` or `PHP_INI_SCAN_DIR` asks, and so does `export $N=…` (a computed name).
+  - Fixed on the way: `perl -Mstrict -e x` was refused (the `-i` check read any `i`); it asks.
+  - New friction: `perl -c`, a script under HOME outside the project, `bun <script>`, an awk
+    print into a computed file or a `sort` pipe ask. Both runtimes.
 - **A `cd` before the word no longer softens the decision.**
   - After `cd ~/.claude` (or `cd ~ && cd .claude`, `pushd`), a relative word gets the
     written-out path's decision: `cd ~/.claude && rm -r cobot` and `cd ~/.claude && tar -xf

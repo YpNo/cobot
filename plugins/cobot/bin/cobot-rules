@@ -52,6 +52,7 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters: mise tasks
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the script dir
 import _cobot_agy as agy  # noqa: E402
+import _cobot_inline as inline  # noqa: E402
 import _cobot_make  # noqa: E402
 import _cobot_secrets as secrets  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
@@ -138,6 +139,9 @@ OPAQUE_SUBCOMMANDS = {
     "uv": frozenset({"run"}),
     "uvx": frozenset({""}),
     "kubectl": frozenset({"exec"}),
+    "pipx": frozenset({"run", "runpip"}),  # a package from the index, as ``uvx`` (spec gate-f57, story 5)
+    "pixi": frozenset({"run", "exec", "x"}),  # a task from pixi.toml, or a command (T03 review)
+    "rye": frozenset({"run"}),
 }
 # entry wrappers: the command they run is visible once their own options are parsed
 SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
@@ -242,7 +246,6 @@ PWD_UNKNOWN_RE = re.compile(
     r"|\b(?:printf|read|declare|typeset|export|local|readonly|mapfile|readarray|getopts|unset|let)\b"
 )
 ANYWHERE = ""  # key of the directories any part of a script may run in (a sentinel is never empty)
-INLINE_CODE_FLAGS = frozenset({"-c", "-e", "-"})
 # mise tasks are resolved from the config (closest folder first, local files first)
 MISE_CONFIGS = (
     "mise.local.toml",
@@ -277,7 +280,6 @@ MAKE_FLAGS = frozenset(
     "--warn-undefined-variables -h --help -j --jobs".split()
 )
 MAKE_NAMES = frozenset({"make", "gmake"})
-INTERPRETERS = frozenset({"python", "python3", "node", "deno", "ruby", "perl", "php"})
 # global options of known binaries: options that take a value, and flags without a value
 GLOBAL_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "git": (
@@ -2183,6 +2185,8 @@ def is_opaque(plain: list[str]) -> bool:
     any reading past the options before its verb (``uv -q run …``)."""
     if gh_unknown_command(plain):
         return True
+    if plain and (inline.family(plain[0]) or inline.read_program(plain) is not None):
+        return opaque_as_read(plain)  # their options are read in full: ``sed --sandbox`` is no verb skip
     return opaque_as_read(plain) or any(opaque_as_read(r) for r in readings(plain) if r != plain)
 
 
@@ -2210,6 +2214,12 @@ def opaque_as_read(plain: list[str]) -> bool:
             return False
         hidden = sub in OPAQUE_SUBCOMMANDS["mise"] or sub.startswith("-") or sub not in MISE_BUILTINS
         return bool(sub) and hidden
+    reading = inline.read_argv(plain)
+    if reading is not None and (reading.asks() or inline.pip_command(reading)):  # gate-f57: pip expands
+        return True
+    program = inline.read_program(plain)
+    if program is not None and program.why:  # awk or sed running a command (gate-f57, story 6)
+        return True
     if head in OPAQUE_SUBCOMMANDS:
         verb = canonical_package_manager(strip_global_options(plain))
         sub = verb[1] if len(verb) > 1 else ""
@@ -2218,8 +2228,6 @@ def opaque_as_read(plain: list[str]) -> bool:
         if head in SCRIPT_SHORTHAND:  # `pnpm typecheck` runs the package.json script
             return bool(sub) and not sub.startswith("-") and sub not in SCRIPT_SHORTHAND[head]
         return head == "npm" and sub in NPM_SCRIPT_ALIASES
-    if head in INTERPRETERS:
-        return any(token in INLINE_CODE_FLAGS for token in plain[1:])
     if head in WRAPPER_PARSERS:  # opaque until expand_segments resolves the inner command
         return WRAPPER_PARSERS[head](plain) != NOTHING_HIDDEN
     return False
@@ -2386,7 +2394,95 @@ def inner_rustup(plain: list[str]) -> list[str] | None:
     return None
 
 
+INFO_FLAGS = frozenset({"-V", "--version", "-h", "--help"})
+# Python launchers (spec gate-f57, story 5): their options around ``run``, value options then flags
+LAUNCHER_OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "poetry": (
+        frozenset({"-C", "--directory", "-P", "--project"}),
+        frozenset(
+            "-q --quiet -v -vv -vvv --verbose -n --no-interaction --no-ansi --ansi --no-plugins "
+            "--no-cache".split()
+        ),
+    ),
+    "pdm": (
+        frozenset({"-p", "--project", "--venv", "--skip"}),
+        frozenset(
+            "-q --quiet -v --verbose -g --global -s --site-packages -r --recreate -l --list --json".split()
+        ),
+    ),
+    "hatch": (
+        frozenset({"-e", "--env", "-p", "--project", "--data-dir", "--cache-dir", "--config"}),
+        frozenset("-q --quiet -v --verbose --no-color --interactive --no-interactive".split()),
+    ),
+    "conda": (
+        frozenset({"-n", "--name", "-p", "--prefix", "--cwd"}),
+        frozenset("--live-stream --no-capture-output -v --verbose --debug-wrapper-scripts".split()),
+    ),
+}
+LAUNCHER_TABLES = {"mamba": "conda", "micromamba": "conda"}  # the same ``run`` (bypass review of T03)
+HATCH_SELECTOR_RE = re.compile(r"[+-][\w-]+=\S*")  # ``hatch run +py=3.12 …``: a matrix filter
+# corepack runs the manager, or a binary of one, it names (``corepack pnpx x`` is ``pnpm dlx x``)
+COREPACK_BINARIES = {
+    "npm": ["npm"],
+    "pnpm": ["pnpm"],
+    "yarn": ["yarn"],
+    "npx": ["npx"],
+    "pnpx": ["pnpm", "dlx"],
+    "yarnpkg": ["yarn"],
+}
+COREPACK_OWN = frozenset("enable disable install pack prepare use up cache hydrate".split()) | INFO_FLAGS
+
+
+def inner_launcher(plain: list[str]) -> list[str] | None:
+    """``poetry run``, ``pdm run``, ``hatch run`` (and ``hatch env run``), ``conda run`` (and mamba's):
+    options before and after ``run``, then the command; None on an option the gate does not know
+    (the command could start anywhere). hatch's ``env:`` prefix and matrix filters are dropped. A
+    launcher's own script table (pdm and hatch scripts in pyproject.toml) is not read."""
+    head = plain[0]
+    value_options, flags = LAUNCHER_OPTIONS[LAUNCHER_TABLES.get(head, head)]
+    flags = flags | INFO_FLAGS
+    rest = split_options(plain[1:], value_options, flags)
+    if rest is not None and head == "hatch" and rest[:2] == ["env", "run"]:
+        rest = rest[1:]
+    if rest is None or rest[:1] != ["run"]:
+        return None if rest is None else NOTHING_HIDDEN
+    rest = split_options(rest[1:], value_options, flags)
+    if rest is None:
+        return None
+    rest = rest[1:] if rest[:1] == ["--"] else rest
+    if head == "hatch":
+        rest = hatch_command(rest)
+    return [shell.join(rest)] if rest else NOTHING_HIDDEN
+
+
+def hatch_command(words: list[str]) -> list[str]:
+    """``hatch run +py=3.12 test:python -c x`` runs ``python -c x``."""
+    rest = list(words)
+    while rest and HATCH_SELECTOR_RE.fullmatch(rest[0]):
+        rest = rest[1:]
+    if rest and ":" in rest[0]:
+        rest = [rest[0].split(":", 1)[1], *rest[1:]]
+    return rest
+
+
+def inner_corepack(plain: list[str]) -> list[str] | None:
+    """``corepack pnpm@9 exec …`` runs the manager it names; ``corepack enable`` runs nothing; any
+    other first word stays opaque."""
+    word = plain[1] if len(plain) > 1 else ""
+    name = word.split("@", 1)[0]
+    if name in COREPACK_BINARIES:
+        return [shell.join([*COREPACK_BINARIES[name], *plain[2:]])]
+    return NOTHING_HIDDEN if not word or word in COREPACK_OWN else None
+
+
 WRAPPER_PARSERS = {
+    "poetry": inner_launcher,
+    "pdm": inner_launcher,
+    "hatch": inner_launcher,
+    "conda": inner_launcher,
+    "mamba": inner_launcher,
+    "micromamba": inner_launcher,
+    "corepack": inner_corepack,
     "rustup": inner_rustup,
     "distrobox": inner_distrobox,
     "distrobox-enter": inner_distrobox,
@@ -2668,6 +2764,9 @@ def expand_runner(plain: list[str], here: Path | None) -> tuple[list[str], Dirs]
         commands = expand_node(plain, here)
     elif head in SHELLS:
         commands = expand_shell(plain)
+    elif inline.family(head) == "python":  # ``python -m pip …`` is ``pip …`` (spec gate-f57, story 3)
+        pip = inline.pip_argv(plain)
+        commands = [shell.join(pip)] if pip else None
     elif head in WRAPPER_PARSERS:
         commands = WRAPPER_PARSERS[head](plain)
     else:
@@ -5602,7 +5701,7 @@ def whole_segment_is_zone(plain: list[str]) -> bool:
     """A head whose arguments an expander, an interpreter or a canonicaliser reads anywhere, decided
     by name; or a segment that is opaque with its verb as written (``docker exec``, ``npm test``)."""
     head = plain[0]
-    if any(head in group for group in (SHELLS, OPAQUE, INTERPRETERS, MAKE_NAMES, WHOLE_WRAPPERS)):
+    if any(head in group for group in (SHELLS, OPAQUE, MAKE_NAMES, WHOLE_WRAPPERS)) or inline.family(head):
         return True
     if is_opaque(plain):
         return True
@@ -5875,8 +5974,82 @@ def judge_segment(
     return best
 
 
+def program_writes(segments: list[list[str]], holes: dict) -> list[str]:
+    """The literal files awk's ``print > "f"`` and sed's ``w f`` write, as written (``$HOME`` kept),
+    judged with the redirect targets (spec gate-f57, story 6)."""
+    found = []
+    for segment in segments:
+        program = inline.read_program([show(token, holes) for token in program_of(segment)])
+        found += program.writes if program else []
+    return found
+
+
+def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) -> str | None:
+    """A script an interpreter runs from outside the project root asks, as ``bash /tmp/s.sh`` does
+    (spec gate-f57, story 4, Q1): a file there may come from ``curl -o`` or ``cp``, never from Edit
+    or Write. The root is the hook's working directory; a relative script is read from every folder
+    the walk says the segment runs in, and one the gate cannot place (an unknown folder, an
+    expansion) asks. A symlink is followed. The same holds for the words an unknown option may have
+    taken for the script, for the files a preload, include or config option names, and from the
+    folder ``ruby -C`` or ``bun --cwd`` changes into (bypass review of T02), and for an awk or sed
+    program file (``-f``; T04 review)."""
+    words, base = script_words(argv)
+    if not words or own_tool_run(argv) is not None:  # cobot's own bin/ tools
+        return None
+    root = Path(cwd or os.getcwd()).resolve()
+    bases = placed_bases(base, dirs, root)
+    for word in words:
+        if not word_inside(word, bases, root):
+            return f"a script outside the project, not written with Edit or Write: '{show(word, holes)[:60]}'"
+    return None
+
+
+def script_words(argv: list[str]) -> tuple[list[str], str | None]:
+    """The files an interpreter, awk or sed runs or loads, and the folder it changes into first;
+    none when it already asks for its inline code or runs an installed plugin's file."""
+    reading = inline.read_argv(argv)
+    if reading is None:
+        program = inline.read_program(argv)
+        return (program.files if program and not program.why else []), None
+    if reading.asks() or (reading.script and installed_plugin_file(reading.script)):
+        return [], None
+    return [*filter(None, [reading.script]), *reading.candidates, *reading.loads], reading.base
+
+
+def installed_plugin_file(word: str) -> bool:
+    """A file under the plugin folders Claude Code and agy install into (the session brief runs
+    ``python3 -I <config dir>/plugins/…/bin/cobot-env``); the gate guards writes there."""
+    if shell.has_sentinel(word) or not os.path.isabs(os.path.expanduser(word)):
+        return False
+    real = Path(os.path.realpath(os.path.expanduser(word)))
+    roots = (config_dir() / "plugins", Path.home() / ".gemini" / "config" / "plugins")
+    return any(real.is_relative_to(os.path.realpath(root)) for root in roots)
+
+
+def placed_bases(base: str | None, dirs: Dirs, root: Path) -> list[Path] | None:
+    """The folders a relative script is read from (None when one is unknown): the walk's folders,
+    or the root when it has none, each joined with the interpreter's own ``-C`` folder."""
+    folders = None if dirs is None else (sorted(dirs) or [root])
+    if base is None or folders is None:
+        return folders
+    if shell.has_sentinel(base) or UNSURE_PATH_CHARS & set(base):
+        return None
+    return [folder / os.path.expanduser(base) for folder in folders]
+
+
+def word_inside(word: str, bases: list[Path] | None, root: Path) -> bool:
+    """Whether the file a word names lies under the root from every base, symlinks followed."""
+    path = os.path.expanduser(word)
+    if shell.has_sentinel(word) or UNSURE_PATH_CHARS & set(word):
+        return False
+    if os.path.isabs(path):
+        return Path(os.path.realpath(path)).is_relative_to(root)
+    if bases is None:
+        return False
+    return all(Path(os.path.realpath(base / path)).is_relative_to(root) for base in bases)
+
+
 WRITING_SCRIPT = "a script that writes files: edit them with Edit or Write, not a script (cobot protocol)"
-PYTHON_RE = re.compile(r"python(?:\d+(?:\.\d+)?)?")
 # what a Python script calls to write a file: open() or .open() with a writing mode, the pathlib
 # writers, and the moves and copies of os and shutil
 PYTHON_WRITES_RE = re.compile(
@@ -5888,25 +6061,43 @@ PYTHON_WRITES_RE = re.compile(
 )
 
 
+# what a Node script calls to write a file (spec gate-f57, Q4): the fs writers on ``fs``, ``fsp``,
+# ``promises`` or a ``require("fs")`` / ``node:fs`` / ``fs/promises`` result. A destructured or
+# computed name, ``process.binding`` or ``child_process`` keeps the inline-code ask
+NODE_FS_RE = (
+    r"(?:\b(?:fs|fsp|promises)"
+    r"|\brequire\(\s*['\"`](?:node:)?fs(?:/promises)?['\"`]\s*\)(?:\.promises)?)"
+)
+NODE_WRITES_RE = re.compile(
+    NODE_FS_RE + r"\s*\.\s*(?:writeFile|appendFile|copyFile|cp|rename|createWriteStream)\w*\s*\("
+)
+SCRIPT_WRITES_RE = {
+    "python": PYTHON_WRITES_RE,
+    "node": NODE_WRITES_RE,
+    "tsx": NODE_WRITES_RE,
+    "ts-node": NODE_WRITES_RE,
+    "bun": NODE_WRITES_RE,
+}
+
+
 def writes_by_script(segment: list[str], unit: shell.Scan, holes: dict) -> bool:
-    """Whether a segment edits files through an interpreter: a Python script read from stdin or
-    ``-c`` whose code writes a file, or ``perl -i``. The protocol asks for Edit or Write, whose
+    """Whether a segment edits files through an interpreter: a Python, Node, tsx, ts-node or Bun
+    script read from stdin or inline whose code writes a file (``SCRIPT_WRITES_RE``), or ``perl
+    -i``. The protocol asks for Edit or Write, whose
     diff the owner sees and whose path the rules judge; a script is opaque to both, whatever the
     host suggests. A script that only reads keeps its ask."""
-    argv = strip_wrappers(segment)
-    if not argv:
+    reading = inline.read_argv(strip_wrappers(segment))
+    if reading is None:
         return False
-    head = argv[0].lower()
-    if head == "perl":
-        return any(re.fullmatch(r"-[a-zA-Z]*i\S*", word) for word in argv[1:] if not word.startswith("--"))
-    if not PYTHON_RE.fullmatch(head):
+    if reading.family == "perl":
+        return reading.in_place  # read in clusters: ``-Mstrict`` holds an i, and is not ``-i``
+    writes = SCRIPT_WRITES_RE.get(reading.family)
+    if writes is None:
         return False
-    words = argv[1:]
-    code = [show(words[words.index("-c") + 1], holes)] if "-c" in words[:-1] else []
-    reads_stdin = "-" in words or not [w for w in words if not w.startswith("-")]
-    if reads_stdin and not code:
+    code = [show(text, holes) for text in reading.code]
+    if reading.stdin and not code:
         code = [doc.body for doc in unit.heredocs]
-    return any(PYTHON_WRITES_RE.search(text) for text in code)
+    return any(writes.search(text) for text in code)
 
 
 # ---------------------------------------------------------------- shell writes (gate-f36-f40-f44, story 6)
@@ -6390,6 +6581,7 @@ def judge_bash(
     placed = [(segment, dirs) for segment, _, _, dirs in entries]
     homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
+    reached.paths.extend(program_writes([segment for segment, _ in placed], holes))
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     in_protected = protected_cwd(directories, rules)
     if touched:
@@ -6415,6 +6607,9 @@ def judge_bash(
             verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
+        outside = outside_script(program_of(segment), dirs, cwd, holes)
+        if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
+            verdict = Verdict(ASK, None, outside)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
@@ -6442,10 +6637,21 @@ def judge_bash(
 START_VARIABLES = (
     "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND "
     # options an extractor reads from its environment (spec gate-f56-f60, T04 review)
-    "TAR_OPTIONS UNZIP UNZIPOPT".split()
+    "TAR_OPTIONS UNZIP UNZIPOPT "
+    # code an interpreter loads or runs before its script (spec gate-f57, Q5; T05 review adds the
+    # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
+    "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
+    "PHP_INI_SCAN_DIR".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
+
+
+# a setter whose variable name holds an expansion or a brace: the name is built when the command
+# runs, so it may be any start variable (spec gate-f57, T05 review)
+COMPUTED_EXPORT_RE = re.compile(
+    r"(?:^|[\s;&|(`])(?:export|declare|typeset|readonly|local)\s+(?:-[a-zA-Z]+\s+)*[^\s=;&|]*[${][^\s;&|]*="
+)
 
 
 def sets_start_variable(text: str, name: str) -> bool:
@@ -6468,6 +6674,8 @@ def shell_start_variable(command: str) -> Verdict:
         found = "BASH_FUNC_"
     if found is None and LONG_SETTER_RE.search(text):
         found = "a setter too long to read"
+    if found is None and COMPUTED_EXPORT_RE.search(text):  # ``export $N=…``, ``export NODE_{OPTIONS,X}=…``
+        found = "an exported name the command computes"
     if found is None:
         return Verdict(None, None, "no rule matched")
     return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")

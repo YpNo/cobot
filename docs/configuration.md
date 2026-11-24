@@ -161,8 +161,44 @@ part named as the config dir (`mv . /tmp/x`, `mv shell-snapshots /tmp`).
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,
-`shutil.move`, `os.replace` or `os.rename`, and `perl -i`. Edit and Write show you the diff and
-meet the path rules; a script is opaque to both. A script that only reads keeps its ask.
+`shutil.move`, `os.replace` or `os.rename`; a Node, tsx, ts-node or Bun inline script that calls
+an `fs` writer (`writeFile*`, `appendFile*`, `copyFile*`, `cp*`, `rename*`, `createWriteStream`)
+on `fs`, `fsp`, `promises` or a `require("fs")` result; and `perl -i`. Edit and Write show you
+the diff and meet the path rules; a script is opaque to both. A script that only reads keeps its
+ask, and so does a write the pattern does not name (a destructured `writeFileSync`).
+
+Code the gate cannot read asks (.agent/specs/gate-f57.md), in both runtimes:
+
+- **Inline code in any option form.** Each interpreter family (`python`, `python3.N`, `pypy`;
+  `node`, `tsx`; `perl`; `ruby`; `php`; `ts-node`; `bun`; `deno`) has its options in a table, so
+  `node -p x`, `python3 -Sc x`, `perl -ne x`, `php -r x`, `deno eval x` and `bun -p x` ask, while
+  `python3 s.py -c x` (the script's own argument) does not. After an option the table lacks, any
+  later code option of the family asks. `perl -M` with an expression (`-M'lib qx(x)'`) asks;
+  `-Mlib=lib` does not. `perl -c` asks: a syntax check runs `BEGIN` blocks.
+- **Code on stdin.** A bare interpreter (`echo x | python3`), `-i`, `-` and a `/dev/` or `/proc/`
+  operand ask; `--version` and the like do not.
+- **A script outside the project.** `python3 /tmp/s.py`, `node ~/x.js`, `node -r /tmp/x.js s.js`
+  and `awk -f /tmp/x.awk` ask, as `bash /tmp/s.sh` does: a file there never passed through Edit
+  or Write. The project is the hook's working directory. A script in it stays silent, and so do
+  cobot's own installed tools. Friction: a script under HOME outside the project asks.
+- **`python -m`.** `timeit`, `code`, `pdb`, `cProfile`, `profile`, `trace`, `asyncio`,
+  `_pyrepl`, `idlelib`, `IPython` and `runpy` ask; `python -m pip` is judged as `pip`; other
+  modules stay silent.
+- **Launchers.** `poetry run`, `pdm run`, `hatch run`, `conda run`, `mamba run` and `corepack
+  <pm>` are judged by the command they run; `pipx run`, `pixi run`, `rye run`, `node --run`,
+  `deno x` and `bun <script>` ask.
+- **awk and sed.** `system()`, a command pipe, `getline` from a command, `@load` and gawk `-l`,
+  and sed's `e` command and `e` flag ask; `print > "f"` and sed `w f` are write targets, so
+  cobot's owner files are refused, and a computed target asks. `sed --sandbox` is silent.
+- **The environment.** Setting `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `PYTHONSTARTUP`,
+  `PYTHONINSPECT`, `BUN_OPTIONS`, `PYTHONHOME` or `PHP_INI_SCAN_DIR` in the command asks, and so
+  does an exported name the command computes (`export $N=…`, `export NODE_{OPTIONS,X}=…`).
+
+Not covered: a script copied, linked or fetched into the project earlier (`curl -o d.py u &&
+python3 d.py`); a planted module (`PYTHONPATH`, `NODE_PATH`, `RUBYLIB`, `PERL5LIB`, `ruby -r
+json` with a planted `json.rb`); a loader variable of any program (`LD_PRELOAD`, F-65);
+other interpreters (`lua`, `Rscript`, `osascript`, `julia`); editors and debuggers that run
+commands (F-63); an interpreter copied under another name.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

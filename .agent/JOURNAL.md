@@ -396,3 +396,11 @@ Proof: full suite with coverage 98.32 %, 5836 passed (an earlier run under load 
 Open: kept, the floor reads a cluster's first three letters; is_opaque reads awk and sed twice. F-63, F-64, F-65 open; F-58 parked next.
 Next: the owner verifies and pushes security/gate-f57 (after PR 83); then F-58.
 verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-24 — spec gate-f58: nested Claude Code, plugin removal, launchers and copies (F-58), for the owner
+Changed: .agent/specs/gate-f58.md revision 2: 15 measured Goal rows on de4a125 (Claude Code 2.1.311), eight stories (cobot's plugin disable and uninstall refused as agy's are; claude option tables per subcommand, read on every unwrapped form; the CLAUDE_CODE_* start variables; launchers; the cli.js name row; globs on protected files matched on disk; the subcommands that change Claude Code; both runtimes), Q1 to Q8 with recommended defaults, accept the risk offered on each; FINDINGS F-58 points at the spec.
+Why: the orchestrator relayed: spec F-58 on a new branch from main de4a125, challenger, fold, owner questions; no build until the owner answers.
+Proof: every Goal row measured with cobot-rules check; challenger SOUND WITH CHANGES (1 BLOCKER, 7 MAJOR, 6 MINOR), all folded, the BLOCKER and two MAJORs re-run by hand (claude plugin disable cobot, --managed-settings, claude agents --dangerously-skip-permissions: none).
+Open: Q1 to Q8 for the owner; checkpoints before the build: the binary's option list for 2.1.311 and 2.1.322, a bypass-mode spike in the owner's terminal, --restricted alone, the CLAUDE_CODE_* semantics, the launchers' docs.
+Next: the owner answers Q1 to Q8; then T01.
+verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · spec text and findings only

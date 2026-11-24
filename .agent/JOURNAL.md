@@ -563,3 +563,11 @@ Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook ref
 Open: a hung NFS or FUSE read; report and handback have no deadline; JOURNAL.md over 400 lines.
 Next: the owner's go for the push and the PR.
 verified: tree 499cf639f860f38de32db62801011b5a4f4123d2 · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents
+
+## 2026-11-24 — CI installs Claude Code 2.1.331
+Changed: .github/workflows/ci.yml (quality job 2.1.318, evals 2.1.322) and knowledge-refresh.yml (2.1.322) all install @anthropic-ai/claude-code@2.1.331; CHANGELOG Changed entry; CONTEXT environment line. Redone on main 3e83cc6; 6565b0b (2.1.329, on claude/ci-claude-code-1d4c9b) is superseded.
+Why: the pins trailed npm latest 2.1.331 (published 2026-11-23); no reason to keep two versions.
+Proof: ruff 0.17.6 clean; check-plugin ok; sync-agents --check in sync; markdownlint-cli2 0.24.2 0 issues. Gate checkpoint (F-58): 2.1.331 installed by npm install --prefix into the scratchpad (global install untouched); the commander specs of both binaries extracted the same way: 18 long options added (--agents-view-if-allowed, --discard, --event, --gateway-json, --hold-repository-while-parked, --initialize-fields, --lead-verify-key, --list, --managed-settings-in-initialize, --max-cost, --metadata, --organization-gateway, --output, --path, --review-md, --session-began-as-copy, --trusted-folder, --web), 1 removed (--registry <url>), no shape change, no short letter added or removed. --managed-settings-in-initialize and --initialize-fields are read from the raw argv before commander.
+Open: the gate table in _cobot_nested.py still holds 2.1.311 (the next gate spec folds the diff in; until then Q1's unknown-option ask covers the 18); the eval and knowledge-refresh jobs are unproven on 2.1.331 until their next CI run; local Claude Code is 2.1.311.
+Next: the gate spec that folds in the 2.1.331 options.
+verified: tree 269c3d0c423cfa11cbe2527e284923f51c8b4b22 · ruff, check-plugin, sync-agents --check, markdownlint, option diff 2.1.311→2.1.331 (re-run after the rebase on 071b1c9)

@@ -87,7 +87,7 @@ jobs:
           python-version: "3.13"
       - name: Install Claude Code and the checks
         run: |
-          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.322
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.331
           python -m pip install --quiet ruff==0.17.6
       - name: Run the learner (read-only, budget-capped)
         env:

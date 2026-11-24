@@ -329,6 +329,62 @@ def test_story4_launcherFriction_staysSilent(rules, project, command):
     assert decide(rules, command) is None
 
 
+# ---------------------------------------------------------------- story 6: globs on protected files
+
+
+@pytest.fixture
+def state_files(project):
+    home = project.parent / "home"
+    (home / ".claude.json").write_text("{}")
+    (home / ".claude.json.backup1").write_text("{}")
+    (project / ".mcp.json").write_text("{}")
+    return home
+
+
+GLOB_ASK = [
+    "tee ~/.claude.js?n",
+    "cp x ~/.claude.j*",
+    "rm ~/.claude.j*",
+    "tee .mc?.json",
+    "tee ~/.claude.json.b*",
+    "cat ~/.cl*.json",
+    "ls ~/.c*",
+    # T05 review: a .. after a hole, $PWD with a glob
+    "cat ~/.cl*/../.claude.json",
+    "tee ~/.c*/../.claude.json",
+    "tee $PWD/.mc?.json",
+    'tee "$PWD"/.mc?.json',
+    "cp x ${PWD}/.mc*",
+    "cat $HOME/.claude.j*",
+]
+
+
+@pytest.mark.parametrize("command", GLOB_ASK)
+def test_story6_globMatchingAProtectedFile_asks(rules, state_files, command):
+    assert decide(rules, command) == "ask"
+
+
+def test_story6_globMatchingNothingProtected_staysSilent(rules, project):
+    """No ``.mcp.json`` here and no ``~/.claude.json``: the same globs name nothing protected."""
+    for command in ("tee .mc?.json", "cat ~/.cl*.json", "ls ~/.c*", "cat *.json", "ls src/*"):
+        assert decide(rules, command) is None, command
+
+
+def test_story6_otherGlobs_staySilent(rules, state_files):
+    """Without dotglob a glob reaches a dotfile only through a leading dot (T05 review: ``ls *`` in
+    a repository with a ``.mcp.json``)."""
+    (state_files / ".bashrc.d").mkdir()
+    for command in (
+        "cat *.py",
+        "ls ~/.bashrc.d/*",
+        "cat ~/.config/*.toml",
+        "ls *",
+        "cat *.json",
+        "ls ~/?claude.json",
+    ):
+        assert decide(rules, command) is None, command
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [

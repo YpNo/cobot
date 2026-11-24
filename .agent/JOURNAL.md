@@ -436,3 +436,11 @@ Proof: full suite green twice (before and after the folds); tests/test_gate_f58.
 Open: a copy or link of cli.js under another name, Q4's accepted residual.
 Next: T05, globs on protected files.
 verified: tree f762592555e393e0a5d32ffd439a5b6533987d33 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T05: a glob that names a protected file on disk asks (story 6, Q6)
+Changed: glob_names_asked_file in word_touches: a glob word that could name a file an ask row protects (~/.claude.json and its backups, .mcp.json, the config dir twin) is listed on disk with glob_links within the glob budget and asks when a match is that file; a .. after a hole skips the lexical pre-check; a leading $PWD or $HOME (text to the scanner) is written out; without dotglob, a glob reaches a dotfile only through a leading literal dot.
+Why: the owner's Q6 (ask when the glob matches on disk, any verb); tee ~/.claude.js?n reached no decision where the written-out word asks.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 196 passed; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 2 MINOR), each a test row; a 20,000-file folder checks in 0.4 to 0.6 s, as on HEAD.
+Open: residual, dotglob turned on in the command reaches .mcp.json without an ask (never rows stay dotglob-safe); friction, ls ~/.c* and du -sh ~/.* ask (Q6).
+Next: T06, the subcommands, agy rows, docs and FINDINGS.
+verified: tree bbc10d762cd6d3f099079b120d2402ba84dd07c2 · full suite, F-58 file, ruff

@@ -4363,8 +4363,15 @@ def word_touches(
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     pathlike = pathlike or any(full_hole(key) for key in shell.sentinels(token))
     if shell.has_sentinel(token):
-        protected = [r for r in protected if r.decision == "never"]
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
+        placed = with_known_folders(token, cwd)  # ``$PWD/.mc?.json`` (T05 review)
+        if (
+            placed is not None
+            and budget is not None
+            and glob_names_asked_file(placed, cwd, protected, budget)
+        ):
+            return True
+        protected = [r for r in protected if r.decision == "never"]
         if not (pathlike or bare_glob):
             return False
         acting = relocating or destroying or whole  # the word stands for whole folders
@@ -4389,6 +4396,38 @@ def word_touches(
         return False
     named_root = os.path.basename(token.rstrip("/")).casefold() in CUSTOMIZATION_ROOTS_FOLDED
     return named_root or anchored
+
+
+def with_known_folders(token: str, cwd: str | None) -> str | None:
+    """A glob word with a leading ``$PWD`` or ``$HOME`` (kept as text by the scanner) written out,
+    so it can be listed on disk; None when a hole other than a glob is in it."""
+    if any(shell.kind_of(key) != "glob" for key in shell.sentinels(token)):
+        return None
+    for name, folder in ((PWD_NAMES, cwd or os.getcwd()), (HOME_WORDS, os.path.expanduser("~"))):
+        lead = next((word for word in name if token == word or token.startswith(word + "/")), None)
+        if lead:
+            return folder + token[len(lead) :]
+    return token
+
+
+def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], budget: GlobBudget) -> bool:
+    """A glob that could name a file an ``ask`` row protects (``~/.claude.json``, ``.mcp.json``)
+    and matches it on disk now asks, as the written-out word does (spec gate-f58, story 6, Q6). The
+    lexical "could match" comes first, so only such globs list a folder."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    last = glob.rstrip("/").rsplit("/", 1)[-1]
+    if GLOB_HOLES & set(last) and not last.startswith("."):
+        return False  # without dotglob, bash reaches a dotfile only through a leading literal dot
+    asked = [r for r in protected if r.decision == "ask"]
+    if "/../" not in glob:  # a ``..`` after a hole defeats the lexical check (T05 review)
+        asked = [r for r in asked if path_may_match(r, token, cwd, False)]
+    if not asked:
+        return False
+
+    def named(name: str) -> bool:
+        return any(matches_file(r, file_forms(name, cwd), fold=True) for r in asked)
+
+    return glob_links(token, cwd, asked, budget, named)
 
 
 def protected_file_touched(

@@ -390,3 +390,16 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   BLOCKER, 3 MAJOR, 1 MINOR), each a test row: `nvm exec 22 -- claude` (a `--` after the
   version); `nvm run` read as `node`; fnm's and volta's global options before the verb; `nodenv`
   and `n`. The MINOR, a copy or link of `cli.js` under another name, is Q4's accepted residual.
+- T05 build: `glob_names_asked_file` in `word_touches`. A glob word that could name a file an
+  `ask` row protects (`~/.claude.json` and its backups, `.mcp.json`, the config dir twin of
+  `~/.claude.json`; the backups have no twin, so story 6's text is corrected) is listed on disk
+  with `glob_links` within the glob budget, and asks when a match is that file. Bypass review
+  (SOUND WITH CHANGES, 2 MAJOR, 2 MINOR), each a test row:
+  - a `..` after a hole skips the lexical pre-check (`cat ~/.cl*/../.claude.json`);
+  - a leading `$PWD` or `$HOME`, which the scanner keeps as text, is written out
+    (`tee $PWD/.mc?.json`).
+  - Friction folded: bash without `dotglob` reaches a dotfile only through a leading literal
+    dot, so `ls *` and `cat *.json` stay silent in a repository with a `.mcp.json`.
+  - Residual: `dotglob` turned on in the command (`shopt -s dotglob; cat *`) reaches `.mcp.json`
+    without an ask; the `never` rows keep their dotglob-safe reading.
+  - Q6's accepted friction: `ls ~/.c*`, `ls -d ~/.*`, `du -sh ~/.*` ask.

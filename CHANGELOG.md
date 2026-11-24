@@ -249,6 +249,29 @@ All notable changes to this project are documented here. The format follows
     customization root elsewhere in the command (`cp x ~/.agents/; cp x ~/.claude/cobot.rules`).
   - A config dir reached through a symlink is protected at its real path, and re-pointing a link
     above it is refused.
+- **Claude Code started from Bash is read (F-58).**
+  - `claude plugin disable cobot`, `uninstall cobot`, `disable --all` and removing cobot's
+    marketplace are refused, as agy's twins are. The plugin commands that change what is
+    installed ask.
+  - A nested session that switches the hooks off (`--bare`, `--safe-mode`, `--restricted`,
+    `--setting-sources project`, `CLAUDE_CODE_SIMPLE=1`), brings settings or code from outside,
+    runs past your prompts (`--dangerously-skip-permissions`, `bypassPermissions`), or runs
+    elsewhere (`--cloud`, `ultrareview`) asks. So does any option outside the binary's own
+    table, and any `CLAUDE_CODE_*` variable set in the command.
+  - `volta run`, `asdf exec`, `fnm exec`, `nodenv exec`, `nvm exec` and `n exec` are read as
+    runners; `pnpx`, `dx`, `uv tool run` and `npm explore` ask; Claude Code's `cli.js` by path is
+    read as `claude`.
+  - A glob that matches `~/.claude.json` or `.mcp.json` on disk asks, as the written-out word
+    does. `claude install`, `update`, `upgrade`, `purge`, `import` and `auto-mode reset` ask.
+  - Setting an API endpoint for Claude Code asks: `ANTHROPIC_BASE_URL` and its provider
+    variants, `ANTHROPIC_UNIX_SOCKET`, `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, and the TLS
+    trust a proxy needs (`NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`). `claude auth
+    login`, `auth logout` and `claude rm --discard-unpushed` ask (F-66, F-69).
+  - Fixed on the way: a quoted `;` and an arithmetic assignment no longer hide a start variable
+    (`export X='a;b' BASH_ENV`, `((a=1,BASH_ENV=1))`).
+  - Accepted by the owner: copies of the binary under another name; a start variable already in
+    the gate's environment. New friction: `CLAUDE_CODE_USE_VERTEX=1 claude`, `ls ~/.c*`. Both
+    runtimes.
 - **Inline code beyond `-c`, `-e` and `-` asks (F-57).**
   - Each interpreter's options are read from a table: `node -p x`, `python3 -Sc x`, `perl -ne x`,
     `php -r x`, `deno eval x`, `bun -p x`, `tsx -e x`, code on stdin (`echo x | python3`) and a

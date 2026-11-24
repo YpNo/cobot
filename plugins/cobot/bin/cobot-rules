@@ -54,6 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the
 import _cobot_agy as agy  # noqa: E402
 import _cobot_inline as inline  # noqa: E402
 import _cobot_make  # noqa: E402
+import _cobot_nested as nested  # noqa: E402
 import _cobot_secrets as secrets  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
@@ -120,7 +121,7 @@ MCP_WRITE_WORDS = frozenset(
 )
 OPAQUE = frozenset(
     "sh bash zsh dash ksh fish eval source . trap "
-    "xargs sudo doas su make gmake just task npx bunx ssh mosh "
+    "xargs sudo doas su make gmake just task npx bunx pnpx dx ssh mosh "  # pnpx, dx: gate-f58
     # each runs a command it is given, through a shell or after options the gate does not read
     # (bypass review of T01): GNU parallel's family, watchers, prefix tools, privilege and sandbox
     # launchers, terminal multiplexers and job queues
@@ -131,7 +132,7 @@ OPAQUE = frozenset(
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
     "mise": frozenset({"run", "exec", "x", "r"}),
-    "npm": frozenset({"run", "run-script", "exec", "x"}),
+    "npm": frozenset({"run", "run-script", "exec", "x", "explore"}),  # explore: a shell in a package
     "pnpm": frozenset({"run", "exec", "dlx"}),
     "yarn": frozenset({"run", "exec", "dlx"}),
     "bun": frozenset({"run", "x"}),
@@ -767,6 +768,9 @@ def skip_wrapper_options(
     return rest
 
 
+CLAUDE_ENTRY_RE = re.compile(r"(?:^|/)@anthropic-ai/claude-code/cli\.m?js$")
+
+
 def strip_wrappers(tokens: list[str]) -> list[str]:
     """Drop reserved words, wrappers, assignments and prefix commands; basename the binary. A
     ``for``, ``select`` or ``case`` head leaves nothing: those words are data."""
@@ -784,6 +788,8 @@ def strip_wrappers(tokens: list[str]) -> list[str]:
         if rest is None:
             break
         tokens = rest
+    if tokens and CLAUDE_ENTRY_RE.search(tokens[0]):  # Claude Code's npm entry by path (gate-f58)
+        tokens[0] = "claude"
     if tokens and "/" in tokens[0] and not tokens[0].startswith("$"):
         tokens[0] = os.path.basename(tokens[0])
     return tokens
@@ -2225,6 +2231,8 @@ def opaque_as_read(plain: list[str]) -> bool:
         sub = verb[1] if len(verb) > 1 else ""
         if sub in OPAQUE_SUBCOMMANDS[head] or "" in OPAQUE_SUBCOMMANDS[head]:
             return True
+        if head == "uv" and verb[1:3] == ["tool", "run"]:  # uvx by its long name (gate-f58)
+            return True
         if head in SCRIPT_SHORTHAND:  # `pnpm typecheck` runs the package.json script
             return bool(sub) and not sub.startswith("-") and sub not in SCRIPT_SHORTHAND[head]
         return head == "npm" and sub in NPM_SCRIPT_ALIASES
@@ -2465,6 +2473,58 @@ def hatch_command(words: list[str]) -> list[str]:
     return rest
 
 
+# Node version managers (spec gate-f58, story 4): docs.volta.sh run, asdf-vm.com commands, fnm's
+# commands.md, nvm's README, read 2026-11-24. Value options, then flags; the command follows.
+VERSION_RUNNERS: dict[str, tuple[frozenset[str], frozenset[str], frozenset[str], bool]] = {
+    "volta": (frozenset({"run"}), frozenset({"--node", "--npm", "--yarn", "--env"}), frozenset(
+        {"--bundled-npm", "--no-yarn", "--verbose", "--quiet"}
+    ), False),
+    "asdf": (frozenset({"exec"}), frozenset(), frozenset(), False),
+    "fnm": (frozenset({"exec"}), frozenset(
+        {"--using", "--node-dist-mirror", "--fnm-dir", "--log-level", "--arch", "--version-file-strategy"}
+    ), frozenset({"--corepack-enabled", "--resolve-engines"}), False),
+    "nvm": (frozenset({"exec", "run"}), frozenset(), frozenset({"--silent"}), True),
+    "nodenv": (frozenset({"exec"}), frozenset(), frozenset(), False),
+    "n": (frozenset({"exec", "run", "use"}), frozenset(), frozenset(), True),
+}  # fmt: skip
+NODE_VERBS = frozenset({("nvm", "run"), ("n", "run"), ("n", "use")})  # these run ``node <args>``
+NVM_VERSION_RE = re.compile(r"v?\d[\w.]*|lts/\S+|node|iojs|stable|default|system|latest|lts")
+
+
+def inner_version_runner(plain: list[str]) -> list[str] | None:
+    """``volta run``, ``asdf exec``, ``fnm exec``, ``nodenv exec``, ``nvm exec|run [version]`` and
+    ``n exec|run|use <version>``: the command after the manager's options (global ones before
+    the verb too), a version and a ``--``; ``run`` and ``use`` run ``node``. None on an option the
+    gate does not know."""
+    head = plain[0]
+    verbs, value_options, flags, versioned = VERSION_RUNNERS[head]
+    rest = split_options(plain[1:], value_options, flags)  # fnm and volta options before the verb
+    if rest is None or not rest or rest[0] not in verbs:
+        return None if rest is None else NOTHING_HIDDEN
+    verb = rest[0]
+    words = rest[1:]
+    lts = next((i for i, w in enumerate(words) if not w.startswith("-") or w.startswith("--lts")), None)
+    by_lts = versioned and lts is not None and words[lts].startswith("--lts")  # the version slot only
+    if by_lts:
+        words = [*words[:lts], *words[lts + 1 :]]
+    rest = split_options(words, value_options, flags)
+    if rest is None:
+        return None
+    rest = rest[1:] if rest[:1] == ["--"] else rest
+    versioned = versioned and not by_lts  # a version word may still come
+    if versioned and rest[:1] and NVM_VERSION_RE.fullmatch(rest[0]):
+        rest = rest[1:]
+        rest = rest[1:] if rest[:1] == ["--"] else rest  # ``nvm exec 22 -- cmd`` (T04 review)
+        versioned = False
+    if rest[1:2] == ["--"] and head == "volta":  # ``volta run <cmd> -- args``: clap drops it
+        rest = [rest[0], *rest[2:]]
+    unsure = versioned and len(rest) > 1  # no version read: the first word may be a user alias
+    readings = [rest, rest[1:]] if unsure else [rest]  # ``nvm exec myalias claude``: an alias or a command
+    if (head, verb) in NODE_VERBS:
+        readings = [["node", *reading] for reading in readings]
+    return [shell.join(reading) for reading in readings] if rest else NOTHING_HIDDEN
+
+
 def inner_corepack(plain: list[str]) -> list[str] | None:
     """``corepack pnpm@9 exec …`` runs the manager it names; ``corepack enable`` runs nothing; any
     other first word stays opaque."""
@@ -2483,6 +2543,12 @@ WRAPPER_PARSERS = {
     "mamba": inner_launcher,
     "micromamba": inner_launcher,
     "corepack": inner_corepack,
+    "volta": inner_version_runner,
+    "asdf": inner_version_runner,
+    "fnm": inner_version_runner,
+    "nvm": inner_version_runner,
+    "nodenv": inner_version_runner,
+    "n": inner_version_runner,
     "rustup": inner_rustup,
     "distrobox": inner_distrobox,
     "distrobox-enter": inner_distrobox,
@@ -3296,16 +3362,33 @@ def applies(rule: Rule, tool: str, agent: str | None) -> bool:
     return file_tool_covers(rule, tool)
 
 
+PATTERN_WILDCARDS_RE = re.compile(r"\*|\?|\[[^\]]*\]")
+
+
 def matches_bash(rule: Rule, forms: list[str]) -> bool:
     """never/ask match any form; allow matches only the canonical (last) form, so a method moved
     to the front of ``gh api`` cannot hide behind a read-only prefix pattern. An agent-scoped
     allow whose pattern ends a word with ``*`` (``cat*``, ``git diff*``) matches that word only:
     ``catatonit`` and ``git difftool`` are other programs."""
     candidates_for_rule = forms[-1:] if rule.decision == "allow" else forms
+    head, pieces = pattern_pieces(rule.pattern)
     return any(
-        fnmatch.fnmatchcase(form, rule.pattern) and (rule.decision != "allow" or word_bounded(rule, form))
+        form.startswith(head)
+        and all(piece in form for piece in pieces)  # a cheap no before fnmatch backtracks (wrap review)
+        and fnmatch.fnmatchcase(form, rule.pattern)
+        and (rule.decision != "allow" or word_bounded(rule, form))
         for form in candidates_for_rule
     )
+
+
+@functools.lru_cache(maxsize=4096)
+def pattern_pieces(pattern: str) -> tuple[str, tuple[str, ...]]:
+    """A pattern's literal start and its literal pieces: a form that lacks one cannot match, and
+    saying so costs a substring search where fnmatch on a long form backtracks over every ``*``
+    (spec gate-f58, wrap security review: 2000 words before ``mcp add`` took 20 s)."""
+    pieces = tuple(piece for piece in PATTERN_WILDCARDS_RE.split(pattern) if piece)
+    starts_literal = pieces and pattern.startswith(pieces[0])
+    return (pieces[0] if starts_literal else ""), pieces
 
 
 def word_bounded(rule: Rule, form: str) -> bool:
@@ -4305,8 +4388,15 @@ def word_touches(
     pathlike = "/" in token or token.startswith("~") or globstar(token)
     pathlike = pathlike or any(full_hole(key) for key in shell.sentinels(token))
     if shell.has_sentinel(token):
-        protected = [r for r in protected if r.decision == "never"]
         bare_glob = all(shell.kind_of(key) == "glob" for key in shell.sentinels(token))
+        placed = with_known_folders(token, cwd)  # ``$PWD/.mc?.json`` (T05 review)
+        if (
+            placed is not None
+            and budget is not None
+            and glob_names_asked_file(placed, cwd, protected, budget)
+        ):
+            return True
+        protected = [r for r in protected if r.decision == "never"]
         if not (pathlike or bare_glob):
             return False
         acting = relocating or destroying or whole  # the word stands for whole folders
@@ -4331,6 +4421,46 @@ def word_touches(
         return False
     named_root = os.path.basename(token.rstrip("/")).casefold() in CUSTOMIZATION_ROOTS_FOLDED
     return named_root or anchored
+
+
+def with_known_folders(token: str, cwd: str | None) -> str | None:
+    """A glob word with a leading ``$PWD`` or ``$HOME`` (kept as text by the scanner) written out,
+    so it can be listed on disk; None when a hole other than a glob is in it."""
+    if any(shell.kind_of(key) != "glob" for key in shell.sentinels(token)):
+        return None
+    for name, folder in ((PWD_NAMES, cwd or os.getcwd()), (HOME_WORDS, os.path.expanduser("~"))):
+        lead = next((word for word in name if token == word or token.startswith(word + "/")), None)
+        if lead:
+            return folder + token[len(lead) :]
+    return token
+
+
+def names_meet(last: str, pattern: str) -> bool:
+    """Whether a glob's last segment and a row's last segment can name the same file, either way
+    round (``.mc?.json`` and ``.mcp.json``; ``.claude.json.b*`` and ``.claude.json.backup*``).
+    ``*/README.md`` meets no protected file, so its folder is never listed for these rows (wrap:
+    the listing spent the glob budget the ``never`` rows need)."""
+    return globs_meet(last.casefold(), pattern.rsplit("/", 1)[-1].casefold())
+
+
+def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], budget: GlobBudget) -> bool:
+    """A glob that could name a file an ``ask`` row protects (``~/.claude.json``, ``.mcp.json``)
+    and matches it on disk now asks, as the written-out word does (spec gate-f58, story 6, Q6). The
+    lexical "could match" comes first, so only such globs list a folder."""
+    glob, _ = path_glob(os.path.expanduser(token))
+    last = glob.rstrip("/").rsplit("/", 1)[-1]
+    if GLOB_HOLES & set(last) and not last.startswith("."):
+        return False  # without dotglob, bash reaches a dotfile only through a leading literal dot
+    asked = [r for r in protected if r.decision == "ask" and names_meet(last, r.pattern)]
+    if "/../" not in glob:  # a ``..`` after a hole defeats the lexical check (T05 review)
+        asked = [r for r in asked if path_may_match(r, token, cwd, False)]
+    if not asked:
+        return False
+
+    def named(name: str) -> bool:
+        return any(matches_file(r, file_forms(name, cwd), fold=True) for r in asked)
+
+    return glob_links(token, cwd, asked, budget, named)
 
 
 def protected_file_touched(
@@ -6610,6 +6740,11 @@ def judge_bash(
         outside = outside_script(program_of(segment), dirs, cwd, holes)
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
+        # every folder the segment may run in; None when the walk cannot know (``cd ~``)
+        folders = None if dirs is None else [str(d) for d in sorted(dirs)] or [cwd or os.getcwd()]
+        session = nested.nested_reason(program_of(segment), folders)  # a nested Claude Code (gate-f58)
+        if session and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
+            verdict = Verdict(ASK, None, session)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
@@ -6641,7 +6776,22 @@ START_VARIABLES = (
     # code an interpreter loads or runs before its script (spec gate-f57, Q5; T05 review adds the
     # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
     "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
-    "PHP_INI_SCAN_DIR".split()
+    "PHP_INI_SCAN_DIR "
+    # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
+    # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
+    # by their prefix, START_PREFIXES
+    "CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE "
+    # the API endpoints Claude Code sends prompts, code and the transcript to (spec gate-f58, T07,
+    # F-66: the owner, "Ask on both"); read from the 2.1.311 binary. HTTP(S)_PROXY moves every
+    # program's traffic and is set daily, so it is left out
+    "ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_BEDROCK_MANTLE_BASE_URL "
+    "ANTHROPIC_VERTEX_BASE_URL ANTHROPIC_FOUNDRY_BASE_URL ANTHROPIC_AWS_BASE_URL "
+    "ANTHROPIC_GOOGLE_CLOUD_BASE_URL "
+    # T07 review: a socket the requests go over, a profile or its folder (a gateway's baseUrl),
+    # the provider's own resource or project, and the TLS trust that lets a proxy read the traffic;
+    # AWS_ENDPOINT_URL* is set daily for local AWS work and is left out
+    "ANTHROPIC_UNIX_SOCKET ANTHROPIC_CONFIG_DIR ANTHROPIC_PROFILE ANTHROPIC_FOUNDRY_RESOURCE "
+    "ANTHROPIC_VERTEX_PROJECT_ID NODE_EXTRA_CA_CERTS NODE_TLS_REJECT_UNAUTHORIZED".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
@@ -6654,22 +6804,45 @@ COMPUTED_EXPORT_RE = re.compile(
 )
 
 
-def sets_start_variable(text: str, name: str) -> bool:
-    """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``)."""
-    word = re.escape(name)
+START_PREFIXES = ("CLAUDE_CODE_",)  # every name under the prefix is a start variable (Q8)
+QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+
+
+def sets_start_variable(text: str, name: str, prefix: bool = False) -> bool:
+    """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``);
+    with ``prefix``, any name that starts with ``name``."""
+    word = re.escape(name) + (r"\w+" if prefix else "")
+    # after a comma, an equals sign or a bracket too: ``((a=1,NAME=1))``, ``let x=NAME=1``,
+    # ``a[NAME=1]=x`` assign it (spec gate-f58, T03 review)
     return bool(
-        re.search(rf"(?:^|[\s;&|(`]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
+        re.search(rf"(?:^|[\s;&|(`,=\[]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
         or re.search(rf"printf\s+(?:-[^\s;&|]+\s+){{0,16}}-v\s*{word}\b", text)
         or re.search(rf"\b(?:declare|typeset|local)\b[^;&|\n]{{0,{ASSIGNER_SPAN}}}=\s*{word}\b", text)
     )
 
 
+def start_variable_set(text: str) -> str | None:
+    """The first start variable the text sets, by name or by prefix (``CLAUDE_CODE_*``); a name
+    absent from the text costs nothing (wrap code review: 100 KB of exports took 45 s)."""
+    names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
+    found = next((name for name in names if name in text and sets_start_variable(text, name)), None)
+    if found is None:
+        prefixed = (name for name in START_PREFIXES if name in text and sets_start_variable(text, name, True))
+        found = next((f"{name}*" for name in prefixed), None)
+    return found
+
+
 def shell_start_variable(command: str) -> Verdict:
     """A command that sets a variable naming a file a program will read, or text a shell will run,
-    asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too."""
-    text = re.sub(r"[\\'\"]", "", command)
-    names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
-    found = next((name for name in names if sets_start_variable(text, name)), None)
+    asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too. A
+    ``;``, ``&`` or ``|`` inside quotes is no separator, so it is blanked first: ``export X='a;b'
+    BASH_ENV`` still exports BASH_ENV (spec gate-f58, T03 review)."""
+    # both readings, the stricter kept: an escaped quote (``\'``) can make the blanking misread a
+    # span and hide a variable the plain reading sees (wrap security review)
+    blanked = QUOTED_RE.sub(lambda quoted: re.sub(r"[;&|]", "_", quoted.group(0)), command)
+    texts = [re.sub(r"[\\'\"]", "", blanked), re.sub(r"[\\'\"]", "", command)]
+    text = texts[1]
+    found = next(filter(None, map(start_variable_set, texts)), None)
     if found is None and re.search(r"BASH_FUNC_\w+%%", text):
         found = "BASH_FUNC_"
     if found is None and LONG_SETTER_RE.search(text):
@@ -6678,6 +6851,10 @@ def shell_start_variable(command: str) -> Verdict:
         found = "an exported name the command computes"
     if found is None:
         return Verdict(None, None, "no rule matched")
+    if found.startswith(("ANTHROPIC_", "NODE_EXTRA_CA", "NODE_TLS")):
+        return Verdict(
+            ASK, None, f"{found} sends Claude Code's prompts and transcript somewhere the command names"
+        )
     return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")
 
 

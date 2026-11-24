@@ -396,3 +396,74 @@ Proof: full suite with coverage 98.32 %, 5836 passed (an earlier run under load 
 Open: kept, the floor reads a cluster's first three letters; is_opaque reads awk and sed twice. F-63, F-64, F-65 open; F-58 parked next.
 Next: the owner verifies and pushes security/gate-f57 (after PR 83); then F-58.
 verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-24 — spec gate-f58: nested Claude Code, plugin removal, launchers and copies (F-58), for the owner
+Changed: .agent/specs/gate-f58.md revision 2: 15 measured Goal rows on de4a125 (Claude Code 2.1.311), eight stories (cobot's plugin disable and uninstall refused as agy's are; claude option tables per subcommand, read on every unwrapped form; the CLAUDE_CODE_* start variables; launchers; the cli.js name row; globs on protected files matched on disk; the subcommands that change Claude Code; both runtimes), Q1 to Q8 with recommended defaults, accept the risk offered on each; FINDINGS F-58 points at the spec.
+Why: the orchestrator relayed: spec F-58 on a new branch from main de4a125, challenger, fold, owner questions; no build until the owner answers.
+Proof: every Goal row measured with cobot-rules check; challenger SOUND WITH CHANGES (1 BLOCKER, 7 MAJOR, 6 MINOR), all folded, the BLOCKER and two MAJORs re-run by hand (claude plugin disable cobot, --managed-settings, claude agents --dangerously-skip-permissions: none).
+Open: Q1 to Q8 for the owner; checkpoints before the build: the binary's option list for 2.1.311 and 2.1.322, a bypass-mode spike in the owner's terminal, --restricted alone, the CLAUDE_CODE_* semantics, the launchers' docs.
+Next: the owner answers Q1 to Q8; then T01.
+verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · spec text and findings only
+
+## 2026-11-24 — gate-f58 T01: cobot's plugin cannot be disabled or removed through claude (story 1)
+Changed: default.rules: never rows for claude plugin disable (by name, --all, -a), uninstall and remove of cobot and marketplace remove or rm of cobot's marketplace, the verb right after plugin or plugins and the name in any case; ask rows for the i alias, update, init and new, eval --trust-plugin, prune, autoremove and --prune, configure --values-stdin, any disable, marketplace remove, rm and update, tag --push. Spec Converge records the owner's answers (all as recommended). Tests in tests/test_gate_f58.py.
+Why: the challenger's BLOCKER on spec gate-f58: claude plugin disable cobot reached no decision while agy's twins are refused.
+Proof: full suite green twice (before and after the review folds); tests/test_gate_f58.py 37 passed; ruff clean. Bypass review SOUND WITH CHANGES (no deny-level bypass; 1 MAJOR, 3 MINOR), each a test row.
+Open: whether Claude Code matches plugin ids without case is unverified (matched either way).
+Next: T02, the claude option tables.
+verified: tree 0643e3125a43053a316925db489defba9e4373f0 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T02: a nested session's options read from the binary's table (story 2)
+Changed: new plugins/cobot/bin/_cobot_nested.py: nested_reason reads a claude or claude-code argv with the 2.1.311 binary's option specs (201 long names, 18 letters, each none, required, optional or variadic), the top level and agents; asks on the options that switch hooks off (found in the raw argv, as Claude Code does, for --bare, --safe-mode, --restricted), foreign inputs (--managed-settings, --permission-prompt-tool, --sdk-url, --dangerously-load-development-channels, --channels, --plugin-url, --project-config-root), Q2's widening (and --agents JSON with a wide permissionMode), --add-dir on HOME, its ancestors, the config dir or a .claude folder, Q3's moving options and ultrareview, and an unknown option (Q1). Called per segment in judge_bash on the unwrapped program, with the segment's folder.
+Why: F-58 rows 3 to 9; the owner's Q1 to Q3.
+Proof: full suite green; tests/test_gate_f58.py 118 passed; ruff clean. Bypass review RETHINK (2 BLOCKER, 2 MAJOR, 1 MINOR): the environment blocker is T03's; the rest folded, each a test row.
+Open: the 2.1.322 diff (not installed here) and the bypass-mode spike (owner's terminal) not run; the unknown-option ask covers the first, rows 3 and 5 ask either way.
+Next: T03, the CLAUDE_CODE_* start variables.
+verified: tree 18b588489eab175cd581e8fd61e08abd93ecfc2d · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T03: Claude Code's start variables (story 3, Q8)
+Changed: CLAUDE_CONFIG_DIR and CLAUDE_ENV_FILE join START_VARIABLES and every CLAUDE_CODE_ name asks by prefix (START_PREFIXES), so CLAUDE_CODE_SIMPLE=1, CLAUDE_CODE_SAFE_MODE, CLAUDE_CODE_RESTRICTED, CLAUDE_CODE_PLUGIN_DIRS and CLAUDE_CODE_SHELL_PREFIX set in a command ask. The setter scan blanks a quoted ; & | first, and an assignment after a comma, an equals sign or a bracket counts (both older gaps, for BASH_ENV too). FINDINGS F-66 (ANTHROPIC_BASE_URL).
+Why: the owner's Q8; T02 review's environment blocker.
+Proof: full suite green; F-55, F-57 and F-58 files 705 passed; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, older), each a test row.
+Open: known costs, a command naming a start variable as text asks, CLAUDE_CODE_USE_VERTEX=1 claude asks.
+Next: T04, the launchers and the cli.js name row.
+verified: tree f9fc6c4c214ceffef95732933c3d86c4737d5e60 · full suite, F-55 F-57 F-58 files, ruff
+
+## 2026-11-24 — gate-f58 T04: launchers and Claude Code's npm entry (stories 4 and 5)
+Changed: inner_version_runner joins WRAPPER_PARSERS for volta run, asdf exec, fnm exec, nodenv exec, nvm exec and run, n exec, run and use (global options before the verb, a version, a --; run and use read as node). npm explore is opaque; pnpx and dx join OPAQUE; uv tool run is opaque as uvx. strip_wrappers reads a command word ending in @anthropic-ai/claude-code/cli.js as claude.
+Why: F-58 rows 11 to 13: volta run claude mcp add x and pnpx @anthropic-ai/claude-code mcp add x reached no decision.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 181 passed; ruff clean. Bypass review SOUND WITH CHANGES (1 BLOCKER, 3 MAJOR, 1 MINOR), each a test row.
+Open: a copy or link of cli.js under another name, Q4's accepted residual.
+Next: T05, globs on protected files.
+verified: tree f762592555e393e0a5d32ffd439a5b6533987d33 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T05: a glob that names a protected file on disk asks (story 6, Q6)
+Changed: glob_names_asked_file in word_touches: a glob word that could name a file an ask row protects (~/.claude.json and its backups, .mcp.json, the config dir twin) is listed on disk with glob_links within the glob budget and asks when a match is that file; a .. after a hole skips the lexical pre-check; a leading $PWD or $HOME (text to the scanner) is written out; without dotglob, a glob reaches a dotfile only through a leading literal dot.
+Why: the owner's Q6 (ask when the glob matches on disk, any verb); tee ~/.claude.js?n reached no decision where the written-out word asks.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 196 passed; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 2 MINOR), each a test row; a 20,000-file folder checks in 0.4 to 0.6 s, as on HEAD.
+Open: residual, dotglob turned on in the command reaches .mcp.json without an ask (never rows stay dotglob-safe); friction, ls ~/.c* and du -sh ~/.* ask (Q6).
+Next: T06, the subcommands, agy rows, docs and FINDINGS.
+verified: tree bbc10d762cd6d3f099079b120d2402ba84dd07c2 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T06: self-changing subcommands, both runtimes, docs (stories 7 and 8)
+Changed: subcommand_reason asks on install, update, upgrade, purge, import and auto-mode reset (Q7), and on setup-token (a token into the transcript); a -- before the subcommand is read, as commander dispatches it. agy rows for each story; docs/configuration.md and CHANGELOG Security entry; default.rules comment on globs. FINDINGS F-58 closed, F-67 and F-68 accepted (Q4, Q5), F-69 open (auth login and logout, rm --discard-unpushed).
+Why: the owner's Q7; plan item T06.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 224 passed; ruff, markdownlint (145 files), check-plugin, sync-agents clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 4 MINOR), each a test row or F-69.
+Next: wrap, code and security reviews, full checks.
+verified: tree 22045b3ff7ba24e53e73308e67a8d01d01d74593 · full suite, F-58 file, ruff, markdownlint, check-plugin, sync-agents
+
+## 2026-11-24 — wrap gate-f58: code and security reviews folded
+Changed: code review, a relative --add-dir read from every folder the segment may run in (asks when the walk has none, cd ~); a start variable absent from the text costs nothing (100 KB of exports took 45 s); --lts only the version slot; first_positional dropped; a NUL byte asks. Security review, an escaped quote misread by the blanking hid a start variable (both readings matched now, the stricter kept); the new claude rows made fnmatch backtrack over a long form (2000 options before mcp add: 20.6 s, past the hook timeout), so matches_bash rejects a row whose literal pieces are absent first (4.2 s, de4a125 6.4 s); nvm exec <alias> read both ways. Coverage run: names_meet keeps the on-disk glob check off rows whose last segment cannot meet the glob's (cat */README.md had spent the glob budget). Each fold a test row.
+Why: /cobot:wrap of spec gate-f58 T01 to T06.
+Proof: full suite with coverage 98.35 %, 6067 passed; ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; cobot-memory check.
+Open: F-66 (ANTHROPIC_BASE_URL), F-69 (auth login and logout, rm --discard-unpushed) for the owner; F-67 and F-68 accepted (Q4, Q5); the 2.1.322 option diff and the bypass-mode spike not run.
+Next: the owner verifies and pushes security/gate-f58.
+verified: tree ec3b62d34f8c1ed06203cbd4c1fa9b68ae3f4ec7 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — gate-f58 T07: API endpoints and the auth and rm subcommands ask (F-66, F-69)
+Changed: START_VARIABLES gains ANTHROPIC_BASE_URL and its BEDROCK, BEDROCK_MANTLE, VERTEX, FOUNDRY, AWS and GOOGLE_CLOUD base URLs (each sends the prompts, code and transcript where the command names; read from the 2.1.311 binary), and, from the bypass review, ANTHROPIC_UNIX_SOCKET, ANTHROPIC_CONFIG_DIR, ANTHROPIC_PROFILE, ANTHROPIC_FOUNDRY_RESOURCE, ANTHROPIC_VERTEX_PROJECT_ID, NODE_EXTRA_CA_CERTS and NODE_TLS_REJECT_UNAUTHORIZED; their ask says where the traffic goes. subcommand_reason asks on claude auth login and logout and on rm with --discard-unpushed or --force-remove-worktree; --help stays silent. Docs, CHANGELOG; FINDINGS F-66 and F-69 closed; spec Converge records the owner's answer.
+Why: the owner on F-66 and F-69, relayed verbatim: Ask on both.
+Proof: full suite with coverage 98.35 %, 6099 passed; tests/test_gate_f58.py 263 passed; ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean. Bypass review SOUND WITH CHANGES (3 MAJOR, 1 MINOR), each a test row.
+Open: left out on purpose, HTTPS_PROXY and ALL_PROXY alone (set daily, TLS unread) and AWS_ENDPOINT_URL* (set daily for local AWS work).
+Next: the owner verifies and pushes PR 85.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents

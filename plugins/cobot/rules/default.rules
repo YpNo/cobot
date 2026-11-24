@@ -254,6 +254,24 @@ never Write(_agent/plugins/*)
 never Bash(agy *plugin* disable*cobot*)
 never Bash(agy *plugin* uninstall*cobot*)
 never Bash(agy *plugin* link*cobot*)
+# claude plugin and its alias plugins, the same (spec gate-f58, story 1): disabling, removing or
+# dropping cobot's marketplace takes the gate away from every later session
+# (the verb right after plugin or plugins, so a prompt's words or --plugin-dir do not hit it;
+# the name in any case; T01 review)
+never Bash(claude *plugin disable *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugins disable *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugin disable *--all*)
+never Bash(claude *plugins disable *--all*)
+never Bash(claude *plugin disable* -a*)
+never Bash(claude *plugins disable* -a*)
+never Bash(claude *plugin uninstall *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugins uninstall *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugin remove *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugins remove *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugin marketplace remove *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugins marketplace remove *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugin marketplace rm *[Cc][Oo][Bb][Oo][Tt]*)
+never Bash(claude *plugins marketplace rm *[Cc][Oo][Bb][Oo][Tt]*)
 
 # outward or destructive: ask
 # apply and destroy (spec session-grants): the owner answers each at the prompt; an owner allow
@@ -783,6 +801,36 @@ ask Bash(claude *--mcp-config*)
 ask Bash(claude *plugin install*)
 ask Bash(claude *plugin marketplace add*)
 ask Bash(claude *plugin enable*)
+# the install alias, updates, a scaffold in ~/.claude/skills, a trusted eval, auto-removal,
+# saved options, any disable and a marketplace removed or refreshed (spec gate-f58, story 1)
+ask Bash(claude *plugin i *)
+ask Bash(claude *plugins i *)
+ask Bash(claude *plugin update*)
+ask Bash(claude *plugins update*)
+ask Bash(claude *plugin init*)
+ask Bash(claude *plugins init*)
+ask Bash(claude *plugin new *)
+ask Bash(claude *plugins new *)
+ask Bash(claude *plugin eval *--trust-plugin*)
+ask Bash(claude *plugins eval *--trust-plugin*)
+ask Bash(claude *plugin prune*)
+ask Bash(claude *plugins prune*)
+ask Bash(claude *plugin autoremove*)
+ask Bash(claude *plugins autoremove*)
+ask Bash(claude *plugin* *--prune*)
+ask Bash(claude *plugin configure *--values-stdin*)
+ask Bash(claude *plugins configure *--values-stdin*)
+ask Bash(claude *plugin disable*)
+ask Bash(claude *plugins disable*)
+ask Bash(claude *plugin marketplace remove*)
+ask Bash(claude *plugins marketplace remove*)
+ask Bash(claude *plugin marketplace rm *)
+ask Bash(claude *plugins marketplace rm *)
+ask Bash(claude *plugin marketplace update*)
+ask Bash(claude *plugins marketplace update*)
+# a release tag pushed to the remote, as git push asks (T01 review)
+ask Bash(claude *plugin tag *--push*)
+ask Bash(claude *plugins tag *--push*)
 ask Bash(claude *--plugin-dir*)
 # a settings file can turn on every project server (enableAllProjectMcpServers), skipping the
 # approval a repository .mcp.json needs; reset-project-choices forgets the owner's refusals
@@ -799,7 +847,8 @@ ask Write(~/.claude.json.backup*)
 ask Edit(.mcp.json)
 ask Write(.mcp.json)
 # A shell word naming either file asks too (cp, tee, a redirection, dd of=, curl -o), as for a
-# protected file; a glob that only could name them does not (protected_file_touched).
+# protected file; a glob asks when it matches one of them on disk now, as the word does, and
+# stays silent when it only could (spec gate-f58, story 6: glob_names_asked_file).
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

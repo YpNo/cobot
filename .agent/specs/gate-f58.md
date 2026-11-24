@@ -348,3 +348,22 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   ask; the name is matched in any case (`[Cc][Oo][Bb][Oo][Tt]`, Claude Code's id matching
   unverified); the verb is pinned right after `plugin` or `plugins`, so a prompt's words and
   `--plugin-dir` no longer hit a deny.
+- T02 build: `plugins/cobot/bin/_cobot_nested.py`, `nested_reason`, called per segment on the
+  unwrapped program (`bash -c`, `env`, `mise exec`, `npm exec`, a path, `claude-code`), with the
+  segment's folder for a relative `--add-dir`; an owner allow lifts it. The table is the
+  commander specs of the 2.1.311 binary (201 long names, 18 letters), each with its value shape.
+  Checkpoints: 2.1.322 (the CI pin) is not installed here, so its diff stays unread, and Q1's
+  unknown-option ask covers what it adds; the bypass-mode and `--restricted` spike needs the
+  owner's terminal and was not run (rows 3 and 5 ask either way). Bypass review **RETHINK** (2
+  BLOCKER, 2 MAJOR, 1 MINOR):
+  - BLOCKER, the environment variables (`CLAUDE_CODE_SIMPLE=1 claude`): T03's story, as planned;
+  - BLOCKER, Claude Code finds `--bare`, `--safe-mode` and `--restricted` in the raw argv (the
+    binary's `process.argv.indexOf`), so a value slot does not hide them
+    (`claude --model --bare`): now a raw scan before the first `--`, under any subcommand;
+  - MAJOR, `--project-config-root` (project settings and `.claude` trees from elsewhere) joins
+    the foreign options;
+  - MAJOR, `--add-dir` is resolved from the segment's folder: HOME, its ancestors, the config dir
+    and a `.claude` folder itself ask, `${HOME}` read; a folder below a project's `.claude` (a
+    worktree) stays silent;
+  - MINOR, `--agents` JSON with a wide `permissionMode` asks; `--setting-sources` keeping both
+    `user` and `project` stays silent. `--allowedTools Bash` stays silent (Q2, spike B).

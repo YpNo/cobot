@@ -54,6 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # python3 -I drops the
 import _cobot_agy as agy  # noqa: E402
 import _cobot_inline as inline  # noqa: E402
 import _cobot_make  # noqa: E402
+import _cobot_nested as nested  # noqa: E402
 import _cobot_secrets as secrets  # noqa: E402
 import _cobot_shell as shell  # noqa: E402
 from _cobot_common import (  # noqa: E402
@@ -6610,6 +6611,10 @@ def judge_bash(
         outside = outside_script(program_of(segment), dirs, cwd, holes)
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
+        here = next(iter(sorted(dirs)), None) if dirs else None
+        session = nested.nested_reason(program_of(segment), str(here or cwd or os.getcwd()))  # gate-f58
+        if session and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
+            verdict = Verdict(ASK, None, session)
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)

@@ -412,3 +412,11 @@ Proof: full suite green twice (before and after the review folds); tests/test_ga
 Open: whether Claude Code matches plugin ids without case is unverified (matched either way).
 Next: T02, the claude option tables.
 verified: tree 0643e3125a43053a316925db489defba9e4373f0 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T02: a nested session's options read from the binary's table (story 2)
+Changed: new plugins/cobot/bin/_cobot_nested.py: nested_reason reads a claude or claude-code argv with the 2.1.311 binary's option specs (201 long names, 18 letters, each none, required, optional or variadic), the top level and agents; asks on the options that switch hooks off (found in the raw argv, as Claude Code does, for --bare, --safe-mode, --restricted), foreign inputs (--managed-settings, --permission-prompt-tool, --sdk-url, --dangerously-load-development-channels, --channels, --plugin-url, --project-config-root), Q2's widening (and --agents JSON with a wide permissionMode), --add-dir on HOME, its ancestors, the config dir or a .claude folder, Q3's moving options and ultrareview, and an unknown option (Q1). Called per segment in judge_bash on the unwrapped program, with the segment's folder.
+Why: F-58 rows 3 to 9; the owner's Q1 to Q3.
+Proof: full suite green; tests/test_gate_f58.py 118 passed; ruff clean. Bypass review RETHINK (2 BLOCKER, 2 MAJOR, 1 MINOR): the environment blocker is T03's; the rest folded, each a test row.
+Open: the 2.1.322 diff (not installed here) and the bypass-mode spike (owner's terminal) not run; the unknown-option ask covers the first, rows 3 and 5 ask either way.
+Next: T03, the CLAUDE_CODE_* start variables.
+verified: tree 18b588489eab175cd581e8fd61e08abd93ecfc2d · full suite, F-58 file, ruff

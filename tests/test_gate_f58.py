@@ -101,11 +101,130 @@ def test_story1_readingPlugins_staysSilent(rules, project, command):
     assert decide(rules, command) is None
 
 
+# ---------------------------------------------------------------- story 2: a nested session's options
+
+NESTED_ASK = [
+    # the gate's hooks do not load
+    "claude -p x --bare",
+    "claude --bare -p x",
+    "claude -r --bare",
+    "claude -p x --safe-mode",
+    "claude -p x --setting-sources project",
+    "claude -p x --setting-sources=user",
+    "claude --restricted -p x",
+    # settings, a permission answerer, a transport or plugin code from outside
+    "claude -p x --managed-settings {}",
+    "claude -p x --permission-prompt-tool x",
+    "claude -p x --sdk-url wss://h",
+    "claude -p x --dangerously-load-development-channels server:x",
+    "claude -p x --plugin-url https://h/p.zip",
+    # Q2: widening
+    "claude -p x --dangerously-skip-permissions",
+    "claude -p x --allow-dangerously-skip-permissions",
+    "claude -p x --permission-mode bypassPermissions",
+    "claude -p x --permission-mode=auto",
+    "claude -p x --permission-mode dontAsk",
+    "claude -p x --add-dir ~/.claude",
+    "claude -p x --add-dir src ~/.claude/projects",
+    "claude -p x --add-dir ~",
+    # Q3: elsewhere
+    "claude --cloud x",
+    "claude --cloud",
+    "claude --remote-control",
+    "claude --environment e",
+    "claude --teleport",
+    "claude --desktop",
+    "claude ultrareview",
+    # a subcommand's own options
+    "claude agents --dangerously-skip-permissions",
+    "claude agents --permission-mode bypassPermissions",
+    "claude agents --setting-sources project",
+    # Q1: an option the table lacks
+    "claude -p x --flag-not-in-the-binary",
+    "claude -pZ x",
+    # every unwrapped form
+    'bash -c "claude --bare"',
+    "env claude --bare",
+    "claude-code --bare",
+    "/usr/bin/claude --bare -p x",
+    "mise exec -- claude --bare",
+    "npm exec -- claude --bare",
+    # T02 review: Claude Code finds these in the raw argv, so a value slot does not hide them
+    "claude --model --bare -p x",
+    "claude --append-system-prompt --safe-mode -p x",
+    "claude -n --bare",
+    "claude attach abc --bare",
+    "claude respawn abc --bare",
+    "claude logs abc --restricted",
+    "claude --project-config-root /tmp/empty -p x",
+    "claude --add-dir ${HOME}",
+    "claude --add-dir /",
+    "claude --add-dir .claude",
+    'claude --agents \'{"x":{"permissionMode":"bypassPermissions"}}\' -p x',
+]
+NESTED_FRICTION = [
+    "claude",
+    "claude -p x",
+    "claude -c",
+    "claude --resume",
+    "claude -r abc",
+    "claude --version",
+    "claude -v",
+    "claude -p x -- --bare",
+    'claude -p "explain --bare in the docs"',
+    "claude -p x --model sonnet --output-format json",
+    "claude -p x --max-turns 3",
+    "claude -p x --max-budget-usd 1",
+    "claude -p x --permission-mode plan",
+    "claude -p x --permission-mode acceptEdits",
+    'claude -p x --allowedTools "Bash(git push:*)"',
+    "claude -p x --allowedTools Read Grep",
+    "claude -p x --add-dir ../other",
+    "claude --bg x",
+    "claude -w x",
+    "claude mcp list",
+    "claude doctor",
+    "claude agents",
+    "claude agents --json",
+    "claude mcp get x",
+    "claude auth status",
+    # T02 review
+    "claude -- --bare",
+    "claude --setting-sources user,project,local -p x",
+    "claude --add-dir .claude/worktrees/x/docs",
+    'claude --agents \'{"x":{"prompt":"y"}}\' -p x',
+]
+
+
+def test_story2_addDir_resolvesFromTheSegmentsFolder(rules, project):
+    """A relative ``--add-dir`` is read from the folder the walk gives (T02 review: ``../..``)."""
+    (project / "a" / "b").mkdir(parents=True)
+    (project / ".claude").mkdir()
+    assert decide(rules, "cd a/b && claude --add-dir ../../.claude -p x") == "ask"
+    assert decide(rules, "cd a/b && claude --add-dir .. -p x") is None
+    assert decide(rules, f"claude --add-dir {project.parent} -p x") == "ask"  # HOME's parent
+
+
+@pytest.mark.parametrize("command", NESTED_ASK)
+def test_story2_nestedSessionOption_asks(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", NESTED_FRICTION)
+def test_story2_nestedFriction_staysSilent(rules, project, command):
+    assert decide(rules, command) is None
+
+
+def test_story2_reason_namesTheOption(rules, project):
+    assert "--bare" in verdict(rules, "claude -p x --bare").note
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [
     ("claude plugin disable cobot", "deny"),
     ("claude plugin update x", "force_ask"),
+    ("claude -p x --bare", "force_ask"),
     ("claude plugin list", "allow"),
 ]
 

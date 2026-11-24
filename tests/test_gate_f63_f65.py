@@ -512,6 +512,84 @@ def test_story6_friction_staysSilent(rules, project):
     assert_all(rules, COMMAND_FRICTION, None)
 
 
+def test_story6_unchanged_gitConfigEditor_asks(rules, project):
+    assert decide(rules, "git config core.editor x") == "ask"
+
+
+# ---------------------------------------------------------------- story 5: dotglob
+
+DOTGLOB_ASK = [
+    # row 13
+    "shopt -s dotglob; cat *",
+    "shopt -s dotglob; tee *.json",
+    "shopt -s nullglob dotglob; cp x *.json",
+    "shopt -s dotglob; cat ~/*",
+    "shopt -s dot''glob; cat *",
+    "GLOBIGNORE=x; cat *",
+    "export GLOBIGNORE=x; cat *",
+    "bash -O dotglob -c 'cat *'",
+    "bash -c 'shopt -s dotglob; cat *'",
+    "o=dotglob; shopt -s $o; cat *",
+    "setopt globdots; cat *",
+    "setopt GLOB_DOTS; cat *",
+    "set -o globdots; cat *",
+    # T05 review: a shell's flag one level down, and zsh's inversions and short flag
+    "bash -c 'bash -O dotglob -c \"cat *\"'",
+    "sh -c 'bash -O dotglob -c \"cat *\"'",
+    "bash -c 'zsh -o globdots -c \"cat *\"'",
+    "cat <(bash -O dotglob -c 'cat *')",
+    "find . -maxdepth 0 -exec bash -O dotglob -c 'cat *' \\;",
+    "zsh -c 'unsetopt noglobdots; cat *'",
+    "zsh +o noglobdots -c 'cat *'",
+    "setopt -4; cat *",
+    "zsh -c 'options[globdots]=on; cat *'",
+]
+DOTGLOB_UNCHANGED_ASK = [
+    "cat {.,}*.json",
+    "cat .mc?.json",
+    "shopt -s dotglob && rm -f *",
+]
+DOTGLOB_FRICTION = [
+    "ls *",
+    "cat *.json",
+    "shopt -s nullglob; cat *.json",
+    "shopt -s dotglob; ls *.md",
+    "shopt -u dotglob; cat *",
+    "shopt -s extglob; ls *.json",
+    "shopt dotglob",
+    "shopt -p",
+    "echo shopt -s dotglob",
+    "unset GLOBIGNORE",
+    "ping -4 -c 1 h; ls *",  # -4 is zsh's globdots letter for zsh, set and setopt only
+]
+
+
+def test_story5_textNamingGlobignore_asks_knownCost(rules, with_server_lists):
+    # quotes are stripped before the setter scan, so a mention reads as a set (T05 review)
+    assert decide(rules, "grep 'GLOBIGNORE=x' f; cat *") == "ask"
+
+
+@pytest.fixture
+def with_server_lists(project):
+    (project / ".mcp.json").write_text("{}")
+    (project / "a.json").write_text("{}")
+    (project / "r.md").write_text("")
+    (project.parent / "home" / ".claude.json").write_text("{}")
+    return project
+
+
+def test_story5_dotglobOn_globReachesProtectedFile_asks(rules, with_server_lists):
+    assert_all(rules, DOTGLOB_ASK, "ask")
+
+
+def test_story5_unchangedAsks_stayAsks(rules, with_server_lists):
+    assert_all(rules, DOTGLOB_UNCHANGED_ASK, "ask")
+
+
+def test_story5_friction_staysSilent(rules, with_server_lists):
+    assert_all(rules, DOTGLOB_FRICTION, None)
+
+
 def test_story6_unchanged_gitConfigAndAliases_ask(rules, project):
     assert decide(rules, "git -c alias.st='!x' st") == "ask"
     assert decide(rules, "git config core.pager cat") == "ask"

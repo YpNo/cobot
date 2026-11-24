@@ -515,3 +515,11 @@ Proof: tests/test_gate_f63_f65.py 32 passed; full suite in parallel green but fo
 Open: F-71 needs a probe in the owner's terminal; F-72 for the owner.
 Next: T05, dotglob.
 verified: tree 2ce4446ce9912ec3436ed2df6a66955b5fdaf0af · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T05: a glob under dotglob asks as the written-out word does (story 5)
+Changed: dotglob_on reads every placed and written segment (shopt -s, setopt, a shell's -O or -o, set -o, zsh's -4; a name that is not plain counts), the quote-stripped text for a shell's flag one level down and zsh's inversions, and GLOBIGNORE set in any way; GlobBudget.dotglob carries it to glob_names_asked_file, which then skips its leading-dot return. FINDINGS F-73 (the gate's time on long commands, older).
+Why: the owner's Q4, relayed verbatim: All as recommended. shopt -s dotglob; cat * reached .mcp.json with no ask.
+Proof: tests/test_gate_f63_f65.py 37 passed; full suite in parallel green but for the xdist timing tests; ruff clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 2 MINOR), each a test row; no measurable cost on a 53 KB command.
+Open: the zsh rows rest on zsh's manual (zsh is not installed); a text naming GLOBIGNORE= asks.
+Next: T06, the 2.1.331 nested-claude options.
+verified: tree 34da0efb70b54c8d6a4e378b5e5d110c66f0c674 · focused tests, full suite (parallel), ruff

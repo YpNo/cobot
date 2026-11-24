@@ -4047,10 +4047,11 @@ class GlobBudget:
 
     entries: int
     deadline: float
+    dotglob: bool = False  # the command turns dotglob on: a glob reaches dotfiles (gate-f63-f65)
 
     @classmethod
-    def fresh(cls) -> GlobBudget:
-        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE)
+    def fresh(cls, dotglob: bool = False) -> GlobBudget:
+        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE, dotglob)
 
     def take(self) -> bool:
         """One more entry; False once the entries or the time are spent."""
@@ -4547,6 +4548,56 @@ def with_known_folders(token: str, cwd: str | None) -> str | None:
     return token
 
 
+PLAIN_OPTION_RE = re.compile(r"[A-Za-z_]+")
+GLOBDOTS = "globdots"  # zsh's name, read without case or underscores
+# read from the quote-stripped text, so a shell's flag one level down counts (``bash -c 'bash -O
+# dotglob -c …'``, ``find -exec bash -O dotglob``), and zsh's inversions (T05 review)
+DOTGLOB_TEXT_RE = re.compile(
+    r"(?:^|[\s;&|(`])(?:-O\s+dotglob|-o\s+glob_?dots|\+o\s+no_?glob_?dots)\b"
+    r"|\bunsetopt\b[^;&|\n]*\bno_?glob_?dots\b|\boptions\[glob_?dots\]",
+    re.IGNORECASE,
+)
+ZSH_GLOBDOTS_LETTER = "4"  # zsh's one-letter flag for GLOB_DOTS (zsh, set and setopt)
+
+
+def dotglob_on(segments: list[list[str]], command: str) -> bool:
+    """Whether the command may turn on dotglob (bash) or globdots (zsh), so a glob reaches dotfiles
+    (spec gate-f63-f65, story 5, Q4). Read from the words of every segment, ``bash -c`` bodies
+    included, so ``dot''glob`` is ``dotglob``; an option name that is not plain (an expansion) counts.
+    ``GLOBIGNORE`` set in any way turns dotglob on too."""
+    text = re.sub(r"[\\'\"]", "", command)
+    if sets_start_variable(text, "GLOBIGNORE") or DOTGLOB_TEXT_RE.search(text):
+        return True
+    try:  # the written segments too: ``bash -O dotglob -c …`` is placed as its body only
+        written = split_segments(command)
+    except ValueError:
+        return True  # words the splitter cannot read: assume the worst
+    return any(segment_turns_dotglob_on(strip_wrappers(segment)) for segment in [*segments, *written])
+
+
+def segment_turns_dotglob_on(plain: list[str]) -> bool:
+    head = plain[0] if plain else ""
+    words = plain[1:]
+
+    def names(option: str) -> bool:
+        return (
+            option == "dotglob"
+            or option.replace("_", "").lower() == GLOBDOTS
+            or not PLAIN_OPTION_RE.fullmatch(option)
+        )
+
+    if head == "shopt" and any(w.startswith("-") and "s" in w for w in words):
+        return any(names(w) for w in words if not w.startswith("-"))
+    if head in ("zsh", "set", "setopt") and any(
+        w[:1] == "-" and w[1:2] != "-" and ZSH_GLOBDOTS_LETTER in w for w in words
+    ):
+        return True
+    if head == "setopt":
+        return any(names(w) for w in words if not w.startswith("-"))
+    takes = {"-O", "-o"} if head in SHELLS else {"-o"} if head == "set" else set()
+    return any(w in takes and names(v) for w, v in itertools.pairwise(words))
+
+
 def names_meet(last: str, pattern: str) -> bool:
     """Whether a glob's last segment and a row's last segment can name the same file, either way
     round (``.mc?.json`` and ``.mcp.json``; ``.claude.json.b*`` and ``.claude.json.backup*``).
@@ -4561,7 +4612,7 @@ def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], bu
     lexical "could match" comes first, so only such globs list a folder."""
     glob, _ = path_glob(os.path.expanduser(token))
     last = glob.rstrip("/").rsplit("/", 1)[-1]
-    if GLOB_HOLES & set(last) and not last.startswith("."):
+    if GLOB_HOLES & set(last) and not last.startswith(".") and not budget.dotglob:
         return False  # without dotglob, bash reaches a dotfile only through a leading literal dot
     asked = [r for r in protected if r.decision == "ask" and names_meet(last, r.pattern)]
     if "/../" not in glob:  # a ``..`` after a hole defeats the lexical check (T05 review)
@@ -4582,6 +4633,7 @@ def protected_file_touched(
     paths: list[str] | None = None,
     visited: Dirs = frozenset(),
     homes: frozenset[str] = frozenset(),
+    dotglob: bool = False,
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
     Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
@@ -4595,7 +4647,7 @@ def protected_file_touched(
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
-    budget = GlobBudget.fresh()
+    budget = GlobBudget.fresh(dotglob)
     fallback: str | None = None
     jobs = [(segment, dirs, True) for segment, dirs in placed]
     segments = [segment for segment, _ in placed]
@@ -6923,7 +6975,8 @@ def judge_bash(
     homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
     reached.paths.extend(program_writes([segment for segment, _ in placed], holes))
-    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
+    dotglob = dotglob_on([segment for segment, _ in placed], command)
+    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited, dotglob=dotglob)
     in_protected = protected_cwd(directories, rules)
     if touched:
         best = protected_verdict(touched, holes, placed, cwd, rules, reached)

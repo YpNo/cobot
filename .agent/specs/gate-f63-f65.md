@@ -568,3 +568,20 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
   - Seen, older than this branch and outside story 6: **F-72**. These are a verb's own options
     (`git clone -c`, `clone -u`, `fetch`/`ls-remote --upload-pack`, `gh repo clone -- -c`), and
     `rsync -e` and `RSYNC_RSH`.
+- T05 build.
+  - `dotglob_on` reads the placed and the written segments: `shopt -s`, `setopt`, a shell's
+    `-O`/`-o`, `set -o` and zsh's `-4`. A name that is not plain counts. `GLOBIGNORE` set in any
+    way counts too.
+  - The flag rides `GlobBudget.dotglob` into `glob_names_asked_file`, which then skips its
+    leading-dot return.
+  - Checkpoint 3 used zsh's option rules: zsh is not installed, so the zsh rows rest on its
+    manual.
+  - Bypass review: SOUND WITH CHANGES (1 MAJOR, 2 MINOR; no regression, no measurable cost),
+    each a test row:
+    - a shell's `-O dotglob` one level down (`bash -c 'bash -O dotglob -c …'`, `<( )`,
+      `find -exec`) was lost with the outer segment. The quote-stripped text is now scanned for
+      the flag forms;
+    - zsh's inversions (`unsetopt noglobdots`, `+o noglobdots`), `-4` and `options[globdots]`
+      are read.
+  - Known cost: a text that only names `GLOBIGNORE=` asks (`grep 'GLOBIGNORE=x' f; cat *`).
+  - Seen, older than this branch: **F-73**, the gate's time on long commands.

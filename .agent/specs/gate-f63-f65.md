@@ -279,6 +279,24 @@ its friction rows stay silent.
 9. **Both runtimes.** agy rows: one per story, `deny` for a deny and `force_ask` for an ask.
    Also `docs/configuration.md` and its Antigravity part, and the CHANGELOG Security entry. In
    FINDINGS, F-63, F-64, F-65 and F-70 are closed or set to accepted.
+10. **The hook's time limit (F-73; the owner's "Fold a size cap in", 2026-11-24).**
+    - F-73 was filed LOW as failing closed. It does not under Claude Code: a hook past its 10 s
+      timeout lets the call run. Measured on `4514a83`: a 53 KB command ending in `rm -rf /`
+      took 15.6 s, and a 16 KB command of `ls src/*N*` steps took 22 s. So it is HIGH.
+    - A cap alone does not hold: time follows the steps, not the bytes.
+    - So `judge_bash` asks unread past 32768 characters, and the Claude Code hook (`gate`) asks
+      once `GATE_DEADLINE` (7 s) passes.
+    - The timer raises a `BaseException`, so no reader's `except Exception` swallows it.
+    - agy is unchanged past the cap: `gate-agy.sh` already denies at `COBOT_GATE_DEADLINE`.
+    - Bypass review (no call left with no decision; 1 MAJOR, 3 MINOR):
+      - Folded, each a test row: the 7 s counts from the process start (start-up took about
+        0.32 s under load), and the deadline answer is logged.
+      - For the owner (MAJOR): padding a `never` row's command past the cap or the deadline turns
+        its deny into an ask, with no word of the rule. The other choice is deny on both, so the
+        agent splits the command.
+      - Left: a read stuck in a hung NFS or FUSE mount cannot be interrupted (older than this
+        branch); `report` and `handback` have no deadline (older; a slow report passes
+        unmarked).
 
 ## Trust boundaries
 
@@ -418,6 +436,7 @@ bypass-aimed review folded before its commit.
 | T05 | dotglob | gate | auth | — |
 | T06 | nested-`claude` option diff | gate | auth | checkpoint 5 |
 | T07 | agy rows, docs, CHANGELOG, FINDINGS | gate | — | T01–T06 |
+| T08 | the size cap and the hook deadline (story 10, F-73) | gate | auth | T07 |
 
 ## Trade-offs
 

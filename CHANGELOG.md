@@ -244,6 +244,13 @@ All notable changes to this project are documented here. The format follows
   - `--managed-settings-in-initialize`, `--initialize-fields` and `--routine` ask wherever they
     sit;
   - `--trusted-folder`, the gateway options, `--web` and `--discard` ask with their own reasons.
+- **The gate answers within the hook's time limit (F-73, raised to HIGH).** Claude Code runs a
+  call whose hook outlives its 10 s timeout, so a long command lost its decision:
+  - a 53 KB command ending in `rm -rf /` took 15.6 s to judge, and ran with no deny;
+  - a 16 KB command of `ls src/*N*` steps took 22 s.
+
+  Now a command over 32768 characters asks without being read, and the Claude Code hook asks
+  once 7 s pass. Under agy, `gate-agy.sh` already denied at its own deadline.
 
   Both runtimes. New friction: every editor or debugger run asks, and so does a project script
   named `./editor`.

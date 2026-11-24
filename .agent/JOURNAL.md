@@ -547,3 +547,11 @@ Proof: full suite with coverage 98.38 %, 6167 passed (serial); tests/test_gate_f
 Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words); JOURNAL.md over 400 lines (compact is the owner's call).
 Next: the owner verifies and pushes the branch.
 verified: tree a10668b48c96b8ce592b2944d16eb88e0f1e0413 · full suite with coverage, ruff, markdownlint, shellcheck, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — T08 gate-f63-f65: the size cap and the hook deadline (F-73)
+Changed: judge_bash asks unread past MAX_COMMAND_CHARS (32768); gate() runs gate_within under a SIGALRM deadline of GATE_DEADLINE (7 s) counted from the process start, raising GateDeadline (a BaseException) and answering a logged ask; gate_agy unchanged (gate-agy.sh denies at its own deadline); spec story 10 and T08; F-73 raised to HIGH and closed; CHANGELOG Security, docs/configuration.md.
+Why: the owner's "Fold a size cap in". F-73 did not fail closed under Claude Code: a hook past its 10 s timeout lets the call run, and a 53 KB command ending in rm -rf / took 15.6 s. A cap alone did not hold (a 16 KB glob chain took 22 s), so the deadline too.
+Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook on the 16 KB glob and variable chains answers ask in 7.2 s, the 53 KB command in 0.24 s; ruff, markdownlint, check-plugin, sync-agents clean; a bypass review (no call left without a decision; 1 MAJOR for the owner, 2 MINOR folded as test rows).
+Open: the MAJOR: a padded never-row command gets ask, not deny (owner's choice: ask or deny on cap and deadline); a hung NFS or FUSE read; report and handback have no deadline.
+Next: the owner answers the MAJOR, then the push and PR.
+verified: tree e4cfbe3e921013ec7fb315852acf056c6cf4f6eb · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents

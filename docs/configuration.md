@@ -306,6 +306,10 @@ both runtimes:
 - **Claude Code 2.1.331.** `--managed-settings-in-initialize`, `--initialize-fields` and
   `--routine` ask wherever they sit, value slots included. `--trusted-folder`, the gateway
   options, `--web` and `--discard` ask with their own reasons. `--max-cost` stays silent.
+- **Within the hook's time limit.** A command over 32768 characters asks without being read.
+  Under Claude Code, the hook asks once it has judged for 7 s, below its 10 s timeout, past which
+  Claude Code runs the call with no decision. Under agy, `gate-agy.sh` denies at
+  `COBOT_GATE_DEADLINE`.
 
 Not covered: an inherited loader variable or `GLOBIGNORE` (the F-59 class); build-tool variables
 (`GOFLAGS`, `RUSTC_WRAPPER`, `MAVEN_OPTS`), since a build runs repository code already;

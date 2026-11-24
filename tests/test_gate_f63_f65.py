@@ -734,3 +734,97 @@ def test_story9_agy_dotglob_sameJudgement(rules, with_server_lists, monkeypatch)
     call = {"id": "t1", "name": "run_command", "args": args}
     body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(with_server_lists)]}
     assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == "force_ask"
+
+
+# ---------------------------------------------------------------- story 10: the hook's time limit (F-73)
+
+SLOW_GLOBS = "".join(f"ls src/*{i}* && " for i in range(400)) + "true"  # about 5 s to judge at 3e83cc6
+
+
+def gate_body(command):
+    return json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": None})
+
+
+def agy_body(project, command):
+    call = {"id": "t1", "name": "run_command", "args": {"CommandLine": command, "Cwd": str(project)}}
+    return json.dumps({"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(project)]})
+
+
+def test_story10_commandPastTheCap_asksUnread(rules, project):
+    """A 53 KB command ending in ``rm -rf /`` took 15.6 s: past the hook's 10 s, its deny was lost."""
+    import time
+
+    command = "".join(f"cp src/f{i}.txt build/o{i}.txt && " for i in range(1300)) + "rm -rf /"
+    assert len(command) > rules.MAX_COMMAND_CHARS
+    started = time.monotonic()
+    found = verdict(rules, command)
+    assert time.monotonic() - started < 1
+    assert found.decision == "ask"
+    assert "too long" in found.reason()
+
+
+def test_story10_commandAtTheCap_isJudged(rules, project):
+    filler = "x" * (rules.MAX_COMMAND_CHARS - len("echo ; rm -rf /"))
+    assert decide(rules, f"echo {filler}; rm -rf /") == "deny"
+
+
+def test_story10_gatePastItsDeadline_asks(rules, project, monkeypatch):
+    """A command under the cap can still be slow to judge; the hook answers ask before its timeout."""
+    import signal
+    import time
+
+    monkeypatch.setattr(rules, "GATE_DEADLINE", 0.2)
+    started = time.monotonic()
+    out = json.loads(rules.gate(gate_body(SLOW_GLOBS)))["hookSpecificOutput"]
+    assert time.monotonic() - started < 2
+    assert out["permissionDecision"] == "ask"
+    assert "time" in out["permissionDecisionReason"]
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+def test_story10_agyPastTheCap_forceAsks(rules, project, monkeypatch):
+    """Under agy, gate-agy.sh's own deadline denies a slow call; the cap answers a long one first."""
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    (project / ".agent").mkdir()
+    (project / ".agent" / "cobot.rules").write_text("")
+    command = "rm -rf / ; " + "x" * rules.MAX_COMMAND_CHARS
+    assert json.loads(rules.gate_agy(agy_body(project, command)))["decision"] == "force_ask"
+
+
+def test_story10_deadlineSurvivesABroadHandler(rules, project, monkeypatch):
+    """The timer's exception is no ``Exception``, so a reader's ``except Exception`` cannot eat it."""
+    import time
+
+    def judge_swallowing(*_):
+        try:
+            time.sleep(5)
+        except Exception:  # noqa: BLE001 - the shape under test
+            return rules.Verdict(None, None, "swallowed")
+        return rules.Verdict(None, None, "no rule matched")
+
+    monkeypatch.setattr(rules, "GATE_DEADLINE", 0.1)
+    monkeypatch.setattr(rules, "judge", judge_swallowing)
+    out = json.loads(rules.gate(gate_body("ls")))["hookSpecificOutput"]
+    assert out["permissionDecision"] == "ask"
+
+
+def test_story10_startUpCountsAgainstTheDeadline(rules, project, monkeypatch, tmp_path):
+    """Wrap review: the time Python spent starting is part of the hook's 10 s; the ask is logged."""
+    import time
+
+    log = tmp_path / "gate.log"
+    monkeypatch.setenv("COBOT_GATE_LOG", str(log))
+    monkeypatch.setattr(rules, "GATE_DEADLINE", 1.0)
+    started = time.monotonic()
+    out = json.loads(rules.gate(gate_body(SLOW_GLOBS), started - 0.95))["hookSpecificOutput"]
+    assert time.monotonic() - started < 0.6
+    assert out["permissionDecision"] == "ask"
+    assert json.loads(log.read_text().splitlines()[-1])["decision"] == "ask"
+
+
+def test_story10_fastCallUnderTheDeadline_unchanged(rules, project):
+    assert (
+        json.loads(rules.gate(gate_body("git push --force")))["hookSpecificOutput"]["permissionDecision"]
+        == "deny"
+    )
+    assert rules.gate(gate_body("ls")) is None

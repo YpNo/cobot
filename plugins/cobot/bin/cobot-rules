@@ -26,6 +26,7 @@ named in the default layer, and an owner or project ``ask`` outranks both.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import fcntl
 import fnmatch
@@ -36,14 +37,17 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import time
 import unicodedata
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+PROCESS_STARTED = time.monotonic()  # the hook's time limit counts from here (F-73)
 
 try:
     import tomllib  # Python 3.11+
@@ -6992,11 +6996,17 @@ def protected_verdict(
     return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
 
 
+MAX_COMMAND_CHARS = 32768  # a longer command asks unread: judging it may outrun the hook (F-73)
+TOO_LONG = f"the command is too long to read in time (over {MAX_COMMAND_CHARS} characters); read it first"
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
     """Judge every segment of the command and of every substitution body; the most restrictive
     verdict wins. Also return the trace."""
+    if len(command) > MAX_COMMAND_CHARS:
+        return Verdict(ASK, None, TOO_LONG), [(command[:60], [])]
     bash_rules = [r for r in rules if applies(r, "Bash", agent)]
     scanned = shell.scan(command)
     if scanned.error:
@@ -7749,7 +7759,46 @@ def stamp_suffix(cwd: str | None) -> str:
     return f" · stamp: {line}"[:STAMP_SUFFIX_LIMIT]
 
 
-def gate(stdin: str) -> str | None:
+# Claude Code runs a call whose hook outlives its 10 s timeout, so the gate answers first (F-73);
+# under agy, gate-agy.sh's own deadline (COBOT_GATE_DEADLINE) denies first
+GATE_DEADLINE = 7.0  # seconds from the process start; the answer and the shim fit in the rest
+MIN_DEADLINE = 0.1  # a start-up that already spent the budget still leaves the timer something to fire
+TOO_SLOW = "the command takes too long to judge within the hook's time limit; read it before approving"
+
+
+class GateDeadline(BaseException):
+    """The gate's timer ran out. Not an ``Exception``, so no reader's broad handler swallows it."""
+
+
+def deadline_reached(signum: int, frame: object) -> None:
+    raise GateDeadline
+
+
+@contextlib.contextmanager
+def deadline(seconds: float) -> Iterator[None]:
+    """Raise GateDeadline in the main thread once ``seconds`` pass; the timer is cleared on exit."""
+    previous = signal.signal(signal.SIGALRM, deadline_reached)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def gate(stdin: str, started: float | None = None) -> str | None:
+    """The Claude Code hook's answer, or ask once GATE_DEADLINE passes since ``started`` (the
+    hook passes PROCESS_STARTED: compiling this script under ``-I`` takes a part of its time)."""
+    left = max(GATE_DEADLINE - (time.monotonic() - (started or time.monotonic())), MIN_DEADLINE)
+    try:
+        with deadline(left):
+            return gate_within(stdin)
+    except GateDeadline:
+        log_event({"tool": "gate", "decision": ASK, "reason": TOO_SLOW})
+        return hook_output(ASK, f"cobot gate: {TOO_SLOW}")
+
+
+def gate_within(stdin: str) -> str | None:
     try:
         payload = json.loads(stdin)
         tool = str(payload.get("tool_name", ""))
@@ -8491,7 +8540,7 @@ def main(argv: list[str]) -> int:
         if runtime not in RUNTIMES:
             print(f"cobot-rules: unknown runtime {runtime!r} (claude or agy)", file=sys.stderr)
             return 2
-        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read())
+        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read(), PROCESS_STARTED)
         if output:
             print(output)
         return 0

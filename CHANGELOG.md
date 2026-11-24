@@ -217,6 +217,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **A copy, a download or an extraction is judged where it lands (F-56, F-60).**
+  - An option value joined to its option now gets the separate form's decision:
+    `cp --target-directory=~/.claude cobot.rules`, `cp -t$HOME/.claude …`, `curl -o~/…`,
+    `wget -P~/…`, `7z x -o~/.claude`.
+  - Each source of a copy is checked where it lands, `<target>/<basename>`. So
+    `cp e/.claude.json ~/` asks, and `scp`, `docker cp` and `rclone copy` into `~/.claude` are
+    refused.
+  - A download is checked at `<folder>/<url name>`, in the working directory when no folder is
+    given.
+  - An extraction with no folder option lands in the working directory, and asks where that holds
+    the config dir.
+  - A config dir moved outside HOME keeps its protection, and moving a folder that holds the config
+    dir (`mv /home x`) is refused.
+  - New friction:
+    - in a session started in HOME, every extraction asks;
+    - `cpio -i` asks without `--no-absolute-filenames`;
+    - `curl -K` asks.
+- **The other writers are judged where they land (F-61).** `aria2c` and `gh … download`, `sftp`,
+  `pax -rw` and `ditto` copies, `jar`, `ar`, `unar`, `bsdunzip`, `bsdcpio` and `dpkg-deb`
+  extractions, and decompression in place (`gunzip ~/.claude/cobot.rules.gz` is refused).
+  New friction: `pax -r` asks everywhere; `aria2c -i` asks.
+- **Taking the config dir away or locking it is refused or asked (F-62).**
+  - Refused, as `rm -r` is: `tar --remove-files`, `zip -m`, `7z -sdel`, a recursive compressor,
+    `rclone purge|delete|rmdirs`, a `mount` or FUSE mount over it, and a link or bind mount of a
+    folder holding it (`ln -s ~ x`, `cp -rs ~ x`, `mount --bind ~ x`).
+  - Asked: `chmod`, `chown`, `chgrp`, `setfacl`, `chattr` on it or a folder holding it (the mode
+    is not read, so `chmod 700 ~` asks), and every `bwrap` command, as `unshare` already did:
+    `bwrap --bind / / rm -rf ~/.claude` had no decision.
+  - A literal refusal on cobot's owner files is no longer softened to an ask by a landing in a
+    customization root elsewhere in the command (`cp x ~/.agents/; cp x ~/.claude/cobot.rules`).
+  - A config dir reached through a symlink is protected at its real path, and re-pointing a link
+    above it is refused.
+- **A `cd` before the word no longer softens the decision.**
+  - After `cd ~/.claude` (or `cd ~ && cd .claude`, `pushd`), a relative word gets the
+    written-out path's decision: `cd ~/.claude && rm -r cobot` and `cd ~/.claude && tar -xf
+    e.tar` are refused where they asked. This holds in both runtimes.
+  - After a `cd` the gate cannot follow (`cd "$X"`, `cd -`, `popd`), a word through a folder
+    named as the config dir asks. Before, `cd "$X" && ln -sfn /tmp/o .claude` had no decision.
+  - New friction: `cd ~/.claude/cobot` alone is refused. So are `cd ~/.claude || rm -r cobot`
+    and a quoted `cd "~/.claude" && …`. After an unknown `cd`, `cp -r .claude x` asks.
 - **A shell variable no longer hides a protected file (F-55).**
   - Before, the gate read `$X` as text, so `cp x ~/.claude/$X` got no decision past the refusals
     on cobot's owner files. Now a variable is read by how the command sets it:

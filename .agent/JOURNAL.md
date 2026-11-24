@@ -176,3 +176,160 @@ Proof: cobot-memory check without the journal warning, brief 5384 chars (budget 
 Open: none new.
 Next: the owner pushes security/gate-f55 and opens the PR.
 verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · cobot-memory check, ruff, check-plugin, sync-agents
+
+## 2026-11-23 — spec gate-f56-f60 written and challenged, nothing built
+Changed: .agent/specs/gate-f56-f60.md revision 2 (248 lines): six stories on where a copy, download or extraction lands (F-56) and option values joined to their option (F-60); FINDINGS F-56 and F-60 pointed at it; F-61 filed for the writers kept out (cpio -p, pax, ditto, sftp, aria2c, gh download -D, curl --create-dirs).
+Why: owner, relayed by the orchestrator session: "Spec F-56 and F-60", one spec, kept small; F-57 and F-58 out.
+Proof: every Goal row measured with cobot-rules check on a5db3f8 (each none today); challenger revision 1 SOUND WITH CHANGES (5 MAJOR, 2 MINOR), each shape re-probed and folded; cobot-memory check ok, brief 5500 chars.
+Open: Q1 (an extraction in a cwd that only holds the config dir: ask, recommended) and Q2 (a download with no output folder lands in the cwd: yes, recommended) for the owner.
+Next: owner review, then /cobot:build gate-f56-f60, T01 first, a bypass-aimed review per task.
+verified: tree 8d25765db902cbcc095889cfc61051bad21cfec5 · spec only, cobot-memory check
+
+## 2026-11-23 — gate-f56-f60 T01: an option that says where a file lands is read in every form
+Changed: cobot-rules LANDING_OPTIONS (cp/mv/ln/install -t and --target-directory as a folder; curl -o/--output and wget -O/--output-document as a file; curl --output-dir and wget -P/--directory-prefix as a folder), landing_option_values in every form (joined short, cluster end, =, separate, a long prefix of 3+ chars except curl), landing_option_hit in protected_file_touched; JOINED_PATH_RE reads the path joined to any short option (wget -o~/x, gcc -o~/x, curl -sD~/x); 7z/7za/7zz/7zr -o and cpio -D in FOLDER_OPTIONS; tests/test_gate_f56_f60.py story 1; spec Clarify answers (Q1 ask, Q2 yes).
+Why: F-60 (HIGH): cp --target-directory=~/.claude cobot.rules got none where cp -t ~/.claude denied.
+Proof: tests/test_gate_f56_f60.py exit 0; full suite with coverage 98.65 % with one failure, test_gcpMcpGate_globThatOnlyCouldNameAServerList_staysSilent[cat */README.md], which passes alone and in its file (GLOB_DEADLINE 0.25 s under suite load; seen once during F-55 too); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; MAJOR: joined paths on other options, 7zz/7zr), each a test row.
+Open: the flaky glob-deadline test (pre-existing); cp -t ~ .bashrc and cp .bashrc ~ are T02; wget --execute= is T03.
+Next: T02, landing words per copier.
+verified: tree 89c6458f45d0dcdb3ce89d3a26ecdd6aacbe57eb · tests/test_gate_f56_f60.py, full suite (one flaky row), ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T02: each source of a copy lands at <target>/<basename>
+Changed: cobot-rules copy_parts (coreutils, gio and git mv through merge_parts; rsync, scp and docker/podman/kubectl cp with per-copier value-option tables; rclone and unknown options try every positional as the target), copy_verb finds the verb behind global options, landing_words (cp --parents and rsync -R keep the path, rsync's /./ marker read, host:path remote only for the remote copiers), landing_hit judges each landing as a relocating word, merges_into_an_anchor iterates copy_parts and reads rclone and --files-from as contents copies, merge_parts takes --target-directory prefixes, relocates covers scp, the container copiers and rclone; tests story 2.
+Why: F-56 (HIGH): cp e/.claude.json ~/, scp h:/x/cobot.rules ~/.claude and the like reached no decision.
+Proof: full suite with coverage exit 0, 98.59 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 6 MAJOR: rclone and container global options, rclone contents, git mv, x: as a local folder for cp, rsync /./), each a test row. The T02 tests were appended to the test file with a shell heredoc, against the Edit/Write-only rule.
+Open: the flaky glob-deadline test (passed this run).
+Next: T03, curl and wget landings.
+verified: tree 507d2119db1bdfe186f2b9d442827621399820ff · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T03: a download is judged where it lands
+Changed: cobot-rules download_landings (every output folder, the working directory when none, per Q2; <folder>/<url name> for curl -O and always for wget unless -O; a relative curl -o joined to --output-dir; unknown names for curl -J, URL globbing and -o '#1', wget -i -r -m -x --content-disposition --trust-server-names by prefix), url_names (wget decoded and ;params dropped, --default-page), download_hit (a sealed folder by its ~ name, a folder holding one as <folder>/*, which asks), config_reader (curl -K and --config; wget --config, and -e/--execute only for wgetrc commands that move output) asking in judge_bash; tests story 3; spec Goal row: a sealed folder reached through cd asks, as cd ~/.claude && tar -C . -xf did before.
+Why: F-56 (HIGH): curl --output-dir ~ -O https://h/.claude.json and wget -P ~ reached no decision.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 5 MAJOR: --next folders, wget prefixes, wget --config, URL globbing, decoded names; MINOR: --default-page, the cwd tier), each a test row; friction kept silent: wget -e robots=off -r -P mirror.
+Open: through the working directory a sealed folder asks, not denies (the customization-root check on a relative '.'; pre-existing).
+Next: T04, extraction into the working directory.
+verified: tree 56b60223a057494a34fe314fe9f1b1cfd8979021 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T04: an extraction lands in the working directory
+Changed: cobot-rules extracts (tar family, unzip, cpio, 7-Zip, long prefixes, 7z switches before the verb), extraction_unplaced (tar -P, cpio without --no-absolute-filenames, unzip -:, 7z -spf) asking in judge_bash, extraction_hit (a protected cwd by its ~ name, a cwd holding one as <cwd>/*, an untracked cd as unknown, all asking per Q1), folder_options reads cpio -p's destination and tar --one-top-level with no value; TAR_OPTIONS, UNZIP and UNZIPOPT join START_VARIABLES; tests story 4; FINDINGS F-61 widened (other unpackers, decompression in place).
+Why: F-56 (HIGH): cd ~ && tar -xf e.tar and cd ~/.claude && unzip e.zip reached no decision.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; 6 MAJOR: long prefixes, --one-top-level, option variables, 7-Zip forms, untracked cd, cpio -p), each a test row. A first run failed 18 tests: a new short_letters shadowed the kubectl helper of the same name; renamed option_letters.
+Open: a cd into a missing folder leaves the cwd unknown, so an extraction after it asks; cpio -i asks anywhere without --no-absolute-filenames (accepted friction); payload cwd ~/.claude denies where cd ~/.claude asks (MINOR).
+Next: T05, moved config dir and moved holders.
+verified: tree 555a3d3a927f6ce0c13f3c6fcfbc059d1bb5cf0c · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T05: a moved config dir keeps its folder protection, and moving a folder that holds it is refused
+Changed: cobot-rules protected_anchors walks a config dir moved outside HOME up to and including it; deleted_words marks a move's sources (moved_sources: mv, rename, git mv, gio move|mv|rename) as removed, so mv /home x and mv of the moved dir's parent deny like rm -r, and a glob source asks as rm's does; tests story 5; FINDINGS F-62 filed (tar --remove-files, zip -m, chmod/chown -R, mount --bind, bwrap, a symlinked CLAUDE_CONFIG_DIR).
+Why: F-56 (HIGH): with CLAUDE_CONFIG_DIR outside HOME, cp, tar -C, unzip -d, ln -sfn, mv and rm on it reached no decision; mv /home x got none.
+Proof: full suite with coverage exit 0, 98.28 % (fail-under 85); ruff 0.17.6 check and format clean; check-plugin ok; bypass review folded (no BLOCKER; MAJOR: a glob source in a move; the pre-existing ones became F-62); no friction found (mv a b, git mv, mv src/*.py lib/ silent).
+Open: F-62; inside HOME, cd ~ && mv .claude z asks where mv ~/.claude y denies (pre-existing, MINOR).
+Next: T06, agy rows, CHANGELOG, FINDINGS, docs.
+verified: tree ff787bc156c9012aafbf2d99617d915116175647 · full suite with coverage, ruff, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T06: both runtimes and the docs
+Changed: tests story 6 (agy run_command rows; a grant never covers a landing verdict); CHANGELOG Security entry; docs/configuration.md says where a file lands and what is not covered (F-59, F-61, F-62); FINDINGS F-56 and F-60 closed; spec tasks ticked, Converge written.
+Why: ADR-0007 and the docs that listed 7z -o, cpio -D and extraction after a cd as not covered.
+Proof: full suite with coverage exit 0, 98.28 %; ruff 0.17.6 check and format clean; markdownlint-cli2 0.24.2 clean; check-plugin ok; cobot-memory check exit 0 (brief at its 6000-char budget).
+Open: the brief is at its budget; a compact or a shorter project line in MEMORY is the next housekeeping.
+Next: /cobot:wrap gate-f56-f60.
+verified: tree 90a7a619c638d5936e4e7fc8b470205433028e74 · full suite with coverage, ruff, markdownlint, check-plugin, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60: reviews folded, F-56 and F-60 closed
+Changed: protected_file_touched keeps an ask-tier landing (a glob, an unknown folder) as a fallback, so it never hides a literal owner-file deny in the same or a later segment; the landing checks return none in the rule-less customization-root pass; landing_hit asks past 16 candidate targets or 256 landing words; keeps_path per program (cp --parents only; rsync -R, --relative and -aR); curl's -# and -: before a joined path; wget -O is no remote name; every_target by index; tests for each.
+Why: wrap security review (BLOCKER: an extraction anywhere in a command turned a literal owner-file deny into an ask, also under agy) and code review (3 MAJOR: 100 positionals took 14 s past the 10 s hook timeout, cp -R read as keeping the path, curl -#o~/x silent; 2 MINOR).
+Proof: full suite with coverage exit 0, 98.27 % (fail-under 85); ruff 0.17.6 check and format clean; shellcheck clean; markdownlint-cli2 0.24.2 clean; claude plugin validate --strict passes twice; check-plugin ok; sync-agents in sync; cobot-deps check --fresh: no supported lockfile; 200 positionals judged in under 5 s.
+Open: F-57, F-58, F-59 (accepted), F-61, F-62 and the older F-50, F-51; MINOR tiers: cd ~/.claude asks where cd /home/u/.claude denies, a cd into a missing folder asks before an extraction; cp -t $H/.claude with an inherited H stays silent (F-59 class); the brief is at its budget.
+Next: the owner reviews security/gate-f56-f60 and decides push and PR.
+verified: tree 44ef46d45f07037134dab963f997bf679224f049 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-23 — brief headroom: CONTEXT trimmed, open finding rows shortened
+Changed: CONTEXT.md head compacted (one verified date for the command table, Stack and Environment shortened); F-59, F-61 and F-62 rows point at their specs instead of listing every shape.
+Why: the brief sat at its 6000-char budget (owner: the nit).
+Proof: cobot-memory check exit 0, brief 5280 chars before this entry.
+Open: F-61 and F-62 become stories 7 and 8 of spec gate-f56-f60.
+Next: measure F-61 and F-62 on 6022fa6, extend the spec.
+verified: tree 44ef46d45f07037134dab963f997bf679224f049 · cobot-memory check, brief size
+
+## 2026-11-23 — gate-f56-f60 T07: other downloaders, copiers and extractors (F-61)
+Changed: spec revision 3, stories 7 and 8 for F-61 and F-62 (challenger SOUND WITH CHANGES, all folded; T07 and T08 merged). aria2c and gh release|run download landings, server names unplaced, aria2c -i and --conf-path ask; sftp, pax -rw (path kept) and ditto copiers (contents; -c a read, -x a folder); pax -r, jar x, ar x, unar, bsdunzip, bsdcpio, dpkg-deb -x|-X|-R extractions; tests/test_gate_f61_f62.py.
+Why: F-61; owner: F-61 and F-62 on the same branch and PR.
+Proof: full suite with coverage exit 0, 98.28 %; ruff clean; markdownlint clean; check-plugin ok. Bypass review folded: pax keeps operand paths, aria2c --index-out, ar key words, pax -rw -s asks.
+Open: pre-existing tier, a cd into an owner folder makes a download or extraction ask, not deny (also curl -O and tar xf); dpkg --root is a residual.
+Next: T08 in-place decompression.
+verified: tree f7ca68c759a305e523b1fdff23082218d9b4cbef · full suite with coverage, ruff, markdownlint, check-plugin
+
+## 2026-11-23 — gate-f56-f60 T08: in-place decompression (F-61)
+Changed: decompress_landings (each input without its suffix or -S, beside it or in zstd's --output-dir-flat|-mirror or lzop's -p), judged by download_hit; -N and -r unplaced; zstd --filelist and xz --files ask; -c, -t, -l and -o files add none; a names-a-protected-file check on relative landings after an unfollowed cd; landing words capped.
+Why: F-61, gunzip ~/.claude/cobot.rules.gz and kin got none.
+Proof: full suite with coverage, 98.30 %, one failure: the known flaky glob-deadline test under load, which passes alone; ruff clean. Bypass review folded: cluster scan per program (-dT0, -dS.x), -- ends options, xz --files, lz4 --multiple, lbzip2, lrzip, lzop -x and -p, getopt prefixes, the cap.
+Open: pre-existing, a followed cd into an owner folder asks where the literal path denies (touch too); 5000 plain words take about 6 s in the word loop (cat too).
+Next: T09 removal, cover, link and lock verbs.
+verified: tree 970927fb5011b00c138b661e0571bfa4348307d3 · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T09: removing, covering, linking and locking the config dir (F-62)
+Changed: taken_away (tar --remove-files, zip -m, 7z -sdel, a recursive compressor, rclone removal verbs) in deleted_words; ln, cp -s and cp -l sources as moved holders; covered_folders (mount, mount.*, FUSE mounters, rclone mount|nfsmount) as folder options; lock_hit asks for chmod, chown, chgrp, setfacl, chattr on a never-row folder or its holder, bwrap destinations (a self-bind excepted) and zip -m -@.
+Why: F-62.
+Proof: full suite with coverage exit 0, 98.32 %; ruff clean. Bypass review folded: rclone verbs behind valued flags, cp -l and long prefixes, bwrap no-value flags, chmod -w modes, globs, -m@, chmod 700 ~/.ssh silent (never rows only), more mounters, a lock cap.
+Open: cd ~ then a relative operand asks where the literal denies (rm -rf .claude too).
+Next: T10 the config dir's real path.
+verified: tree e47c2b8ec324bc4aa4b177009f98e5251c31c589 · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T10: the config dir's real path (F-62)
+Changed: resolved_config (cached realpath of the config dir) twins every config row and anchors outside HOME; sealed_paths cached and covering it; config_literal normalizes CLAUDE_CONFIG_DIR (.. and ~); relinked_ancestor refuses ln -n|-T on a symlink above the config dir (HOME a link).
+Why: F-62, a symlinked CLAUDE_CONFIG_DIR or ~/.claude (dotfile layout) left the real folder unread.
+Proof: full suite with coverage, 98.33 %, one failure: the flaky glob-deadline test, whose file passes alone; ruff clean. Bypass review folded: .. in CLAUDE_CONFIG_DIR, ln -sfn on HOME's link. Caching sealed paths cut the focused run from 16 s to 14 s.
+Open: accepted, a literal $HOME in CLAUDE_CONFIG_DIR is not expanded (nor by Claude Code, as far as known); mkdir under a dangling config link; a link loop holds no files.
+Next: T11 agy rows, docs, findings.
+verified: tree 8a2446442a7becaf2bb3fb0f269cce656dc3806d · full suite with coverage, ruff
+
+## 2026-11-23 — gate-f56-f60 T11: both runtimes, docs, F-61 and F-62 closed
+Changed: agy rows for stories 7 and 8; covered_folders reads a mount's mount point only (its last operand past option values, or --target; rclone mount keeps every operand), found by an agy row where a source under HOME's parent denied; CHANGELOG Security entries; configuration.md says where the other writers land and what taking the config dir away costs; FINDINGS F-61 and F-62 closed; spec Converge.
+Why: ADR-0007; the docs listed F-61 and F-62 as not covered.
+Proof: focused suites 562 passed; ruff, markdownlint, check-plugin clean; cobot-memory check exit 0 (brief 5195 chars).
+Next: /cobot:wrap stories 7 and 8.
+verified: tree 777007cc7306ff0ce4566c34ee82ffa16c1508d6 · focused tests, ruff, markdownlint, check-plugin, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60 stories 7 and 8: reviews folded, F-61 and F-62 closed
+Changed: wrap code review (mount's joined -o values and per-mounter value letters, unzstd --filelist, lz4 and lrzip -l, ar --output value, dpkg -R, lock_hit and locked_words tidied); wrap security review (bwrap opaque, bind-mount sources as second names, owner_hit leaves out a segment a customization root flags, so a landing in ~/.agents no longer softens a literal deny elsewhere: a class older than this spec that the new tables widened); docs and CHANGELOG to match.
+Why: /cobot:wrap.
+Proof: full suite 5319 passed; with coverage 98.33 %, its one failure the known flaky glob-deadline test under load (file passes alone); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean.
+Open: F-57, F-58, F-59 (accepted), F-50, F-51; LOW, cd into an unknown folder then ln -sfn .claude gets none (rm -rf .claude asks); Q3 built on its default (a lock asks), for the owner at review.
+Next: the orchestrator verifies, pushes to PR 83 and updates its body.
+verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · full suite with and without coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-23 — gate-f56-f60: Q3 confirmed by the owner
+Changed: spec Clarify Q3 carries the owner's answer (lock verbs ask, not deny); Converge says so.
+Why: the owner kept Q3 as ask at review (relayed 2026-11-23); it is no longer a default the owner may reverse.
+Proof: spec only; no code changed; tree stamp unchanged.
+Next: lower gap 1, a literal cd into an owner folder gets the literal path's decision.
+verified: tree f36ed7c1936dd9d05a79f77af69641c44e3c2574 · spec text only
+
+## 2026-11-23 — gate-f56-f60 T12: a literal cd gets the written-out path's decision (story 9)
+Changed: home_cd_reach follows the latest ~ folder through the script (cd ~/x sets it, a relative cd moves it, cd -, a variable, popd or a known folder clears it); owner_hit gives each one-segment job that folder while its own is unknown; home_cd_targets adds up to HOME_TARGETS_MAX folders a relative cd reached; extraction_hit judges them before its unknown-folder ask; a literal owner deny outranks protected_cwd's ask. Tests in tests/test_gate_cd_gaps.py, in a HOME of their own; the HOME-dependent cd ~/.claude ask rows moved there as denies.
+Why: lower gap 1 of the wrap; the owner asked that cd ~/.claude && rm -r cobot be refused as rm -r ~/.claude/cobot is.
+Proof: full suite green; story 9 file 48 passed; ruff clean. Bypass review folded: the owner pass collected every cd (cd ~ && cd proj && rm -r .claude denied), now it follows the latest. A first build reading ~ in the walk broke two differential rows and was dropped. 200 chained cds: 3.5 s (c9304bc 1.8 s; a first build 44 s).
+Open: accepted false denies on shapes the owner pass does not model (||, if, functions, pipes, a quoted ~, HOME reassigned); cd ~/.claude/cobot alone denies naming the word cd; pre-existing, 100 cds into distinct ~ folders take about 38 s on c9304bc too.
+Next: lower gap 2, an unknown cd then ln -sfn .claude.
+verified: tree 6e104155ffd7cf9108e26f6032e41757578956b1 · full suite, story 9 tests, ruff
+
+## 2026-11-23 — gate-f56-f60 T13: after an unknown cd, the config dir's name asks (story 9)
+Changed: config_tail reads a relative word through a part named as the config dir (from its last such part) under the config dir's parent while the folder is unknown to the walk and the owner pass; a hit asks as <unknown working directory>/*. It covers plain words, option values (=, a joined short option) and folder options; lost_cd_reach gives the ask pass the folder a relative cd through that name reached. Tests in tests/test_gate_cd_gaps.py.
+Why: lower gap 2 of the wrap; cd "$X" && ln -sfn /tmp/o .claude reached no decision.
+Proof: full suite green (its one failure, a row T13 meant to change, moved to the ask list; story 9 file then passes); ruff clean. Bypass review folded: a word of 1000 .claude parts took 37 s and hid a later deny past the hook timeout (now 0.5 s, deny); option values, folder options and a cd into .claude after an unknown cd.
+Open: accepted, cp -r .claude /tmp/backup after an unknown cd asks; reading by name only, so mv . /tmp/x or mv shell-snapshots /tmp after an unknown cd reach none, as on c9304bc.
+Next: docs and CHANGELOG, then wrap reviews.
+verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · full suite, story 9 tests, ruff
+
+## 2026-11-23 — gate-f56-f60: docs and CHANGELOG for story 9
+Changed: configuration.md says how a cd before the word is read (the latest ~ cd, and the ask after an unknown cd) and what it costs; its Not covered list gains the words with no config-dir part after an unknown cd; CHANGELOG Security entry for T12 and T13.
+Why: the orchestrator asked for docs and CHANGELOG lines for both lower gaps, in both runtimes (the gate is shared; the agy rows are in tests/test_gate_cd_gaps.py).
+Proof: markdownlint clean on both files; check-plugin ok; sync-agents in sync; cobot-memory check, brief 5350 chars.
+Next: wrap reviews (bypass and code) of T12 and T13.
+verified: tree eeecf3220810f1350043d323f303c0f8bbfec1c7 · markdownlint, check-plugin, sync-agents, cobot-memory check
+
+## 2026-11-23 — wrap gate-f56-f60 story 9: reviews folded
+Changed: code review (a short option cluster -vt.claude now asks; an extraction's reason no longer names a folder a later cd left; pushd +1 clears the ~ folder; one cd_operand parser for both reach functions); bypass review (HIGH: the folders relative cds reached were a set for the whole command, read by every segment, so a 3 KB command took 13.3 s and the hook timeout let a literal rm run; now each segment reads only the folder the cds before it reached, HOME_TARGETS_MAX removed; LOW: the .claude guess is kept through cd -, popd, ~ and absolute cds); each fold a test row; spec Converge.
+Why: /cobot:wrap for T12 and T13.
+Proof: full suite with coverage 98.34 %, 5400 passed, 2 failed under load: the new relative-timing test (rewritten as a ratio to the same command without the ~ cd; story 9 file 93 passed under coverage) and the known glob-deadline class (test_gcp_mcp_gate cat */README.md, passes alone); ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean; brief 4942 chars. The padded 3 KB command: 5.6 s (c9304bc 4.8 s).
+Open: accepted, protected_file_touched stays long; cd ~ && cd .CLAUDE && rm -r cobot denies (names compared without case); false denies on ||, if, functions, pipes, quoted ~. Pre-existing: 100 cds into distinct ~ folders take about 38 s on c9304bc too (a hook timeout).
+Next: Part 2, spec F-57 on security/gate-f57.
+verified: tree 54fc9776c0452eb87e6fdca88052e148318c62eb · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents, cobot-memory check

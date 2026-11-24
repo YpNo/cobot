@@ -29,6 +29,7 @@ from __future__ import annotations
 import difflib
 import fcntl
 import fnmatch
+import functools
 import hashlib
 import itertools
 import json
@@ -39,6 +40,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -123,7 +125,7 @@ OPAQUE = frozenset(
     # launchers, terminal multiplexers and job queues
     "parallel sem niceload parset env_parallel rush xe watch entr watchexec hyperfine "
     "setsid taskset chrt unbuffer strace dbus-run-session pkexec run0 systemd-run unshare firejail "
-    "script tmux screen pueue tsp nq".split()
+    "bwrap script tmux screen pueue tsp nq".split()  # bwrap: wrap security review, stories 7 and 8
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
 OPAQUE_SUBCOMMANDS = {
@@ -512,13 +514,15 @@ def read_layer(layer: str, path: Path, rules: list[Rule], warnings: list[str]) -
     if not path.is_file():
         return
     moved = moved_config()
+    resolved = resolved_config()
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         rule = parse_rule(line, layer, number, warnings)
         if rule:
             rules.append(rule)
-            twin = moved and config_twin(rule, moved)
-            if twin:
-                rules.append(twin)
+            for root in (moved, resolved):
+                twin = root and config_twin(rule, root)
+                if twin:
+                    rules.append(twin)
             zdot = zdotdir_twin(rule)
             if zdot:
                 rules.append(zdot)
@@ -539,8 +543,40 @@ def zdotdir_twin(rule: Rule) -> Rule | None:
 
 def moved_config() -> str | None:
     """The config dir when ``CLAUDE_CONFIG_DIR`` moves it away from ``~/.claude``, else None."""
-    moved = str(config_dir())
+    moved = config_literal()
     return None if moved == os.path.expanduser(HOME_CONFIG) else moved
+
+
+def config_literal() -> str:
+    """The config dir as written, with ``~`` and ``..`` resolved lexically: ``/x/a/../cc`` is
+    ``/x/cc``, the form an operand names (T10 review)."""
+    return os.path.normpath(os.path.expanduser(str(config_dir())))
+
+
+@functools.lru_cache(maxsize=8)
+def linked_ancestors(literal: str) -> frozenset[str]:
+    """The folders on the config dir's path that are symlinks (HOME itself, ``/home``): ``ln -sfn``
+    on one re-points the config dir to a folder the agent filled (T10 review)."""
+    found, folder = set(), literal
+    while folder not in ("/", ""):
+        if os.path.islink(folder):
+            found.add(folder.casefold())
+        folder = os.path.dirname(folder)
+    return frozenset(found)
+
+
+def resolved_config() -> str | None:
+    """The config dir's real path when it is, or sits under, a symlink (``CLAUDE_CONFIG_DIR`` set
+    to a link, or ``~/.claude`` linked into a dotfiles folder): the files live there, under a
+    name the rows do not read (story 8, T10). A link loop leaves the path as it is. Read once per
+    environment: ``sealed`` asks for it on every rule."""
+    return resolved_path(config_literal())
+
+
+@functools.lru_cache(maxsize=8)
+def resolved_path(literal: str) -> str | None:
+    real = os.path.realpath(literal)
+    return None if real == literal else real
 
 
 def config_twin(rule: Rule, moved: str) -> Rule | None:
@@ -558,8 +594,13 @@ def config_twin(rule: Rule, moved: str) -> Rule | None:
 
 def sealed(rule: Rule) -> bool:
     """A never file row on cobot's owner files, in either config dir form."""
-    paths = {f"{root}/{name}" for root in (HOME_CONFIG, str(config_dir())) for name in SEALED}
-    return rule.decision == "never" and rule.pattern in paths
+    return rule.decision == "never" and rule.pattern in sealed_paths(config_literal(), resolved_config())
+
+
+@functools.lru_cache(maxsize=8)
+def sealed_paths(moved: str, resolved: str | None) -> frozenset[str]:
+    """cobot's owner files under each form of the config dir; built once per form (T10)."""
+    return frozenset(f"{root}/{name}" for root in (HOME_CONFIG, moved, resolved) if root for name in SEALED)
 
 
 def load_rules(cwd: str | None) -> tuple[list[Rule], list[str], dict[str, Path]]:
@@ -3241,7 +3282,39 @@ FOLDER_OPTIONS = {
     "unzip": (("-d",), ()),
     "patch": (("-d",), ("--directory",)),
     "git": (("-C",), ("--work-tree", "--git-dir")),
+    # spec gate-f56-f60, story 1: an extraction folder (7-Zip's ``-o`` is joined: ``-odir``)
+    **{name: (("-o",), ()) for name in ("7z", "7za", "7zz", "7zr")},
+    "cpio": (("-D",), ("--directory",)),
+    # story 7 (F-61): GNU ar 2.44 (``--output``) and jar (JDK 24, extraction only), read 2026-11-23
+    "ar": ((), ("--output",)),
+    "jar": (("-C",), ("--dir",)),
 }
+EXTRACTOR_ALIASES = {"bsdunzip": "unzip", "bsdcpio": "cpio"}  # libarchive's twins take the same options
+UNAR_FOLDER = ("-o", "-output-directory", "--output-directory")  # unar's long options take one dash
+DPKG_EXTRACTING = frozenset("-x --extract -X --vextract -R --raw-extract".split())  # then: deb, folder
+DPKG_RECURSIVE = frozenset({"-R", "--raw-extract"})  # for dpkg itself, -R is --recursive (wrap review)
+# options naming where a copy or a download lands (spec gate-f56-f60, story 1, F-60): per
+# program, (short letter, long name, kind). A ``folder`` is judged as ``cp -t DIR`` is, a
+# relocating word; a ``file`` as a path word. Read from coreutils ``cp``, ``mv``, ``ln`` and
+# ``install --help``, ``curl --help all`` and ``wget --help`` on 2026-11-23.
+LANDING_OPTIONS: dict[str, tuple[tuple[str, str, str], ...]] = {
+    **{name: (("t", "--target-directory", "folder"),) for name in ("cp", "mv", "ln", "install")},
+    "curl": (("o", "--output", "file"), ("", "--output-dir", "folder")),
+    "wget": (("O", "--output-document", "file"), ("P", "--directory-prefix", "folder")),
+    # story 7 (F-61): aria2c 1.37 manual and ``gh release|run download --help`` (gh 2.x), read
+    # 2026-11-23; aria2c writes ``-o`` inside ``-d``. gh's are read for its download verbs only.
+    "aria2c": (("d", "--dir", "folder"), ("o", "--out", "file"), ("O", "--index-out", "indexed")),
+    "gh": (("D", "--dir", "folder"), ("O", "--output", "file")),
+    # story 7, T08: ``zstd --help`` 1.5, read 2026-11-23 (zstd takes no abbreviated long option)
+    "zstd": (("", "--output-dir-flat", "folder"), ("", "--output-dir-mirror", "folder")),
+    "lzop": (("p", "--path", "folder"),),  # lzop's output folder (T08 review)
+}
+GH_DOWNLOADING = frozenset({"release", "run"})  # ``gh release download``, ``gh run download``
+# any short option with a path joined to it, for programs outside the table: the path after the
+# letters is a path word, as it is with a space (``wget -o~/log``, ``gcc -o~/x``, ``curl -c~/j``)
+JOINED_PATH_RE = re.compile(r"-[A-Za-z0-9#:]+((?:~|\$HOME|\$\{HOME\}|/|\.\.?/)\S*)")  # curl -#o~/x
+LANDING_PREFIX_MIN = 3  # getopt takes any unambiguous prefix: ``cp --t=DIR`` is ``--target-directory``
+EXACT_LONG_NAMES = frozenset({"curl", "zstd"})  # they take no abbreviated long option
 GIT_VALUE_OPTIONS = frozenset({"-c", "--namespace", "--exec-path", "--config-env"})  # before the verb
 
 
@@ -3265,8 +3338,11 @@ def folder_options(segment: list[str]) -> list[str]:
     clustered short forms, and tar's old-style first word (``tar xfC e.tar dir``)."""
     found = [w.split("=", 1)[1] for w in segment if w.startswith(GIT_FOLDER_VARIABLES)]
     argv = program_of(segment)
-    head = argv[0] if argv else ""
-    if head not in FOLDER_OPTIONS:
+    head = EXTRACTOR_ALIASES.get(argv[0], argv[0]) if argv else ""
+    if head == "cpio" and ("p" in option_letters(argv) or "--pass-through" in argv):
+        found += [w for w in argv[1:] if not w.startswith("-")][-1:]  # copy-pass: its destination folder
+    found += other_extraction_folders(head, argv) + covered_folders(argv)
+    if head not in FOLDER_OPTIONS or (head == "jar" and not extracts(argv)):
         return [value for value in found if value]
     shorts, longs = FOLDER_OPTIONS[head]
     letters = "".join(option[1] for option in shorts)
@@ -3280,6 +3356,9 @@ def folder_options(segment: list[str]) -> list[str]:
         if head == "git" and not word.startswith("-"):
             break  # the verb: what follows is its own options
         if word.startswith("--") and long_named(word, longs):
+            if "=" not in word and long_prefix(word, "--one-top-level", LONG_PREFIX_MIN):
+                i += 1  # no value: tar extracts into a folder named after the archive, in the cwd
+                continue
             found.append(word.split("=", 1)[1] if "=" in word else following)
             i += 1 if "=" in word else 2
             continue
@@ -3296,6 +3375,142 @@ def folder_options(segment: list[str]) -> list[str]:
     return [value for value in found if value]
 
 
+FUSE_MOUNTERS = frozenset(
+    "sshfs bindfs fuse-overlayfs archivemount squashfuse s3fs gocryptfs encfs mergerfs unionfs "
+    "unionfs-fuse guestmount".split()
+)
+RCLONE_MOUNTING = frozenset({"mount", "nfsmount"})
+
+
+# short options that take a value, per mounter (mount(8), bindfs 1.17, sshfs 3.7); others: -o
+MOUNT_VALUE_SHORTS = {"mount": "otOLUNT", "bindfs": "ougpmM", "sshfs": "opF"}
+MOUNT_VALUE_DEFAULT = "o"
+MOUNT_VALUE_LONGS = frozenset(
+    "--types --options --test-opts --fstab --label --uuid --namespace --source --target-prefix".split()
+)
+
+
+def covered_folders(argv: list[str]) -> list[str]:
+    """The mount point of ``mount`` or a FUSE mounter (its last operand, past option values, and
+    ``--target``'s value), and every operand of ``rclone mount`` (its source is a remote, its
+    flags' values are unknown): a mount over a folder hides it from every process, as removing it
+    would (story 8). A mount's source is not covered: it is shown elsewhere, not hidden."""
+    head = argv[0] if argv else ""
+    if head == "rclone":
+        verb = rclone_verb(argv, RCLONE_MOUNTING)
+        return [w for w in argv[verb + 1 :] if not w.startswith("-")] if verb is not None else []
+    if head != "mount" and not head.startswith("mount.") and head not in FUSE_MOUNTERS:
+        return []
+    targets, operands, _ = mount_operands(argv)
+    return [t for t in targets if t] + operands[-1:]
+
+
+def mount_operands(argv: list[str]) -> tuple[list[str], list[str], str]:
+    """A mounter's ``--target`` values, its operands past option values, and its option text
+    (every ``-o`` value and short cluster, to find ``bind``)."""
+    takers = MOUNT_VALUE_SHORTS.get(argv[0], MOUNT_VALUE_DEFAULT)
+    targets, operands, options, i = [], [], [], 1
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        if name == "--target":
+            targets.append(value if eq else following)
+            i += 1 if eq else 2
+        elif word.startswith("--"):
+            options.append(word)
+            i += 2 if name in MOUNT_VALUE_LONGS and not eq else 1
+        elif word.startswith("-") and len(word) > 1:
+            # the cluster ends at its first value letter: ``-oremount,ro`` holds its value
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in takers), None)
+            options.append(word + (" " + following if taker == len(word) - 1 else ""))
+            i += 2 if taker == len(word) - 1 else 1
+        else:
+            operands.append(word)
+            i += 1
+    return targets, operands, " ".join(options)
+
+
+BIND_OPTIONS_RE = re.compile(r"(?:^|\s)(?:--r?bind\b|-[A-Za-z]*[BR]\b|-o\s*(?:\S*,)?r?bind\b)")
+
+
+def bind_sources(argv: list[str]) -> list[str]:
+    """The source of a bind mount (``mount --bind|--rbind|-B|-R|-o bind``, ``bindfs``): a second
+    name for a folder, like a link to it (wrap security review, story 8)."""
+    head = argv[0] if argv else ""
+    if head not in ("mount", "bindfs"):
+        return []
+    _, operands, options = mount_operands(argv)
+    return operands[:-1] if head == "bindfs" or BIND_OPTIONS_RE.search(options) else []
+
+
+def other_extraction_folders(head: str, argv: list[str]) -> list[str]:
+    """The folders unar (``-o``, ``-output-directory``) and dpkg-deb (``-x DEB DIR``) extract into
+    (story 7): neither fits the getopt forms ``folder_options`` reads."""
+    if head == "unar":
+        return [argv[i + 1] for i, word in enumerate(argv[:-1]) if word in UNAR_FOLDER] + [
+            w.split("=", 1)[1] for w in argv if w.split("=", 1)[0] in UNAR_FOLDER and "=" in w
+        ]
+    if head == "ditto" and "x" in option_letters(argv):  # ``ditto -x -k e.zip DIR``
+        return [w for w in argv[1:] if not w.startswith("-")][-1:]
+    if head not in ("dpkg-deb", "dpkg"):
+        return []
+    actions = DPKG_EXTRACTING - DPKG_RECURSIVE if head == "dpkg" else DPKG_EXTRACTING
+    action = next((i for i, word in enumerate(argv) if word.split("=", 1)[0] in actions), None)
+    if action is None:
+        return []
+    operands = [w for w in argv[action + 1 :] if not w.startswith("-")]
+    return operands[1:2]
+
+
+def landing_option_values(segment: list[str]) -> list[tuple[str, str]]:
+    """The values of the options that name where a copy or a download lands, with their kind, in
+    every form: separate, joined short (``-tDIR``, ``-o~/x``), the end of a short cluster
+    (``-rt DIR``), ``--long=VALUE``, ``--long VALUE``, and a long prefix of three or more
+    characters (spec gate-f56-f60, story 1). An over-read prefix only checks one more word."""
+    argv = program_of(segment)
+    table = LANDING_OPTIONS.get(argv[0] if argv else "", ())
+    if argv[:1] == ["gh"] and not gh_downloads(argv):
+        table = ()  # gh's other verbs give -D and -O other meanings
+    letters = {short: kind for short, _, kind in table if short}
+    found: list[tuple[str, str]] = []
+    i = 1
+    while i < len(argv) and table:
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        if word == "--":
+            break
+        step = 1
+        if word.startswith("--"):
+            name, eq, value = word.partition("=")
+            kind = long_landing(argv[0], name, table)
+            if kind:
+                found.append((value if eq else following, kind))
+                step = 1 if eq else 2
+        elif word.startswith("-") and letters:
+            cluster = re.fullmatch(rf"-([a-zA-Z0-9#:]*?)([{''.join(letters)}])(.*)", word)
+            if cluster:
+                found.append((cluster.group(3) or following, letters[cluster.group(2)]))
+                step = 1 if cluster.group(3) else 2
+        i += step
+    # aria2c's ``--index-out=INDEX=PATH`` names a file after its index (T07 review)
+    found = [(v.split("=", 1)[-1], "file") if k == "indexed" else (v, k) for v, k in found]
+    return [(value, kind) for value, kind in found if value and value != "-"]
+
+
+def gh_downloads(argv: list[str]) -> bool:
+    """``gh release download`` or ``gh run download``, behind any global option (``-R o/r``)."""
+    return any(word in GH_DOWNLOADING and argv[i + 1 : i + 2] == ["download"] for i, word in enumerate(argv))
+
+
+def long_landing(program: str, name: str, table: tuple[tuple[str, str, str], ...]) -> str | None:
+    """The kind of the landing option a long word names, exactly or by a prefix getopt takes."""
+    for _, long, kind in table:
+        exact = name == long
+        prefix = program not in EXACT_LONG_NAMES and len(name) >= LANDING_PREFIX_MIN and long.startswith(name)
+        if exact or prefix:
+            return kind
+    return None
+
+
 def deleted_words(segment: list[str]) -> frozenset[int]:
     """The indexes of the words a segment deletes with what is under them: every word of ``rm``,
     ``rmdir``, ``unlink``, ``shred``, ``trash``, ``git rm``, ``gio trash|remove``; the start paths
@@ -3310,6 +3525,12 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
         or (head == "gio" and argv[1:2] and argv[1] in GIO_DELETING)
     ):
         return frozenset(range(at + 1, len(segment)))
+    taken = taken_away(argv)
+    if taken:  # removed after archiving, or every file under it replaced (story 8)
+        return frozenset(at + i for i in taken)
+    moved = moved_sources(argv)
+    if moved:  # a folder moved away is gone from its place: as removed for the anchors (story 5)
+        return frozenset(at + i for i, word in enumerate(argv) if i > 0 and word in moved)
     if head not in FIND_PROGRAMS or not FIND_ACTIONS & set(argv):
         return frozenset()
     if "-files0-from" in argv:
@@ -3317,6 +3538,73 @@ def deleted_words(segment: list[str]) -> frozenset[int]:
     inside = {at + i for i in find_body_indexes(argv)}
     words = {at + i for i in range(1, len(argv))} - inside
     return frozenset(words if find_starts(argv) else words | {IMPLICIT_FOLDER})
+
+
+MOVERS = frozenset({"mv", "rename"})
+# story 8 (F-62): GNU tar 1.35 ``--remove-files``, Info-ZIP ``zip -m``, 7-Zip ``-sdel`` and
+# ``rclone`` 1.69's removal verbs, read 2026-11-23
+RCLONE_REMOVING = frozenset({"purge", "delete", "deletefile", "rmdir", "rmdirs"})
+
+
+def taken_away(argv: list[str]) -> list[int]:
+    """The indexes of the words a command removes or rewrites with what is under them: the
+    sources of ``tar --remove-files``, ``zip -m``, ``7z -sdel`` and a recursive compressor, and
+    the paths of rclone's removal verbs (story 8)."""
+    head = argv[0] if argv else ""
+    words = list(range(1, len(argv)))
+    if head in TAR_FAMILY and any(long_prefix(w, "--remove-files", 5) for w in argv[1:]):
+        return words
+    if head == "zip" and zip_moves(argv):
+        return words
+    if head in SEVEN_ZIPS and any(w.casefold().startswith("-sdel") for w in argv):
+        return words
+    if head in DECOMPRESS_FLAG or head in DECOMPRESSING:
+        letters, longs = decompress_options(argv)
+        if "r" in letters or any(long_prefix(w, "--recursive", 5) for w in longs):
+            return words
+    verb = rclone_verb(argv, RCLONE_REMOVING)
+    return list(range(verb + 1, len(argv))) if verb is not None else []
+
+
+def rclone_verb(argv: list[str], verbs: frozenset[str]) -> int | None:
+    """The index of the first word that is one of rclone's ``verbs``. rclone's flags take values
+    the gate has no table for, so the first bare word may be one (``--config x purge``; T09
+    review); a value spelled like a verb is read as one, which can only add a decision."""
+    if argv[:1] != ["rclone"]:
+        return None
+    return next((i for i, w in enumerate(argv[1:], 1) if w in verbs), None)
+
+
+def zip_moves(argv: list[str]) -> bool:
+    """``zip -m``, in any cluster (``-rm@``), or ``--move`` and its prefixes."""
+    clusters = [w for w in argv[1:] if w.startswith("-") and not w.startswith("--")]
+    return any("m" in w[1:] for w in clusters) or any(long_prefix(w, "--move", 5) for w in argv)
+
+
+def linked_holder(argv: list[str]) -> bool:
+    """``ln``, ``cp -s`` and ``cp -l``: a link (or a tree of hard links) to a folder holding the
+    config dir reaches it under another name the rows do not read (challenger, T09 review)."""
+    head = argv[0] if argv else ""
+    if head != "cp":
+        return head == "ln"
+    longs = ("--symbolic-link", "--link")
+    return bool({"s", "l"} & option_letters(argv)) or any(long_prefix(w, o, 5) for w in argv for o in longs)
+
+
+def moved_sources(argv: list[str]) -> set[str]:
+    """The sources of a move (``mv``, ``rename``, ``git mv``, ``gio move|mv|rename``) or a link
+    (``ln``, ``cp -s``): moving or linking a folder that holds the config dir carries it away or
+    reaches it (``mv /home x``, ``ln -s ~ /tmp/h``; spec gate-f56-f60, stories 5 and 8)."""
+    head = argv[0] if argv else ""
+    gio = head == "gio" and argv[1:2] in (["move"], ["mv"], ["rename"])
+    if linked_holder(argv):
+        return set(merge_parts(argv[1:])[1])
+    if bind_sources(argv):
+        return set(bind_sources(argv))
+    if head not in MOVERS and not gio and not (head == "git" and copy_verb(argv) is not None):
+        return set()
+    _, sources, _ = merge_parts(argv[(copy_verb(argv) or 0) + 1 :])
+    return set(sources)  # a glob is judged as rm's is: it asks where it could name an anchor
 
 
 def find_starts(argv: list[str]) -> list[int]:
@@ -3429,14 +3717,14 @@ def enters(segment: list[str]) -> bool:
 def relocates(segment: list[str]) -> bool:
     argv = program_of(segment)
     head = argv[0] if argv else ""
-    gio = head == "gio" and bool(argv[1:2]) and argv[1] in GIO_MOVING
-    return head in RELOCATING or (head == "git" and "mv" in argv[1:3]) or gio
+    return head in RELOCATING or head == "scp" or other_copier(argv) or copy_verb(argv) is not None
 
 
 def protected_anchors(protected: list[Rule]) -> frozenset[str]:
     """The folders holding an absolute protected pattern, and their parents below HOME: moving or
     linking one carries the protected files with it (``mv ~/.gemini/config x``)."""
     home, anchors = os.path.expanduser("~"), set()
+    outsides = [p for p in (moved_config(), resolved_config()) if p and not p.startswith(home + "/")]
     for rule in protected:
         pattern = os.path.expanduser(rule.pattern)
         if not os.path.isabs(pattern):
@@ -3445,6 +3733,12 @@ def protected_anchors(protected: list[Rule]) -> frozenset[str]:
         folder = literal.rstrip("/") if literal.endswith("/") else os.path.dirname(literal)
         while folder not in (home, "/", "") and folder.startswith(home + "/"):
             anchors.add(folder.casefold())  # compared without case (F-30)
+            folder = os.path.dirname(folder)
+        # a config dir moved outside HOME, or its real path there: its folders up to and including
+        # it (spec gate-f56-f60, stories 5 and 8)
+        outside = next((p for p in outsides if folder == p or folder.startswith(p + "/")), None)
+        while outside and (folder == outside or folder.startswith(outside + "/")):
+            anchors.add(folder.casefold())
             folder = os.path.dirname(folder)
     return frozenset(anchors)
 
@@ -3551,7 +3845,22 @@ def merges_into_an_anchor(segment: list[str], base: str, anchors: frozenset[str]
     copies a folder's contents (a trailing ``/`` or ``/.``, ``-T``, a variable, a hole, find's
     ``{}``). The target is ``-t``/``--target-directory`` when given, else the last word.
     ``cp a ~`` stays silent."""
-    target, sources, contents = merge_parts(program_of(segment)[1:])
+    argv = program_of(segment)
+    # rclone copies a folder's contents; ``--files-from`` names sources the gate does not read
+    listed = bool(argv) and (argv[0] in CONTENTS_COPIERS or any(w.startswith("--files-from") for w in argv))
+    return next(
+        (
+            found
+            for target, sources, contents, _ in copy_parts(argv)
+            if (found := merged_source(target, sources or ["."] * listed, contents or listed, base, anchors))
+        ),
+        None,
+    )
+
+
+def merged_source(
+    target: str | None, sources: list[str], contents: bool, base: str, anchors: frozenset[str]
+) -> str | None:
     if target is None or not sources:
         return None
     folder = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1]))).casefold()
@@ -3575,7 +3884,8 @@ def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
     while i < len(args):
         word = args[i]
         following = args[i + 1] if i + 1 < len(args) else None
-        if word.startswith("--target-directory"):
+        name = word.split("=", 1)[0]
+        if len(name) >= LANDING_PREFIX_MIN and "--target-directory".startswith(name):
             target, i = (word.split("=", 1)[1], i + 1) if "=" in word else (following, i + 2)
             continue
         if word in ("-T", "--no-target-directory") or re.fullmatch(r"-[a-zA-Z]*T[a-zA-Z]*", word):
@@ -3590,6 +3900,285 @@ def merge_parts(args: list[str]) -> tuple[str | None, list[str], bool]:
     if target is None and len(sources) >= 2:
         target = sources.pop()
     return target, sources, contents
+
+
+# copiers whose sources land in a target folder (spec gate-f56-f60, story 2), and the options of
+# each that take a value: rsync's ``-t`` keeps times, it names no target. Read from ``rsync
+# --help`` 3.4, ``scp`` (OpenSSH 10), ``docker cp --help``, ``kubectl cp --help`` and ``rclone
+# copy --help`` on 2026-11-23. An option outside a table may take a value, so every positional
+# is then tried as the target.
+COPY_VALUE_SHORTS = {
+    "rsync": "eBfMT@",
+    "scp": "cDFiJlPoSX",
+    "kubectl": "cn",
+    "docker": "",
+    "podman": "",
+    # story 7 (F-61): sftp (OpenSSH 10), POSIX pax and macOS ditto, read 2026-11-23
+    "sftp": "BbcDFiJloPRSsX",
+    "pax": "bfopsxBEGTU",
+    "ditto": "",
+}
+COPY_VALUE_LONGS = {
+    "rsync": frozenset(
+        "--rsh --rsync-path --filter --exclude --include --exclude-from --include-from --files-from "
+        "--temp-dir --partial-dir --log-file --log-file-format --password-file --chmod --chown "
+        "--backup-dir --suffix --compare-dest --copy-dest --link-dest --timeout --contimeout "
+        "--bwlimit --max-size --min-size --modify-window --out-format --info --debug --iconv "
+        "--usermap --groupmap --port --sockopts --outbuf --max-delete --block-size --remote-option "
+        "--skip-compress --checksum-choice --compress-choice --compress-level --stop-after --stop-at".split()
+    ),
+    "kubectl": frozenset("--container --namespace --retries --context --kubeconfig".split()),
+    "scp": frozenset(),
+    "docker": frozenset(),
+    "podman": frozenset(),
+    "ditto": frozenset({"--arch", "--bom", "--zlibCompressionLevel"}),
+}
+# copiers whose every option is in their table: an unknown long word is a flag, not a value taker
+OPTIONS_KNOWN = frozenset({"scp", "sftp", "pax", "ditto"})
+
+
+def other_copier(argv: list[str]) -> bool:
+    """Story 7's copiers: ``sftp``, ``pax -rw``, and ``ditto`` unless it archives (``-c``, a read)
+    or extracts (``-x``, judged by its folder operand)."""
+    head = argv[0] if argv else ""
+    if head == "ditto":
+        return not {"c", "x"} & option_letters(argv)
+    return head == "sftp" or (head == "pax" and {"r", "w"} <= option_letters(argv))
+
+
+COPY_TARGETS_MAX = 16  # targets tried when an option is unknown; past it the copy asks
+LANDING_WORDS_MAX = 256  # landing words one segment may make; past it the copy asks
+
+
+def keeps_path(head: str, args: list[str]) -> bool:
+    """Whether a copy keeps the source's path: ``cp --parents``; ``rsync -R``/``--relative``, also
+    in a short cluster (``-aR``). For ``cp``, ``-R`` is only recursive (wrap code review)."""
+    if head == "cp":
+        return "--parents" in args
+    if head == "pax":  # POSIX copy mode writes DIR/<operand as written> (T07 review)
+        return True
+    return head == "rsync" and (
+        "--relative" in args or any(re.fullmatch(r"-[A-Za-z]*R[A-Za-z]*", w) for w in args)
+    )
+
+
+CONTAINER_COPIERS = frozenset({"docker", "podman", "kubectl"})
+REMOTE_COPIERS = CONTAINER_COPIERS | {"scp", "sftp", "rsync", "rclone"}  # where ``host:path`` is remote
+# copies whose sources are a folder's contents or a list the gate does not read (T02 review)
+CONTENTS_COPIERS = frozenset({"rclone", "ditto"})  # ditto copies a folder's contents (challenger, story 7)
+RCLONE_COPYING = frozenset({"copy", "move", "sync", "copyto", "moveto"})
+REMOTE_RE = re.compile(r"^[^/~.$][^/]*:")  # ``host:path``, ``container:path``, ``remote:path``
+
+
+Copy = tuple[str | None, list[str], bool, bool]  # target, sources, into the target itself, path kept
+
+
+def copy_parts(argv: list[str]) -> list[Copy]:
+    """The readings of a copy as (target, sources, ``-T``, path kept): one for the coreutils and
+    ``gio``, from ``merge_parts``; one for rsync, scp and the container copiers while their options
+    are known, and else one per positional as the target."""
+    head = argv[0] if argv else ""
+    verb = copy_verb(argv)
+    if (head in RELOCATING and head != "rsync") or (head in ("gio", "git") and verb is not None):
+        args = argv[verb + 1 :] if verb is not None else argv[1:]
+        target, sources, contents = merge_parts(args)
+        return [(target, sources, contents, keeps_path(head, args))]
+    if head in CONTAINER_COPIERS and verb is not None:
+        args = argv[verb + 1 :]
+    elif head == "rclone" and verb is not None:
+        if argv[verb] in ("copyto", "moveto"):
+            return []  # the target is the file itself, a word of the segment already
+        return every_target([w for w in argv[verb + 1 :] if not w.startswith("-")], False)
+    elif head in ("scp", "rsync") or other_copier(argv):
+        args = argv[1:]
+    else:
+        return []
+    positionals, known = copy_positionals(head, args)
+    keep = keeps_path(head, args)
+    if not known:
+        return every_target(positionals, keep)
+    if head == "sftp" and len(positionals) == 1 and REMOTE_RE.match(positionals[0]):
+        return [(".", positionals, False, keep)]  # ``sftp h:path`` fetches into the working directory
+    return [(positionals[-1], positionals[:-1], False, keep)] if len(positionals) >= 2 else []
+
+
+def copy_verb(argv: list[str]) -> int | None:
+    """The index of a copying verb behind a program's global options: ``cp`` for the container
+    tools (``docker --context x cp``, ``docker container cp``), rclone's copy verbs, ``git mv``,
+    and ``gio copy|move`` (T02 bypass review: global options pushed it out of reach)."""
+    head = argv[0] if argv else ""
+    verbs = {
+        "docker": {"cp"},
+        "podman": {"cp"},
+        "kubectl": {"cp"},
+        "rclone": RCLONE_COPYING,
+        "git": {"mv"},
+        "gio": GIO_MOVING,
+    }.get(head)
+    if not verbs:
+        return None
+    if head == "gio":
+        return 1 if argv[1:2] and argv[1] in verbs else None
+    if head == "git":
+        return next((i for i in (1, 2) if argv[i : i + 1] == ["mv"]), None)  # as ``relocates`` reads it
+    return next((i for i, word in enumerate(argv[1:], 1) if word in verbs), None)
+
+
+def copy_positionals(head: str, args: list[str]) -> tuple[list[str], bool]:
+    """A copier's positionals, and whether every option was one its table knows."""
+    shorts, longs = COPY_VALUE_SHORTS.get(head, ""), COPY_VALUE_LONGS.get(head, frozenset())
+    positionals, known, i = [], True, 0
+    while i < len(args):
+        word = args[i]
+        if word == "--":
+            positionals += args[i + 1 :]
+            break
+        if word.startswith("--"):
+            takes = word.split("=", 1)[0] in longs and "=" not in word
+            known = known and (word.split("=", 1)[0] in longs or "=" in word or head in OPTIONS_KNOWN)
+            i += 2 if takes else 1
+            continue
+        if word.startswith("-") and len(word) > 1:
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in shorts), None)
+            i += 2 if taker is not None and taker == len(word) - 1 else 1
+            continue
+        positionals.append(word)
+        i += 1
+    return positionals, known
+
+
+def every_target(positionals: list[str], keep: bool) -> list[Copy]:
+    return [
+        (p, [q for j, q in enumerate(positionals) if j != i], False, keep) for i, p in enumerate(positionals)
+    ]
+
+
+def landing_words(segment: list[str]) -> list[str]:
+    """Where each source of a copy lands: ``<target>/<basename>``, or ``<target>/<source>`` when
+    the copy keeps the path (spec gate-f56-f60, story 2). A remote source counts by its path; a
+    remote target, ``-T`` and a word with a hole (judged elsewhere) add none."""
+    words: list[str] = []
+    argv = program_of(segment)
+    remote = bool(argv) and argv[0] in REMOTE_COPIERS  # for cp, ``x:`` is a local folder
+    for target, sources, contents, keep in copy_parts(argv):
+        if target is None or contents or (remote and REMOTE_RE.match(target)) or shell.has_sentinel(target):
+            continue
+        for source in sources:
+            if shell.has_sentinel(source) or source == target:
+                continue
+            path = source.split(":", 1)[1] if remote and REMOTE_RE.match(source) else source
+            kept = path.rsplit("/./", 1)[-1] if "/./" in path else path.lstrip("/")  # rsync -R's marker
+            rest = kept if keep else os.path.basename(path.rstrip("/"))
+            if rest not in ("", ".", ".."):
+                words.append(os.path.join(target, rest))
+    return words
+
+
+# downloads (spec gate-f56-f60, story 3): read from ``curl --help all`` and ``wget --help`` on
+# 2026-11-23. A name taken from the URL lands in the output folder; these forms take it from the
+# server, a list or a tree instead, so the landing is unknown.
+REMOTE_NAME_OPTIONS = frozenset({"-O", "--remote-name", "--remote-name-all"})
+DOWNLOAD_UNPLACED = {
+    "curl": (frozenset({"-J", "--remote-header-name"}), "J"),
+    "wget": (
+        frozenset(
+            "-i --input-file -r --recursive -m --mirror -x --force-directories --content-disposition "
+            "--trust-server-names".split()
+        ),
+        "irmx",
+    ),
+    # story 7: aria2c takes a name from Content-Disposition, gh from the release or the run
+    "aria2c": (frozenset("-i --input-file -T --torrent-file -M --metalink-file".split()), "iTM"),
+    "gh": (frozenset(), ""),
+}
+SERVER_NAMED = frozenset({"aria2c", "gh"})  # without an output file, the server names what lands
+INSIDE_FOLDER = frozenset({"curl", "aria2c"})  # a relative output file is written inside the folder
+CONFIG_READERS = {"curl": (("-K", "--config"), "K"), "wget": (("-e", "--execute", "--config"), "e")}
+# wgetrc commands a ``wget -e`` may run that move where a download lands or what it reads
+# (wget 1.25 manual, "Wgetrc Commands", read 2026-11-23); ``-e robots=off`` stays silent
+WGETRC_LANDING_RE = re.compile(
+    r"(?i)^(?:dir_?prefix|output_?document|default_?page|logfile|input|base|cut_?dirs|mirror|recursive"
+    r"|content_?disposition|trust_?server_?names|dirstruct|add_?hostdir|protocol_?directories|"
+    r"no_?parent|backups|timestamping)\s*="
+)
+
+
+def download_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | None:
+    """A curl or wget download's output folders (``.``, the working directory, when none is
+    given; every one, since ``curl --next`` gives each URL its own), the words it lands at, and
+    whether its names are unknown (spec gate-f56-f60, story 3)."""
+    head = argv[0] if argv else ""
+    if head not in DOWNLOAD_UNPLACED or (head == "gh" and not gh_downloads(argv)):
+        return None
+    values = landing_option_values(argv)
+    folders = [value for value, kind in values if kind == "folder"] or ["."]
+    files = [value for value, kind in values if kind == "file"]
+    longs, letters = DOWNLOAD_UNPLACED[head]
+    shorts = {c for w in argv[1:] if re.fullmatch(r"-[A-Za-z]+", w) for c in w[1:]}
+    named_long = any(long_named_option(head, w, longs) for w in argv[1:] if w.startswith("--"))
+    urls = [w for w in argv[1:] if "/" in w and not w.startswith("-") and w not in folders + files]
+    globbed = head == "curl" and not {"-g", "--globoff"} & set(argv) and any(set(u) & set("{[") for u in urls)
+    numbered = head == "curl" and any(re.search(r"#\d", f) for f in files)
+    unplaced = named_long or bool(set(letters) & shorts) or globbed or numbered
+    unplaced = unplaced or (head in SERVER_NAMED and not files)
+    # wget names every download from its URL unless -O; curl only with -O (wget's -O is a file)
+    named = (head in ("wget", "aria2c") and not files) or (
+        head == "curl" and (bool(REMOTE_NAME_OPTIONS & set(argv)) or "O" in shorts)
+    )
+    names = [n for u in urls for n in url_names(u, head, default_page(argv))] if named else []
+    words = [os.path.join(folder, name) for folder in folders for name in names]
+    if head in INSIDE_FOLDER:  # wget ignores -P with -O; curl and aria2c write a relative one inside
+        words += [os.path.join(d, f) for d in folders if d != "." for f in files if not os.path.isabs(f)]
+    return folders, words, unplaced
+
+
+def long_named_option(head: str, word: str, longs) -> bool:
+    """A long word that names one of ``longs``, exactly or by a prefix getopt takes."""
+    return long_landing(head, word.split("=", 1)[0], tuple(("", n, "named") for n in longs)) is not None
+
+
+def url_names(url: str, head: str, page: str) -> list[str]:
+    """The names a download may take from its URL: the path's last part with the query dropped,
+    and for wget also decoded and with ``;params`` dropped (``%2Ebashrc`` is ``.bashrc``); a URL
+    ending in ``/`` takes wget's ``--default-page``."""
+    path = re.split(r"[?#]", url.split("://", 1)[-1], maxsplit=1)[0]
+    raw = os.path.basename(path) if "/" in path else ""
+    names = {raw}
+    if head == "wget":
+        names |= {urllib.parse.unquote(raw).split(";", 1)[0], raw.split(";", 1)[0]}
+        names |= {page} if path.endswith("/") and page else set()
+    return [name for name in names if name]
+
+
+def default_page(argv: list[str]) -> str:
+    values = [w.split("=", 1)[1] for w in argv if w.split("=", 1)[0].startswith("--default-p") and "=" in w]
+    return values[-1] if values else ""
+
+
+def config_reader(argv: list[str]) -> bool:
+    """``curl -K`` and ``wget -e`` read options the gate does not see (spec gate-f56-f60, story 3)."""
+    head = argv[0] if argv else ""
+    if head == "aria2c":  # story 7: a file of options, or a list whose dir= and out= lines move it
+        longs = ("--conf-path", "--input-file")
+        named = any(long_named_option(head, w, longs) for w in argv[1:] if w.startswith("--"))
+        return named or any(re.fullmatch(r"-[A-Za-z]*i.*", w) for w in argv[1:] if not w.startswith("--"))
+    if head not in CONFIG_READERS:
+        return False
+    longs, letter = CONFIG_READERS[head]
+    cluster = re.compile(rf"-[A-Za-z]*?{letter}(.*)")  # ``-K cfg``, ``-sKcfg``, ``-eoutput_document=…``
+    for i, word in enumerate(argv[1:], 1):
+        following = argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        long = word.startswith("--") and long_named_option(head, word, longs)
+        joined = None if word.startswith("--") else cluster.fullmatch(word)
+        if not long and not joined:
+            continue
+        if head == "curl" or (long and "--config".startswith(name) and not "--execute".startswith(name)):
+            return True  # curl -K, wget --config: a file of options
+        command = value if long and eq else (joined.group(1) if joined and joined.group(1) else following)
+        if WGETRC_LANDING_RE.match(command):
+            return True
+    return False
 
 
 def holds_an_anchor(form: str, anchors: frozenset[str]) -> bool:
@@ -3651,6 +4240,7 @@ def protected_file_touched(
     rules: list[Rule],
     paths: list[str] | None = None,
     visited: Dirs = frozenset(),
+    homes: frozenset[str] = frozenset(),
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
     Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
@@ -3658,21 +4248,34 @@ def protected_file_touched(
     gcp-mcp-opt-in), or that moves or links a customization root or a protected folder. Each word
     is a path in every directory its segment may run in (``cd`` followed, F-31); ``paths`` (the
     redirection and runner targets) are checked word by word, never read as a command, in every
-    directory the script visits. Either way the verdict is an ask (``protected_verdict``)."""
+    directory the script visits. Either way the verdict is an ask (``protected_verdict``).
+    ``homes``: the ``~`` folders earlier cds reached, for the owner pass's one-segment jobs."""
     protected = [r for r in rules if r.tool in FILE_TOOLS and r.decision in ("never", ASK) and not r.agent]
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
     budget = GlobBudget.fresh()
+    fallback: str | None = None
     jobs = [(segment, dirs, True) for segment, dirs in placed]
+    segments = [segment for segment, _ in placed]
+    latest = home_cd_reach(segments) + [frozenset()]
+    guessed = lost_cd_reach(segments) + [frozenset()]
     if paths:
         jobs.append((paths, union(visited, start), False))
-    for segment, dirs, command in jobs:
+    for job, (segment, dirs, command) in enumerate(jobs):
+        # a folder unknown to the walk but not to the owner pass: a ``~`` cd, read by name (story 9)
+        lost = dirs is None and not (latest[job] or homes)
         program = own_tool_run(segment) if command else None
         relocating = command and relocates(segment)
         deleted = deleted_words(segment) if command else frozenset()
         entering = command and enters(segment)
-        bases = sorted({str(d) for d in (dirs or start)} | homed)  # unknown: the payload cwd, and by name
+        # the ``~`` folder the cds before this segment reached, only while the walk lost it: a later
+        # known cd leaves it, and no other segment pays for it (story 9; wrap review: a global set
+        # timed a 3 KB command out)
+        earlier = homes | latest[job] if dirs is None else frozenset()
+        reached = homed | earlier
+        reached |= guessed[job] if dirs is None else frozenset()  # ``cd "$X"/.claude``: ask pass only (T13)
+        bases = sorted({str(d) for d in (dirs or start)} | reached)  # unknown: the payload cwd, and by name
         folders = folder_options(segment) if command else []
         if len(folders) > FOLDER_OPTIONS_MAX:
             return folders[-1]  # past the cap the segment asks rather than judge every folder
@@ -3683,11 +4286,30 @@ def protected_file_touched(
                     word_touches(form, base, protected, False, anchors, True, budget, True) for base in origin
                 ):
                     return folder
+                if lost and not fallback:
+                    fallback = config_tail(form, protected, anchors, (False, True, True), budget)
             homed_folder = os.path.expanduser(home_forms(folder)[-1])
             joined.update(
                 os.path.normpath(os.path.join(b, homed_folder)) for b in origin
             )  # linear, never compounded
         bases = sorted({*bases, *joined})
+        landed = landing_option_hit(segment, bases, protected, anchors, budget) if command else None
+        landed = landed or (landing_hit(segment, bases, protected, anchors, budget) if relocating else None)
+        away = dirs != start  # a cd ran, or one the gate cannot follow
+        if command and not landed:
+            landed = download_hit(segment, bases, protected, anchors, budget, away)
+        if command and not landed:
+            here = earlier  # the latest, not a folder a later cd left
+            landed = extraction_hit(segment, bases, protected, anchors, budget, dirs is not None, here)
+        if command and not landed:
+            landed = lock_hit(segment, bases, protected)
+        if command and not landed and protected:
+            landed = relinked_ancestor(segment, bases)
+        if landed and not unsure_landing(landed):
+            return landed
+        # an ask-tier landing (a glob, an unknown folder) must not hide a literal hit after it, in
+        # this segment or a later one (wrap security review): it is returned only if none is found
+        fallback = fallback or landed
         moved = dirs != start  # a cd ran, or one the gate cannot follow (CDPATH may send it elsewhere)
         if FILES_FROM in deleted:
             return "-files0-from"
@@ -3710,6 +4332,17 @@ def protected_file_touched(
                 for base in bases
             ):
                 return token
+            joined = JOINED_PATH_RE.fullmatch(token)
+            if joined and any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for form in home_forms(joined.group(1))
+                for base in bases
+            ):
+                return token  # ``sort -o~/x``, ``curl -sD~/x``: a short option's joined path (F-60 review)
+            short = config_joined(token) if lost else ""  # ``-t.claude``, ``-vt.claude`` (wrap review)
+            attached = value or (joined.group(1) if joined else short)
+            if lost and attached and not fallback:  # ``--target-directory=.claude`` (T13 review)
+                fallback = config_tail(attached, protected, anchors, (relocating, False, False), budget)
             if token.startswith("-") or index == program:
                 continue
             if DIRECTORY_STACK_RE.match(token):
@@ -3725,7 +4358,538 @@ def protected_file_touched(
                     return token
                 if moved and not anchored and names_a_protected_file(form, protected, dirs is None):
                     return token
+                if lost and not anchored and not fallback:
+                    acting = (relocating, destroying, entering)
+                    fallback = config_tail(form, protected, anchors, acting, budget)
+    return fallback
+
+
+def config_tail(
+    form: str, protected: list[Rule], anchors: frozenset[str], acting: tuple[bool, bool, bool], budget
+) -> str | None:
+    """After a ``cd`` the gate cannot follow, a relative word through a folder named as the config
+    dir (``.claude``, ``.claude/cobot``) may be on it: read from the config dir's parent, a hit
+    asks (``<unknown working directory>/*``). Not a deny: a project has its own ``.claude``
+    (spec gate-f56-f60, story 9, T13)."""
+    if shell.has_sentinel(form):
+        return None
+    candidate = config_named(os.path.normpath(form).split("/"))
+    relocating, destroying, entering = acting
+    parent = os.path.dirname(config_literal())
+    if candidate and word_touches(
+        candidate, parent, protected, relocating, anchors, destroying, budget, entering
+    ):
+        return "<unknown working directory>/*"
     return None
+
+
+def config_joined(token: str) -> str:
+    """A single-dash cluster's joined value from where the config dir's name starts in it
+    (``-vt.claude/cobot`` is ``.claude/cobot``): which letter takes the value is per program, so
+    the name is the anchor. Empty when there is none."""
+    if token[:1] != "-" or token[1:2] == "-":
+        return ""
+    found = token.casefold().find(os.path.basename(config_literal()).casefold())
+    return token[found:] if found > 1 else ""
+
+
+def config_named(parts: list[str]) -> str | None:
+    """The path from the last of ``parts`` named as the config dir on, read under the config dir's
+    parent (``x/.claude/cobot`` is ``~/.claude/cobot``); None without one. The last only: one
+    check per word, never one per part (T13 review: 1000 ``.claude`` parts took 37 s)."""
+    config = config_literal()
+    name = os.path.basename(config).casefold()
+    named = [i for i, part in enumerate(parts) if part.casefold() == name]
+    if not named or any(shell.has_sentinel(part) for part in parts[named[-1] :]):
+        return None
+    return os.path.normpath(os.path.join(os.path.dirname(config), *parts[named[-1] :]))
+
+
+def landing_option_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+) -> str | None:
+    """The landing option value that names a protected folder (as a relocating word) or a protected
+    file (as a path word), in any of its forms (spec gate-f56-f60, story 1)."""
+    for value, kind in landing_option_values(segment):
+        for form in home_forms(value):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, kind == "folder", anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return value
+    return None
+
+
+def landing_hit(
+    segment: list[str], bases: list[str], protected: list[Rule], anchors: frozenset[str], budget: GlobBudget
+) -> str | None:
+    """The landing word of a copy that names a protected file or folder (spec gate-f56-f60). Past
+    COPY_TARGETS_MAX candidate targets or LANDING_WORDS_MAX words the copy asks rather than judge
+    every pair: the gate must answer within the hook's timeout (wrap code review)."""
+    if not protected:
+        return None
+    if len(copy_parts(program_of(segment))) > COPY_TARGETS_MAX:
+        return "<too many copy paths>/*"
+    words = landing_words(segment)
+    if len(words) > LANDING_WORDS_MAX:
+        return "<too many copy paths>/*"
+    for word in words:
+        for form in home_forms(word):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, True, anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return word
+    return None
+
+
+def download_hit(
+    segment: list[str],
+    bases: list[str],
+    protected: list[Rule],
+    anchors: frozenset[str],
+    budget: GlobBudget,
+    unknown: bool = False,
+) -> str | None:
+    """A download or decompression that lands on a protected file, or whose names are unknown in a
+    folder that is protected (the folder itself) or holds a protected folder (``<folder>/*``, which
+    asks: the owner may approve a download into HOME). The working directory when it names no
+    folder (Q2). After a ``cd`` the gate did not follow (``unknown``), a relative landing named
+    like a protected file counts, as a relative word does (T08)."""
+    argv = program_of(segment)
+    if protected and listed_decompression(argv):
+        return "<files from a list>/*"
+    parts = download_landings(argv) or decompress_landings(argv)
+    if parts is None:
+        return None
+    folders, words, unplaced = parts
+    if protected and len(words) + len(folders) > LANDING_WORDS_MAX:
+        return "<too many copy paths>/*"  # judged in time, as copies are (T08 review)
+    for word in words:
+        for form in home_forms(word):
+            anchored = os.path.isabs(form) or form.startswith("~")
+            if any(
+                word_touches(form, base, protected, False, anchors, False, budget)
+                for base in bases[: 1 if anchored else None]
+            ):
+                return word
+            if unknown and not anchored and names_a_protected_file(form, protected):
+                return word
+    if not unplaced or not protected:  # the rule-less customization-root pass must not meet it
+        return None
+    for folder in folders:
+        for form in home_forms(folder):
+            places = [os.path.normpath(os.path.join(b, os.path.expanduser(form))) for b in bases]
+            named = [tilde_form(p) for p in places]  # the cwd by its ``~/`` name, as T01 reads a folder
+            for name in named:
+                if word_touches(name, name, protected, True, anchors, False, budget):
+                    return name
+            if any(holds_an_anchor(p, anchors) for p in places):
+                return f"{folder.rstrip('/')}/*"
+    return None
+
+
+# in-place decompression (story 7, T08): read from gzip 1.13, xz 5.6, zstd 1.5 and bzip2 1.0
+# ``--help`` and the lz4, brotli, pigz, lzip, lzop and p7zip manuals on 2026-11-23. Each input
+# lands beside itself without its suffix; ``-c``, ``-t`` and ``-l`` write nothing.
+DECOMPRESSING = frozenset("gunzip unxz unlzma unzstd bunzip2 unlz4 unpigz uncompress lunzip lrunzip".split())
+DECOMPRESS_FLAG = frozenset(
+    "gzip xz lzma zstd zstdmt bzip2 pbzip2 lbzip2 lz4 brotli lzip plzip lzop pigz compress p7zip "
+    "lrzip".split()
+)
+NOT_WRITING_LETTERS = "ctl"  # stdout, test, list; lz4's -l is its legacy format, lrzip's is LZO
+NOT_WRITING_BY = {"lz4": "ct", "unlz4": "ct", "lrzip": "t", "lrunzip": "t"}
+NOT_WRITING_LONGS = ("--stdout", "--to-stdout", "--test", "--list")
+NOT_WRITING_PREFIX = 4  # getopt's shortest unique prefix among them: gzip's ``--std`` (T08 review)
+SUFFIX_TAKERS = frozenset("gzip gunzip pigz unpigz xz unxz lzma unlzma brotli".split())  # -S, --suffix
+NAME_RESTORERS = frozenset("gzip gunzip pigz unpigz".split())  # -N restores a stored name
+PAIRED_OUTPUT = frozenset({"lz4", "unlz4"})  # ``lz4 -d in out``: a second operand is the output
+# per program, the short options that take a value: a cluster ends there (``-dT0``, ``-dS.x``)
+DECOMPRESS_VALUE_SHORTS = {
+    **dict.fromkeys(("pigz", "unpigz"), "Sbp"),
+    **dict.fromkeys(("xz", "unxz", "lzma", "unlzma"), "STM"),
+    **dict.fromkeys(("zstd", "unzstd", "zstdmt"), "oDTBM"),
+    "brotli": "oSqw",
+    "lzip": "oms",
+    "lzop": "opS",
+    "lrzip": "oOSpLwN",
+}
+DECOMPRESS_VALUE_DEFAULT = "So"
+DECOMPRESS_VALUE_LONGS = frozenset(
+    "--suffix --output --trace --filelist --output-dir-flat --output-dir-mirror --threads --files --files0 "
+    "--path".split()
+)
+FILE_LISTS = {
+    **dict.fromkeys(("zstd", "zstdmt", "unzstd"), "--filelist"),
+    **dict.fromkeys(("xz", "unxz", "lzma", "unlzma"), "--files"),
+}
+GZIP_SUFFIXES = ("-gz", "_z", "-z")  # gzip's other suffixes; ``.z`` and ``.Z`` strip as an extension
+
+
+def decompress_options(argv: list[str]) -> tuple[set[str], list[str]]:
+    """A decompressor's short letters and long words before ``--``: each cluster read up to the
+    first letter that takes a value, digits skipped (``-dT0``, ``-d1``, ``-dS.x``; T08 review)."""
+    head = argv[0] if argv else ""
+    takers = DECOMPRESS_VALUE_SHORTS.get(head, DECOMPRESS_VALUE_DEFAULT)
+    letters: set[str] = set()
+    longs: list[str] = []
+    for word in argv[1:]:
+        if word == "--":
+            break
+        if word.startswith("--"):
+            longs.append(word)
+            continue
+        if not word.startswith("-"):
+            continue
+        for c in word[1:]:
+            if c.isalpha():
+                letters.add(c)
+            if c in takers:
+                break
+    return letters, longs
+
+
+def decompresses(argv: list[str]) -> bool:
+    head = argv[0] if argv else ""
+    if head in DECOMPRESSING:
+        return True
+    letters, longs = decompress_options(argv)
+    long = any(long_prefix(w, "--decompress", 6) or long_prefix(w, "--uncompress", 5) for w in longs)
+    flag = "d" in letters or (head == "lzop" and "x" in letters)  # lzop -x extracts in place
+    return head in DECOMPRESS_FLAG and (flag or long)
+
+
+def listed_decompression(argv: list[str]) -> bool:
+    """``zstd --filelist`` and ``xz --files[0]`` name their inputs in a file: decompressed or
+    removed (``--rm``), they may be anywhere (challenger and T08 review, story 7)."""
+    option = FILE_LISTS.get(argv[0] if argv else "")
+    if not option or not any(w.startswith(option) for w in argv):
+        return False
+    return decompresses(argv) or "--rm" in argv
+
+
+def decompress_landings(argv: list[str]) -> tuple[list[str], list[str], bool] | None:
+    """An in-place decompression's folders, the words it lands at, and whether its names are
+    unknown (``-N``) or every file under a folder is rewritten (``-r``), in the shape
+    ``download_landings`` returns, so ``download_hit`` judges both alike (story 7, T08)."""
+    head = argv[0] if argv else ""
+    if not decompresses(argv):
+        return None
+    letters, longs = decompress_options(argv)
+    quiet = any(long_prefix(w, o, NOT_WRITING_PREFIX) for w in longs for o in NOT_WRITING_LONGS)
+    if letters & set(NOT_WRITING_BY.get(head, NOT_WRITING_LETTERS)) or quiet:
+        return None
+    inputs, suffix, output = decompress_operands(argv)
+    multiple = "m" in letters or any(long_prefix(w, "--multiple", 5) for w in longs)
+    if output or (head in PAIRED_OUTPUT and len(inputs) == 2 and not multiple):
+        return None  # the output file is a word of the segment already
+    outdirs = [value for value, kind in landing_option_values(argv) if kind == "folder"]
+    recursive = "r" in letters or any(long_prefix(w, "--recursive", 5) for w in longs)
+    restored = head in NAME_RESTORERS and ("N" in letters or any(long_prefix(w, "--name", 5) for w in longs))
+    words, folders = [], []
+    for source in inputs:
+        folder = outdirs[0] if outdirs else os.path.dirname(source) or "."
+        folders.append(source if recursive else folder)
+        name = stripped_name(os.path.basename(source), suffix if head in SUFFIX_TAKERS else "")
+        if name:
+            words.append(os.path.join(folder, name))
+    return folders, words, recursive or restored
+
+
+def decompress_operands(argv: list[str]) -> tuple[list[str], str, bool]:
+    """The inputs, a ``-S`` suffix, and whether an ``-o`` output file is named."""
+    takers = DECOMPRESS_VALUE_SHORTS.get(argv[0], DECOMPRESS_VALUE_DEFAULT)
+    inputs, suffix, output, i = [], "", False, 1
+    while i < len(argv):
+        word, following = argv[i], argv[i + 1] if i + 1 < len(argv) else ""
+        name, eq, value = word.partition("=")
+        if word == "--":
+            inputs += argv[i + 1 :]
+            break
+        if word.startswith("--"):
+            takes = name in DECOMPRESS_VALUE_LONGS and not eq
+            given = value if eq else following
+            suffix = given if long_prefix(name, "--suffix", 5) else suffix
+            output = output or long_prefix(name, "--output", 5)  # brotli's ``--out=`` (T08 review)
+            i += 2 if takes else 1
+            continue
+        if word.startswith("-") and len(word) > 1:
+            taker = next((n for n, c in enumerate(word[1:], 1) if c in takers), None)
+            letter = word[taker] if taker else ""
+            given = word[taker + 1 :] or following if taker else ""
+            suffix = given if letter == "S" else suffix
+            output = output or letter == "o"
+            i += 2 if taker and not word[taker + 1 :] else 1
+            continue
+        inputs.append(word)
+        i += 1
+    return inputs, suffix, output
+
+
+def stripped_name(name: str, suffix: str) -> str:
+    """A compressed file's name without its suffix: ``-S``'s when it ends the name, ``.tgz`` and
+    ``.taz`` as ``.tar``, gzip's ``-gz`` and ``_z``, else the last extension."""
+    if suffix and name.endswith(suffix) and name != suffix:
+        return name[: -len(suffix)]
+    if name.lower().endswith((".tgz", ".taz")):
+        return name[:-4] + ".tar"
+    for other in GZIP_SUFFIXES:
+        if name.endswith(other) and name != other:
+            return name[: -len(other)]
+    stem, dot, _ = name.rpartition(".")
+    return stem if dot and stem else ""
+
+
+# extractions (spec gate-f56-f60, story 4): read from GNU tar 1.35, bsdtar 3.7, UnZip 6, GNU cpio
+# 2.15 and 7-Zip 24 help on 2026-11-23
+TAR_FAMILY = frozenset({"tar", "bsdtar", "gtar"})
+SEVEN_ZIPS = frozenset({"7z", "7za", "7zz", "7zr"})
+UNZIP_NOT_WRITING = frozenset("ltvZpcz")  # list, test, verbose, zipinfo, pipe, cat, comment
+
+
+def option_letters(argv: list[str]) -> set[str]:
+    return {c for w in argv[1:] if re.fullmatch(r"-[A-Za-z:]+", w) for c in w[1:]}
+
+
+def extracts(argv: list[str]) -> bool:
+    """Whether a segment unpacks an archive into a folder (the working directory, without one)."""
+    head = EXTRACTOR_ALIASES.get(argv[0], argv[0]) if argv else ""
+    letters = option_letters(argv)
+    extract_long = any(long_prefix(w, "--extract", 5) or long_prefix(w, "--get", 4) for w in argv[1:])
+    old = bool(argv[1:2]) and argv[1][:1].isalpha() and "x" in argv[1]  # ``tar xf``, ``jar xf``
+    if head in TAR_FAMILY or head == "jar":
+        return old or "x" in letters or extract_long
+    if head == "unzip":
+        return not UNZIP_NOT_WRITING & letters
+    if head == "cpio":
+        return "i" in letters or extract_long
+    if head == "pax":  # story 7: -r reads an archive; with -w it is a copy (``pax_copies``)
+        return "r" in letters and "w" not in letters
+    if head == "ar":
+        return "x" in ar_key(argv)
+    if head == "unar":
+        return True
+    verb = next((w for w in argv[1:] if not w.startswith("-")), "")
+    return head in SEVEN_ZIPS and verb.casefold() in ("x", "e")  # 7z takes switches before its verb
+
+
+AR_VALUE_LONGS = frozenset({"--plugin", "--target", "--record-libdeps", "--output"})
+AR_OPERATIONS = frozenset("dmpqrstx")
+
+
+def ar_key(argv: list[str]) -> str:
+    """ar's operation and modifier letters: every dashed short word (``-v -x``), and the first bare
+    word when no operation came before it (``xv``); a long option's value is skipped (T07 review)."""
+    key, i = "", 1
+    while i < len(argv):
+        word = argv[i]
+        if word.startswith("--"):
+            i += 2 if word in AR_VALUE_LONGS else 1
+            continue
+        if word.startswith("-"):
+            key += word[1:]
+        elif AR_OPERATIONS & set(key):
+            break  # the archive
+        else:
+            return key + word
+        i += 1
+    return key
+
+
+def long_prefix(word: str, option: str, shortest: int) -> bool:
+    """A long word that is ``option`` or a prefix of it at least ``shortest`` characters long."""
+    name = word.split("=", 1)[0]
+    return name.startswith("--") and len(name) >= shortest and option.startswith(name)
+
+
+def extraction_unplaced(argv: list[str]) -> bool:
+    """An extraction whose members may land outside its folder: ``tar -P``, ``cpio -i`` without
+    ``--no-absolute-filenames`` (GNU cpio keeps absolute names by default), ``unzip -:``."""
+    head = argv[0] if argv else ""
+    if head == "pax" and {"r", "w", "s"} <= option_letters(argv):
+        return True  # ``pax -rw -s`` rewrites each name, ``..`` included (T07 review)
+    if not extracts(argv):
+        return False
+    letters = option_letters(argv)
+    old = bool(argv[1:2]) and argv[1][:1].isalpha() and "P" in argv[1]
+    if head in TAR_FAMILY or head == "jar":  # jar -P keeps a leading / and ``..`` (story 7)
+        return old or "P" in letters or any(w.startswith("--absolute-n") for w in argv)
+    if head == "bsdcpio":  # libarchive refuses absolute and ``..`` names unless told
+        return "--insecure" in argv
+    if head == "cpio":
+        return "--no-absolute-filenames" not in argv
+    if head == "pax":  # POSIX pax keeps absolute names, and -s rewrites every name
+        return True
+    if head == "ar":
+        return "P" in ar_key(argv)
+    if head in SEVEN_ZIPS:
+        return any(w.casefold().startswith("-spf") for w in argv)  # 7-Zip keeps absolute paths
+    return EXTRACTOR_ALIASES.get(head, head) == "unzip" and ":" in letters
+
+
+def extraction_hit(
+    segment: list[str],
+    bases: list[str],
+    protected: list[Rule],
+    anchors,
+    budget,
+    followed: bool = True,
+    homes: set[str] | frozenset[str] = frozenset(),
+) -> str | None:
+    """An extraction with no folder option lands in the working directory (spec gate-f56-f60,
+    story 4): a protected one by its ``~`` name, one that only holds a protected folder as
+    ``<cwd>/*``, which asks (Q1: the owner may approve it; a deny could not be). After a ``cd``
+    the gate cannot follow, the working directory is unknown, so it asks (T04 review), unless a
+    ``~`` folder a cd reached is protected itself (``cd ~/.claude && tar -xf``, story 9)."""
+    if not protected or folder_options(segment) or not extracts(program_of(segment)):
+        return None
+    if not followed:
+        named = (tilde_form(os.path.normpath(home)) for home in sorted(homes))
+        hit = next((n for n in named if word_touches(n, n, protected, True, anchors, False, budget)), None)
+        return hit or "<unknown working directory>/*"
+    for base in bases:
+        name = tilde_form(os.path.normpath(base))
+        if word_touches(name, name, protected, True, anchors, False, budget):
+            return name
+        if holds_an_anchor(os.path.normpath(base), anchors):
+            return f"{name.rstrip('/')}/*"
+    return None
+
+
+# locks (story 8, Q3): coreutils chmod, chown, chgrp, acl's setfacl, e2fsprogs chattr and
+# bubblewrap 0.11's mount options, read 2026-11-23
+LOCKERS = frozenset({"chmod", "chown", "chgrp", "setfacl", "chattr"})
+MODE_FIRST = frozenset({"chmod", "chown", "chgrp"})  # the first operand is a mode, an owner or a group
+SETFACL_VALUES = frozenset({"-m", "-x", "-M", "-X", "--modify", "--remove", "--set", "--set-file"})
+BWRAP_DESTS = {  # option: how many words it takes, the last one its destination
+    **dict.fromkeys(
+        "--bind --bind-try --dev-bind --dev-bind-try --ro-bind --ro-bind-try --bind-fd --ro-bind-fd "
+        "--file --bind-data --ro-bind-data --symlink --chmod".split(),
+        2,
+    ),
+    **dict.fromkeys("--remount-ro --tmp-overlay --ro-overlay --proc --dev --tmpfs --mqueue --dir".split(), 1),
+    "--overlay": 3,
+}
+BWRAP_VALUES = {"--setenv": 2, "--perms": 1, "--size": 1, "--overlay-src": 1}  # any other --x takes one
+BWRAP_FLAGS = frozenset(  # options that take no value (T09 review)
+    "--unshare-all --unshare-user --unshare-user-try --unshare-ipc --unshare-pid --unshare-net "
+    "--unshare-uts --unshare-cgroup --unshare-cgroup-try --share-net --clearenv --new-session "
+    "--die-with-parent --as-pid-1 --disable-userns --assert-userns-disabled --level-prefix".split()
+)
+CHMOD_MINUS_MODE = re.compile(r"-[ugoa]*[rwxXst]+")  # ``chmod -w f``: GNU reads it as a mode
+LOCK_WORDS_MAX = 256  # paths one lock may name; past it the lock asks (the hook's 10 s)
+
+
+def locked_words(argv: list[str]) -> list[str]:
+    """The paths a lock names: chmod-family operands (past the mode or owner unless
+    ``--reference``), and ``bwrap``'s mount destinations up to its command (a folder bound on
+    itself excepted: it covers nothing)."""
+    head = argv[0] if argv else ""
+    if head in LOCKERS:
+        return locker_operands(argv)
+    return bwrap_destinations(argv) if head == "bwrap" else []
+
+
+def locker_operands(argv: list[str]) -> list[str]:
+    """The paths of a chmod-family command, past its mode or owner unless ``--reference``."""
+    head = argv[0]
+    operands, skip, ended = [], False, False
+    for word in argv[1:]:
+        if skip:
+            skip = False
+        elif ended or not word.startswith("-") or (head == "chmod" and CHMOD_MINUS_MODE.fullmatch(word)):
+            operands.append(word)
+        elif word == "--":
+            ended = True
+        elif head == "setfacl" and word in SETFACL_VALUES:
+            skip = True
+    first = head in MODE_FIRST and not any(w.startswith("--reference") for w in argv)
+    return [w for w in operands[1 if first else 0 :] if not w.startswith(("+", "="))]  # chattr +i
+
+
+def bwrap_destinations(argv: list[str]) -> list[str]:
+    """``bwrap``'s mount destinations, up to its command; a folder bound on itself covers nothing."""
+    dests, i = [], 1
+    while i < len(argv) and argv[i].startswith("--"):
+        count = 0 if argv[i] in BWRAP_FLAGS else BWRAP_DESTS.get(argv[i]) or BWRAP_VALUES.get(argv[i], 1)
+        values = argv[i + 1 : i + 1 + count]
+        if argv[i] not in BWRAP_DESTS and any(v.startswith("--") for v in values):
+            count = 0  # an unknown flag with no value: the next option is not its value
+            values = []
+        if argv[i] in BWRAP_DESTS and values and not (count == 2 and values[0] == values[-1]):
+            dests.append(values[-1])
+        i += 1 + count
+    return dests
+
+
+def lock_hit(segment: list[str], bases: list[str], protected: list[Rule]) -> str | None:
+    """A lock on a protected folder or a folder holding one, as ``<folder>/*``, which asks (Q3:
+    the mode is not read, so the owner may approve a harmless one; a ``bwrap`` cover only the
+    child sees); ``zip -m -@`` removes names read from stdin."""
+    if not protected:
+        return None
+    argv = program_of(segment)
+    if argv[:1] == ["zip"] and "@" in "".join(w for w in argv[1:] if w.startswith("-")) and zip_moves(argv):
+        return "<names on stdin>/*"
+    words = locked_words(argv)
+    if len(words) > LOCK_WORDS_MAX:
+        return "<too many lock paths>/*"
+    # the folders of never rows only: an ask row (``~/.ssh/rc``) must not make ``chmod 700 ~/.ssh`` ask
+    sealed_anchors = protected_anchors([r for r in protected if r.decision == "never"])
+    holders = sealed_anchors | {parent for a in sealed_anchors for parent in folder_parents(a)}
+    for word in words:
+        for form in home_forms(word):
+            for base in bases:
+                if shell.has_sentinel(form):  # a glob or a substitution: it may name a holder
+                    pattern = os.path.normpath(os.path.join(base, os.path.expanduser(path_glob(form)[0])))
+                    if any(globs_meet(pattern.casefold(), h) for h in holders):
+                        return f"{word}/*"
+                    continue
+                place = os.path.normpath(os.path.join(base, os.path.expanduser(form)))
+                if place.casefold() in sealed_anchors or holds_an_anchor(place, sealed_anchors):
+                    return f"{tilde_form(place).rstrip('/')}/*"
+    return None
+
+
+def relinked_ancestor(segment: list[str], bases: list[str]) -> str | None:
+    """``ln -n`` or ``-T`` replacing a symlink on the config dir's path (``ln -sfn /tmp/o ~`` with
+    HOME a link): the config dir then resolves into another folder. Refused as moving it is."""
+    argv = program_of(segment)
+    if argv[:1] != ["ln"]:
+        return None
+    longs = ("--no-dereference", "--no-target-directory")
+    replacing = {"n", "T"} & option_letters(argv) or any(long_prefix(w, o, 5) for w in argv for o in longs)
+    target = merge_parts(argv[1:])[0] if replacing else None
+    linked = linked_ancestors(config_literal())
+    if not target or not linked or shell.has_sentinel(target):
+        return None
+    for base in bases:
+        place = os.path.normpath(os.path.join(base, os.path.expanduser(home_forms(target)[-1])))
+        if place.casefold() in linked:
+            return target
+    return None
+
+
+def folder_parents(folder: str) -> list[str]:
+    """Every folder above ``folder``, up to ``/``."""
+    parents = []
+    while folder not in ("/", ""):
+        folder = os.path.dirname(folder)
+        parents.append(folder)
+    return parents
+
+
+def unsure_landing(word: str) -> bool:
+    """A landing the gate names only as a could-be: a glob (``~/*``) or an unknown folder."""
+    return word.startswith("<") or shell.has_sentinel(word) or any(c in word for c in GLOB_CHARS)
+
+
+def tilde_form(path: str) -> str:
+    """An absolute path under HOME written from ``~``, the form the rules and their checks read."""
+    home = os.path.expanduser("~")
+    return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path
 
 
 def protected_cwd(directories: list[Path], rules: list[Rule]) -> Verdict | None:
@@ -3752,7 +4916,8 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
     ``~``, ``$HOME`` or ``${HOME}`` (read as HOME), a bare ``cd`` (HOME), and a relative operand
     under each ``CDPATH`` entry the command assigns or the hook inherits. The walk keeps them
     unknown so runners stay opaque after them; the protected check also reads every word in them,
-    which can only add asks (``cd ~/.gemini && rm -r config``)."""
+    which can only add asks (``cd ~/.gemini && rm -r config``). A relative cd under one is
+    ``home_cd_reach``'s, per segment (story 9)."""
     cdpath = [
         entry
         for segment in segments
@@ -3778,6 +4943,64 @@ def home_cd_targets(segments: list[list[str]]) -> set[str]:
             elif not os.path.isabs(homed) and not homed.startswith(("./", "../")):
                 folders.update(os.path.normpath(os.path.join(root, homed)) for root in roots)
     return folders
+
+
+def home_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
+    """The ``~`` folder the script is in after each segment, as far as the cds before it say
+    (the owner pass, spec gate-f56-f60, story 9): ``cd ~/x`` (or a bare ``cd``) puts it there,
+    a relative cd moves it, any other directory change (``-``, a variable, an absolute folder the
+    walk follows, ``popd``) leaves none. No CDPATH guess: a deny reads only what is written."""
+    current: frozenset[str] = frozenset()
+    reach = []
+    for segment in segments:
+        current = home_cd_step(directory_verb(segment), current)
+        reach.append(current)
+    return reach
+
+
+def cd_operand(argv: list[str]) -> str | None:
+    """The one operand of a ``cd`` or ``pushd``, in its ``~`` form; "" when it has none; None for
+    another directory verb or more than one operand."""
+    operands = [w for w in argv[1:] if w not in CD_OPTIONS and w != "--"]
+    if argv[0] not in ("cd", "pushd") or len(operands) > 1:
+        return None
+    return home_forms(operands[0])[-1] if operands else ""
+
+
+def home_cd_step(argv: list[str] | None, current: frozenset[str]) -> frozenset[str]:
+    """``current`` after one segment's directory verb (``home_cd_reach``)."""
+    if not argv:
+        return current
+    word = cd_operand(argv)
+    if not word:  # another directory verb, or a bare ``cd`` (HOME) or ``pushd`` (a swap)
+        return frozenset({os.path.expanduser("~")}) if word == "" and argv[0] == "cd" else frozenset()
+    if shell.has_sentinel(word) or word.startswith(("-", "+")) or os.path.isabs(word):
+        return frozenset()  # ``-``, ``+1``: OLDPWD or the stack (wrap review)
+    if word.startswith("~"):
+        return frozenset({os.path.normpath(os.path.expanduser(word))})
+    return frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
+
+
+def lost_cd_reach(segments: list[list[str]]) -> list[frozenset[str]]:
+    """After each segment, the folder a relative cd through a part named as the config dir may
+    have reached, read under the config dir's parent (``cd "$X"/.claude``, ``cd "$X" && cd
+    .claude``; T13 review). For the ask pass only: the owner pass never reads it, since the
+    unknown folder may be a project's own ``.claude``."""
+    current: frozenset[str] = frozenset()
+    reach = []
+    for segment in segments:
+        argv = directory_verb(segment)
+        if argv:
+            word = cd_operand(argv) or "/"  # none, or another directory verb: the folder is lost
+            named = None if word.startswith(("~", "/")) else config_named(word.split("/"))
+            if named:
+                current = frozenset({named})
+            elif shell.has_sentinel(word) or word.startswith(("-", "+", "~", "/")):
+                pass  # kept: ``cd -``, ``popd`` or a cd that fails may lead back (wrap review)
+            else:
+                current = frozenset(os.path.normpath(os.path.join(folder, word)) for folder in current)
+        reach.append(current)
+    return reach
 
 
 def names_a_protected_file(word: str, protected: list[Rule], unknown: bool = True) -> bool:
@@ -5100,11 +6323,23 @@ def owner_hit(
 ) -> str | None:
     """The word on cobot's owner files, a literal one first: a hole in one segment must not hide a
     literal hit in another (``cat ${!N}; cp x ~/.claude/cobot.rules``; wrap security review)."""
-    hits = [protected_file_touched([p], cwd, owner_rows, [], reached.visited) for p in placed]
-    hits.append(protected_file_touched([], cwd, owner_rows, reached.paths, reached.visited))
-    found = [h for h in hits if h]
-    literal = [h for h in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
-    return (literal or found or [None])[0]
+    jobs = [([p], []) for p in placed] + [([], reached.paths)]
+    # each segment in the ``~`` folders the cds before it reached (story 9): one at a time, the
+    # job would not see them (``cd ~/.claude && rm -r cobot``)
+    homes = home_cd_reach([segment for segment, _ in placed]) + [frozenset()]
+    hits = [
+        protected_file_touched(job, cwd, owner_rows, paths, reached.visited, homes[i])
+        for i, (job, paths) in enumerate(jobs)
+    ]
+    # a customization root (``.agents``) is flagged with no rule at all: that segment's hit is not
+    # on the owner files, and it must not soften another segment's (wrap security review)
+    found = [
+        (h, i)
+        for i, h in enumerate(hits)
+        if h and not protected_file_touched(jobs[i][0], cwd, [], jobs[i][1], reached.visited, homes[i])
+    ]
+    literal = [h for h, _ in found if not shell.has_sentinel(h) and not any(c in h for c in GLOB_CHARS)]
+    return (literal or [h for h, _ in found] or [None])[0]
 
 
 def protected_verdict(
@@ -5120,13 +6355,12 @@ def protected_verdict(
     line written there by a script would widen the gate. A word with a hole or a glob keeps the
     ask, since it only might name them."""
     owner_rows = [r for r in rules if sealed(r)]
-    hit = owner_rows and owner_hit(placed, cwd, owner_rows, reached)
+    hit = owner_hit(placed, cwd, owner_rows, reached) if owner_rows else None
     # a whole-word variable is a merge's source of unknown content into a literal folder (``cp -r $X ~``)
     whole_variable = bool(hit) and shell.kind_of(hit) == "variable"
     plain_hit = whole_variable or not shell.has_sentinel(hit or "")
     literal = hit and plain_hit and not any(c in hit for c in GLOB_CHARS)
-    # a customization root (``.agents``) is flagged with no rule at all: not an owner-file hit
-    if literal and not protected_file_touched(placed, cwd, [], reached.paths, reached.visited):
+    if literal:  # owner_hit has left out the segments a customization root flags
         return Verdict(DENY, None, f"shell access to cobot's owner files '{show(hit, holes)[:60]}'")
     return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
 
@@ -5158,10 +6392,10 @@ def judge_bash(
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
     touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
     in_protected = protected_cwd(directories, rules)
-    if in_protected:
-        best = in_protected
-    elif touched:
+    if touched:
         best = protected_verdict(touched, holes, placed, cwd, rules, reached)
+    if in_protected and best.decision != DENY:  # a literal owner hit there is refused (lower gap 1)
+        best = in_protected
     asks = [best] if best.decision == ASK else []
     trace: list[tuple[str, list[Rule]]] = []
     refused = written_file(reached)
@@ -5177,6 +6411,10 @@ def judge_bash(
         hass = hass_verdict(command, segment, dirs, cwd, agent)
         if hass and outranks(hass, verdict):
             verdict = hass
+        if config_reader(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
+            verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
+        if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
+            verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
         if origin:
             verdict = replace(verdict, via=origin[:MAX_ORIGIN])
         form = show(" ".join(strip_wrappers(segment)), holes)
@@ -5202,7 +6440,9 @@ def judge_bash(
 # or XDG_CONFIG_HOME moves every start file, curl and wget read CURL_HOME and WGETRC, and PS4,
 # SHELLOPTS, BASHOPTS, PROMPT_COMMAND and exported functions run text (spec gate-f55, story 2)
 START_VARIABLES = (
-    "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND".split()
+    "BASH_ENV ZDOTDIR HOME XDG_CONFIG_HOME CURL_HOME WGETRC PS4 SHELLOPTS BASHOPTS PROMPT_COMMAND "
+    # options an extractor reads from its environment (spec gate-f56-f60, T04 review)
+    "TAR_OPTIONS UNZIP UNZIPOPT".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"

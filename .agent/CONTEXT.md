@@ -2,37 +2,38 @@
 
 profile: library
 goal: a Claude Code plugin marketplace that makes the main thread a governed orchestrator
-forge: github                  # YpNo/cobot
-owner: YpNo (Michael Lopez) · public since 0.2.0 (2026-11-14) · MIT
+forge: github  # YpNo/cobot
+owner: YpNo · public since 0.2.0 · MIT
 governance: docs/01-decisions.md
 runs: host
 
 ## Stack
-- Python 3.12+ standard library only for `plugins/cobot/bin/*`
-- POSIX sh for hooks and `install.sh`; Markdown for skills and agents
+- Python 3.12+ stdlib for `plugins/cobot/bin/*`; POSIX sh hooks and `install.sh`; Markdown skills and agents
 - pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor
 
 ## Environment
 - Claude Code 2.1.311 locally, CI pins 2.1.322; hooks run as the user
-- the directory marketplace serves this checkout to every dogfood repository: keep it on `main`, branch in worktrees
-- owner's git: `safe.bareRepository = explicit`; rtk PreToolUse hook rewrites Bash to `rtk <cmd>`
+- the directory marketplace serves this checkout to dogfood repos: keep it on `main`, branch in worktrees
+- rtk rewrites Bash to `rtk <cmd>`; git has `safe.bareRepository = explicit`
 
 ## Verified commands
-| purpose | command | result | verified |
-|---|---|---|---|
-| tests + coverage gate | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` | exit 0 (98.34 %) | 2026-11-22 |
-| lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` | exit 0 | 2026-11-22 |
-| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh plugins/cobot/evals/*/fixture.sh` | exit 0 | 2026-11-22 |
-| markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` | exit 0 | 2026-11-22 |
-| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` | exit 0 | 2026-11-22 |
-| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` | exit 0 | 2026-11-22 |
-| plugin contract | `python3 scripts/check-plugin.py` | exit 0 | 2026-11-22 |
-| memory self-check | `plugins/cobot/bin/cobot-memory check` | exit 0 | 2026-11-22 |
-| agy twins in sync | `python3 scripts/sync-agents.py --check` | exit 0 | 2026-11-22 |
+All exit 0 on 2026-11-23.
+
+| purpose | command |
+|---|---|
+| tests, coverage gate (98.34 %, 5402 tests) | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` |
+| lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` |
+| shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh plugins/cobot/evals/*/fixture.sh` |
+| markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` |
+| plugin validation | `claude plugin validate plugins/cobot --strict && claude plugin validate . --strict` |
+| gate dry run | `plugins/cobot/bin/cobot-rules check "<cmd>"` |
+| plugin contract | `python3 scripts/check-plugin.py` |
+| memory self-check | `plugins/cobot/bin/cobot-memory check` |
+| agy twins in sync | `python3 scripts/sync-agents.py --check` |
 
 ## Constraints
 - nothing writes to `~/.claude/CLAUDE.md`, `~/.claude/agents`, `~/.claude/skills`, `~/.claude/settings.json` (ADR-0003)
-- the Claude Code gate emits `allow` only for a command a session grant covers (ADR-0008); any failure blocks (exit 2). Under agy: `allow` (no opinion), `force_ask` or `deny`, never `auto_approve`; a failure prints a deny
+- the gate emits `allow` only under a session grant (ADR-0008); a failure blocks (exit 2). agy: `allow`, `force_ask` or `deny`, never `auto_approve`; a failure denies
 - agents never write `.agent/`; only the orchestrator and wrap do
 - commits: Conventional Commits, no Co-Authored-By; PR bodies never mention Claude Code
 - coverage floor 85 % on `bin/`; check-plugin holds the size caps

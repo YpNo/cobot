@@ -105,11 +105,59 @@ like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hype
 `taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
 `script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
+
+Where a file lands (spec gate-f56-f60):
+
+- An option value is read in every form: `cp -t`/`--target-directory` (joined, `=`, a long
+  prefix such as `--t=`), `curl -o`/`--output-dir`, `wget -O`/`-P`, `7z -o`, `cpio -D`, and a
+  path joined to any short option (`sort -o~/x`).
+- Each source of a copy is judged where it lands: `<target>/<basename>`, or the full path for
+  `cp --parents` and `rsync -R`. This covers `cp`, `mv`, `ln`, `install`, `rsync`, `scp`,
+  `docker`/`podman`/`kubectl cp`, `rclone`, `gio` and `git mv`. So `cp e/.claude.json ~/` asks.
+- A download lands at `<folder>/<url name>`, in the working directory when it names no folder.
+  Names the gate cannot know (`curl -J`, URL globbing, `wget -i`, `-r`) ask in a folder that holds
+  the config dir. `curl -K`, `wget --config` and a `wget -e` that moves output ask.
+- An extraction with no folder option lands in the working directory, and asks there when that
+  is or holds the config dir. So does a session started in HOME (owner's choice). `tar -P`,
+  `cpio -i` without `--no-absolute-filenames`, `unzip -:`, `7z -spf`, and `TAR_OPTIONS` or `UNZIP`
+  set in the command ask.
+- A config dir moved outside HOME keeps its folder protection. Moving a folder that holds the
+  config dir is refused like removing it (`mv /home x`).
+- The other writers are read the same way (F-61): `aria2c -d`/`-o`, `gh release|run download
+  -D`/`-O` (server-chosen names ask in a folder that holds the config dir; `aria2c -i` and
+  `--conf-path` ask), `sftp`, `pax -rw` and `ditto` copies, `jar x`, `ar x`, `unar`, `bsdunzip`,
+  `bsdcpio`, `dpkg-deb -x` extractions, and decompression in place: `gunzip
+  ~/.claude/cobot.rules.gz` lands at `~/.claude/cobot.rules` and is refused. `pax -r` asks
+  everywhere, as `cpio -i` does.
+- Taking the config dir away is refused like removing it (F-62): `tar --remove-files`, `zip -m`,
+  `7z -sdel`, a recursive `gzip`/`zstd`, `rclone purge|delete`, a `mount` or FUSE mount over it,
+  and a second name for a folder holding it (`ln -s ~ /tmp/h`, `cp -rs ~ x`, `mount --bind ~
+  /mnt/h`). `chmod`, `chown`, `chgrp`, `setfacl` and `chattr` on it or a folder holding it ask,
+  since the mode is not read (so `chmod 700 ~` asks). `bwrap` asks, as `unshare` and `firejail`
+  do: the gate does not read the command it runs.
+- A config dir reached through a symlink (`CLAUDE_CONFIG_DIR` set to a link, or `~/.claude`
+  linked into a dotfiles folder) is protected at its real path too, and re-pointing a link above
+  it (`ln -sfn x ~` with HOME a link) is refused. With that dotfiles layout, `git -C ~/dotfiles …`
+  and copies into `~/dotfiles` are refused, as `git -C ~` is.
+- A `cd` before the word gets the written-out path's decision: `cd ~/.claude && rm -r cobot`
+  and `cd ~/.claude && tar -xf e.tar` are refused, as `rm -r ~/.claude/cobot` and `tar -C
+  ~/.claude -xf e.tar` are, in both runtimes. The gate follows the latest `~` cd (a relative
+  cd moves it; `cd -`, a variable, `popd` or a known folder ends it). Since the split words show
+  neither quoting nor the shell's structure, `cd ~/.claude || rm -r cobot` and a quoted
+  `cd "~/.claude" && …` are refused too, and `cd ~/.claude/cobot` alone is refused, as
+  `ls ~/.claude/cobot` is.
+- After a `cd` the gate cannot follow (`cd "$X"`, `cd -`, `popd`), a word through a folder named
+  as the config dir asks: `ln -sfn /tmp/o .claude`, `rm -r .claude/cobot`, `tar -C .claude`,
+  `cd .claude && ln -sfn /tmp/o cobot`. It asks rather than refuses, since the folder may be a
+  project with its own `.claude`; reads (`ls .claude`) stay silent, a copy out of it asks.
+
 Not covered: a link reached after a second hole segment (`*/d*/key.txt`), an inherited variable
-or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell profile, a link created between
-the check and the run, archive members not written on the command line, folder options of
-other tools (`7z -o`, `cpio -D`), extracting after a `cd` into a protected folder, and
-`busybox find`.
+or run-time data standing for a whole protected path (F-59), a `CDPATH` set only in your shell
+profile, a link created between the check and the run, archive members (the gate never opens an
+archive), a client's own command language (`sftp -b`, `lftp -c`), sandboxes other than `bwrap`
+(`firejail`, `proot`, `systemd-run`), `rar`, aria2c's hooks and RPC, `dpkg --root`, a symlinked
+`~/.gemini` under agy, `busybox find`, and after a `cd` the gate cannot follow, a word with no
+part named as the config dir (`mv . /tmp/x`, `mv shell-snapshots /tmp`).
 
 A script that writes files is denied, whatever the host suggests: a Python script read from stdin
 or `-c` whose code opens a file for writing, calls `write_text`, `write_bytes`, `shutil.copy`,

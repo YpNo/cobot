@@ -467,3 +467,11 @@ Proof: full suite with coverage 98.35 %, 6099 passed; tests/test_gate_f58.py 263
 Open: left out on purpose, HTTPS_PROXY and ALL_PROXY alone (set daily, TLS unread) and AWS_ENDPOINT_URL* (set daily for local AWS work).
 Next: the owner verifies and pushes PR 85.
 verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — spec gate-f63-f65: editors and debuggers, newlines, loader variables and dotglob (F-63, F-64, F-65), for the owner
+Changed: .agent/specs/gate-f63-f65.md revision 2: 15 measured Goal rows on 3e83cc6, nine stories (editors opaque by a family pattern; debuggers, profilers and glibc tracers opaque, perf's read-only subcommands narrowed; shell_items reads newlines in its quote pass; loader and runtime-option variables by name and prefix, search paths by value; dotglob turned on in the command; git -c, --config-env, --exec-path and the command variables; the 2.1.331 nested-claude diff; the other launchers; both runtimes), Q1 to Q6 with recommended defaults, accept the risk offered on each. FINDINGS: F-63, F-64, F-65 point at the spec; F-64 raised to HIGH; F-70 opened (git -c and command variables).
+Why: the orchestrator relayed: one spec and one PR for F-63, F-64, F-65 and dotglob on a new branch from main 3e83cc6, challenger, fold, owner questions; no build until the owner answers.
+Proof: every Goal row measured with cobot-rules check (dotglob rows in a folder holding .mcp.json); challenger SOUND WITH CHANGES (1 BLOCKER, 6 MAJOR, 5 MINOR), all folded; the BLOCKER and the main MAJORs re-run by hand (echo a\\<nl>rm -rf /, git --config-env core.fsmonitor=V status, perf report --objdump, vim.basic, sotruss, fakeroot rm -rf /: none).
+Open: Q1 to Q6 for the owner; F-64's escaped-backslash bypass of the never rows is live on main; checkpoints: the readers' newline assumptions, the tools' option lists, zsh's dotglob names, whether agy's run_command has a terminal, the 2.1.331 option diff from ci-claude-pin.
+Next: the owner answers Q1 to Q6; then T01.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text and findings only

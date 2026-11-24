@@ -263,7 +263,7 @@ LOOP_HEADS = frozenset({"while", "until", "for", "select"})
 REDIRECTS = frozenset({">", ">>", "<", "<<", "2>", "&>"})
 UNSURE_PATH_CHARS = frozenset("$`*?[{\\")  # expansions the gate does not perform
 PWD_NAMES = ("$PWD", "${PWD}")  # the shell's own directory, unless the script assigns PWD
-LINE = "\n"  # between the lines of a runner body (the shell items turn a newline into ``;``)
+LINE = "\n"  # between the lines of a runner body (the shell items turn an unquoted newline into ``;``)
 # a script that may redefine cd or change how it resolves: the walk does not follow it
 UNTRACKABLE_RE = re.compile(
     r"\b(?:CDPATH|shopt|alias|enable|eval|trap|source|function)\b|\w\s*\(\s*\)"
@@ -3310,6 +3310,24 @@ def expand_units(
             expand_units(hole.body, hole.span, here, state, reached, entries)
 
 
+def body_substitutions(entries: list, state: ShellState, reached: Reached, depth: int = 0) -> list:
+    """The substitutions inside a shell ``-c`` body the expansion left opaque, expanded as units, so
+    a ``never`` row in ``bash -c "echo \\$(rm -rf /)"`` denies as at the top level (wrap security
+    review: the body read as bash passes it holds ``$(…)``, which kept it opaque)."""
+    extra: list = []
+    for segment, _, _, dirs in entries:
+        body = shell_body(strip_wrappers(segment))
+        if body is None or ("$(" not in body and "`" not in body):
+            continue
+        inner = shell.scan(body, frozenset(shell.sentinels(body)))
+        for hole in [] if inner.error else inner.holes.values():
+            if hole.body is not None:
+                expand_units(hole.body, hole.span, dirs, state, reached, extra)
+    if extra and depth < MAX_EXPANSION:
+        extra.extend(body_substitutions(extra, state, reached, depth + 1))
+    return extra
+
+
 def canonical(tokens: list[str]) -> list[str]:
     steps = (
         expand_push_flags,
@@ -4554,7 +4572,7 @@ GLOBDOTS = "globdots"  # zsh's name, read without case or underscores
 # dotglob -c …'``, ``find -exec bash -O dotglob``), and zsh's inversions (T05 review)
 DOTGLOB_TEXT_RE = re.compile(
     r"(?:^|[\s;&|(`])(?:-O\s+dotglob|-o\s+glob_?dots|\+o\s+no_?glob_?dots)\b"
-    r"|\bunsetopt\b[^;&|\n]*\bno_?glob_?dots\b|\boptions\[glob_?dots\]",
+    r"|\bunsetopt\b[^;&|\n]{0,256}?\bno_?glob_?dots\b|\boptions\[glob_?dots\]",  # bounded (wrap review)
     re.IGNORECASE,
 )
 ZSH_GLOBDOTS_LETTER = "4"  # zsh's one-letter flag for GLOB_DOTS (zsh, set and setopt)
@@ -6322,10 +6340,10 @@ SEARCH_PATH_INDIRECT_RE = re.compile(
 PWD_ASSIGNED_RE = re.compile(r"(?<!\$)(?<!\$\{)\bPWD\b")  # the script names PWD other than as $PWD
 
 
-def assignment_words(segment: list[str]) -> list[str]:
-    """The assignment words the segment's program runs under: those before it, past reserved words,
-    wrappers and prefix commands (``time``, ``if``, ``{``, ``nice env``; T03 review), and those a
-    setter (``export``, ``declare``, ``env``) takes."""
+def program_walk(segment: list[str]) -> tuple[list[str], list[str]]:
+    """The assignment words before the segment's program, past reserved words, wrappers and prefix
+    commands (``time``, ``if``, ``{``, ``nice env``, ``command``; T03 review), and the words from its
+    program on."""
     found: list[str] = []
     tokens = list(segment)
     while tokens:
@@ -6333,12 +6351,34 @@ def assignment_words(segment: list[str]) -> list[str]:
             found.append(tokens.pop(0))
             continue
         if tokens[0] in SEARCH_PATH_SETTERS:
-            return found + [word for word in tokens[1:] if ASSIGNMENT_WORD_RE.fullmatch(word)]
+            break
         rest = drop_wrapper(tokens)
         if rest is None:
             break
         tokens = rest
-    return found
+    return found, tokens
+
+
+def assignment_words(segment: list[str]) -> list[str]:
+    """The assignment words the segment's program runs under, and those a setter takes: every one
+    for ``export`` or ``declare``, those before its program for ``env`` (wrap code review: ``env grep
+    NAME=x f`` is grep's data)."""
+    found, rest = program_walk(segment)
+    if not rest or rest[0] not in SEARCH_PATH_SETTERS:
+        return found
+    words = rest[1:]
+    if rest[0] == "env":
+        words = list(
+            itertools.takewhile(lambda w: w.startswith("-") or ASSIGNMENT_WORD_RE.fullmatch(w), words)
+        )
+    return found + [word for word in words if ASSIGNMENT_WORD_RE.fullmatch(word)]
+
+
+@functools.lru_cache(maxsize=8)
+def search_path_facts(text: str) -> tuple[bool, bool]:
+    """Read once per command, not per segment (wrap code review): whether it sets a search path
+    indirectly, and whether ``$PWD`` keeps its meaning (the command names PWD nowhere else)."""
+    return bool(SEARCH_PATH_INDIRECT_RE.search(text)), not PWD_ASSIGNED_RE.search(text)
 
 
 def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: dict, text: str) -> str | None:
@@ -6347,15 +6387,18 @@ def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: d
     ``grep`` for the name stays silent. An empty entry or ``.`` is the folder the segment runs in,
     ``$PWD`` and ``~+`` are that folder unless the command names PWD, and the variable's own name is
     the inherited value (the F-59 class). ``text`` is the whole command."""
-    if any(word in SEARCH_PATH_READERS for word in segment[:1]) and any(
-        word.removeprefix("-v") in SEARCH_PATHS for word in segment
+    _, program = program_walk(segment)
+    if (
+        program[:1]
+        and program[0] in SEARCH_PATH_READERS
+        and any(word.removeprefix("-v") in SEARCH_PATHS for word in program)
     ):
         return "a search path set from input: the gate cannot place it"
-    if SEARCH_PATH_INDIRECT_RE.search(text):
+    indirect, pwd_known = search_path_facts(text)
+    if indirect:
         return "a search path set through a nameref, a loop or getopts: the gate cannot place it"
     root = Path(cwd or os.getcwd()).resolve()
     bases = placed_bases(None, dirs, root)
-    pwd_known = not PWD_ASSIGNED_RE.search(text)
     for word in assignment_words(segment):
         name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
         if name not in SEARCH_PATHS:
@@ -6369,14 +6412,14 @@ def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: d
 EDITOR_VARIABLES = frozenset({"GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "EDITOR", "VISUAL"})
 
 
-def editor_variable_reason(segment: list[str]) -> str | None:
+def editor_variable_reason(segment: list[str], holes: dict) -> str | None:
     """An editor variable set to a command other than a safe one (empty, ``true``, ``:``, ``cat``)
     asks: git, crontab and the rest run it without a terminal (spec gate-f63-f65, story 6, Q5). Read
     from the assignment words, so a ``grep`` for the name stays silent."""
     for word in assignment_words(segment):
         name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
         if name in EDITOR_VARIABLES and value.strip() not in SAFE_COMMAND_VALUES:
-            return f"{name} names a command a program runs: '{value[:60]}'"
+            return f"{name} names a command a program runs: '{show(value, holes)[:60]}'"
     return None
 
 
@@ -6964,6 +7007,7 @@ def judge_bash(
     entries: list[tuple[list[str], str, shell.Scan, Dirs]] = []
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
+    entries.extend(body_substitutions(entries, shell_state(command), reached))
     variables = variables_of(command, scanned)
     entries = [
         (reading, origin, unit, dirs)
@@ -7004,7 +7048,7 @@ def judge_bash(
         outside = (
             outside_script(program_of(segment), dirs, cwd, holes)
             or search_path_reason(segment, dirs, cwd, holes, command)
-            or editor_variable_reason(segment)
+            or editor_variable_reason(segment, holes)
         )
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)

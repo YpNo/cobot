@@ -539,3 +539,11 @@ Proof: tests/test_gate_f63_f65.py 64 passed; ruff and markdownlint clean.
 Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words).
 Next: the wrap: code and security reviews, then the full checks.
 verified: tree 8ac0b97e753928b0cf2a5403f2e0544215a7cc81 · focused tests, ruff, markdownlint
+
+## 2026-11-24 — wrap gate-f63-f65: code and security reviews folded
+Changed: search_path_reason's two text reads cached per command (search_path_facts); program_walk finds a reader past IFS=, while, if, {, command and builtin; env stops at its program; DOTGLOB_TEXT_RE's unsetopt span bounded; the editor reason shows a substitution; body_substitutions expands the substitutions of an opaque shell -c body as units, so bash -c "echo \$(rm -rf /)" denies again; two comments updated; spec Converge records the wrap.
+Why: the wrap code review (3 MAJOR, 4 MINOR) and security review (1 HIGH: a deny fell to an ask once \$ read as bash reads it; a differential of 5 746 test commands found no other weakening).
+Proof: full suite with coverage 98.38 %, 6167 passed (serial); tests/test_gate_f63_f65.py 68 passed in 8.8 s; ruff check and format, markdownlint, shellcheck, plugin validate --strict x2, check-plugin, sync-agents clean; brief 5537 of 6000.
+Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words); JOURNAL.md over 400 lines (compact is the owner's call).
+Next: the owner verifies and pushes the branch.
+verified: tree a10668b48c96b8ce592b2944d16eb88e0f1e0413 · full suite with coverage, ruff, markdownlint, shellcheck, plugin validate x2, check-plugin, sync-agents

@@ -127,6 +127,27 @@ REVIEW_ASK = [
 ]
 
 
+# wrap security review: a substitution in a -c body is read as at the top level, so its never row
+# denies (the body is otherwise opaque, an ask)
+BODY_SUBSTITUTION_DENY = [
+    'bash -c "echo \\$(rm -rf /)"',
+    'bash -c "\\$(rm -rf /)"',
+    'bash -c "echo hi; \\$(rm -rf /)"',
+    'sh -c "x=\\$(git push --force origin main)"',
+    "bash -c 'echo $(rm -rf /)'",
+    'bash -c "echo \\`rm -rf /\\`"',
+    "bash -c 'bash -c \"echo \\$(rm -rf /)\"'",
+]
+
+
+def test_story3_wrap_substitutionInABody_denies(rules, project):
+    assert_all(rules, BODY_SUBSTITUTION_DENY, "deny")
+
+
+def test_story3_wrap_substitutionInABody_staysOpaque(rules, project):
+    assert decide(rules, "bash -c 'echo $(date)'") == "ask"
+
+
 def test_story3_review_innerStringsReadAsBash(rules, project):
     assert_all(rules, REVIEW_DENY, "deny")
 
@@ -409,6 +430,13 @@ SEARCH_PATH_ASK = [
     "LUA_PATH_5_4=/tmp/?.lua lua s.lua",
     "LUA_CPATH_5_4=/tmp/?.so lua s.lua",
     "ERL_LIBS=/tmp erl",
+    # wrap code review: a reader behind an assignment, a reserved word or a wrapper
+    "IFS= read -r PYTHONPATH; export PYTHONPATH; python3 x.py",
+    "while read PYTHONPATH; do python3 x.py; done",
+    "if read PYTHONPATH; then python3 x.py; fi",
+    "{ read PYTHONPATH; }",
+    "command read PYTHONPATH",
+    "builtin read LD_LIBRARY_PATH",
 ]
 LOADER_FRICTION = [
     "PYTHONPATH=. pytest",
@@ -430,7 +458,20 @@ LOADER_FRICTION = [
     "cd tests && PYTHONPATH=../src pytest",
     "PYTHONPATH=~+/src pytest",
     "printenv LD_LIBRARY_PATH",
+    "env grep PYTHONPATH=/etc f",  # wrap code review: the words after env's program are its data
 ]
+
+
+def test_story6_editorReason_showsTheSubstitution(rules, project):
+    assert "$(id)" in verdict(rules, "EDITOR=$(id) crontab -e").note
+
+
+def test_story5_longUnsetoptText_isLinear(rules, project):
+    import time
+
+    started = time.monotonic()
+    rules.dotglob_on([], "unsetopt " * 6000)
+    assert time.monotonic() - started < 1.0
 
 
 def test_story4_loaderVariables_ask(rules, project):

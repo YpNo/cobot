@@ -604,3 +604,21 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
   friction), and `docs/configuration.md` for both runtimes. The CHANGELOG Security entry is
   added. In FINDINGS, F-63, F-64, F-65 and F-70 are closed; F-71 to F-74 stay open for the
   owner.
+- 2026-11-24, wrap, two reviews with every fold a test row.
+  - **Code review** (3 MAJOR, 4 MINOR):
+    - `search_path_reason` scanned the whole command once per segment (50 KB of exports: 163 s
+      at base, 261 s), so its two text reads are cached per command;
+    - a `read` behind `IFS=`, `while`, `if`, `{`, `command` or `builtin` hid the search path. The
+      reader is now found past them (`program_walk`);
+    - `DOTGLOB_TEXT_RE`'s `unsetopt` span was quadratic, and it is bounded now;
+    - the editor reason shows a substitution's text;
+    - `env grep PYTHONPATH=/etc f` no longer asks, since `env` stops at its program;
+    - two comments were brought up to date.
+    - Known cost: `emacs-lsp-booster` and `vim-addon-manager` ask, through the family pattern.
+  - **Security review** (1 HIGH, 1 LOW intended), measured by a differential of 5 746 test
+    commands against `3e83cc6`: 206 got stronger and 2 weaker.
+    - HIGH: `bash -c "echo \$(rm -rf /)"` fell from deny to ask. The body, now read as bash passes
+      it, holds `$(…)`, which kept it opaque. Base denied only by a shlex mis-split.
+      `body_substitutions` now expands the substitutions of an opaque `-c` body as units, so
+      these deny, and so does `bash -c 'echo $(rm -rf /)'`, which only asked at base.
+    - LOW, intended: `claude … --max-cost 1` is silent (Q7), with its canary row.

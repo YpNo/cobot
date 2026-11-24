@@ -475,3 +475,11 @@ Proof: every Goal row measured with cobot-rules check (dotglob rows in a folder 
 Open: Q1 to Q6 for the owner; F-64's escaped-backslash bypass of the never rows is live on main; checkpoints: the readers' newline assumptions, the tools' option lists, zsh's dotglob names, whether agy's run_command has a terminal, the 2.1.331 option diff from ci-claude-pin.
 Next: the owner answers Q1 to Q6; then T01.
 verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text and findings only
+
+## 2026-11-24 — spec gate-f63-f65 revision 3: the 2.1.331 nested-claude option diff (story 7, Q7)
+Changed: .agent/specs/gate-f63-f65.md: Goal rows 16 and 17, a Facts row for the diff (18 added, --registry removed, no shape changed), story 7 rewritten (--managed-settings-in-initialize and --initialize-fields raw-scanned and foreign; --trusted-folder foreign; --organization-gateway and --gateway-json the F-66 class; --web and --routine elsewhere; --discard asks; --max-cost silent; ten options left unknown until checkpoint 5; --registry kept), Q7 added, checkpoint 5 now reads the unclear options' meaning.
+Why: the orchestrator relayed the ci-claude-pin session's diff (commit f5cb6ff) and asked for it as a story or checkpoint, with Q7 where a new question arises.
+Proof: claude --model --managed-settings-in-initialize -p x and claude --model --initialize-fields -p x give none on 3e83cc6 (the unknown-option ask misses the value slot); the 18 ask as unknown elsewhere; --max-cost-usd silent.
+Open: Q1 to Q7 for the owner; row 16 is live once the CI pin or a host moves to 2.1.331.
+Next: the owner answers Q1 to Q7; then T01.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text only

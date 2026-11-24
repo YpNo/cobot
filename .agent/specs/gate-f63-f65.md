@@ -1,7 +1,7 @@
 # Spec — editors and debuggers, newlines, loader variables and dotglob (F-63, F-64, F-65)
 
-size: medium · profile: library · owner: YpNo · date: 2026-11-24 · revision 2 (challenger
-folded) · base `main` `3e83cc6` (PRs 82–85 merged)
+size: medium · profile: library · owner: YpNo · date: 2026-11-24 · revision 3 (challenger
+folded, the 2.1.331 option diff folded) · base `main` `3e83cc6` (PRs 82–85 merged)
 
 ## Goal
 
@@ -50,6 +50,8 @@ project layers empty. The challenger re-ran every row. The dotglob rows ran in a
 | 13 | `shopt -s dotglob; cat *` · `shopt -s dotglob; tee *.json` · `shopt -s nullglob dotglob; cp x *.json` · `shopt -s dotglob; cat ~/*` · `shopt -s dot''glob; cat *` · `GLOBIGNORE=x; cat *` · `export GLOBIGNORE=x; cat *` · `bash -O dotglob -c 'cat *'` · `bash -c 'shopt -s dotglob; cat *'` · `o=dotglob; shopt -s $o; cat *` | none | ask, as `cat .mc?.json` asks (Q4) |
 | 14 | `git -c core.fsmonitor=x status` · `git -c core.sshCommand=x fetch` · `git --config-env=core.fsmonitor=V status` · `git --config-env core.fsmonitor=V status` · `git --exec-path=/tmp status` · `git --exec-path /tmp status` | none | ask, as `git config <key> x` asks (Q5) |
 | 15 | `GIT_SSH_COMMAND=x git fetch` · `GIT_EXEC_PATH=/tmp git status` · `GIT_CONFIG_GLOBAL=/tmp/x git status` · `LESSOPEN='\|x %s' less f` · `EDITOR=x crontab -e` | none | ask (Q5) |
+| 16 | `claude --model --managed-settings-in-initialize -p x` · `claude --model --initialize-fields -p x` (2.1.331 reads both from the raw argv, so a value slot does not hide them) | none | ask (story 7) |
+| 17 | `claude -p x --managed-settings-in-initialize` · `--trusted-folder /tmp/x` · `--organization-gateway` · `--gateway-json` · `--web` · `--routine r` · `--discard` | ask (an option the gate does not know) | ask, with the class's own reason (Q7) |
 
 Unchanged, and each a test row. These ask or deny today and keep doing so:
 - `strace ls` and `strace -o out ls` ask (opaque); `strace -o ~/.claude/settings.json ls` asks;
@@ -121,6 +123,7 @@ and `python3 -c 'x=1<nl>y'`.
 | git, man, less | run in a scratch repository, no terminal (the challenger) | `GIT_PAGER='echo X' git log \| cat`, `git -p log` and `MANPAGER='echo X' man ls` never run the pager; `LESSOPEN='\|echo X %s' less f \| cat` runs it; `V=v git --config-env core.abc=V config core.abc` prints `v` (the space form is accepted) |
 | this host | `command -v` | `vim.basic`, `vim.tiny`, `editor` and `sensible-editor` are installed; gdb, lldb, emacs, nvim, perf and valgrind are not |
 | cobot | `cobot-rules` | `strace` is in `OPAQUE`, so every run asks, and an opaque launcher keeps none of its inner deny (`strace rm -rf /` asks), while `chroot / rm -rf /` keeps it (a wrapper parser). `git_exec_key` holds the keys whose value git runs, and `git_alias_set` parses both `--config-env` forms. `START_VARIABLES` is read by name from the command's text, and `START_PREFIXES` by prefix. The scanner strips comments and here-documents before `shell_items`. |
+| Claude Code 2.1.331 | the ci-claude-pin session's diff of the binary's commander specs against 2.1.311 (commit `f5cb6ff`, relayed) | 18 options added. With no value: `--agents-view-if-allowed`, `--discard`, `--gateway-json`, `--hold-repository-while-parked`, `--managed-settings-in-initialize`, `--organization-gateway`, `--web`. With a required value: `--event`, `--initialize-fields`, `--lead-verify-key`, `--list`, `--max-cost`, `--metadata`, `--output`, `--path`, `--review-md`, `--session-began-as-copy`, `--trusted-folder`. One removed: `--registry <url>`. No value shape changed, and no letter was added or removed. `--managed-settings-in-initialize` and `--initialize-fields` are read from the raw argv before commander. `--trusted-folder <absolute>` reads "The current directory, which the host says a person trusted". `--session-began-as-copy` and `--lead-verify-key` are forwarded to a session. `--max-cost` may only be a prefix of `--max-cost-usd`. `--routine` is in both binaries and is forwarded, but is missing from the gate's table (an older gap) |
 | cobot | `cobot-rules` `glob_names_asked_file` | returns early on a last segment that does not start with `.` ("without dotglob, bash reaches a dotfile only through a leading literal dot") |
 
 Not read yet. Each is a build checkpoint before its task, not an assumption:
@@ -142,8 +145,12 @@ Not read yet. Each is a build checkpoint before its task, not an assumption:
    T05.
 4. **Whether Antigravity's `run_command` gives the command a terminal** (Q5's sub-question). Read
    agy's docs, or run a probe in the owner's terminal: `test -t 1 && echo tty`. Before T04.
-5. **The nested-`claude` option diff from 2.1.311 to 2.1.331.** The ci-claude-pin session reports
-   it, and it is relayed to this session. Before T06.
+5. **The meaning of the 2.1.331 options whose class Q7 leaves unread**: `--event`, `--list`,
+   `--metadata`, `--output`, `--path`, `--review-md`, `--lead-verify-key`,
+   `--session-began-as-copy`, `--agents-view-if-allowed`, `--hold-repository-while-parked`. Read
+   them from the 2.1.331 binary's option descriptions and Claude Code's CLI reference. An option
+   that stays unclear stays out of the table, so it keeps asking (F-58 Q1). Before T06. The diff
+   itself is read (Facts read).
 
 ## Stories and acceptance
 
@@ -250,16 +257,20 @@ its friction rows stay silent.
        `core.pager` and `pager.*` keys under `git -c`;
      - if agy's `run_command` has a terminal, they join the editor list, with `less` and `more`
        carrying options only added to the safe values.
-7. **The nested-`claude` table follows the CI pin (checkpoint 5).**
-   - The 2.1.331 diff is folded into `_cobot_nested.py`'s tables. Each new option gets its value
-     shape, and each falls into one of F-58's classes:
-     - hooks off: ask;
-     - foreign settings or code: ask;
-     - widening (F-58 Q2): ask;
-     - moving the session elsewhere (Q3): ask;
-     - known and harmless: silent.
-   - An option 2.1.331 drops stays in the table, for older installs. An option whose class is
-     unclear is put to the owner, and asks meanwhile, per F-58 Q1.
+7. **The nested-`claude` table follows the CI pin, 2.1.331 (rows 16, 17; Q7).**
+   - `--managed-settings-in-initialize` and `--initialize-fields` join `RAW_SCANNED` and
+     `FOREIGN`. A value slot does not hide them (row 16), as F-58 T02 found for `--bare`.
+   - Under Q7's default, these get a class:
+     - `--managed-settings-in-initialize`, `--initialize-fields` and `--trusted-folder` are
+       foreign (settings, or a folder trusted without the person);
+     - `--organization-gateway` and `--gateway-json` route the traffic, the F-66 class, with its
+       reason;
+     - `--web` and `--routine` move the session elsewhere (F-58 Q3);
+     - `--discard` asks, the F-69 class (it may drop work).
+   - `--max-cost` is known and silent, with a required value, as `--max-cost-usd` is.
+   - The other ten stay out of the table until checkpoint 5 reads them, so they keep asking as
+     unknown (F-58 Q1).
+   - `--registry` stays in the table with its 2.1.311 shape, for older installs.
 8. **The other launchers (row 9; Q6).**
    - Under the default, `fakeroot`, `eatmydata`, `nsenter`, `setpriv`, `prlimit`, `xvfb-run` and
      `ssh-agent` join `OPAQUE`.
@@ -280,7 +291,7 @@ its friction rows stay silent.
 | a module search path outside the project | the value reading (Q3) | 4 |
 | a glob reaching a protected dotfile under dotglob | the dotglob scan | 5 |
 | a command git or an editor runs from a variable, `-c` or `--exec-path` | `git_exec_key`, start variables | 6 |
-| a nested Claude Code option added since 2.1.311 | the option tables | 7 |
+| a nested Claude Code option added since 2.1.311, or read from the raw argv | the option tables, `RAW_SCANNED` | 7 |
 | the same under Antigravity | the shared judge | 9 |
 
 ## Clarify
@@ -355,6 +366,22 @@ HIGH) has no question: it is a misreading of bash, and its fix is to read as bas
   - Recommended: **yes, as opaque names**, the same reading as Q2.
   - Other options: as prefix commands keeping the inner deny (Q2's alternative); a finding for
     later; accept the risk.
+- **Q7: the 2.1.331 options.** All 18 ask today as unknown, except in a value slot (row 16).
+  Should the clear ones get a class (story 7)?
+  - Recommended: **as story 7 reads them.**
+    - `--managed-settings-in-initialize`, `--initialize-fields` and `--trusted-folder` ask as
+      `--managed-settings` does. Each brings in settings, or trust the person did not give.
+    - `--organization-gateway` and `--gateway-json` ask as `ANTHROPIC_BASE_URL` does.
+    - `--web` and `--routine` ask as `--cloud` does.
+    - `--discard` asks.
+    - `--max-cost` is silent.
+    - The ten unread options keep the unknown-option ask until checkpoint 5.
+  - The asks are the same as today's, so the gain is row 16 and a reason that says what the
+    option does.
+  - Other options:
+    - only the raw-scanned pair (row 16), with the rest left unknown;
+    - make `--trusted-folder` silent if checkpoint 5 shows only the host sets it;
+    - accept the risk on row 16.
 
 ## Plan
 
@@ -370,7 +397,10 @@ HIGH) has no question: it is a misreading of bash, and its fix is to read as bas
    the git reader, the variables and the safe values.
 5. **T05, dotglob (story 5).** Run checkpoint 3 first. Then the dotglob scan on unquoted words,
    and the flag through to `glob_names_asked_file`.
-6. **T06, the nested-`claude` diff (story 7).** Run checkpoint 5 first, then the table rows.
+6. **T06, the nested-`claude` diff (story 7).** Run checkpoint 5 first. Then the raw-scanned
+   pair, the class of each option under Q7, `--max-cost` and `--routine`. The CI pin's commit
+   (`f5cb6ff`, branch `chore/ci-claude-code-2.1.331`) lands separately: this task edits the
+   gate's table, not CI.
 7. **T07, both runtimes and docs (story 9).** The agy rows, `docs/configuration.md`, the CHANGELOG
    Security entry and the FINDINGS rows.
 
@@ -460,4 +490,8 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
 
 ## Converge
 
-Pending: the owner's answers to Q1–Q6.
+- 2026-11-24, the 2.1.331 option diff, relayed from the ci-claude-pin session (commit `f5cb6ff`),
+  is folded as story 7 and Q7. Re-measured: `claude --model --managed-settings-in-initialize -p x`
+  and `--initialize-fields` give none (row 16). `--trusted-folder` in a value slot also gives
+  none, but commander reads it as the value there, so it is not raw-scanned.
+- Pending: the owner's answers to Q1–Q7.

@@ -2292,7 +2292,7 @@ def opaque_as_read(plain: list[str]) -> bool:
     if head in OPAQUE or head.startswith("$") or head == "env" or head in WRAPPER_OPTIONS:
         # a leftover ``env`` or wrapper carries options the gate does not read
         return True
-    if head == "git" and git_alias_set(plain):
+    if head == "git" and (git_alias_set(plain) or git_command_line_exec(plain)):
         return True
     if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
         sub = plain[1] if len(plain) > 1 else ""
@@ -3388,6 +3388,38 @@ def git_alias_set(plain: list[str]) -> bool:
             value = arg.partition("=")[2] or following
         if value.lower().startswith("alias."):
             return True
+    return False
+
+
+GIT_GLOBAL_VALUES = frozenset(
+    {"-c", "-C", "--config-env", "--git-dir", "--work-tree", "--namespace", "--attr-source"}
+)
+GIT_EDITOR_KEYS = frozenset({"core.editor", "sequence.editor"})
+SAFE_COMMAND_VALUES = frozenset({"", "true", ":", "cat"})  # an editor or pager that runs nothing
+
+
+def git_command_line_exec(plain: list[str]) -> bool:
+    """``git -c core.fsmonitor=x status``, ``--config-env``, ``--exec-path=<dir>``: a key whose value
+    git runs, or a folder of git's own commands, set on the command line before the verb, as ``git
+    config`` would set it (spec gate-f63-f65, story 6, F-70). The verb's own options (``git clone
+    -c``, ``--upload-pack``) are F-72, for the owner. A pager key is left out (a pager never
+    runs without a terminal, Q5), and an editor key with a safe value stays silent."""
+    index = 1
+    while index < len(plain) and plain[index].startswith("-"):
+        arg = plain[index]
+        following = plain[index + 1] if index + 1 < len(plain) else ""
+        if arg.startswith("--exec-path="):
+            return True  # without ``=``, git prints its own folder and exits (T04 review)
+        value = following if arg == "-c" else ""
+        if arg.startswith("--config-env"):
+            value = arg.partition("=")[2] or following
+        key, _, setting = value.partition("=")
+        lowered = key.lower()
+        pager = lowered == "core.pager" or lowered.startswith("pager.")
+        safe_editor = arg == "-c" and lowered in GIT_EDITOR_KEYS and setting.strip() in SAFE_COMMAND_VALUES
+        if key and git_exec_key(key) and not pager and not safe_editor:
+            return True
+        index += 2 if arg in GIT_GLOBAL_VALUES else 1
     return False
 
 
@@ -6282,6 +6314,20 @@ def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: d
     return None
 
 
+EDITOR_VARIABLES = frozenset({"GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "EDITOR", "VISUAL"})
+
+
+def editor_variable_reason(segment: list[str]) -> str | None:
+    """An editor variable set to a command other than a safe one (empty, ``true``, ``:``, ``cat``)
+    asks: git, crontab and the rest run it without a terminal (spec gate-f63-f65, story 6, Q5). Read
+    from the assignment words, so a ``grep`` for the name stays silent."""
+    for word in assignment_words(segment):
+        name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
+        if name in EDITOR_VARIABLES and value.strip() not in SAFE_COMMAND_VALUES:
+            return f"{name} names a command a program runs: '{value[:60]}'"
+    return None
+
+
 def search_entry_inside(
     entry: str, name: str, bases: list[Path] | None, root: Path, holes: dict, pwd_known: bool
 ) -> bool:
@@ -6902,8 +6948,10 @@ def judge_bash(
             verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
-        outside = outside_script(program_of(segment), dirs, cwd, holes) or search_path_reason(
-            segment, dirs, cwd, holes, command
+        outside = (
+            outside_script(program_of(segment), dirs, cwd, holes)
+            or search_path_reason(segment, dirs, cwd, holes, command)
+            or editor_variable_reason(segment)
         )
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
@@ -6956,6 +7004,12 @@ START_VARIABLES = (
     "GIO_EXTRA_MODULES GIO_MODULE_DIR GTK_MODULES GTK_PATH QT_PLUGIN_PATH GST_PLUGIN_PATH "
     "GST_PLUGIN_SYSTEM_PATH VK_LAYER_PATH VK_ICD_FILENAMES LIBGL_DRIVERS_PATH GDK_PIXBUF_MODULE_FILE "
     "OPENSSL_MODULES OPENSSL_ENGINES DOTNET_ADDITIONAL_DEPS "
+    # a command git or less runs, or a config or command folder git reads instead of its own (spec
+    # gate-f63-f65, story 6, F-70); GIT_CONFIG_KEY_<n> and _VALUE_<n> by their prefix. The pagers
+    # are left out: none runs without a terminal (Q5)
+    "GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_EXEC_PATH GIT_ASKPASS SSH_ASKPASS GIT_EXTERNAL_DIFF "
+    "GIT_TEMPLATE_DIR GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG GIT_CONFIG_PARAMETERS "
+    "GIT_CONFIG_COUNT LESSOPEN LESSCLOSE "
     # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
     # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
     # by their prefix, START_PREFIXES
@@ -6983,7 +7037,10 @@ COMPUTED_EXPORT_RE = re.compile(
 )
 
 
-START_PREFIXES = ("CLAUDE_CODE_", "LD_", "DYLD_", "CORECLR_PROFILER", "COR_PROFILER", "LUA_INIT_")
+START_PREFIXES = (
+    *("CLAUDE_CODE_", "LD_", "DYLD_", "CORECLR_PROFILER", "COR_PROFILER", "LUA_INIT_"),
+    *("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"),
+)
 # the search paths a prefix would name are left to their value reading (search_path_reason)
 PREFIX_EXCLUDED = "|".join(sorted(SEARCH_PATHS))
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")

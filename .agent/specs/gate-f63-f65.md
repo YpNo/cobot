@@ -553,3 +553,18 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
     - `CLASSPATH=…:lib/*` (Java's own wildcard) stays silent.
   - Left as the build-tool residual: `GOFLAGS`, `MAVEN_OPTS`, `GRADLE_OPTS`, `JAVA_OPTS`, and
     R's, Julia's and Tcl's paths.
+- T04 build.
+  - `git_command_line_exec` reads git's global options before the verb: `-c`, both forms of
+    `--config-env`, and `--exec-path=`. The git and `less` command variables join
+    `START_VARIABLES`, and `GIT_CONFIG_KEY_` and `GIT_CONFIG_VALUE_` join the prefixes.
+    `editor_variable_reason` reads the four editor variables by value.
+  - Checkpoint 4 was not read: no repository doc says whether agy's `run_command` has a
+    terminal, and the probe needs the owner's terminal. Under Q5's default, the pagers stay out
+    and the question is **F-71**.
+  - Bypass review: SOUND WITH CHANGES (1 MAJOR, 3 MINOR; no regression), each a test row:
+    - `--attr-source <tree>` takes a value, so it no longer stops the scan;
+    - `git --exec-path /tmp` only prints git's folder, so it is silent. Goal row 14's space form
+      is dropped, since git reads a folder only after `=`.
+  - Seen, older than this branch and outside story 6: **F-72**. These are a verb's own options
+    (`git clone -c`, `clone -u`, `fetch`/`ls-remote --upload-pack`, `gh repo clone -- -c`), and
+    `rsync -e` and `RSYNC_RSH`.

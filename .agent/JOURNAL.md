@@ -507,3 +507,11 @@ Proof: tests/test_gate_f63_f65.py 28 passed; full suite in parallel green but fo
 Open: build-tool variables (GOFLAGS, MAVEN_OPTS, GRADLE_OPTS, JAVA_OPTS) stay the spec's residual.
 Next: T04, git -c, --exec-path and the command variables.
 verified: tree 0614745a3e43377afd113ac797823b471d75655e · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T04: git -c, --config-env, --exec-path= and the command variables (story 6, F-70)
+Changed: git_command_line_exec reads git's global options before the verb: an exec key set by -c or --config-env asks, as git config does, but a pager key (Q5) and an editor key with a safe value; --exec-path=<dir> asks. START_VARIABLES gains the git variables that run a command or move its config or command folder, and LESSOPEN and LESSCLOSE; GIT_CONFIG_KEY_ and GIT_CONFIG_VALUE_ join the prefixes; editor_variable_reason reads GIT_EDITOR, GIT_SEQUENCE_EDITOR, EDITOR and VISUAL by value. FINDINGS F-71 (agy's terminal, checkpoint 4 unread) and F-72 (a git verb's own options, rsync -e).
+Why: the owner's Q5, relayed verbatim: All as recommended. git -c core.fsmonitor=x status reached no decision.
+Proof: tests/test_gate_f63_f65.py 32 passed; full suite in parallel green but for the known flaky rows (xdist timing, cat */README.md); ruff clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 3 MINOR), each a test row.
+Open: F-71 needs a probe in the owner's terminal; F-72 for the owner.
+Next: T05, dotglob.
+verified: tree 2ce4446ce9912ec3436ed2df6a66955b5fdaf0af · focused tests, full suite (parallel), ruff

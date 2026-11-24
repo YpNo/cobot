@@ -444,6 +444,75 @@ def test_story4_friction_staysSilent(rules, project):
     assert_all(rules, LOADER_FRICTION, None)
 
 
-def test_story4_unchanged_namedVariableInText_asks(rules, project):
+def test_story4_unchanged_namedVariableInText_asks_knownCost(rules, project):
     assert decide(rules, "grep -rn 'NODE_OPTIONS=' .") == "ask"
     assert decide(rules, "PATH=/tmp:$PATH ls") == "ask"
+
+
+# ---------------------------------------------------------------- story 6: git -c, command variables (F-70)
+
+GIT_COMMAND_ASK = [
+    # row 14
+    "git -c core.fsmonitor=x status",
+    "git -c core.sshCommand=x fetch",
+    "git --config-env=core.fsmonitor=V status",
+    "git --config-env core.fsmonitor=V status",
+    "git --exec-path=/tmp status",
+    "git -C . -c core.hooksPath=/tmp/h status",
+    "git -c core.editor=x commit --amend",
+    # T04 review: --attr-source takes a value
+    "git --attr-source HEAD -c core.fsmonitor=x status",
+]
+COMMAND_VARIABLE_ASK = [
+    # row 15
+    "GIT_SSH_COMMAND=x git fetch",
+    "GIT_SSH=x git fetch",
+    "GIT_PROXY_COMMAND=x git fetch",
+    "GIT_EXEC_PATH=/tmp git status",
+    "GIT_ASKPASS=x git fetch",
+    "SSH_ASKPASS=x git fetch",
+    "GIT_EXTERNAL_DIFF=x git diff",
+    "GIT_TEMPLATE_DIR=/tmp git init",
+    "GIT_CONFIG_GLOBAL=/tmp/x git status",
+    "GIT_CONFIG_SYSTEM=/tmp/x git status",
+    "GIT_CONFIG_PARAMETERS=x git status",
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=x git status",
+    "LESSOPEN='|x %s' less f",
+    "LESSCLOSE=x less f",
+    "EDITOR=x crontab -e",
+    "VISUAL=x crontab -e",
+    "export EDITOR=x; crontab -e",
+]
+COMMAND_FRICTION = [
+    "GIT_PAGER=cat git log",
+    "PAGER=cat man ls",
+    "git --no-pager log",
+    "git -c color.ui=always log",
+    "git -c core.pager=less log",  # a pager never runs without a terminal (Q5)
+    "git --exec-path",
+    "git --exec-path /tmp",  # without =, git prints its own folder and exits (T04 review)
+    "git -c core.editor=cat status",
+    "git -c core.autocrlf=false status",
+    "GIT_TERMINAL_PROMPT=0 git status",
+    "EDITOR=true crontab -e",
+    "EDITOR= crontab -l",
+    "grep -rn 'GIT_EDITOR=' .",
+]
+
+
+def test_story6_gitCommandLineConfig_asks(rules, project):
+    assert_all(rules, GIT_COMMAND_ASK, "ask")
+
+
+def test_story6_commandVariables_ask(rules, project):
+    assert_all(rules, COMMAND_VARIABLE_ASK, "ask")
+
+
+def test_story6_friction_staysSilent(rules, project):
+    assert_all(rules, COMMAND_FRICTION, None)
+
+
+def test_story6_unchanged_gitConfigAndAliases_ask(rules, project):
+    assert decide(rules, "git -c alias.st='!x' st") == "ask"
+    assert decide(rules, "git config core.pager cat") == "ask"
+    assert decide(rules, "GIT_EDITOR=x git commit") == "ask"

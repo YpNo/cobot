@@ -6780,7 +6780,18 @@ START_VARIABLES = (
     # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
     # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
     # by their prefix, START_PREFIXES
-    "CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE".split()
+    "CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE "
+    # the API endpoints Claude Code sends prompts, code and the transcript to (spec gate-f58, T07,
+    # F-66: the owner, "Ask on both"); read from the 2.1.311 binary. HTTP(S)_PROXY moves every
+    # program's traffic and is set daily, so it is left out
+    "ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_BEDROCK_MANTLE_BASE_URL "
+    "ANTHROPIC_VERTEX_BASE_URL ANTHROPIC_FOUNDRY_BASE_URL ANTHROPIC_AWS_BASE_URL "
+    "ANTHROPIC_GOOGLE_CLOUD_BASE_URL "
+    # T07 review: a socket the requests go over, a profile or its folder (a gateway's baseUrl),
+    # the provider's own resource or project, and the TLS trust that lets a proxy read the traffic;
+    # AWS_ENDPOINT_URL* is set daily for local AWS work and is left out
+    "ANTHROPIC_UNIX_SOCKET ANTHROPIC_CONFIG_DIR ANTHROPIC_PROFILE ANTHROPIC_FOUNDRY_RESOURCE "
+    "ANTHROPIC_VERTEX_PROJECT_ID NODE_EXTRA_CA_CERTS NODE_TLS_REJECT_UNAUTHORIZED".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
@@ -6840,6 +6851,10 @@ def shell_start_variable(command: str) -> Verdict:
         found = "an exported name the command computes"
     if found is None:
         return Verdict(None, None, "no rule matched")
+    if found.startswith(("ANTHROPIC_", "NODE_EXTRA_CA", "NODE_TLS")):
+        return Verdict(
+            ASK, None, f"{found} sends Claude Code's prompts and transcript somewhere the command names"
+        )
     return Verdict(ASK, None, f"{found} makes a program read a file or run text the gate does not see")
 
 

@@ -231,13 +231,23 @@ Claude Code started from Bash (.agent/specs/gate-f58.md), in both runtimes:
   `.mcp.json` on disk asks, as the written-out word does (`tee ~/.claude.js?n`, `tee
   .mc?.json`). Without `dotglob`, `ls *` and `cat *.json` reach no dotfile and stay silent.
   Friction: `ls ~/.c*` and `du -sh ~/.*` ask.
-- **Claude Code changing itself.** `claude install`, `update`, `upgrade`, `purge`, `import` and
-  `auto-mode reset` ask.
+- **Claude Code changing itself.** `claude install`, `update`, `upgrade`, `purge`, `import`,
+  `auto-mode reset` and `setup-token` ask, and so do `claude auth login`, `auth logout`, and `rm`
+  with `--discard-unpushed` or `--force-remove-worktree`. Their `--help` stays silent.
+- **Where Claude Code's traffic goes.** Setting an API endpoint asks:
+  - `ANTHROPIC_BASE_URL`, and the Bedrock, Bedrock Mantle, Vertex, Foundry, AWS and Google Cloud
+    `_BASE_URL` variants;
+  - `ANTHROPIC_UNIX_SOCKET`, `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`,
+    `ANTHROPIC_FOUNDRY_RESOURCE` and `ANTHROPIC_VERTEX_PROJECT_ID`;
+  - the TLS trust a proxy needs to read the traffic: `NODE_EXTRA_CA_CERTS` and
+    `NODE_TLS_REJECT_UNAUTHORIZED`.
+
+  `HTTPS_PROXY` alone stays silent: it is set daily, and the proxy sees only TLS it cannot read.
 
 Not covered, accepted by the owner: a copy or link of the binary or of `cli.js` under another
 name (the gate reads names, not files); a start variable already in the gate's own environment.
-Also not covered: `ANTHROPIC_BASE_URL` set for a nested session (F-66), and `dotglob` turned on
-in the command before a glob that reaches `.mcp.json`.
+Also not covered: `AWS_ENDPOINT_URL*` (set daily for local AWS work), and `dotglob` turned on in
+the command before a glob that reaches `.mcp.json`.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

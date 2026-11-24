@@ -483,6 +483,66 @@ def test_story7_otherSubcommands_staySilent(rules, project, command):
     assert decide(rules, command) is None
 
 
+# ---------------------------------------------------------------- T07: F-66 and F-69 (owner: "Ask on both")
+
+API_ASK = [
+    "ANTHROPIC_BASE_URL=https://h claude -p x",
+    "export ANTHROPIC_BASE_URL=https://h; claude",
+    "env ANTHROPIC_BEDROCK_BASE_URL=https://h claude",
+    "ANTHROPIC_BEDROCK_MANTLE_BASE_URL=https://h claude",
+    "ANTHROPIC_VERTEX_BASE_URL=https://h claude",
+    "ANTHROPIC_FOUNDRY_BASE_URL=https://h claude",
+    "ANTHROPIC_AWS_BASE_URL=https://h claude",
+    "ANTHROPIC_GOOGLE_CLOUD_BASE_URL=https://h claude",
+    # T07 review
+    "ANTHROPIC_UNIX_SOCKET=/tmp/x.sock claude -p x",
+    "ANTHROPIC_CONFIG_DIR=/tmp/c claude -p x",
+    "ANTHROPIC_PROFILE=x claude -p x",
+    "HTTPS_PROXY=http://h:8080 NODE_EXTRA_CA_CERTS=/tmp/ca.pem claude -p x",
+    "NODE_TLS_REJECT_UNAUTHORIZED=0 claude -p x",
+    "ANTHROPIC_FOUNDRY_RESOURCE=x claude",
+    "ANTHROPIC_VERTEX_PROJECT_ID=x claude",
+]
+SUBCOMMAND_ASK = [
+    "claude auth login",
+    "claude auth login --sso",
+    "claude auth logout",
+    "claude -- auth logout",
+    "claude rm abc --discard-unpushed x@w1",
+    "claude rm abc --discard-unpushed=x@w1",
+    "claude rm abc --force-remove-worktree w1",
+]
+T07_FRICTION = [
+    "claude auth status",
+    "claude rm abc",
+    "echo $ANTHROPIC_BASE_URL",
+    "HTTPS_PROXY=http://h curl x",
+    # T07 review: help only
+    "claude auth login --help",
+    "claude auth logout -h",
+    "claude rm --discard-unpushed --help",
+]
+
+
+def test_t07_apiVariable_reasonSaysWhereTrafficGoes(rules, project):
+    assert "transcript" in verdict(rules, "ANTHROPIC_BASE_URL=https://h claude -p x").note
+
+
+@pytest.mark.parametrize("command", API_ASK)
+def test_t07_apiEndpointVariable_asks(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", SUBCOMMAND_ASK)
+def test_t07_authAndDiscardingRm_ask(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", T07_FRICTION)
+def test_t07_friction_staysSilent(rules, project, command):
+    assert decide(rules, command) is None
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [
@@ -492,6 +552,8 @@ AGY_ROWS = [
     ("CLAUDE_CODE_SIMPLE=1 claude -p x", "force_ask"),
     ("volta run claude mcp add x", "force_ask"),
     ("claude purge", "force_ask"),
+    ("ANTHROPIC_BASE_URL=https://h claude -p x", "force_ask"),
+    ("claude auth logout", "force_ask"),
     ("claude -p x --model sonnet", "allow"),
     ("claude plugin list", "allow"),
 ]

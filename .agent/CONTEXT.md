@@ -21,7 +21,7 @@ All exit 0 on 2026-11-24.
 
 | purpose | command |
 |---|---|
-| tests, coverage gate (98.35 %, 6067 tests) | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` |
+| tests, coverage gate (98.35 %, 6099 tests) | `uv run --no-project --python 3.13 --with pytest==9.2.0 --with pytest-cov==7.1.0 pytest --cov=plugins/cobot/bin --cov-fail-under=85` |
 | lint | `uvx ruff@0.17.6 check . && uvx ruff@0.17.6 format --check .` |
 | shell lint | `uvx --from shellcheck-py shellcheck install.sh plugins/cobot/hooks/*.sh scripts/*.sh scripts/spikes/*.sh plugins/cobot/evals/*/fixture.sh` |
 | markdown lint | `npx --yes markdownlint-cli2@0.24.2 "**/*.md"` |

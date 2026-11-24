@@ -459,3 +459,11 @@ Proof: full suite with coverage 98.35 %, 6067 passed; ruff, shellcheck, markdown
 Open: F-66 (ANTHROPIC_BASE_URL), F-69 (auth login and logout, rm --discard-unpushed) for the owner; F-67 and F-68 accepted (Q4, Q5); the 2.1.322 option diff and the bypass-mode spike not run.
 Next: the owner verifies and pushes security/gate-f58.
 verified: tree ec3b62d34f8c1ed06203cbd4c1fa9b68ae3f4ec7 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — gate-f58 T07: API endpoints and the auth and rm subcommands ask (F-66, F-69)
+Changed: START_VARIABLES gains ANTHROPIC_BASE_URL and its BEDROCK, BEDROCK_MANTLE, VERTEX, FOUNDRY, AWS and GOOGLE_CLOUD base URLs (each sends the prompts, code and transcript where the command names; read from the 2.1.311 binary), and, from the bypass review, ANTHROPIC_UNIX_SOCKET, ANTHROPIC_CONFIG_DIR, ANTHROPIC_PROFILE, ANTHROPIC_FOUNDRY_RESOURCE, ANTHROPIC_VERTEX_PROJECT_ID, NODE_EXTRA_CA_CERTS and NODE_TLS_REJECT_UNAUTHORIZED; their ask says where the traffic goes. subcommand_reason asks on claude auth login and logout and on rm with --discard-unpushed or --force-remove-worktree; --help stays silent. Docs, CHANGELOG; FINDINGS F-66 and F-69 closed; spec Converge records the owner's answer.
+Why: the owner on F-66 and F-69, relayed verbatim: Ask on both.
+Proof: full suite with coverage 98.35 %, 6099 passed; tests/test_gate_f58.py 263 passed; ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents clean. Bypass review SOUND WITH CHANGES (3 MAJOR, 1 MINOR), each a test row.
+Open: left out on purpose, HTTPS_PROXY and ALL_PROXY alone (set daily, TLS unread) and AWS_ENDPOINT_URL* (set daily for local AWS work).
+Next: the owner verifies and pushes PR 85.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents

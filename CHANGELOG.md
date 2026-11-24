@@ -263,6 +263,10 @@ All notable changes to this project are documented here. The format follows
     read as `claude`.
   - A glob that matches `~/.claude.json` or `.mcp.json` on disk asks, as the written-out word
     does. `claude install`, `update`, `upgrade`, `purge`, `import` and `auto-mode reset` ask.
+  - Setting an API endpoint for Claude Code asks: `ANTHROPIC_BASE_URL` and its provider
+    variants, `ANTHROPIC_UNIX_SOCKET`, `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, and the TLS
+    trust a proxy needs (`NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`). `claude auth
+    login`, `auth logout` and `claude rm --discard-unpushed` ask (F-66, F-69).
   - Fixed on the way: a quoted `;` and an arithmetic assignment no longer hide a start variable
     (`export X='a;b' BASH_ENV`, `((a=1,BASH_ENV=1))`).
   - Accepted by the owner: copies of the binary under another name; a start variable already in

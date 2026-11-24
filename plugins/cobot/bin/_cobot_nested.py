@@ -87,6 +87,7 @@ SUBCOMMANDS = frozenset(
     "respawn rm setup-token stop kill ultrareview update upgrade help".split()
 )
 SESSION_SUBCOMMANDS = frozenset({"agents"})
+DISCARDING_RM = frozenset({"--discard-unpushed", "--force-remove-worktree"})  # ``claude rm --help``
 # the subcommands that change Claude Code itself (spec gate-f58, story 7, Q7)
 SELF_CHANGING = {
     "install": "replaces the binary every later session and hook runs under",
@@ -169,8 +170,14 @@ def subcommand_reason(subcommand: str, rest: list[str]) -> str | None:
     if subcommand in SELF_CHANGING:
         return f"claude {subcommand} {SELF_CHANGING[subcommand]}"
     verb = next((word for word in rest if not word.startswith("-")), None)
+    if {"-h", "--help"} & set(rest):  # help only (T07 review)
+        return None
     if subcommand == "auto-mode" and verb == "reset":
         return "claude auto-mode reset resets the auto mode classifier's configuration"
+    if subcommand == "auth" and verb in ("login", "logout"):  # T07, F-69
+        return f"claude auth {verb} changes the account and credentials every later session uses"
+    if subcommand == "rm" and any(word.split("=", 1)[0] in DISCARDING_RM for word in rest):
+        return "claude rm drops a worktree's unpushed commits or the worktree itself"
     return None
 
 

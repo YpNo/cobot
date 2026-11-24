@@ -434,3 +434,22 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   - **Found by the coverage run:** under coverage, `cat */README.md` asked. An MCP row met the
     lexical check, so the folder was listed and the glob budget that the `never` rows need ran
     out. `names_meet` now keeps only rows whose last segment can meet the glob's.
+- 2026-11-24, the owner on F-66 and F-69 (relayed verbatim): "Ask on both". T07 on PR 85.
+- T07 build.
+  - **F-66.** `START_VARIABLES` gains the seven API endpoint variables the 2.1.311 binary reads:
+    `ANTHROPIC_BASE_URL` and the `_BEDROCK_`, `_BEDROCK_MANTLE_`, `_VERTEX_`, `_FOUNDRY_`, `_AWS_`
+    and `_GOOGLE_CLOUD_` base URLs. Each sends the prompts, the code and the transcript to the
+    endpoint the command names. The ask's reason says so.
+  - **F-69.** `subcommand_reason` asks on `auth login`, `auth logout`, and `rm` with
+    `--discard-unpushed` or `--force-remove-worktree`. F-69 named both options, and the owner
+    answered on the finding. Help stays silent.
+  - **Bypass review** (SOUND WITH CHANGES, 3 MAJOR, 1 MINOR), each a test row. Added:
+    - `ANTHROPIC_UNIX_SOCKET` (the requests go over the socket);
+    - `ANTHROPIC_CONFIG_DIR` and `ANTHROPIC_PROFILE` (a profile can name a gateway's baseUrl,
+      inferred from the binary);
+    - `NODE_EXTRA_CA_CERTS` and `NODE_TLS_REJECT_UNAUTHORIZED` (with them, a proxy reads the
+      traffic);
+    - `ANTHROPIC_FOUNDRY_RESOURCE` and `ANTHROPIC_VERTEX_PROJECT_ID`.
+
+    Left out: `HTTPS_PROXY`/`ALL_PROXY` alone (set daily; the proxy sees only TLS) and
+    `AWS_ENDPOINT_URL*` (set daily for local AWS work).

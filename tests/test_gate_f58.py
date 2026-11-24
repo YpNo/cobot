@@ -219,6 +219,48 @@ def test_story2_reason_namesTheOption(rules, project):
     assert "--bare" in verdict(rules, "claude -p x --bare").note
 
 
+# ---------------------------------------------------------------- story 3: the start variables
+
+VARIABLE_ASK = [
+    "CLAUDE_CODE_SIMPLE=1 claude -p x",
+    "CLAUDE_CODE_SAFE_MODE=1 claude",
+    "CLAUDE_CODE_RESTRICTED=1 claude",
+    "export CLAUDE_CODE_SIMPLE=1; claude -p x",
+    "env CLAUDE_CODE_SIMPLE=1 claude",
+    "CLAUDE_CONFIG_DIR=/tmp/c claude -p x",
+    "CLAUDE_CODE_PLUGIN_DIRS=/tmp/p claude -p x",
+    "CLAUDE_CODE_MANAGED_SETTINGS_PATH=/tmp/s.json claude -p x",
+    "CLAUDE_CODE_SHELL_PREFIX=/tmp/w claude",
+    "CLAUDE_ENV_FILE=/tmp/e claude",
+    "declare -x CLAUDE_CODE_PLUGIN_CACHE_DIR=/tmp/c",
+    "export CLAUDE_{CODE_SIMPLE,X}=1; claude",
+    # T03 review: a quoted separator, an arithmetic assignment
+    "export X='a;b' CLAUDE_CODE_SIMPLE; claude",
+    "export X=';' CLAUDE_CODE_SIMPLE; claude -p x",
+    "export X='a|b' BASH_ENV",
+    "((a=1,CLAUDE_CODE_SIMPLE=1)); claude -p x",
+    "let a,CLAUDE_CODE_SHELL_PREFIX=1",
+    "let x=CLAUDE_CODE_SIMPLE=1",
+    "a[CLAUDE_CODE_SIMPLE=1]=x",
+    "((a=1,BASH_ENV=1))",
+]
+VARIABLE_FRICTION = [
+    "echo $CLAUDE_CODE_SIMPLE",
+    "printenv CLAUDE_CONFIG_DIR",
+    "CLAUDE_MODEL=x ls",  # make would ask anyway: it is opaque
+]
+
+
+@pytest.mark.parametrize("command", VARIABLE_ASK)
+def test_story3_claudeStartVariable_asks(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", VARIABLE_FRICTION)
+def test_story3_readingTheVariables_staysSilent(rules, project, command):
+    assert decide(rules, command) is None
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [

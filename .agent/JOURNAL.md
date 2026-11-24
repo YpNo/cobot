@@ -420,3 +420,11 @@ Proof: full suite green; tests/test_gate_f58.py 118 passed; ruff clean. Bypass r
 Open: the 2.1.322 diff (not installed here) and the bypass-mode spike (owner's terminal) not run; the unknown-option ask covers the first, rows 3 and 5 ask either way.
 Next: T03, the CLAUDE_CODE_* start variables.
 verified: tree 18b588489eab175cd581e8fd61e08abd93ecfc2d · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T03: Claude Code's start variables (story 3, Q8)
+Changed: CLAUDE_CONFIG_DIR and CLAUDE_ENV_FILE join START_VARIABLES and every CLAUDE_CODE_ name asks by prefix (START_PREFIXES), so CLAUDE_CODE_SIMPLE=1, CLAUDE_CODE_SAFE_MODE, CLAUDE_CODE_RESTRICTED, CLAUDE_CODE_PLUGIN_DIRS and CLAUDE_CODE_SHELL_PREFIX set in a command ask. The setter scan blanks a quoted ; & | first, and an assignment after a comma, an equals sign or a bracket counts (both older gaps, for BASH_ENV too). FINDINGS F-66 (ANTHROPIC_BASE_URL).
+Why: the owner's Q8; T02 review's environment blocker.
+Proof: full suite green; F-55, F-57 and F-58 files 705 passed; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, older), each a test row.
+Open: known costs, a command naming a start variable as text asks, CLAUDE_CODE_USE_VERTEX=1 claude asks.
+Next: T04, the launchers and the cli.js name row.
+verified: tree f9fc6c4c214ceffef95732933c3d86c4737d5e60 · full suite, F-55 F-57 F-58 files, ruff

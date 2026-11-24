@@ -367,3 +367,15 @@ protected file), so it moved to Unchanged. Folded into revision 2:
     worktree) stays silent;
   - MINOR, `--agents` JSON with a wide `permissionMode` asks; `--setting-sources` keeping both
     `user` and `project` stays silent. `--allowedTools Bash` stays silent (Q2, spike B).
+- T03 build: `CLAUDE_CONFIG_DIR` and `CLAUDE_ENV_FILE` join `START_VARIABLES`, and every
+  `CLAUDE_CODE_` name asks by prefix (`START_PREFIXES`). Checkpoint 4 read
+  code.claude.com/docs/en/env-vars, partly: `CLAUDE_CODE_SIMPLE` is `--bare`,
+  `CLAUDE_CODE_SAFE_MODE` is `--safe-mode`, `CLAUDE_CODE_PLUGIN_DIRS` loads plugins,
+  `CLAUDE_CODE_SHELL_PREFIX` wraps every shell command Claude Code spawns, hooks included; the
+  binary reads `CLAUDE_CODE_RESTRICTED` as `--restricted`. Bypass review (SOUND WITH CHANGES, 2
+  MAJOR, both older than this branch, for `BASH_ENV` too), each a test row: a quoted `;`, `&`
+  or `|` is blanked before the setter scan (`export X='a;b' NAME`); an assignment after a comma,
+  an equals sign or a bracket counts (`((a=1,NAME=1))`, `let`, `a[NAME=1]=x`). Known costs: a
+  command that only names a start variable as text asks (`grep -r 'export BASH_ENV'`, older);
+  `CLAUDE_CODE_USE_VERTEX=1 claude` asks (the prefix). Seen, outside Q8, **F-66**:
+  `ANTHROPIC_BASE_URL` set for a nested `claude` routes its context to another endpoint.

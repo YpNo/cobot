@@ -6646,7 +6646,11 @@ START_VARIABLES = (
     # code an interpreter loads or runs before its script (spec gate-f57, Q5; T05 review adds the
     # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
     "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
-    "PHP_INI_SCAN_DIR".split()
+    "PHP_INI_SCAN_DIR "
+    # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
+    # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
+    # by their prefix, START_PREFIXES
+    "CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE".split()
 )
 SHELL_ONLY_VARIABLES = ("ENV",)  # read by an interactive POSIX shell only; ``ENV=prod`` is common
 START_SETTERS = r"(?:export|read|readonly|declare|typeset|local|env)\s+(?:[^\s;&|]+\s+){0,256}?"
@@ -6659,11 +6663,18 @@ COMPUTED_EXPORT_RE = re.compile(
 )
 
 
-def sets_start_variable(text: str, name: str) -> bool:
-    """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``)."""
-    word = re.escape(name)
+START_PREFIXES = ("CLAUDE_CODE_",)  # every name under the prefix is a start variable (Q8)
+QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+
+
+def sets_start_variable(text: str, name: str, prefix: bool = False) -> bool:
+    """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``);
+    with ``prefix``, any name that starts with ``name``."""
+    word = re.escape(name) + (r"\w+" if prefix else "")
+    # after a comma, an equals sign or a bracket too: ``((a=1,NAME=1))``, ``let x=NAME=1``,
+    # ``a[NAME=1]=x`` assign it (spec gate-f58, T03 review)
     return bool(
-        re.search(rf"(?:^|[\s;&|(`]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
+        re.search(rf"(?:^|[\s;&|(`,=\[]){word}\+?=|(?:^|[\s;&|(`]){START_SETTERS}{word}(?=[\s=;&|)]|$)", text)
         or re.search(rf"printf\s+(?:-[^\s;&|]+\s+){{0,16}}-v\s*{word}\b", text)
         or re.search(rf"\b(?:declare|typeset|local)\b[^;&|\n]{{0,{ASSIGNER_SPAN}}}=\s*{word}\b", text)
     )
@@ -6671,10 +6682,15 @@ def sets_start_variable(text: str, name: str) -> bool:
 
 def shell_start_variable(command: str) -> Verdict:
     """A command that sets a variable naming a file a program will read, or text a shell will run,
-    asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too."""
-    text = re.sub(r"[\\'\"]", "", command)
+    asks. Matched with quotes and backslashes removed: ``export "BASH_ENV"=…`` sets it too. A
+    ``;``, ``&`` or ``|`` inside quotes is no separator, so it is blanked first: ``export X='a;b'
+    BASH_ENV`` still exports BASH_ENV (spec gate-f58, T03 review)."""
+    text = QUOTED_RE.sub(lambda quoted: re.sub(r"[;&|]", "_", quoted.group(0)), command)
+    text = re.sub(r"[\\'\"]", "", text)
     names = [*START_VARIABLES, *(SHELL_ONLY_VARIABLES if SHELL_HEAD_RE.search(text) else ())]
     found = next((name for name in names if sets_start_variable(text, name)), None)
+    if found is None:
+        found = next((f"{name}*" for name in START_PREFIXES if sets_start_variable(text, name, True)), None)
     if found is None and re.search(r"BASH_FUNC_\w+%%", text):
         found = "BASH_FUNC_"
     if found is None and LONG_SETTER_RE.search(text):

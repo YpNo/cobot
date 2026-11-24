@@ -600,3 +600,7 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
     - the `=` form in a value slot (`--initialize-fields=x`);
     - a canary row for `--max-cost`'s value shape.
   - Seen, older than this branch: **F-74**, the words after `claude mcp serve`.
+- T07 build: agy rows, one per story (`deny` for a deny and `force_ask` for an ask, `allow` for
+  friction), and `docs/configuration.md` for both runtimes. The CHANGELOG Security entry is
+  added. In FINDINGS, F-63, F-64, F-65 and F-70 are closed; F-71 to F-74 stay open for the
+  owner.

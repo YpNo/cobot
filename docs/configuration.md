@@ -103,7 +103,8 @@ rows its command meets (`find … -exec rm -rf {} +` asks like `rm -rf`, `fd -Hx
 `busybox <applet>` is judged as the applet; runners whose command the gate does not read ask
 like `xargs` (GNU `parallel` and its family, `watch`, `entr`, `watchexec`, `hyperfine`, `setsid`,
 `taskset`, `chrt`, `unbuffer`, `strace`, `pkexec`, `run0`, `systemd-run`, `unshare`, `firejail`,
-`script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`), reads such as `watch git status` included;
+`script`, `tmux`, `screen`, `pueue`, `tsp`, `nq`, and spec gate-f63-f65's editors, debuggers and
+launchers), reads such as `watch git status` included;
 a glob over a folder of more than 4 096 entries; every command run inside a protected folder.
 
 Where a file lands (spec gate-f56-f60):
@@ -195,10 +196,10 @@ Code the gate cannot read asks (.agent/specs/gate-f57.md), in both runtimes:
   does an exported name the command computes (`export $N=…`, `export NODE_{OPTIONS,X}=…`).
 
 Not covered: a script copied, linked or fetched into the project earlier (`curl -o d.py u &&
-python3 d.py`); a planted module (`PYTHONPATH`, `NODE_PATH`, `RUBYLIB`, `PERL5LIB`, `ruby -r
-json` with a planted `json.rb`); a loader variable of any program (`LD_PRELOAD`, F-65);
-other interpreters (`lua`, `Rscript`, `osascript`, `julia`); editors and debuggers that run
-commands (F-63); an interpreter copied under another name.
+python3 d.py`); a module planted inside the project (`ruby -r json` with a planted `json.rb`);
+other interpreters (`lua`, `Rscript`, `osascript`, `julia`); an interpreter copied under
+another name. Search paths outside the project, loader variables, and editors and debuggers
+are covered below (spec gate-f63-f65).
 
 Claude Code started from Bash (.agent/specs/gate-f58.md), in both runtimes:
 
@@ -246,8 +247,71 @@ Claude Code started from Bash (.agent/specs/gate-f58.md), in both runtimes:
 
 Not covered, accepted by the owner: a copy or link of the binary or of `cli.js` under another
 name (the gate reads names, not files); a start variable already in the gate's own environment.
-Also not covered: `AWS_ENDPOINT_URL*` (set daily for local AWS work), and `dotglob` turned on in
-the command before a glob that reaches `.mcp.json`.
+Also not covered: `AWS_ENDPOINT_URL*` (set daily for local AWS work).
+
+Editors, debuggers, newlines, loader variables and dotglob (.agent/specs/gate-f63-f65.md), in
+both runtimes:
+
+- **Newlines are read as bash reads them.** A quoted newline stays in its word, and an escaped
+  backslash before a newline ends the line: `echo a\\<newline>rm -rf /` is refused, as
+  `rm -rf /` is. In double quotes, `\$` and `` \` `` are `$` and `` ` ``, so a `bash -c` string
+  reaches its reader as bash passes it. A Makefile recipe line ending in `\\` ends there.
+- **Editors, debuggers, profilers and launchers ask on every run.** These run commands from
+  their options, their stdin, a project file they read (`.exrc`, `.gdbinit`, `.dir-locals.el`)
+  or a program they are given:
+  - the vi family, emacs, `ed`, `nano`, `micro`, `hx`, `kak`, and Debian's `editor`,
+    `sensible-editor` and `vipe`;
+  - `gdb`, `lldb`, `dlv`, `jdb`, `r2` and `rizin`, and `frida`;
+  - `valgrind`, `ltrace`, `perf`, `rr`, `bpftrace`, and glibc's `sotruss`, `xtrace` and
+    `memusage`;
+  - `fakeroot`, `eatmydata`, `nsenter`, `setpriv`, `prlimit`, `xvfb-run`, `ssh-agent`,
+    `torsocks`, `proxychains`, `faketime`, `numactl`, `ifne`, `trickle`, `cpulimit`, `cgexec`,
+    `systemd-inhibit`, `runuser`, `sg` and `capsh`;
+  - the dynamic loader run by path.
+
+  Versioned names count (`vim.basic`, `lldb-18`, `perf_6.12`). `--version` or `--help` alone
+  stays silent, and so do `perf list` and `perf report` without `--objdump`. A launcher's inner
+  deny becomes an ask (`valgrind rm -rf /`), as with `strace`. Friction: a project script named
+  `./editor` asks.
+- **Loader variables ask.** Setting one in the command asks:
+  - `LD_*` and `DYLD_*`, `GCONV_PATH`, `OPENSSL_CONF`, `OPENSSL_MODULES` and `OPENSSL_ENGINES`;
+  - `JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS` and `JDK_JAVA_OPTIONS`;
+  - `DOTNET_STARTUP_HOOKS`, `DOTNET_ADDITIONAL_DEPS` and the CoreCLR profiler variables;
+  - `LUA_INIT`, `PERL5DB` and Erlang's `ERL_*FLAGS`;
+  - the GIO, GTK, Qt, GStreamer, Vulkan, Mesa and gdk-pixbuf module folders;
+  - `PERF_CONFIG`.
+- **Search paths outside the project ask.** These are `LD_LIBRARY_PATH`, the `DYLD_*_PATH`
+  names, `PYTHONPATH`, `PYTHONUSERBASE`, `PERL5LIB`, `RUBYLIB`, `NODE_PATH`, `LUA_PATH`,
+  `CLASSPATH`, `GEM_PATH`, `GEM_HOME` and `ERL_LIBS`.
+  - One asks when an entry lies outside the project, from the folder the command runs in, or
+    cannot be placed (an expansion, `~`, `~-`).
+  - `PYTHONPATH=. pytest`, `PYTHONPATH=$PWD/src pytest`, `PYTHONPATH=src:$PYTHONPATH` and
+    `CLASSPATH=…:lib/*` stay silent.
+  - They are read from the assignment, so `grep 'PYTHONPATH=' Makefile` stays silent.
+- **Command variables and `git -c` ask.**
+  - `git -c` or `--config-env` with a key whose value git runs (`core.fsmonitor`,
+    `core.sshCommand`, `core.hooksPath`) asks, as `git config` does. So does
+    `--exec-path=<dir>`.
+  - So do `GIT_SSH_COMMAND`, `GIT_SSH`, `GIT_PROXY_COMMAND`, `GIT_EXEC_PATH`, `GIT_ASKPASS`,
+    `SSH_ASKPASS`, `GIT_EXTERNAL_DIFF`, `GIT_TEMPLATE_DIR`, the `GIT_CONFIG_*` variables,
+    `LESSOPEN` and `LESSCLOSE`.
+  - `EDITOR`, `VISUAL`, `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` ask unless set to nothing, `true`,
+    `:` or `cat`.
+  - Pagers are left out (`GIT_PAGER`, `PAGER`, `core.pager`), because no pager runs without a
+    terminal.
+- **dotglob.** A command that turns on bash's `dotglob` or zsh's `globdots` asks when a glob
+  matches `~/.claude.json` or `.mcp.json` on disk. That covers `shopt -s`, `setopt`, a shell's
+  `-O` or `-o` at any depth, `GLOBIGNORE`, and zsh's inversions. `shopt -s dotglob; ls *.md`
+  stays silent where nothing matches.
+- **Claude Code 2.1.331.** `--managed-settings-in-initialize`, `--initialize-fields` and
+  `--routine` ask wherever they sit, value slots included. `--trusted-folder`, the gateway
+  options, `--web` and `--discard` ask with their own reasons. `--max-cost` stays silent.
+
+Not covered: an inherited loader variable or `GLOBIGNORE` (the F-59 class); build-tool variables
+(`GOFLAGS`, `RUSTC_WRAPPER`, `MAVEN_OPTS`), since a build runs repository code already;
+another repository's config (`git -C /tmp/x status`); a whole-folder read or copy reaching
+`.mcp.json` (`grep -r x .`, `cp -r x/. .`); a git verb's own options (`git clone -c`,
+`--upload-pack`) and `rsync -e`, F-72; whether agy's `run_command` has a terminal, F-71.
 
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern

@@ -8,6 +8,8 @@ inside a quoted row is a newline the shell passes in the word.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 
@@ -653,3 +655,41 @@ def test_story7_unreadOptions_keepTheUnknownAsk(rules, project):
 
 def test_story7_friction_staysSilent(rules, project):
     assert_all(rules, NESTED_FRICTION, None)
+
+
+# ---------------------------------------------------------------- story 9: both runtimes
+
+AGY_ROWS = [
+    ("echo a\\\\\nrm -rf /", "deny"),  # story 3
+    ("vim -c '!x' f", "force_ask"),  # story 1
+    ("valgrind rm -rf /", "force_ask"),  # story 2
+    ("fakeroot rm -rf /", "force_ask"),  # story 8
+    ("LD_PRELOAD=/tmp/x.so ls", "force_ask"),  # story 4
+    ("PYTHONPATH=/tmp python3 x.py", "force_ask"),
+    ("git -c core.fsmonitor=x status", "force_ask"),  # story 6
+    ("GIT_SSH_COMMAND=x git fetch", "force_ask"),
+    ("claude --model --managed-settings-in-initialize -p x", "force_ask"),  # story 7
+    ("PYTHONPATH=. pytest", "allow"),
+    ("vim --version", "allow"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), AGY_ROWS)
+def test_story9_agy_sameJudgement(rules, project, monkeypatch, command, expected):
+    """ADR-0007: under agy, run_command reaches the same judgement; ``allow`` there is no opinion."""
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    (project / ".agent").mkdir()
+    (project / ".agent" / "cobot.rules").write_text("")
+    call = {"id": "t1", "name": "run_command", "args": {"CommandLine": command, "Cwd": str(project)}}
+    body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(project)]}
+    assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == expected
+
+
+def test_story9_agy_dotglob_sameJudgement(rules, with_server_lists, monkeypatch):  # story 5
+    monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
+    (with_server_lists / ".agent").mkdir()
+    (with_server_lists / ".agent" / "cobot.rules").write_text("")
+    args = {"CommandLine": "shopt -s dotglob; cat *", "Cwd": str(with_server_lists)}
+    call = {"id": "t1", "name": "run_command", "args": args}
+    body = {"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(with_server_lists)]}
+    assert json.loads(rules.gate_agy(json.dumps(body)))["decision"] == "force_ask"

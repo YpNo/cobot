@@ -531,3 +531,11 @@ Proof: tests/test_gate_f63_f65.py and test_gate_f58.py 316 passed; ruff clean. B
 Open: --max-cost's value shape comes from the relayed diff only (a canary row holds it); F-74.
 Next: T07, agy rows, docs, CHANGELOG, FINDINGS.
 verified: tree 5bc8b5070340263eacddcc0dc5a556350e2e6c33 · focused tests, ruff
+
+## 2026-11-24 — gate-f63-f65 T07: both runtimes, docs, CHANGELOG, FINDINGS (story 9)
+Changed: agy rows, one per story, through gate_agy's run_command; docs/configuration.md gains spec gate-f63-f65's section for both runtimes and drops the Not covered lines it closes; CHANGELOG Security entry; FINDINGS F-63, F-64, F-65 and F-70 closed, F-71 to F-74 open for the owner.
+Why: the orchestrator's build brief: docs for both runtimes, CHANGELOG Security and FINDINGS rows.
+Proof: tests/test_gate_f63_f65.py 64 passed; ruff and markdownlint clean.
+Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words).
+Next: the wrap: code and security reviews, then the full checks.
+verified: tree 8ac0b97e753928b0cf2a5403f2e0544215a7cc81 · focused tests, ruff, markdownlint

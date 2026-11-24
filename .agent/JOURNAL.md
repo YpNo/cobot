@@ -523,3 +523,11 @@ Proof: tests/test_gate_f63_f65.py 37 passed; full suite in parallel green but fo
 Open: the zsh rows rest on zsh's manual (zsh is not installed); a text naming GLOBIGNORE= asks.
 Next: T06, the 2.1.331 nested-claude options.
 verified: tree 34da0efb70b54c8d6a4e378b5e5d110c66f0c674 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T06: the 2.1.331 nested-claude options (story 7, Q7)
+Changed: _cobot_nested.py's table gains the 2.1.331 options the ci-claude-pin diff names and --routine; --managed-settings-in-initialize, --initialize-fields and --trusted-folder are FOREIGN; --organization-gateway and --gateway-json are GATEWAYS (the F-66 reason); --web and --routine are ELSEWHERE; --discard is DISCARDING; --max-cost is silent; the ten unread options keep the unknown-option ask. RAW_SCANNED gains the two initialize options and --routine, read up to a word's =. FINDINGS F-74 (claude mcp serve's trailing words, older).
+Why: the owner's Q7, relayed verbatim: All as recommended. claude --model --managed-settings-in-initialize -p x reached no decision.
+Proof: tests/test_gate_f63_f65.py and test_gate_f58.py 316 passed; ruff clean. Bypass review SOUND (2 MINOR), each a test row.
+Open: --max-cost's value shape comes from the relayed diff only (a canary row holds it); F-74.
+Next: T07, agy rows, docs, CHANGELOG, FINDINGS.
+verified: tree 5bc8b5070340263eacddcc0dc5a556350e2e6c33 · focused tests, ruff

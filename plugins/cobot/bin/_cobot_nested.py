@@ -28,7 +28,9 @@ _LONG_BY_SHAPE = {
         "--prune --publish-report --push --replace --replay-user-messages --reply-on-resume "
         "--resolve-only --restricted --safe-mode --scaffold --session-mirror --session-tunnel --sso "
         "--status --strict-mcp-config --strict --text --tmux --trust-plugin --trust-workspace "
-        "--values-stdin --verbose --xaa --yes --bg --background --help --version"
+        "--values-stdin --verbose --xaa --yes --bg --background --help --version "
+        # 2.1.331 (spec gate-f63-f65, story 7; the ci-claude-pin diff)
+        "--discard --gateway-json --managed-settings-in-initialize --organization-gateway --web"
     ),
     REQUIRED: (
         "--ablation --accept-command --advisor --agent-color --agent-id --agent-name --agent --agents "
@@ -48,7 +50,9 @@ _LONG_BY_SHAPE = {
         "--resume-session-at --rewind-files --runner-declares --runs --scope --sdk-url --session-id "
         "--setting-sources --settings --system-prompt-file --system-prompt --system-prompt-snapshot "
         "--task-budget --teammate-mode --team-name --thinking-display --thinking --threshold "
-        "--timeout --transport --watch-artifact-no-autoreact --watch-artifact --workload"
+        "--timeout --transport --watch-artifact-no-autoreact --watch-artifact --workload "
+        # 2.1.331, and --routine (in both binaries, missing here before)
+        "--initialize-fields --max-cost --routine --trusted-folder"
     ),
     OPTIONAL: (
         "--cloud --data-size --debug --from-pr --json --prompt-suggestions --rc --remote-control "
@@ -100,9 +104,16 @@ SELF_CHANGING = {
 }
 GATE_OFF = frozenset({"--bare", "--safe-mode", "--setting-sources", "--restricted"})
 # read by Claude Code in process.argv before commander, so a value slot does not hide them
-RAW_SCANNED = frozenset({"--bare", "--safe-mode", "--restricted"})
+RAW_SCANNED = frozenset(
+    {"--bare", "--safe-mode", "--restricted", "--managed-settings-in-initialize", "--initialize-fields"}
+    | {"--routine"}  # the fleet check finds it, and --routine=<name>, in every word (ci-claude-pin)
+)
 FOREIGN = frozenset(
     {
+        # 2.1.331 (Q7): settings from the initialize message, and a folder trusted without the person
+        "--managed-settings-in-initialize",
+        "--initialize-fields",
+        "--trusted-folder",
         "--project-config-root",  # project settings, .mcp.json and .claude trees from elsewhere
         "--managed-settings",
         "--permission-prompt-tool",
@@ -119,7 +130,10 @@ WIDE_MODES = frozenset({"bypassPermissions", "auto", "dontAsk"})
 MODE_OPTIONS = frozenset({"--permission-mode", "--inherit-permission-mode"})
 ELSEWHERE = frozenset(
     {"--cloud", "--environment", "--remote-control", "--rc", "--remote", "--teleport", "--desktop"}
+    | {"--web", "--routine"}  # 2.1.331 (Q7): a web session, a routine run in the cloud
 )
+GATEWAYS = frozenset({"--organization-gateway", "--gateway-json"})  # 2.1.331 (Q7), the F-66 class
+DISCARDING = frozenset({"--discard"})  # 2.1.331 (Q7), the F-69 class
 NAMES = frozenset({"claude", "claude-code"})
 Folders = list[str] | tuple[str, ...] | None  # where a segment may run; None when unknown
 
@@ -134,9 +148,9 @@ def nested_reason(argv: list[str], folders: Folders = HERE) -> str | None:
     if not argv or os.path.basename(argv[0]).lower() not in NAMES:
         return None
     raw = argv[1 : argv.index("--")] if "--" in argv else argv[1:]
-    scanned = next((word for word in raw if word in RAW_SCANNED), None)
+    scanned = next((name for name in (word.split("=", 1)[0] for word in raw) if name in RAW_SCANNED), None)
     if scanned:  # Claude Code reads these in process.argv itself, wherever they sit (T02 review)
-        return f"claude {scanned} starts a session without cobot's gate (its hooks do not load)"
+        return option_reason(scanned, [])
     words, index, subcommand = argv[1:], 0, None
     while index < len(words) and words[index] != "--":
         word = words[index]
@@ -238,6 +252,10 @@ def option_reason(name: str, values: list[str], folders: Folders = HERE) -> str 
         return "claude --add-dir opens HOME, the config dir or a .claude folder to a nested session"
     if name in ELSEWHERE:
         return f"claude {name} runs or reaches a session outside this machine's gate"
+    if name in GATEWAYS:
+        return f"claude {name} sends the session's prompts and transcript through a gateway"
+    if name in DISCARDING:
+        return f"claude {name} may drop work: unpushed commits or a worktree"
     return None
 
 

@@ -594,3 +594,62 @@ def test_story6_unchanged_gitConfigAndAliases_ask(rules, project):
     assert decide(rules, "git -c alias.st='!x' st") == "ask"
     assert decide(rules, "git config core.pager cat") == "ask"
     assert decide(rules, "GIT_EDITOR=x git commit") == "ask"
+
+
+# ---------------------------------------------------------------- story 7: the 2.1.331 options (Q7)
+
+NESTED_REASONS = {
+    # row 16: read from the raw argv, so a value slot does not hide them
+    "claude --model --managed-settings-in-initialize -p x": "brings settings",
+    "claude --model --initialize-fields -p x": "brings settings",
+    # row 17: each with its class's reason
+    "claude -p x --managed-settings-in-initialize": "brings settings",
+    "claude -p x --initialize-fields x": "brings settings",
+    "claude -p x --trusted-folder /tmp/x": "brings settings",
+    "claude -p x --organization-gateway": "gateway",
+    "claude -p x --gateway-json": "gateway",
+    "claude -p x --web": "outside this machine",
+    "claude -p x --routine r": "outside this machine",
+    "claude -p x --discard": "drop",
+    # the fleet check reads --routine from the raw argv too (ci-claude-pin, both binaries)
+    "claude --model --routine -p x": "outside this machine",
+    "claude --model --routine=r -p x": "outside this machine",
+    # T06 review: the = form in a value slot
+    "claude --model --initialize-fields=x -p x": "brings settings",
+}
+NESTED_UNKNOWN = [
+    # the ten whose meaning checkpoint 5 could not read keep the unknown-option ask
+    "claude -p x --event x",
+    "claude -p x --list x",
+    "claude -p x --metadata x",
+    "claude -p x --output x",
+    "claude -p x --path x",
+    "claude -p x --review-md x",
+    "claude -p x --lead-verify-key x",
+    "claude -p x --session-began-as-copy x",
+    "claude -p x --agents-view-if-allowed",
+    "claude -p x --hold-repository-while-parked",
+]
+NESTED_FRICTION = [
+    "claude -p x --max-cost 1",
+    "claude -p x --max-cost-usd 1",
+    "claude -p x --registry https://h",  # dropped by 2.1.331, kept for older installs
+    # T06 review, a canary: --max-cost takes a value (the relayed diff, not read in a binary here);
+    # if a later pin shows no value, this row must ask
+    "claude --max-cost --dangerously-skip-permissions -p x",
+]
+
+
+@pytest.mark.parametrize(("command", "reason"), NESTED_REASONS.items())
+def test_story7_newOptions_askWithTheirClass(rules, project, command, reason):
+    found = verdict(rules, command)
+    assert found.decision == "ask" and reason in found.note, (command, found.note)
+
+
+def test_story7_unreadOptions_keepTheUnknownAsk(rules, project):
+    for command in NESTED_UNKNOWN:
+        assert "does not know" in verdict(rules, command).note, command
+
+
+def test_story7_friction_staysSilent(rules, project):
+    assert_all(rules, NESTED_FRICTION, None)

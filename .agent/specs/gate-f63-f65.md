@@ -585,3 +585,18 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
       are read.
   - Known cost: a text that only names `GLOBIGNORE=` asks (`grep 'GLOBIGNORE=x' f; cat *`).
   - Seen, older than this branch: **F-73**, the gate's time on long commands.
+- T06 build.
+  - The 2.1.331 options join `_cobot_nested.py`'s table. `--managed-settings-in-initialize`,
+    `--initialize-fields` and `--trusted-folder` are `FOREIGN`. `--organization-gateway` and
+    `--gateway-json` are `GATEWAYS` (the F-66 reason), `--web` and `--routine` are
+    `ELSEWHERE`, and `--discard` is `DISCARDING`. `--max-cost` is known and silent.
+  - The ten unread options keep the unknown-option ask. Checkpoint 5 found no description for
+    them: the relayed diff names them, and no 2.1.331 binary is installed here.
+  - The ci-claude-pin session read `--routine` from both binaries (relayed). It takes a value,
+    and Claude Code's fleet check finds it, and `--routine=<name>`, in every word. So it joins
+    `RAW_SCANNED`, and the raw scan reads a word up to its `=`. `--bg` and `--background` are
+    found the same way but are silent anyway (F-58).
+  - Bypass review: SOUND (no BLOCKER or MAJOR; 2 MINOR; no regression), each a test row:
+    - the `=` form in a value slot (`--initialize-fields=x`);
+    - a canary row for `--max-cost`'s value shape.
+  - Seen, older than this branch: **F-74**, the words after `claude mcp serve`.

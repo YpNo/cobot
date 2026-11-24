@@ -428,3 +428,11 @@ Proof: full suite green; F-55, F-57 and F-58 files 705 passed; ruff clean. Bypas
 Open: known costs, a command naming a start variable as text asks, CLAUDE_CODE_USE_VERTEX=1 claude asks.
 Next: T04, the launchers and the cli.js name row.
 verified: tree f9fc6c4c214ceffef95732933c3d86c4737d5e60 · full suite, F-55 F-57 F-58 files, ruff
+
+## 2026-11-24 — gate-f58 T04: launchers and Claude Code's npm entry (stories 4 and 5)
+Changed: inner_version_runner joins WRAPPER_PARSERS for volta run, asdf exec, fnm exec, nodenv exec, nvm exec and run, n exec, run and use (global options before the verb, a version, a --; run and use read as node). npm explore is opaque; pnpx and dx join OPAQUE; uv tool run is opaque as uvx. strip_wrappers reads a command word ending in @anthropic-ai/claude-code/cli.js as claude.
+Why: F-58 rows 11 to 13: volta run claude mcp add x and pnpx @anthropic-ai/claude-code mcp add x reached no decision.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 181 passed; ruff clean. Bypass review SOUND WITH CHANGES (1 BLOCKER, 3 MAJOR, 1 MINOR), each a test row.
+Open: a copy or link of cli.js under another name, Q4's accepted residual.
+Next: T05, globs on protected files.
+verified: tree f762592555e393e0a5d32ffd439a5b6533987d33 · full suite, F-58 file, ruff

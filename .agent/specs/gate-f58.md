@@ -379,3 +379,14 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   command that only names a start variable as text asks (`grep -r 'export BASH_ENV'`, older);
   `CLAUDE_CODE_USE_VERTEX=1 claude` asks (the prefix). Seen, outside Q8, **F-66**:
   `ANTHROPIC_BASE_URL` set for a nested `claude` routes its context to another endpoint.
+- T04 build: `inner_version_runner` reads `volta run`, `asdf exec`, `fnm exec`, `nodenv exec`,
+  `nvm exec|run [version]` and `n exec|run|use <version>` (`run` and `use` run `node`), their
+  global options before the verb, a version and a `--`. Checkpoint 5 read the launchers' docs
+  (docs.volta.sh, asdf-vm.com, fnm's commands.md, nvm's README, partly). `npm explore` is opaque
+  (a shell in a package) rather than read, `pnpx` and `dx` are opaque (pnpm's and deno's docs
+  name them as aliases of `dlx` and `deno x`), `uv tool run` is opaque as `uvx` is.
+  `strip_wrappers` reads a command word ending in `@anthropic-ai/claude-code/cli.js` (or `.mjs`)
+  as `claude`, so its rows and the option reader apply. Bypass review (SOUND WITH CHANGES, 1
+  BLOCKER, 3 MAJOR, 1 MINOR), each a test row: `nvm exec 22 -- claude` (a `--` after the
+  version); `nvm run` read as `node`; fnm's and volta's global options before the verb; `nodenv`
+  and `n`. The MINOR, a copy or link of `cli.js` under another name, is Q4's accepted residual.

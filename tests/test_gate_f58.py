@@ -261,6 +261,74 @@ def test_story3_readingTheVariables_staysSilent(rules, project, command):
     assert decide(rules, command) is None
 
 
+# ---------------------------------------------------------------- stories 4 and 5: launchers, cli.js
+
+LAUNCHER_ASK = [
+    "volta run claude mcp add x",
+    "volta run --node 22 claude --bare",
+    "volta run --env A=1 claude -- --bare",
+    "asdf exec claude mcp add x",
+    "fnm exec --using=22 claude --bare",
+    "fnm exec -- claude --bare",
+    "nvm exec 22 claude --bare",
+    "nvm exec --lts claude --bare",
+    "npm explore x -- claude --bare",
+    "pnpx @anthropic-ai/claude-code mcp add x",
+    "dx npm:@anthropic-ai/claude-code -p x",
+    "uv tool run x",
+    "volta run --unknown claude",
+    "/x/node_modules/@anthropic-ai/claude-code/cli.js mcp add x",
+    "/x/node_modules/@anthropic-ai/claude-code/cli.js --bare",
+    # T04 review
+    "nvm exec 22 -- claude --bare",
+    "nvm exec 22 -- claude mcp add x",
+    "nvm run 22 /x/node_modules/@anthropic-ai/claude-code/cli.js --bare",
+    "nvm run --silent 22 /x/node_modules/@anthropic-ai/claude-code/cli.js mcp add x",
+    "fnm --log-level quiet exec claude --bare",
+    "fnm --arch x64 exec claude mcp add x",
+    "nodenv exec claude --bare",
+    "n exec 22 claude --bare",
+    "n run 22 /x/node_modules/@anthropic-ai/claude-code/cli.js --bare",
+]
+LAUNCHER_DENY = [
+    "nvm exec default -- claude plugin disable cobot",
+    "volta run claude plugin uninstall cobot",
+]
+
+
+@pytest.mark.parametrize("command", LAUNCHER_DENY)
+def test_story4_launcher_keepsTheDeny(rules, project, command):
+    assert decide(rules, command) == "deny"
+
+
+LAUNCHER_FRICTION = [
+    "volta run node --version",
+    "volta run --node 22 node s.js",
+    "asdf exec node s.js",
+    "fnm exec --using=22 node s.js",
+    "nvm exec 22 node s.js",
+    "volta install node",
+    "asdf install",
+    "uv tool list",
+    "nvm run 22 s.js",
+    "nvm exec --lts node -v",
+    "fnm exec --using=.nvmrc node -v",
+    "volta run --bundled-npm npm ci",
+    "n 22",
+    "nodenv exec node s.js",
+]
+
+
+@pytest.mark.parametrize("command", LAUNCHER_ASK)
+def test_story4_launcherOrEntry_isReadAsClaude(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", LAUNCHER_FRICTION)
+def test_story4_launcherFriction_staysSilent(rules, project, command):
+    assert decide(rules, command) is None
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [

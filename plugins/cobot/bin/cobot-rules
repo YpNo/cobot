@@ -6214,6 +6214,91 @@ def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) ->
     return None
 
 
+ASSIGNMENT_WORD_RE = re.compile(r"([A-Za-z_]\w*)\+?=(.*)", re.DOTALL)
+SEARCH_PATH_SETTERS = frozenset({"export", "declare", "typeset", "local", "readonly", "env"})
+SEARCH_PATH_READERS = frozenset({"read", "mapfile", "readarray", "printf"})  # set it from input
+
+
+# where a program looks for its libraries or modules ahead of the system's: read by value from the
+# assignment words, never by name from the text (spec gate-f63-f65, story 4, Q3); an entry outside
+# the project, or one the gate cannot place, asks
+SEARCH_PATHS = frozenset(
+    "LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH "
+    "DYLD_FALLBACK_FRAMEWORK_PATH PYTHONPATH PYTHONUSERBASE PERL5LIB PERLLIB RUBYLIB NODE_PATH "
+    "LUA_PATH LUA_CPATH CLASSPATH GEM_PATH GEM_HOME ERL_LIBS".split()
+    + [f"LUA_{kind}PATH_5_{minor}" for kind in ("", "C") for minor in range(1, 5)]  # T03 review
+)
+SEARCH_PATH_NAMES = "|".join(sorted(SEARCH_PATHS))
+# other ways a command sets a search path, read from its text (T03 review): a nameref to it, a loop
+# or getopts variable
+SEARCH_PATH_INDIRECT_RE = re.compile(
+    rf"\b(?:for|select)\s+(?:{SEARCH_PATH_NAMES})\s+in\b|\bgetopts\s+\S+\s+(?:{SEARCH_PATH_NAMES})\b"
+    rf"|\b(?:declare|typeset|local)\s+(?:-\w+\s+)*\w+=(?:{SEARCH_PATH_NAMES})\b"
+)
+PWD_ASSIGNED_RE = re.compile(r"(?<!\$)(?<!\$\{)\bPWD\b")  # the script names PWD other than as $PWD
+
+
+def assignment_words(segment: list[str]) -> list[str]:
+    """The assignment words the segment's program runs under: those before it, past reserved words,
+    wrappers and prefix commands (``time``, ``if``, ``{``, ``nice env``; T03 review), and those a
+    setter (``export``, ``declare``, ``env``) takes."""
+    found: list[str] = []
+    tokens = list(segment)
+    while tokens:
+        if ASSIGNMENT_WORD_RE.fullmatch(tokens[0]):
+            found.append(tokens.pop(0))
+            continue
+        if tokens[0] in SEARCH_PATH_SETTERS:
+            return found + [word for word in tokens[1:] if ASSIGNMENT_WORD_RE.fullmatch(word)]
+        rest = drop_wrapper(tokens)
+        if rest is None:
+            break
+        tokens = rest
+    return found
+
+
+def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: dict, text: str) -> str | None:
+    """A search path (SEARCH_PATHS) set in the segment with an entry outside the project, or one the
+    gate cannot place, asks (spec gate-f63-f65, story 4, Q3). Read from the assignment words, so a
+    ``grep`` for the name stays silent. An empty entry or ``.`` is the folder the segment runs in,
+    ``$PWD`` and ``~+`` are that folder unless the command names PWD, and the variable's own name is
+    the inherited value (the F-59 class). ``text`` is the whole command."""
+    if any(word in SEARCH_PATH_READERS for word in segment[:1]) and any(
+        word.removeprefix("-v") in SEARCH_PATHS for word in segment
+    ):
+        return "a search path set from input: the gate cannot place it"
+    if SEARCH_PATH_INDIRECT_RE.search(text):
+        return "a search path set through a nameref, a loop or getopts: the gate cannot place it"
+    root = Path(cwd or os.getcwd()).resolve()
+    bases = placed_bases(None, dirs, root)
+    pwd_known = not PWD_ASSIGNED_RE.search(text)
+    for word in assignment_words(segment):
+        name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
+        if name not in SEARCH_PATHS:
+            continue
+        for entry in value.split(":"):
+            if not search_entry_inside(entry, name, bases, root, holes, pwd_known):
+                return f"{name} loads code from outside the project: '{show(entry, holes)[:60]}'"
+    return None
+
+
+def search_entry_inside(
+    entry: str, name: str, bases: list[Path] | None, root: Path, holes: dict, pwd_known: bool
+) -> bool:
+    """Whether one entry of a search path lies in the project from every folder the segment runs in."""
+    shown = show(entry, holes)
+    if shown in (f"${name}", f"${{{name}}}"):
+        return True  # the inherited value
+    if name == "CLASSPATH" and shown.endswith("*") and "*" not in shown[:-1]:
+        entry = shown[:-1]  # Java's own wildcard, every jar of a folder (T03 review)
+    here = (*PWD_NAMES, "~+") if pwd_known else ()
+    lead = next((word for word in here if entry == word or entry.startswith(word + "/")), None)
+    entry = "." + entry[len(lead) :] if lead else entry or "."
+    if entry.startswith("~") and entry != "~" and not entry.startswith("~/"):
+        return False  # ``~-`` (OLDPWD), ``~user``: a folder the gate does not place
+    return word_inside(entry, bases, root)
+
+
 def script_words(argv: list[str]) -> tuple[list[str], str | None]:
     """The files an interpreter, awk or sed runs or loads, and the folder it changes into first;
     none when it already asks for its inline code or runs an installed plugin's file."""
@@ -6817,7 +6902,9 @@ def judge_bash(
             verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
-        outside = outside_script(program_of(segment), dirs, cwd, holes)
+        outside = outside_script(program_of(segment), dirs, cwd, holes) or search_path_reason(
+            segment, dirs, cwd, holes, command
+        )
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
         # every folder the segment may run in; None when the walk cannot know (``cd ~``)
@@ -6859,6 +6946,16 @@ START_VARIABLES = (
     "PHP_INI_SCAN_DIR "
     # a perf config can name the objdump or addr2line perf report runs (spec gate-f63-f65, T02 review)
     "PERF_CONFIG PERF_EXEC_PATH "
+    # a library, an agent or code any program of its kind loads (spec gate-f63-f65, story 4, F-65):
+    # the dynamic loader's, OpenSSL's engine config, every JVM's, .NET's, Lua's, Perl's debugger,
+    # Erlang's flags (-eval); the LD_, DYLD_ and profiler names by their prefix, START_PREFIXES
+    "GCONV_PATH OPENSSL_CONF JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS DOTNET_STARTUP_HOOKS "
+    "LUA_INIT PERL5DB ERL_AFLAGS ERL_FLAGS ERL_ZFLAGS "
+    # T03 review: the module folders GIO, GTK, Qt, GStreamer, Vulkan, Mesa, gdk-pixbuf, OpenSSL and
+    # .NET load every library from, into every program of their kind
+    "GIO_EXTRA_MODULES GIO_MODULE_DIR GTK_MODULES GTK_PATH QT_PLUGIN_PATH GST_PLUGIN_PATH "
+    "GST_PLUGIN_SYSTEM_PATH VK_LAYER_PATH VK_ICD_FILENAMES LIBGL_DRIVERS_PATH GDK_PIXBUF_MODULE_FILE "
+    "OPENSSL_MODULES OPENSSL_ENGINES DOTNET_ADDITIONAL_DEPS "
     # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
     # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
     # by their prefix, START_PREFIXES
@@ -6886,14 +6983,17 @@ COMPUTED_EXPORT_RE = re.compile(
 )
 
 
-START_PREFIXES = ("CLAUDE_CODE_",)  # every name under the prefix is a start variable (Q8)
+START_PREFIXES = ("CLAUDE_CODE_", "LD_", "DYLD_", "CORECLR_PROFILER", "COR_PROFILER", "LUA_INIT_")
+# the search paths a prefix would name are left to their value reading (search_path_reason)
+PREFIX_EXCLUDED = "|".join(sorted(SEARCH_PATHS))
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 
 
 def sets_start_variable(text: str, name: str, prefix: bool = False) -> bool:
     """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``);
     with ``prefix``, any name that starts with ``name``."""
-    word = re.escape(name) + (r"\w+" if prefix else "")
+    # a prefix names every word under it but the search paths, read by value (spec gate-f63-f65)
+    word = rf"(?!(?:{PREFIX_EXCLUDED})\b){re.escape(name)}\w+" if prefix else re.escape(name)
     # after a comma, an equals sign or a bracket too: ``((a=1,NAME=1))``, ``let x=NAME=1``,
     # ``a[NAME=1]=x`` assign it (spec gate-f58, T03 review)
     return bool(

@@ -499,3 +499,11 @@ Proof: tests/test_gate_f63_f65.py 24 passed; full suite in parallel green but fo
 Open: an opaque launcher's inner deny is an ask (Q2's accepted trade-off); ./editor asks.
 Next: T03, loader variables and search paths.
 verified: tree 925dc6a3f056adcfa41a4a2bd8f084cdc2ea15a2 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T03: loader variables and search paths (story 4, F-65)
+Changed: START_VARIABLES gains the loaders any program of a kind reads (GCONV_PATH, OPENSSL_CONF, the JVM's options, DOTNET_STARTUP_HOOKS, LUA_INIT, PERL5DB, Erlang's flags; from the review the GIO, GTK, Qt, GStreamer, Vulkan, Mesa, gdk-pixbuf, OpenSSL-module and .NET-deps folders); START_PREFIXES gains LD_, DYLD_, CORECLR_PROFILER, COR_PROFILER, LUA_INIT_, minus SEARCH_PATHS. search_path_reason reads the search paths by value from assignment_words (past reserved words, wrappers and setters): an entry outside the project, or one the gate cannot place, asks; ., $PWD and ~+ are the walk's folder unless the command names PWD; the variable's own name is inherited; a nameref, loop or getopts setting one asks.
+Why: the owner's Q3, relayed verbatim: All as recommended. LD_PRELOAD=/tmp/x.so ls reached no decision.
+Proof: tests/test_gate_f63_f65.py 28 passed; full suite in parallel green but for the xdist timing tests, which pass serially (test_gate_cd_gaps 14 s, as before); ruff clean. Bypass review RETHINK (2 BLOCKER, 3 MAJOR, 1 MINOR), each a test row.
+Open: build-tool variables (GOFLAGS, MAVEN_OPTS, GRADLE_OPTS, JAVA_OPTS) stay the spec's residual.
+Next: T04, git -c, --exec-path and the command variables.
+verified: tree 0614745a3e43377afd113ac797823b471d75655e · focused tests, full suite (parallel), ruff

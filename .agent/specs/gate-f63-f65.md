@@ -535,3 +535,21 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
     - `r2`/`radare2`/`rizin -c '!x'`, `frida`, `edb`, `ddd`, `kdbg` and `gdbtui` join;
     - perf's suffix is its version digits only, so `perf_analyzer` stays silent.
   - Known cost: a project script named `./editor` asks.
+- T03 build.
+  - The by-name loaders join `START_VARIABLES`, and `LD_`, `DYLD_`, `CORECLR_PROFILER`,
+    `COR_PROFILER` and `LUA_INIT_` join `START_PREFIXES`. A prefix skips the `SEARCH_PATHS`
+    names, which `search_path_reason` reads by value from the assignment words.
+  - Bypass review: RETHINK (2 BLOCKER, 3 MAJOR, 1 MINOR; no regression), each a test row:
+    - a reserved word, a compound or a wrapper before the assignment hid it (`time`, `!`, `if`,
+      `{`, a function body, `nice env`, `timeout 5 env`). `assignment_words` now walks past them
+      with `drop_wrapper`;
+    - a nameref, a `for`/`select` loop variable and `getopts` set the path. They are read from
+      the text;
+    - `~+/..`, `~-/lib` and `$PWD` were placed as inside after the command assigned `PWD`. `~+`
+      counts as `$PWD` only while the command does not name PWD, and `~-` asks;
+    - the GIO, GTK, Qt, GStreamer, Vulkan, Mesa, gdk-pixbuf, OpenSSL-module and .NET-deps loaders
+      join by name. `ERL_LIBS` and the versioned `LUA_PATH_5_x` and `LUA_CPATH_5_x` join the
+      search paths;
+    - `CLASSPATH=…:lib/*` (Java's own wildcard) stays silent.
+  - Left as the build-tool residual: `GOFLAGS`, `MAVEN_OPTS`, `GRADLE_OPTS`, `JAVA_OPTS`, and
+    R's, Julia's and Tcl's paths.

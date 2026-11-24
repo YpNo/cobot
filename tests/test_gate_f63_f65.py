@@ -322,3 +322,128 @@ def test_story1_friction_staysSilent(rules, project):
 def test_story1_projectScriptNamedEditor_asks_knownCost(rules, project):
     # the name is Debian's editor alternative; a project script under it asks (T02 review)
     assert decide(rules, "./editor") == "ask"
+
+
+# ---------------------------------------------------------------- story 4: loader variables (F-65)
+
+LOADER_ASK = [
+    # row 10
+    "LD_PRELOAD=/tmp/x.so ls",
+    "LD_AUDIT=/tmp/x.so ls",
+    "DYLD_INSERT_LIBRARIES=/tmp/x.dylib ls",
+    "export LD_PRELOAD=/tmp/x.so; ls",
+    "env LD_PRELOAD=/tmp/x.so ls",
+    "GCONV_PATH=/tmp ls",
+    "OPENSSL_CONF=/tmp/x.cnf curl https://x",
+    "PERL5DB='system(1)' perl -d x.pl",
+    # row 11
+    "JAVA_TOOL_OPTIONS=-javaagent:x.jar java -version",
+    "_JAVA_OPTIONS=x java",
+    "JDK_JAVA_OPTIONS=x java",
+    "DOTNET_STARTUP_HOOKS=/tmp/x.dll dotnet run",
+    "CORECLR_PROFILER_PATH=/tmp/x.so dotnet run",
+    "LUA_INIT=x lua s.lua",
+    "ERL_AFLAGS='-eval x' erl",
+    "LD_BIND_NOW=1 ls",  # the prefix
+    # T03 review: module folders every program of a kind loads from
+    "GIO_EXTRA_MODULES=/tmp x",
+    "GIO_MODULE_DIR=/tmp x",
+    "GTK_MODULES=x x",
+    "GTK_PATH=/tmp x",
+    "QT_PLUGIN_PATH=/tmp x",
+    "GST_PLUGIN_PATH=/tmp x",
+    "GST_PLUGIN_SYSTEM_PATH=/tmp x",
+    "VK_LAYER_PATH=/tmp x",
+    "VK_ICD_FILENAMES=/tmp/x.json x",
+    "LIBGL_DRIVERS_PATH=/tmp x",
+    "GDK_PIXBUF_MODULE_FILE=/tmp/x x",
+    "OPENSSL_MODULES=/tmp curl https://x",
+    "OPENSSL_ENGINES=/tmp curl https://x",
+    "DOTNET_ADDITIONAL_DEPS=/tmp dotnet run",
+]
+SEARCH_PATH_ASK = [
+    # row 12: a search path outside the project, or one the gate cannot place
+    "LD_LIBRARY_PATH=/tmp ls",
+    "DYLD_LIBRARY_PATH=/tmp ls",
+    "PYTHONPATH=/tmp python3 x.py",
+    "PYTHONUSERBASE=/tmp/u python3 x.py",
+    "PERL5LIB=/tmp perl x.pl",
+    "RUBYLIB=/tmp ruby x.rb",
+    "NODE_PATH=/tmp node x.js",
+    "cd /tmp && PYTHONPATH=. python3 x.py",
+    "PYTHONPATH=src:/tmp python3 x.py",
+    "PYTHONPATH=~/lib python3 x.py",
+    "PYTHONPATH=$X python3 x.py",
+    "PYTHONPATH=$(x) python3 x.py",
+    "export PYTHONPATH=/tmp; python3 x.py",
+    "env PYTHONPATH=/tmp python3 x.py",
+    "declare -x NODE_PATH=/tmp",
+    "read PYTHONPATH",
+    "PYTHONPATH+=:/tmp python3 x.py",
+    # T03 review: a reserved word, a compound or a wrapper before the assignment
+    "time LD_LIBRARY_PATH=/tmp ./t",
+    "! LD_LIBRARY_PATH=/tmp ./t",
+    "if LD_LIBRARY_PATH=/tmp ./t; then :; fi",
+    "while LD_LIBRARY_PATH=/tmp ./t; do :; done",
+    "{ LD_LIBRARY_PATH=/tmp ./t; }",
+    "f() { LD_LIBRARY_PATH=/tmp ./t; }; f",
+    "nice env PYTHONPATH=/tmp python3 x.py",
+    "timeout 5 env PYTHONPATH=/tmp python3 x.py",
+    "stdbuf -o0 env PYTHONPATH=/tmp python3 x.py",
+    "command env PYTHONPATH=/tmp python3 x.py",
+    "exec env PYTHONPATH=/tmp python3 x.py",
+    "nohup env PYTHONPATH=/tmp python3 x.py",
+    # T03 review: a nameref, a loop or getopts variable
+    "declare -n r=PYTHONPATH; r=/tmp python3 x.py",
+    "export PYTHONPATH; for PYTHONPATH in /tmp; do python3 x.py; done",
+    "export PYTHONPATH; select PYTHONPATH in /tmp; do python3 x.py; done",
+    "getopts a: PYTHONPATH",
+    # T03 review: folder forms the gate cannot place
+    "PYTHONPATH=~+/.. python3 x.py",
+    "LD_LIBRARY_PATH=~-/lib ./t",
+    "PWD=/tmp; PYTHONPATH=$PWD python3 x.py",
+    "PWD=/tmp PYTHONPATH=$PWD python3 x.py",
+    # T03 review: versioned Lua paths and Erlang's library path
+    "LUA_PATH_5_4=/tmp/?.lua lua s.lua",
+    "LUA_CPATH_5_4=/tmp/?.so lua s.lua",
+    "ERL_LIBS=/tmp erl",
+]
+LOADER_FRICTION = [
+    "PYTHONPATH=. pytest",
+    "PYTHONPATH=src python3 -m pytest",
+    "PYTHONPATH=$PWD/src pytest",
+    "PYTHONPATH=${PWD}/src pytest",
+    "PYTHONPATH=src:$PYTHONPATH pytest",
+    "LD_LIBRARY_PATH=./build ./a.out",
+    "rg 'LD_LIBRARY_PATH=' .",
+    "grep -n 'PYTHONPATH=' Makefile",
+    "LDFLAGS=-L. ls",
+    # T03 review: Java's own wildcard, and other daily forms
+    "CLASSPATH=build/classes:lib/* java Main",
+    "CLASSPATH='build/classes:lib/*' java Main",
+    "PYTHONPATH=tests:src pytest",
+    "GEM_HOME=vendor/bundle bundle exec x",
+    "LD_LIBRARY_PATH=$PWD/lib ./t",
+    "NODE_PATH=node_modules node x.js",
+    "cd tests && PYTHONPATH=../src pytest",
+    "PYTHONPATH=~+/src pytest",
+    "printenv LD_LIBRARY_PATH",
+]
+
+
+def test_story4_loaderVariables_ask(rules, project):
+    assert_all(rules, LOADER_ASK, "ask")
+
+
+def test_story4_searchPathOutside_asks(rules, project):
+    assert_all(rules, SEARCH_PATH_ASK, "ask")
+
+
+def test_story4_friction_staysSilent(rules, project):
+    (project / "tests").mkdir()
+    assert_all(rules, LOADER_FRICTION, None)
+
+
+def test_story4_unchanged_namedVariableInText_asks(rules, project):
+    assert decide(rules, "grep -rn 'NODE_OPTIONS=' .") == "ask"
+    assert decide(rules, "PATH=/tmp:$PATH ls") == "ask"

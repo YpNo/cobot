@@ -847,7 +847,8 @@ ask Write(~/.claude.json.backup*)
 ask Edit(.mcp.json)
 ask Write(.mcp.json)
 # A shell word naming either file asks too (cp, tee, a redirection, dd of=, curl -o), as for a
-# protected file; a glob that only could name them does not (protected_file_touched).
+# protected file; a glob asks when it matches one of them on disk now, as the word does, and
+# stays silent when it only could (spec gate-f58, story 6: glob_names_asked_file).
 
 # agent scopes: consultant and learner are read-only. Everything asks except this read list
 # (an agent-scoped allow in this layer silences the gate; never rules above still win).

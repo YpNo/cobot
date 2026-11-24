@@ -385,12 +385,59 @@ def test_story6_otherGlobs_staySilent(rules, state_files):
         assert decide(rules, command) is None, command
 
 
+# ---------------------------------------------------------------- story 7: self-changing subcommands
+
+SELF_ASK = [
+    "claude install latest",
+    "claude install",
+    "claude update",
+    "claude upgrade",
+    "claude purge",
+    "claude purge /x",
+    "claude import codex --yes",
+    "claude auto-mode reset",
+    # T06 review: a -- before the subcommand, setup-token
+    "claude -- update",
+    "claude --verbose -- update",
+    "claude -p -- update",
+    "claude -- ultrareview",
+    "claude -- agents --dangerously-skip-permissions",
+    "claude setup-token",
+]
+SELF_FRICTION = [
+    "claude doctor",
+    "claude mcp list",
+    "claude plugin list",
+    "claude auth status",
+    "claude auto-mode",
+    'claude -p "install the deps"',
+    "claude auto-mode config reset",
+    "claude auto-mode help reset",
+    "claude help install",
+    "claude -- fix the bug",
+]
+
+
+@pytest.mark.parametrize("command", SELF_ASK)
+def test_story7_selfChangingSubcommand_asks(rules, project, command):
+    assert decide(rules, command) == "ask"
+
+
+@pytest.mark.parametrize("command", SELF_FRICTION)
+def test_story7_otherSubcommands_staySilent(rules, project, command):
+    assert decide(rules, command) is None
+
+
 # ---------------------------------------------------------------- story 8: both runtimes
 
 AGY_ROWS = [
     ("claude plugin disable cobot", "deny"),
     ("claude plugin update x", "force_ask"),
     ("claude -p x --bare", "force_ask"),
+    ("CLAUDE_CODE_SIMPLE=1 claude -p x", "force_ask"),
+    ("volta run claude mcp add x", "force_ask"),
+    ("claude purge", "force_ask"),
+    ("claude -p x --model sonnet", "allow"),
     ("claude plugin list", "allow"),
 ]
 

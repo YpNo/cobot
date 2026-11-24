@@ -403,3 +403,14 @@ protected file), so it moved to Unchanged. Folded into revision 2:
   - Residual: `dotglob` turned on in the command (`shopt -s dotglob; cat *`) reaches `.mcp.json`
     without an ask; the `never` rows keep their dotglob-safe reading.
   - Q6's accepted friction: `ls ~/.c*`, `ls -d ~/.*`, `du -sh ~/.*` ask.
+- T06 build: `subcommand_reason` asks on Q7's six (`install`, `update`, `upgrade`, `purge`,
+  `import`, `auto-mode reset`). There are agy rows for each story, and `docs/configuration.md` and
+  the CHANGELOG cover both runtimes. FINDINGS: F-58 closed, Q4 and Q5 accepted residuals
+  (**F-67**, **F-68**), `ANTHROPIC_BASE_URL` open (**F-66**). Bypass review (SOUND WITH CHANGES, 1
+  MAJOR, 4 MINOR), each a test row:
+  - a `--` before the subcommand (`claude -- update`): commander still dispatches it, so it is
+    read;
+  - `auto-mode reset` only as its first word;
+  - `setup-token` asks, since it prints a long-lived token into the transcript (a credential,
+    beyond Q7's six).
+  - Left for the owner, **F-69**: `auth login`/`logout` and `rm --discard-unpushed`.

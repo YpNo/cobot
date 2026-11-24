@@ -444,3 +444,10 @@ Proof: full suite green twice (before and after the folds); tests/test_gate_f58.
 Open: residual, dotglob turned on in the command reaches .mcp.json without an ask (never rows stay dotglob-safe); friction, ls ~/.c* and du -sh ~/.* ask (Q6).
 Next: T06, the subcommands, agy rows, docs and FINDINGS.
 verified: tree bbc10d762cd6d3f099079b120d2402ba84dd07c2 · full suite, F-58 file, ruff
+
+## 2026-11-24 — gate-f58 T06: self-changing subcommands, both runtimes, docs (stories 7 and 8)
+Changed: subcommand_reason asks on install, update, upgrade, purge, import and auto-mode reset (Q7), and on setup-token (a token into the transcript); a -- before the subcommand is read, as commander dispatches it. agy rows for each story; docs/configuration.md and CHANGELOG Security entry; default.rules comment on globs. FINDINGS F-58 closed, F-67 and F-68 accepted (Q4, Q5), F-69 open (auth login and logout, rm --discard-unpushed).
+Why: the owner's Q7; plan item T06.
+Proof: full suite green twice (before and after the folds); tests/test_gate_f58.py 224 passed; ruff, markdownlint (145 files), check-plugin, sync-agents clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 4 MINOR), each a test row or F-69.
+Next: wrap, code and security reviews, full checks.
+verified: tree 22045b3ff7ba24e53e73308e67a8d01d01d74593 · full suite, F-58 file, ruff, markdownlint, check-plugin, sync-agents

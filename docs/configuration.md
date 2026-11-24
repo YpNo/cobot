@@ -200,6 +200,45 @@ json` with a planted `json.rb`); a loader variable of any program (`LD_PRELOAD`,
 other interpreters (`lua`, `Rscript`, `osascript`, `julia`); editors and debuggers that run
 commands (F-63); an interpreter copied under another name.
 
+Claude Code started from Bash (.agent/specs/gate-f58.md), in both runtimes:
+
+- **Cobot's plugin stays.** `claude plugin disable cobot`, `disable --all`, `uninstall cobot`,
+  `remove cobot` and removing cobot's marketplace are refused, as agy's twins are. The install
+  alias `i`, `update`, `init`, `eval --trust-plugin`, `prune`, `configure --values-stdin`, any
+  `disable`, a marketplace removed or refreshed, and `tag --push` ask.
+- **A nested session the gate may not govern asks.** Claude Code's options are read from the
+  binary's own table (2.1.311, hidden options included):
+  - the options that switch the hooks off ask, wherever they sit: `--bare`, `--safe-mode`,
+    `--restricted`, and `--setting-sources` without both `user` and `project`;
+  - so do settings, a permission answerer or code from outside the session
+    (`--managed-settings`, `--project-config-root`, `--permission-prompt-tool`, `--sdk-url`,
+    `--channels`, `--plugin-url`);
+  - so does a session past your prompts: `--dangerously-skip-permissions`,
+    `--permission-mode bypassPermissions|auto|dontAsk`, `--agents` with such a mode, and
+    `--add-dir` on HOME, its parents, the config dir or a `.claude` folder;
+  - so does a session elsewhere (`--cloud`, `--remote-control`, `--teleport`, `--desktop`,
+    `ultrareview`), and any option the table lacks.
+
+  `claude -p x`, `--allowedTools`, `--model`, `--max-turns` and `--permission-mode plan` stay
+  silent: the gate governs that session too. The `agents` subcommand is read the same way.
+- **The variables.** Setting `CLAUDE_CONFIG_DIR`, `CLAUDE_ENV_FILE` or any `CLAUDE_CODE_*` name in
+  the command asks (`CLAUDE_CODE_SIMPLE=1` is `--bare`). Friction: `CLAUDE_CODE_USE_VERTEX=1
+  claude` asks, and so does a command that only names a start variable as text.
+- **Launchers.** `volta run`, `asdf exec`, `fnm exec`, `nodenv exec`, `nvm exec|run` and `n exec`
+  are judged by the command they run; `pnpx`, `dx`, `uv tool run` and `npm explore` ask. A path
+  ending in `@anthropic-ai/claude-code/cli.js` is read as `claude`.
+- **A glob naming a protected file.** A glob that matches `~/.claude.json`, its backups or
+  `.mcp.json` on disk asks, as the written-out word does (`tee ~/.claude.js?n`, `tee
+  .mc?.json`). Without `dotglob`, `ls *` and `cat *.json` reach no dotfile and stay silent.
+  Friction: `ls ~/.c*` and `du -sh ~/.*` ask.
+- **Claude Code changing itself.** `claude install`, `update`, `upgrade`, `purge`, `import` and
+  `auto-mode reset` ask.
+
+Not covered, accepted by the owner: a copy or link of the binary or of `cli.js` under another
+name (the gate reads names, not files); a start variable already in the gate's own environment.
+Also not covered: `ANTHROPIC_BASE_URL` set for a nested session (F-66), and `dotglob` turned on
+in the command before a glob that reaches `.mcp.json`.
+
 Anchor a Bash pattern on the command word (`cobot-memory learn *--promote*`, not
 `*cobot-memory learn*`): text a command substitution produces can be anything, so a pattern
 that starts with `*` could match any command holding one, and every such command then asks.

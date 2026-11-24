@@ -87,6 +87,16 @@ SUBCOMMANDS = frozenset(
     "respawn rm setup-token stop kill ultrareview update upgrade help".split()
 )
 SESSION_SUBCOMMANDS = frozenset({"agents"})
+# the subcommands that change Claude Code itself (spec gate-f58, story 7, Q7)
+SELF_CHANGING = {
+    "install": "replaces the binary every later session and hook runs under",
+    "update": "replaces the binary every later session and hook runs under",
+    "upgrade": "replaces the binary every later session and hook runs under",
+    "purge": "edits ~/.claude.json, a protected file",
+    "import": "writes Claude Code's configuration from another agent's",
+    # T06 review: a long-lived token printed to stdout lands in the transcript
+    "setup-token": "prints a long-lived subscription token into the transcript",
+}
 GATE_OFF = frozenset({"--bare", "--safe-mode", "--setting-sources", "--restricted"})
 # read by Claude Code in process.argv before commander, so a value slot does not hide them
 RAW_SCANNED = frozenset({"--bare", "--safe-mode", "--restricted"})
@@ -135,8 +145,13 @@ def nested_reason(argv: list[str], cwd: str | None = None) -> str | None:
         if subcommand is None and index == first_positional(words):
             subcommand = word if word in SUBCOMMANDS else ""
             if subcommand and subcommand not in SESSION_SUBCOMMANDS:
-                return subcommand_reason(subcommand)
+                return subcommand_reason(subcommand, words[index + 1 :])
         index += 1
+    after = words[index + 1 : index + 2] if index < len(words) else []
+    if subcommand is None and after and after[0] in SUBCOMMANDS:  # ``claude -- update`` (T06 review)
+        if after[0] in SESSION_SUBCOMMANDS:
+            return nested_reason([argv[0], *words[index + 1 :]], cwd)
+        return subcommand_reason(after[0], words[index + 2 :])
     return None
 
 
@@ -150,10 +165,16 @@ def first_positional(words: list[str]) -> int:
     return index
 
 
-def subcommand_reason(subcommand: str) -> str | None:
-    """A subcommand that sends the branch away asks (Q3)."""
+def subcommand_reason(subcommand: str, rest: list[str]) -> str | None:
+    """A subcommand that sends the branch away (Q3), or changes Claude Code itself (Q7: replaces
+    the binary, edits ``~/.claude.json``, writes configuration, resets the classifier), asks."""
     if subcommand == "ultrareview":
         return "claude ultrareview sends the branch to a review in the cloud"
+    if subcommand in SELF_CHANGING:
+        return f"claude {subcommand} {SELF_CHANGING[subcommand]}"
+    verb = next((word for word in rest if not word.startswith("-")), None)
+    if subcommand == "auto-mode" and verb == "reset":
+        return "claude auto-mode reset resets the auto mode classifier's configuration"
     return None
 
 

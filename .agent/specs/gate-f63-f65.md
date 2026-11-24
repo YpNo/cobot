@@ -520,3 +520,18 @@ Unchanged and friction row was re-run on `3e83cc6` and held. Folded into revisio
       quoted word, and so did an unbalanced quote in backticks. The pass now drops that
       backslash. Such a body holds an ANSI-C quote or a substitution, so it is opaque and asks.
       It was silent before.
+- T02 build.
+  - `PROGRAM_RUNNERS` and `PROGRAM_RUNNER_FAMILY_RE` feed `runs_given_program`, which
+    `opaque_as_read` calls first. The family pattern covers versioned names.
+  - Checkpoint 2: `micro -plugin install`, `hx --grammar fetch` and `nano`'s speller run or
+    fetch code, so every editor joins (Q1's "every editor run asks"). Story 1's silent list of
+    interactive editors is dropped.
+  - Bypass review: SOUND WITH CHANGES (2 MAJOR, 3 MINOR), each a test row:
+    - more launchers hid an inner deny: `torsocks`, `proxychains`, `faketime`, `numactl`,
+      `ifne`, `trickle`, `cpulimit`, `cgexec`, `systemd-inhibit`, `runuser`, `sg`, `newgrp` and
+      `capsh`, and the dynamic loader run by path (`/lib64/ld-linux-x86-64.so.2 /bin/rm`);
+    - `PERF_CONFIG` and `PERF_EXEC_PATH` join the start variables, since a perf config names the
+      objdump that `perf report` runs;
+    - `r2`/`radare2`/`rizin -c '!x'`, `frida`, `edb`, `ddd`, `kdbg` and `gdbtui` join;
+    - perf's suffix is its version digits only, so `perf_analyzer` stays silent.
+  - Known cost: a project script named `./editor` asks.

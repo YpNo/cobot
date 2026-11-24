@@ -150,3 +150,175 @@ def test_story3_review_makefileEvenBackslashes_endTheLine(rules, project):
 def test_story3_review_makefileContinuation_staysOneLine(rules, project):
     (project / "Makefile").write_text("b:\n\techo a \\\n\t  b\n")
     assert decide(rules, "make b") is None
+
+
+# ---------------------------------------------------------------- stories 1, 2, 8: editors, debuggers
+
+EDITOR_ASK = [
+    # row 3
+    "vim -c '!x' f",
+    "vim +'!x' f",
+    "vim --cmd x f",
+    "vim -S s.vim f",
+    "vim -u x.vim f",
+    "vi -c x f",
+    "ex -c x f",
+    "view -c x f",
+    "vimdiff -c x a b",
+    "rvim -c x f",
+    "vim -Z -c x f",
+    "busybox vi -c x f",
+    "printf ':!x\\n' | vim f",
+    # row 4: names installed on Debian hosts
+    "vim.basic -c x f",
+    "vim.tiny -c x f",
+    "/usr/bin/vim.basic -c x f",
+    "editor -c x f",
+    "sensible-editor f",
+    "vipe",
+    # row 5
+    "nvim -c x f",
+    "nvim --cmd x",
+    "nvim --headless -c x",
+    "emacs --batch --eval '(x)'",
+    "emacs -l x.el",
+    "emacs --script x.el",
+    "emacs -x x.el",
+    "emacsclient --eval '(x)'",
+    "emacs-29.4 --eval '(x)'",
+    "ed f",
+    "kak -e x",
+]
+DEBUGGER_ASK = [
+    # row 6
+    "gdb -ex 'shell x'",
+    "gdb -batch -ex run ./a",
+    "gdb -x cmds ./a",
+    "gdb ./a",
+    "gdb -p 1",
+    "lldb -o 'platform shell x'",
+    "lldb-18 -o x",
+    "lldb ./a",
+    "rust-gdb ./a",
+    "cgdb ./a",
+    "dlv exec ./a",
+    "jdb x",
+    # row 7
+    "valgrind rm -rf /",
+    "ltrace rm -rf /",
+    "perf stat rm -rf /",
+    "perf_6.12 stat rm -rf /",
+    "perf record -- rm -rf /",
+    "gdb --args rm -rf /",
+    "lldb -- rm -rf /",
+    "rr record rm -rf /",
+    "catchsegv rm -rf /",
+    "heaptrack rm -rf /",
+    "uftrace rm -rf /",
+    "gdbserver :1 rm -rf /",
+    "sotruss rm -rf /",
+    "xtrace rm -rf /",
+    "memusage rm -rf /",
+    # row 8: the read-only subcommands run a program through these options
+    "perf report --objdump=/tmp/x",
+    "perf annotate --objdump=/tmp/x",
+    "perf --exec-path=/tmp report",
+    # the sole-argument rule
+    "gdb --version -ex 'shell x'",
+    # T02 review: a perf config can name the program perf report runs
+    "PERF_CONFIG=./x perf annotate --stdio",
+    # T02 review: debuggers and disassemblers that run commands
+    "r2 -c '!x' f",
+    "radare2 -c x f",
+    "rizin -c '!x' f",
+    "frida -f ./a",
+    "edb --run ./a",
+    "ddd ./a",
+    "kdbg ./a",
+    "gdbtui ./a",
+]
+LAUNCHER_ASK = [
+    # row 9 (Q6)
+    "fakeroot rm -rf /",
+    "eatmydata rm -rf /",
+    "nsenter -t 1 rm -rf /",
+    "setpriv rm -rf /",
+    "prlimit rm -rf /",
+    "xvfb-run rm -rf /",
+    "ssh-agent rm -rf /",
+    # T02 review: launchers outside Q6's first list, and the dynamic loader by path
+    "torsocks git push --force origin main",
+    "proxychains4 rm -rf /",
+    "proxychains rm -rf /",
+    "faketime 2020-01-01 rm -rf /",
+    "numactl -i all rm -rf /",
+    "ifne rm -rf /",
+    "trickle -d 1 rm -rf /",
+    "cpulimit -l 5 -- rm -rf /",
+    "cgexec -g cpu:x rm -rf /",
+    "systemd-inhibit rm -rf /",
+    "runuser -u x -- rm -rf /",
+    "sg grp -c 'rm -rf /'",
+    "capsh -- -c 'rm -rf /'",
+    "/lib64/ld-linux-x86-64.so.2 /bin/rm -rf /",
+    "ld.so ./a",
+]
+TOOLS_UNCHANGED_ASK = [
+    "strace ls",
+    "strace -o out ls",
+    "strace -o ~/.claude/settings.json ls",
+    "vim -c 'w! ~/.claude/settings.json' f",
+]
+TOOLS_UNCHANGED_DENY = [
+    "ex -s f <<'EOF'\n%s/a/b/\nwq\nEOF",
+    "ed -s f <<< '!x'",
+]
+TOOLS_FRICTION = [
+    "vim --version",
+    "emacs --version",
+    "gdb --version",
+    "vim --help",
+    "perf list",
+    "perf version",
+    "perf report",
+    "perf annotate",
+    "less f",
+    "man ls",
+    "more f",
+    # T02 review: the family pattern leaves these alone
+    "perf_analyzer -m x",
+    "viewer f",
+    "vimtutor",
+    "gdbus call x",
+    "vitest run",
+    "gdb-12 --version",
+]
+
+
+def test_story1_editors_ask(rules, project):
+    assert_all(rules, EDITOR_ASK, "ask")
+
+
+def test_story2_debuggersAndProfilers_ask(rules, project):
+    assert_all(rules, DEBUGGER_ASK, "ask")
+
+
+def test_story8_launchers_ask(rules, project):
+    assert_all(rules, LAUNCHER_ASK, "ask")
+
+
+def test_story1_unchangedAsks_stayAsks(rules, project):
+    assert_all(rules, TOOLS_UNCHANGED_ASK, "ask")
+
+
+def test_story1_unchangedDenies_stayDenied(rules, project):
+    assert_all(rules, TOOLS_UNCHANGED_DENY, "deny")
+
+
+def test_story1_friction_staysSilent(rules, project):
+    assert_all(rules, TOOLS_FRICTION, None)
+
+
+def test_story1_projectScriptNamedEditor_asks_knownCost(rules, project):
+    # the name is Debian's editor alternative; a project script under it asks (T02 review)
+    assert decide(rules, "./editor") == "ask"

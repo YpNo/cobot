@@ -130,6 +130,34 @@ OPAQUE = frozenset(
     "bwrap script tmux screen pueue tsp nq".split()  # bwrap: wrap security review, stories 7 and 8
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
+# editors, debuggers, profilers and launchers: each runs commands from its options, its stdin, a
+# project file it reads (.exrc, .gdbinit, .dir-locals.el), or a program it is given; every run asks
+# (spec gate-f63-f65, stories 1, 2 and 8; Q1, Q2 and Q6, the owner: "All as recommended")
+PROGRAM_RUNNERS = frozenset(
+    # the vi family, emacs, ed and the other editors, Debian's alternatives
+    "vim vi ex view vimdiff rvim rview gvim gview evim vimx nvim nvi lvim vis emacsclient xemacs "
+    "ed red kak mg zile jed nano rnano pico micro joe hx helix editor sensible-editor vipe "
+    # debuggers and disassemblers that run commands (T02 review: r2 -c '!x', rizin, frida)
+    "gdb-multiarch gdbtui rust-gdb cgdb gdbserver rust-lldb lldb-server dlv jdb ddd kdbg edb "
+    "r2 radare2 rizin frida "
+    # tracers and profilers, glibc's own
+    "ltrace rr catchsegv heaptrack uftrace bpftrace sotruss xtrace memusage "
+    # launchers that run the command after their options (T02 review adds the second line on)
+    "fakeroot eatmydata nsenter setpriv prlimit xvfb-run ssh-agent "
+    "torsocks tsocks proxychains proxychains4 faketime numactl ifne trickle cpulimit cgexec "
+    "systemd-inhibit runuser sg newgrp capsh".split()
+)
+# versioned or suffixed names of the same families: vim.basic, vim.tiny, emacs-29.4, lldb-18, perf_6.12
+# (perf by its version digits only: perf_analyzer is another tool; T02 review), and the dynamic
+# loader run by path (/lib64/ld-linux-x86-64.so.2 /bin/rm …)
+PROGRAM_RUNNER_FAMILY_RE = re.compile(
+    r"(?:vim?|nvim|gvim|emacs|gdb|lldb|valgrind)(?:[._-][\w.+-]*)?|perf(?:[._-]\d[\w.]*)?"
+    r"|ld(?:-linux[\w.-]*)?\.so[\d.]*"
+)
+SOLE_INFO_OPTIONS = frozenset({"--version", "--help", "-h"})  # alone, each prints and exits
+PERF_READS = frozenset({"list", "version", "--version", "help"})
+PERF_REPORTS = frozenset({"report", "annotate", "diff"})  # read a perf.data, unless told to run a tool
+PERF_PROGRAM_OPTIONS = ("--objdump", "--addr2line", "--exec-path")  # each names a program perf runs
 OPAQUE_SUBCOMMANDS = {
     "mise": frozenset({"run", "exec", "x", "r"}),
     "npm": frozenset({"run", "run-script", "exec", "x", "explore"}),  # explore: a shell in a package
@@ -2240,10 +2268,27 @@ def gh_unknown_command(plain: list[str]) -> bool:
     return bool(word) and not option_word(word) and word not in GH_COMMANDS
 
 
+def runs_given_program(plain: list[str]) -> bool:
+    """An editor, debugger, profiler or launcher of PROGRAM_RUNNERS or its family pattern; its
+    ``--version`` or ``--help`` alone is silent, and so are perf's reads (spec gate-f63-f65)."""
+    head = plain[0]
+    if head not in PROGRAM_RUNNERS and not PROGRAM_RUNNER_FAMILY_RE.fullmatch(head):
+        return False
+    if len(plain) == 2 and plain[1] in SOLE_INFO_OPTIONS:
+        return False
+    if head.startswith("perf"):
+        sub = plain[1] if len(plain) > 1 else ""
+        names_program = any(word.startswith(PERF_PROGRAM_OPTIONS) for word in plain[2:])
+        return not (sub in PERF_READS or (sub in PERF_REPORTS and not names_program))
+    return True
+
+
 def opaque_as_read(plain: list[str]) -> bool:
     if not plain:
         return False
     head = plain[0]
+    if runs_given_program(plain):
+        return True
     if head in OPAQUE or head.startswith("$") or head == "env" or head in WRAPPER_OPTIONS:
         # a leftover ``env`` or wrapper carries options the gate does not read
         return True
@@ -6812,6 +6857,8 @@ START_VARIABLES = (
     # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
     "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
     "PHP_INI_SCAN_DIR "
+    # a perf config can name the objdump or addr2line perf report runs (spec gate-f63-f65, T02 review)
+    "PERF_CONFIG PERF_EXEC_PATH "
     # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
     # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
     # by their prefix, START_PREFIXES

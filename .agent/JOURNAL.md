@@ -491,3 +491,11 @@ Proof: tests/test_gate_f63_f65.py 26 passed, test_cobot_make and test_cobot_shel
 Open: a bash -c body holding an ANSI-C quote asks rather than denies (command_parts takes expansion holes only).
 Next: T02, editors, debuggers and launchers.
 verified: tree 105698b37b0de535b8f450cd386c44963e33e784 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T02: editors, debuggers, profilers and launchers ask (stories 1, 2, 8; F-63)
+Changed: PROGRAM_RUNNERS (every editor, the debuggers and disassemblers, tracers and profilers, the launchers of Q6 and the review), PROGRAM_RUNNER_FAMILY_RE (vim.basic, emacs-29.4, lldb-18, perf_6.12, the dynamic loader by path) and runs_given_program, first in opaque_as_read; --version, --help or -h alone and perf's reads stay silent; PERF_CONFIG and PERF_EXEC_PATH join START_VARIABLES.
+Why: the owner's Q1, Q2 and Q6, relayed verbatim: All as recommended. valgrind rm -rf / and fakeroot rm -rf / reached no decision.
+Proof: tests/test_gate_f63_f65.py 24 passed; full suite in parallel green but for the xdist timing tests, which pass serially; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 3 MINOR), each a test row.
+Open: an opaque launcher's inner deny is an ask (Q2's accepted trade-off); ./editor asks.
+Next: T03, loader variables and search paths.
+verified: tree 925dc6a3f056adcfa41a4a2bd8f084cdc2ea15a2 · focused tests, full suite (parallel), ruff

@@ -334,4 +334,17 @@ protected file), so it moved to Unchanged. Folded into revision 2:
 
 ## Converge
 
-(pending: the owner's answers to Q1–Q8; no build until then)
+- 2026-11-24, the owner (relayed verbatim): "All as recommended". Q1 ask on an option the table
+  lacks; Q2 ask on the widening options; Q3 ask on the moving options; Q4 accept the risk
+  (copies of the binary); Q5 accept the risk (an inherited variable); Q6 ask when a glob matches
+  a protected file on disk, for any verb; Q7 ask on all six subcommands; Q8 the five named
+  variables and the `CLAUDE_CODE_*` prefix. Build T01–T06; Q4 and Q5 go to FINDINGS as accepted
+  residuals.
+- T01 build: `never` rows for disabling (by name, `--all`, `-a`), uninstalling or removing cobot
+  and removing its marketplace; `ask` rows for the `i` alias, `update`, `init`/`new`,
+  `eval --trust-plugin`, `prune`/`autoremove`/`--prune`, `configure --values-stdin`, any
+  `disable`, a marketplace removed or refreshed, and `tag --push`. Bypass review (SOUND WITH
+  CHANGES, no deny-level bypass; 1 MAJOR, 3 MINOR), each a test row: `tag --push` and `--prune`
+  ask; the name is matched in any case (`[Cc][Oo][Bb][Oo][Tt]`, Claude Code's id matching
+  unverified); the verb is pinned right after `plugin` or `plugins`, so a prompt's words and
+  `--plugin-dir` no longer hit a deny.

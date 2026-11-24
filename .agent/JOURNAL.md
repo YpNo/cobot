@@ -404,3 +404,11 @@ Proof: every Goal row measured with cobot-rules check; challenger SOUND WITH CHA
 Open: Q1 to Q8 for the owner; checkpoints before the build: the binary's option list for 2.1.311 and 2.1.322, a bypass-mode spike in the owner's terminal, --restricted alone, the CLAUDE_CODE_* semantics, the launchers' docs.
 Next: the owner answers Q1 to Q8; then T01.
 verified: tree a3848ecaaac2f10120f0e5ce89188aa6a64f1207 · spec text and findings only
+
+## 2026-11-24 — gate-f58 T01: cobot's plugin cannot be disabled or removed through claude (story 1)
+Changed: default.rules: never rows for claude plugin disable (by name, --all, -a), uninstall and remove of cobot and marketplace remove or rm of cobot's marketplace, the verb right after plugin or plugins and the name in any case; ask rows for the i alias, update, init and new, eval --trust-plugin, prune, autoremove and --prune, configure --values-stdin, any disable, marketplace remove, rm and update, tag --push. Spec Converge records the owner's answers (all as recommended). Tests in tests/test_gate_f58.py.
+Why: the challenger's BLOCKER on spec gate-f58: claude plugin disable cobot reached no decision while agy's twins are refused.
+Proof: full suite green twice (before and after the review folds); tests/test_gate_f58.py 37 passed; ruff clean. Bypass review SOUND WITH CHANGES (no deny-level bypass; 1 MAJOR, 3 MINOR), each a test row.
+Open: whether Claude Code matches plugin ids without case is unverified (matched either way).
+Next: T02, the claude option tables.
+verified: tree 0643e3125a43053a316925db489defba9e4373f0 · full suite, F-58 file, ruff

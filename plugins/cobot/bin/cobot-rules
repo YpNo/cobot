@@ -6996,8 +6996,11 @@ def protected_verdict(
     return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
 
 
-MAX_COMMAND_CHARS = 32768  # a longer command asks unread: judging it may outrun the hook (F-73)
-TOO_LONG = f"the command is too long to read in time (over {MAX_COMMAND_CHARS} characters); read it first"
+# a longer command is refused unread: judging it may outrun the hook, and an ask would let padding
+# turn a never row into an approvable prompt (F-73, owner: deny on both)
+MAX_COMMAND_CHARS = 32768
+SPLIT_IT = "split it into shorter commands"
+TOO_LONG = f"the command is too long to read in time (over {MAX_COMMAND_CHARS} characters); {SPLIT_IT}"
 
 
 def judge_bash(
@@ -7006,7 +7009,7 @@ def judge_bash(
     """Judge every segment of the command and of every substitution body; the most restrictive
     verdict wins. Also return the trace."""
     if len(command) > MAX_COMMAND_CHARS:
-        return Verdict(ASK, None, TOO_LONG), [(command[:60], [])]
+        return Verdict(DENY, None, TOO_LONG), [(command[:60], [])]
     bash_rules = [r for r in rules if applies(r, "Bash", agent)]
     scanned = shell.scan(command)
     if scanned.error:
@@ -7763,7 +7766,7 @@ def stamp_suffix(cwd: str | None) -> str:
 # under agy, gate-agy.sh's own deadline (COBOT_GATE_DEADLINE) denies first
 GATE_DEADLINE = 7.0  # seconds from the process start; the answer and the shim fit in the rest
 MIN_DEADLINE = 0.1  # a start-up that already spent the budget still leaves the timer something to fire
-TOO_SLOW = "the command takes too long to judge within the hook's time limit; read it before approving"
+TOO_SLOW = f"the command takes too long to judge within the hook's time limit; {SPLIT_IT}"
 
 
 class GateDeadline(BaseException):
@@ -7787,15 +7790,15 @@ def deadline(seconds: float) -> Iterator[None]:
 
 
 def gate(stdin: str, started: float | None = None) -> str | None:
-    """The Claude Code hook's answer, or ask once GATE_DEADLINE passes since ``started`` (the
+    """The Claude Code hook's answer, or deny once GATE_DEADLINE passes since ``started`` (the
     hook passes PROCESS_STARTED: compiling this script under ``-I`` takes a part of its time)."""
     left = max(GATE_DEADLINE - (time.monotonic() - (started or time.monotonic())), MIN_DEADLINE)
     try:
         with deadline(left):
             return gate_within(stdin)
     except GateDeadline:
-        log_event({"tool": "gate", "decision": ASK, "reason": TOO_SLOW})
-        return hook_output(ASK, f"cobot gate: {TOO_SLOW}")
+        log_event({"tool": "gate", "decision": DENY, "reason": TOO_SLOW})
+        return hook_output(DENY, f"cobot gate: {TOO_SLOW}")
 
 
 def gate_within(stdin: str) -> str | None:

@@ -249,8 +249,11 @@ All notable changes to this project are documented here. The format follows
   - a 53 KB command ending in `rm -rf /` took 15.6 s to judge, and ran with no deny;
   - a 16 KB command of `ls src/*N*` steps took 22 s.
 
-  Now a command over 32768 characters asks without being read, and the Claude Code hook asks
-  once 7 s pass. Under agy, `gate-agy.sh` already denied at its own deadline.
+  Now a command over 32768 characters is refused without being read, and the Claude Code hook
+  refuses once 7 s pass since its process began. Both reasons say to split the command. A deny,
+  not an ask, so padding a `never` row's command never makes it an approvable prompt (the
+  owner's choice). Under agy, `gate-agy.sh` already denied at its own deadline. New friction: a
+  generated command that long, or that slow to judge, is refused and has to be split.
 
   Both runtimes. New friction: every editor or debugger run asks, and so does a project script
   named `./editor`.

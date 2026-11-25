@@ -284,16 +284,16 @@ its friction rows stay silent.
       timeout lets the call run. Measured on `4514a83`: a 53 KB command ending in `rm -rf /`
       took 15.6 s, and a 16 KB command of `ls src/*N*` steps took 22 s. So it is HIGH.
     - A cap alone does not hold: time follows the steps, not the bytes.
-    - So `judge_bash` asks unread past 32768 characters, and the Claude Code hook (`gate`) asks
-      once `GATE_DEADLINE` (7 s) passes.
+    - So `judge_bash` refuses unread past 32768 characters, and the Claude Code hook (`gate`)
+      refuses once `GATE_DEADLINE` (7 s) passes. Both reasons say to split the command.
     - The timer raises a `BaseException`, so no reader's `except Exception` swallows it.
     - agy is unchanged past the cap: `gate-agy.sh` already denies at `COBOT_GATE_DEADLINE`.
     - Bypass review (no call left with no decision; 1 MAJOR, 3 MINOR):
       - Folded, each a test row: the 7 s counts from the process start (start-up took about
         0.32 s under load), and the deadline answer is logged.
-      - For the owner (MAJOR): padding a `never` row's command past the cap or the deadline turns
-        its deny into an ask, with no word of the rule. The other choice is deny on both, so the
-        agent splits the command.
+      - The MAJOR: with an ask, padding a `never` row's command past the cap or the deadline
+        turned its deny into an approvable prompt, with no word of the rule. The owner's answer,
+        2026-11-25: "Deny on both". The agent splits the command.
       - Left: a read stuck in a hung NFS or FUSE mount cannot be interrupted (older than this
         branch); `report` and `handback` have no deadline (older; a slow report passes
         unmarked).

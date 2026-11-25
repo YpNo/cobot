@@ -555,3 +555,11 @@ Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook on 
 Open: the MAJOR: a padded never-row command gets ask, not deny (owner's choice: ask or deny on cap and deadline); a hung NFS or FUSE read; report and handback have no deadline.
 Next: the owner answers the MAJOR, then the push and PR.
 verified: tree e4cfbe3e921013ec7fb315852acf056c6cf4f6eb · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents
+
+## 2026-11-25 — T08 gate-f63-f65: deny on both (the owner's answer to the T08 MAJOR)
+Changed: the size cap and the Claude Code hook deadline refuse instead of asking; both reasons say to split the command; tests, CHANGELOG, docs/configuration.md, spec story 10 and FINDINGS F-73 follow; test_main_gate_viaFunction starts a fresh process clock.
+Why: the owner's "Deny on both": with an ask, padding a never row's command past the cap or the deadline turned its deny into an approvable prompt.
+Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook refuses the padded 16 KB glob chain ending in rm -rf / in 7.2 s; ruff, markdownlint, check-plugin, sync-agents clean.
+Open: a hung NFS or FUSE read; report and handback have no deadline; JOURNAL.md over 400 lines.
+Next: the owner's go for the push and the PR.
+verified: tree 499cf639f860f38de32db62801011b5a4f4123d2 · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents

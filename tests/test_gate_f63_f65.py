@@ -750,8 +750,9 @@ def agy_body(project, command):
     return json.dumps({"hookEventName": "PreToolUse", "toolCall": call, "workspacePaths": [str(project)]})
 
 
-def test_story10_commandPastTheCap_asksUnread(rules, project):
-    """A 53 KB command ending in ``rm -rf /`` took 15.6 s: past the hook's 10 s, its deny was lost."""
+def test_story10_commandPastTheCap_deniedUnread(rules, project):
+    """A 53 KB command ending in ``rm -rf /`` took 15.6 s: past the hook's 10 s, its deny was lost.
+    The cap refuses rather than asks (owner: deny on both), so padding never makes a prompt."""
     import time
 
     command = "".join(f"cp src/f{i}.txt build/o{i}.txt && " for i in range(1300)) + "rm -rf /"
@@ -759,36 +760,38 @@ def test_story10_commandPastTheCap_asksUnread(rules, project):
     started = time.monotonic()
     found = verdict(rules, command)
     assert time.monotonic() - started < 1
-    assert found.decision == "ask"
-    assert "too long" in found.reason()
+    assert found.decision == "deny"
+    assert "split it" in found.reason()
 
 
 def test_story10_commandAtTheCap_isJudged(rules, project):
-    filler = "x" * (rules.MAX_COMMAND_CHARS - len("echo ; rm -rf /"))
-    assert decide(rules, f"echo {filler}; rm -rf /") == "deny"
+    filler = "x" * (rules.MAX_COMMAND_CHARS - len("echo "))
+    assert decide(rules, f"echo {filler}") is None
+    assert decide(rules, f"echo {filler}x") == "deny"
 
 
-def test_story10_gatePastItsDeadline_asks(rules, project, monkeypatch):
-    """A command under the cap can still be slow to judge; the hook answers ask before its timeout."""
+def test_story10_gatePastItsDeadline_denies(rules, project, monkeypatch):
+    """A command under the cap can still be slow to judge (the bypass review padded ``rm -rf /``
+    with globs to 31 KB); the hook refuses before its timeout, the agent splits the command."""
     import signal
     import time
 
     monkeypatch.setattr(rules, "GATE_DEADLINE", 0.2)
     started = time.monotonic()
-    out = json.loads(rules.gate(gate_body(SLOW_GLOBS)))["hookSpecificOutput"]
+    out = json.loads(rules.gate(gate_body(SLOW_GLOBS + " && rm -rf /")))["hookSpecificOutput"]
     assert time.monotonic() - started < 2
-    assert out["permissionDecision"] == "ask"
-    assert "time" in out["permissionDecisionReason"]
+    assert out["permissionDecision"] == "deny"
+    assert "time limit" in out["permissionDecisionReason"]
     assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
 
 
-def test_story10_agyPastTheCap_forceAsks(rules, project, monkeypatch):
+def test_story10_agyPastTheCap_denies(rules, project, monkeypatch):
     """Under agy, gate-agy.sh's own deadline denies a slow call; the cap answers a long one first."""
     monkeypatch.delenv("COBOT_RULES_PROJECT_DIR", raising=False)
     (project / ".agent").mkdir()
     (project / ".agent" / "cobot.rules").write_text("")
     command = "rm -rf / ; " + "x" * rules.MAX_COMMAND_CHARS
-    assert json.loads(rules.gate_agy(agy_body(project, command)))["decision"] == "force_ask"
+    assert json.loads(rules.gate_agy(agy_body(project, command)))["decision"] == "deny"
 
 
 def test_story10_deadlineSurvivesABroadHandler(rules, project, monkeypatch):
@@ -805,11 +808,11 @@ def test_story10_deadlineSurvivesABroadHandler(rules, project, monkeypatch):
     monkeypatch.setattr(rules, "GATE_DEADLINE", 0.1)
     monkeypatch.setattr(rules, "judge", judge_swallowing)
     out = json.loads(rules.gate(gate_body("ls")))["hookSpecificOutput"]
-    assert out["permissionDecision"] == "ask"
+    assert out["permissionDecision"] == "deny"
 
 
 def test_story10_startUpCountsAgainstTheDeadline(rules, project, monkeypatch, tmp_path):
-    """Wrap review: the time Python spent starting is part of the hook's 10 s; the ask is logged."""
+    """Wrap review: the time Python spent starting is part of the hook's 10 s; the deny is logged."""
     import time
 
     log = tmp_path / "gate.log"
@@ -818,8 +821,8 @@ def test_story10_startUpCountsAgainstTheDeadline(rules, project, monkeypatch, tm
     started = time.monotonic()
     out = json.loads(rules.gate(gate_body(SLOW_GLOBS), started - 0.95))["hookSpecificOutput"]
     assert time.monotonic() - started < 0.6
-    assert out["permissionDecision"] == "ask"
-    assert json.loads(log.read_text().splitlines()[-1])["decision"] == "ask"
+    assert out["permissionDecision"] == "deny"
+    assert json.loads(log.read_text().splitlines()[-1])["decision"] == "deny"
 
 
 def test_story10_fastCallUnderTheDeadline_unchanged(rules, project):

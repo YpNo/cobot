@@ -467,3 +467,99 @@ Proof: full suite with coverage 98.35 %, 6099 passed; tests/test_gate_f58.py 263
 Open: left out on purpose, HTTPS_PROXY and ALL_PROXY alone (set daily, TLS unread) and AWS_ENDPOINT_URL* (set daily for local AWS work).
 Next: the owner verifies and pushes PR 85.
 verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · full suite with coverage, ruff, shellcheck, markdownlint, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — spec gate-f63-f65: editors and debuggers, newlines, loader variables and dotglob (F-63, F-64, F-65), for the owner
+Changed: .agent/specs/gate-f63-f65.md revision 2: 15 measured Goal rows on 3e83cc6, nine stories (editors opaque by a family pattern; debuggers, profilers and glibc tracers opaque, perf's read-only subcommands narrowed; shell_items reads newlines in its quote pass; loader and runtime-option variables by name and prefix, search paths by value; dotglob turned on in the command; git -c, --config-env, --exec-path and the command variables; the 2.1.331 nested-claude diff; the other launchers; both runtimes), Q1 to Q6 with recommended defaults, accept the risk offered on each. FINDINGS: F-63, F-64, F-65 point at the spec; F-64 raised to HIGH; F-70 opened (git -c and command variables).
+Why: the orchestrator relayed: one spec and one PR for F-63, F-64, F-65 and dotglob on a new branch from main 3e83cc6, challenger, fold, owner questions; no build until the owner answers.
+Proof: every Goal row measured with cobot-rules check (dotglob rows in a folder holding .mcp.json); challenger SOUND WITH CHANGES (1 BLOCKER, 6 MAJOR, 5 MINOR), all folded; the BLOCKER and the main MAJORs re-run by hand (echo a\\<nl>rm -rf /, git --config-env core.fsmonitor=V status, perf report --objdump, vim.basic, sotruss, fakeroot rm -rf /: none).
+Open: Q1 to Q6 for the owner; F-64's escaped-backslash bypass of the never rows is live on main; checkpoints: the readers' newline assumptions, the tools' option lists, zsh's dotglob names, whether agy's run_command has a terminal, the 2.1.331 option diff from ci-claude-pin.
+Next: the owner answers Q1 to Q6; then T01.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text and findings only
+
+## 2026-11-24 — spec gate-f63-f65 revision 3: the 2.1.331 nested-claude option diff (story 7, Q7)
+Changed: .agent/specs/gate-f63-f65.md: Goal rows 16 and 17, a Facts row for the diff (18 added, --registry removed, no shape changed), story 7 rewritten (--managed-settings-in-initialize and --initialize-fields raw-scanned and foreign; --trusted-folder foreign; --organization-gateway and --gateway-json the F-66 class; --web and --routine elsewhere; --discard asks; --max-cost silent; ten options left unknown until checkpoint 5; --registry kept), Q7 added, checkpoint 5 now reads the unclear options' meaning.
+Why: the orchestrator relayed the ci-claude-pin session's diff (commit f5cb6ff) and asked for it as a story or checkpoint, with Q7 where a new question arises.
+Proof: claude --model --managed-settings-in-initialize -p x and claude --model --initialize-fields -p x give none on 3e83cc6 (the unknown-option ask misses the value slot); the 18 ask as unknown elsewhere; --max-cost-usd silent.
+Open: Q1 to Q7 for the owner; row 16 is live once the CI pin or a host moves to 2.1.331.
+Next: the owner answers Q1 to Q7; then T01.
+verified: tree c5e727477f8a699d91327b83c538ea1283206ba4 · spec text only
+
+## 2026-11-24 — gate-f63-f65 T01: newlines and escapes read as bash reads them (story 3, F-64)
+Changed: shell_items reads newlines in bash_escapes, the pass that tracks quotes: an unquoted newline separates, a quoted one stays in its word, a backslash-newline joins only when the backslash is not escaped, and in double quotes \$ and \` are $ and ` (shlex kept the backslash). _cobot_make.join_continuations continues a line on an odd run of backslashes only. Spec Converge records the owner's answers (All as recommended) and the T01 build.
+Why: the challenger's BLOCKER: echo a\\<nl>rm -rf / reached no decision, the never rows bypassed; an awk comment swallowed the rest of a multi-line program.
+Proof: tests/test_gate_f63_f65.py 26 passed, test_cobot_make and test_cobot_shell green; full suite in parallel green but for timing tests under xdist load, which pass serially; ruff check and format clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 1 MINOR), each a test row.
+Open: a bash -c body holding an ANSI-C quote asks rather than denies (command_parts takes expansion holes only).
+Next: T02, editors, debuggers and launchers.
+verified: tree 105698b37b0de535b8f450cd386c44963e33e784 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T02: editors, debuggers, profilers and launchers ask (stories 1, 2, 8; F-63)
+Changed: PROGRAM_RUNNERS (every editor, the debuggers and disassemblers, tracers and profilers, the launchers of Q6 and the review), PROGRAM_RUNNER_FAMILY_RE (vim.basic, emacs-29.4, lldb-18, perf_6.12, the dynamic loader by path) and runs_given_program, first in opaque_as_read; --version, --help or -h alone and perf's reads stay silent; PERF_CONFIG and PERF_EXEC_PATH join START_VARIABLES.
+Why: the owner's Q1, Q2 and Q6, relayed verbatim: All as recommended. valgrind rm -rf / and fakeroot rm -rf / reached no decision.
+Proof: tests/test_gate_f63_f65.py 24 passed; full suite in parallel green but for the xdist timing tests, which pass serially; ruff clean. Bypass review SOUND WITH CHANGES (2 MAJOR, 3 MINOR), each a test row.
+Open: an opaque launcher's inner deny is an ask (Q2's accepted trade-off); ./editor asks.
+Next: T03, loader variables and search paths.
+verified: tree 925dc6a3f056adcfa41a4a2bd8f084cdc2ea15a2 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T03: loader variables and search paths (story 4, F-65)
+Changed: START_VARIABLES gains the loaders any program of a kind reads (GCONV_PATH, OPENSSL_CONF, the JVM's options, DOTNET_STARTUP_HOOKS, LUA_INIT, PERL5DB, Erlang's flags; from the review the GIO, GTK, Qt, GStreamer, Vulkan, Mesa, gdk-pixbuf, OpenSSL-module and .NET-deps folders); START_PREFIXES gains LD_, DYLD_, CORECLR_PROFILER, COR_PROFILER, LUA_INIT_, minus SEARCH_PATHS. search_path_reason reads the search paths by value from assignment_words (past reserved words, wrappers and setters): an entry outside the project, or one the gate cannot place, asks; ., $PWD and ~+ are the walk's folder unless the command names PWD; the variable's own name is inherited; a nameref, loop or getopts setting one asks.
+Why: the owner's Q3, relayed verbatim: All as recommended. LD_PRELOAD=/tmp/x.so ls reached no decision.
+Proof: tests/test_gate_f63_f65.py 28 passed; full suite in parallel green but for the xdist timing tests, which pass serially (test_gate_cd_gaps 14 s, as before); ruff clean. Bypass review RETHINK (2 BLOCKER, 3 MAJOR, 1 MINOR), each a test row.
+Open: build-tool variables (GOFLAGS, MAVEN_OPTS, GRADLE_OPTS, JAVA_OPTS) stay the spec's residual.
+Next: T04, git -c, --exec-path and the command variables.
+verified: tree 0614745a3e43377afd113ac797823b471d75655e · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T04: git -c, --config-env, --exec-path= and the command variables (story 6, F-70)
+Changed: git_command_line_exec reads git's global options before the verb: an exec key set by -c or --config-env asks, as git config does, but a pager key (Q5) and an editor key with a safe value; --exec-path=<dir> asks. START_VARIABLES gains the git variables that run a command or move its config or command folder, and LESSOPEN and LESSCLOSE; GIT_CONFIG_KEY_ and GIT_CONFIG_VALUE_ join the prefixes; editor_variable_reason reads GIT_EDITOR, GIT_SEQUENCE_EDITOR, EDITOR and VISUAL by value. FINDINGS F-71 (agy's terminal, checkpoint 4 unread) and F-72 (a git verb's own options, rsync -e).
+Why: the owner's Q5, relayed verbatim: All as recommended. git -c core.fsmonitor=x status reached no decision.
+Proof: tests/test_gate_f63_f65.py 32 passed; full suite in parallel green but for the known flaky rows (xdist timing, cat */README.md); ruff clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 3 MINOR), each a test row.
+Open: F-71 needs a probe in the owner's terminal; F-72 for the owner.
+Next: T05, dotglob.
+verified: tree 2ce4446ce9912ec3436ed2df6a66955b5fdaf0af · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T05: a glob under dotglob asks as the written-out word does (story 5)
+Changed: dotglob_on reads every placed and written segment (shopt -s, setopt, a shell's -O or -o, set -o, zsh's -4; a name that is not plain counts), the quote-stripped text for a shell's flag one level down and zsh's inversions, and GLOBIGNORE set in any way; GlobBudget.dotglob carries it to glob_names_asked_file, which then skips its leading-dot return. FINDINGS F-73 (the gate's time on long commands, older).
+Why: the owner's Q4, relayed verbatim: All as recommended. shopt -s dotglob; cat * reached .mcp.json with no ask.
+Proof: tests/test_gate_f63_f65.py 37 passed; full suite in parallel green but for the xdist timing tests; ruff clean. Bypass review SOUND WITH CHANGES (1 MAJOR, 2 MINOR), each a test row; no measurable cost on a 53 KB command.
+Open: the zsh rows rest on zsh's manual (zsh is not installed); a text naming GLOBIGNORE= asks.
+Next: T06, the 2.1.331 nested-claude options.
+verified: tree 34da0efb70b54c8d6a4e378b5e5d110c66f0c674 · focused tests, full suite (parallel), ruff
+
+## 2026-11-24 — gate-f63-f65 T06: the 2.1.331 nested-claude options (story 7, Q7)
+Changed: _cobot_nested.py's table gains the 2.1.331 options the ci-claude-pin diff names and --routine; --managed-settings-in-initialize, --initialize-fields and --trusted-folder are FOREIGN; --organization-gateway and --gateway-json are GATEWAYS (the F-66 reason); --web and --routine are ELSEWHERE; --discard is DISCARDING; --max-cost is silent; the ten unread options keep the unknown-option ask. RAW_SCANNED gains the two initialize options and --routine, read up to a word's =. FINDINGS F-74 (claude mcp serve's trailing words, older).
+Why: the owner's Q7, relayed verbatim: All as recommended. claude --model --managed-settings-in-initialize -p x reached no decision.
+Proof: tests/test_gate_f63_f65.py and test_gate_f58.py 316 passed; ruff clean. Bypass review SOUND (2 MINOR), each a test row.
+Open: --max-cost's value shape comes from the relayed diff only (a canary row holds it); F-74.
+Next: T07, agy rows, docs, CHANGELOG, FINDINGS.
+verified: tree 5bc8b5070340263eacddcc0dc5a556350e2e6c33 · focused tests, ruff
+
+## 2026-11-24 — gate-f63-f65 T07: both runtimes, docs, CHANGELOG, FINDINGS (story 9)
+Changed: agy rows, one per story, through gate_agy's run_command; docs/configuration.md gains spec gate-f63-f65's section for both runtimes and drops the Not covered lines it closes; CHANGELOG Security entry; FINDINGS F-63, F-64, F-65 and F-70 closed, F-71 to F-74 open for the owner.
+Why: the orchestrator's build brief: docs for both runtimes, CHANGELOG Security and FINDINGS rows.
+Proof: tests/test_gate_f63_f65.py 64 passed; ruff and markdownlint clean.
+Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words).
+Next: the wrap: code and security reviews, then the full checks.
+verified: tree 8ac0b97e753928b0cf2a5403f2e0544215a7cc81 · focused tests, ruff, markdownlint
+
+## 2026-11-24 — wrap gate-f63-f65: code and security reviews folded
+Changed: search_path_reason's two text reads cached per command (search_path_facts); program_walk finds a reader past IFS=, while, if, {, command and builtin; env stops at its program; DOTGLOB_TEXT_RE's unsetopt span bounded; the editor reason shows a substitution; body_substitutions expands the substitutions of an opaque shell -c body as units, so bash -c "echo \$(rm -rf /)" denies again; two comments updated; spec Converge records the wrap.
+Why: the wrap code review (3 MAJOR, 4 MINOR) and security review (1 HIGH: a deny fell to an ask once \$ read as bash reads it; a differential of 5 746 test commands found no other weakening).
+Proof: full suite with coverage 98.38 %, 6167 passed (serial); tests/test_gate_f63_f65.py 68 passed in 8.8 s; ruff check and format, markdownlint, shellcheck, plugin validate --strict x2, check-plugin, sync-agents clean; brief 5537 of 6000.
+Open: F-71 (agy's terminal), F-72 (a git verb's own options, rsync -e), F-73 (time on long commands), F-74 (claude mcp serve's trailing words); JOURNAL.md over 400 lines (compact is the owner's call).
+Next: the owner verifies and pushes the branch.
+verified: tree a10668b48c96b8ce592b2944d16eb88e0f1e0413 · full suite with coverage, ruff, markdownlint, shellcheck, plugin validate x2, check-plugin, sync-agents
+
+## 2026-11-24 — T08 gate-f63-f65: the size cap and the hook deadline (F-73)
+Changed: judge_bash asks unread past MAX_COMMAND_CHARS (32768); gate() runs gate_within under a SIGALRM deadline of GATE_DEADLINE (7 s) counted from the process start, raising GateDeadline (a BaseException) and answering a logged ask; gate_agy unchanged (gate-agy.sh denies at its own deadline); spec story 10 and T08; F-73 raised to HIGH and closed; CHANGELOG Security, docs/configuration.md.
+Why: the owner's "Fold a size cap in". F-73 did not fail closed under Claude Code: a hook past its 10 s timeout lets the call run, and a 53 KB command ending in rm -rf / took 15.6 s. A cap alone did not hold (a 16 KB glob chain took 22 s), so the deadline too.
+Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook on the 16 KB glob and variable chains answers ask in 7.2 s, the 53 KB command in 0.24 s; ruff, markdownlint, check-plugin, sync-agents clean; a bypass review (no call left without a decision; 1 MAJOR for the owner, 2 MINOR folded as test rows).
+Open: the MAJOR: a padded never-row command gets ask, not deny (owner's choice: ask or deny on cap and deadline); a hung NFS or FUSE read; report and handback have no deadline.
+Next: the owner answers the MAJOR, then the push and PR.
+verified: tree e4cfbe3e921013ec7fb315852acf056c6cf4f6eb · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents
+
+## 2026-11-25 — T08 gate-f63-f65: deny on both (the owner's answer to the T08 MAJOR)
+Changed: the size cap and the Claude Code hook deadline refuse instead of asking; both reasons say to split the command; tests, CHANGELOG, docs/configuration.md, spec story 10 and FINDINGS F-73 follow; test_main_gate_viaFunction starts a fresh process clock.
+Why: the owner's "Deny on both": with an ask, padding a never row's command past the cap or the deadline turned its deny into an approvable prompt.
+Proof: full suite with coverage 98.39 %, 6174 passed (serial); the real hook refuses the padded 16 KB glob chain ending in rm -rf / in 7.2 s; ruff, markdownlint, check-plugin, sync-agents clean.
+Open: a hung NFS or FUSE read; report and handback have no deadline; JOURNAL.md over 400 lines.
+Next: the owner's go for the push and the PR.
+verified: tree 499cf639f860f38de32db62801011b5a4f4123d2 · full suite with coverage, ruff, markdownlint, check-plugin, sync-agents

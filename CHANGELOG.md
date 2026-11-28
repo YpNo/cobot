@@ -217,6 +217,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **Newlines are read as bash reads them (F-64, raised to HIGH).** An escaped backslash before a
+  newline hid the next line from the `never` rows (`echo a\\<newline>rm -rf /` had no decision).
+  It is refused now. A quoted newline stays in its word, so an awk comment no longer swallows the
+  rest of the program. In double quotes `\$` and `` \` `` read as bash reads them, and a Makefile
+  recipe line ending in `\\` ends there.
+- **Editors, debuggers, profilers and launchers ask (F-63).**
+  - Every run of a vi-family editor, emacs, `ed`, `nano`, `hx` and Debian's `editor` asks, and so
+    does every run of `gdb`, `lldb`, `r2`, `valgrind`, `ltrace`, `perf`, `rr` or glibc's tracers,
+    versioned names included.
+  - Launchers that ran a command with no decision ask too: `fakeroot`, `eatmydata`, `nsenter`,
+    `setpriv`, `prlimit`, `xvfb-run`, `torsocks`, `proxychains`, `faketime`, `numactl`,
+    `runuser`, `sg`, `capsh`, and the dynamic loader by path. `valgrind rm -rf /` was silent.
+  - `--version` or `--help` alone, and `perf report`, stay silent.
+- **Loader variables and search paths (F-65).** Setting `LD_*`, `DYLD_*`, `JAVA_TOOL_OPTIONS`,
+  `OPENSSL_CONF`, `DOTNET_STARTUP_HOOKS`, `LUA_INIT`, `PERL5DB` or a GIO, GTK, Qt or GStreamer
+  module folder in the command asks. `PYTHONPATH`, `LD_LIBRARY_PATH`, `NODE_PATH` and the other
+  search paths ask when an entry lies outside the project. `PYTHONPATH=. pytest` stays silent.
+- **`git -c` and command variables (F-70).** `git -c core.fsmonitor=x status`, `--config-env`,
+  `--exec-path=<dir>`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, `LESSOPEN`, and an `EDITOR` other than
+  `true` or `cat` ask, as `git config` with those keys does. Pagers stay out, since none runs
+  without a terminal.
+- **dotglob.** A command that turns on `dotglob` or zsh's `globdots` asks when a glob reaches
+  `.mcp.json` or `~/.claude.json` on disk (`shopt -s dotglob; cat *`).
+- **Claude Code 2.1.331.** The options the CI pin adds are read:
+  - `--managed-settings-in-initialize`, `--initialize-fields` and `--routine` ask wherever they
+    sit;
+  - `--trusted-folder`, the gateway options, `--web` and `--discard` ask with their own reasons.
+- **The gate answers within the hook's time limit (F-73, raised to HIGH).** Claude Code runs a
+  call whose hook outlives its 10 s timeout, so a long command lost its decision:
+  - a 53 KB command ending in `rm -rf /` took 15.6 s to judge, and ran with no deny;
+  - a 16 KB command of `ls src/*N*` steps took 22 s.
+
+  Now a command over 32768 characters is refused without being read, and the Claude Code hook
+  refuses once 7 s pass since its process began. Both reasons say to split the command. A deny,
+  not an ask, so padding a `never` row's command never makes it an approvable prompt (the
+  owner's choice). Under agy, `gate-agy.sh` already denied at its own deadline. New friction: a
+  generated command that long, or that slow to judge, is refused and has to be split.
+
+  Both runtimes. New friction: every editor or debugger run asks, and so does a project script
+  named `./editor`.
 - **A copy, a download or an extraction is judged where it lands (F-56, F-60).**
   - An option value joined to its option now gets the separate form's decision:
     `cp --target-directory=~/.claude cobot.rules`, `cp -t$HOME/.claude …`, `curl -o~/…`,

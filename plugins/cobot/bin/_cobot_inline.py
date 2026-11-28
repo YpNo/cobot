@@ -876,8 +876,9 @@ def part_end(script: str, position: int, delimiter: str) -> int:
 
 
 def line_end(script: str, position: int) -> int:
-    """The end of the line: a newline, or ``" ; "``, which is what the gate's command splitter leaves
-    of a newline inside quotes (``shell_items``), so a command after it is still read."""
+    """The end of the line: a newline, or ``" ; "``. The splitter now keeps a quoted newline as it
+    is (spec gate-f63-f65, story 3), so ``" ; "`` is only a guess kept for safety: a false ask at
+    worst."""
     newline = script.find("\n", position)
     newline = len(script) if newline < 0 else newline
     split = script.find(" ; ", position, newline)  # bounded: linear over a long script (wrap review)
@@ -886,8 +887,9 @@ def line_end(script: str, position: int) -> int:
 
 def text_end(script: str, position: int) -> int:
     """``a``, ``i`` and ``c`` text: to the end of the line, and on past each line ending in an odd
-    run of ``\\`` (``foo\\\\`` ends the text). A ``\\`` before a blank may be what the splitter left
-    of ``\\`` and a newline, so the text ends there too: a false ask at worst."""
+    run of ``\\`` (``foo\\\\`` ends the text). A ``\\`` before a blank ends it too: the splitter no
+    longer leaves one of a backslash-newline (spec gate-f63-f65), so this is kept for safety, a
+    false ask at worst."""
     end = line_end(script, position)
     while end < len(script) and odd_backslashes(script, end):
         end = line_end(script, end + 1)

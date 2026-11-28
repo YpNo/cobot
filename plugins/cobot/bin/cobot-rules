@@ -26,6 +26,7 @@ named in the default layer, and an owner or project ``ask`` outranks both.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import fcntl
 import fnmatch
@@ -36,14 +37,17 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import time
 import unicodedata
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+PROCESS_STARTED = time.monotonic()  # the hook's time limit counts from here (F-73)
 
 try:
     import tomllib  # Python 3.11+
@@ -130,6 +134,34 @@ OPAQUE = frozenset(
     "bwrap script tmux screen pueue tsp nq".split()  # bwrap: wrap security review, stories 7 and 8
 )
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish"})
+# editors, debuggers, profilers and launchers: each runs commands from its options, its stdin, a
+# project file it reads (.exrc, .gdbinit, .dir-locals.el), or a program it is given; every run asks
+# (spec gate-f63-f65, stories 1, 2 and 8; Q1, Q2 and Q6, the owner: "All as recommended")
+PROGRAM_RUNNERS = frozenset(
+    # the vi family, emacs, ed and the other editors, Debian's alternatives
+    "vim vi ex view vimdiff rvim rview gvim gview evim vimx nvim nvi lvim vis emacsclient xemacs "
+    "ed red kak mg zile jed nano rnano pico micro joe hx helix editor sensible-editor vipe "
+    # debuggers and disassemblers that run commands (T02 review: r2 -c '!x', rizin, frida)
+    "gdb-multiarch gdbtui rust-gdb cgdb gdbserver rust-lldb lldb-server dlv jdb ddd kdbg edb "
+    "r2 radare2 rizin frida "
+    # tracers and profilers, glibc's own
+    "ltrace rr catchsegv heaptrack uftrace bpftrace sotruss xtrace memusage "
+    # launchers that run the command after their options (T02 review adds the second line on)
+    "fakeroot eatmydata nsenter setpriv prlimit xvfb-run ssh-agent "
+    "torsocks tsocks proxychains proxychains4 faketime numactl ifne trickle cpulimit cgexec "
+    "systemd-inhibit runuser sg newgrp capsh".split()
+)
+# versioned or suffixed names of the same families: vim.basic, vim.tiny, emacs-29.4, lldb-18, perf_6.12
+# (perf by its version digits only: perf_analyzer is another tool; T02 review), and the dynamic
+# loader run by path (/lib64/ld-linux-x86-64.so.2 /bin/rm …)
+PROGRAM_RUNNER_FAMILY_RE = re.compile(
+    r"(?:vim?|nvim|gvim|emacs|gdb|lldb|valgrind)(?:[._-][\w.+-]*)?|perf(?:[._-]\d[\w.]*)?"
+    r"|ld(?:-linux[\w.-]*)?\.so[\d.]*"
+)
+SOLE_INFO_OPTIONS = frozenset({"--version", "--help", "-h"})  # alone, each prints and exits
+PERF_READS = frozenset({"list", "version", "--version", "help"})
+PERF_REPORTS = frozenset({"report", "annotate", "diff"})  # read a perf.data, unless told to run a tool
+PERF_PROGRAM_OPTIONS = ("--objdump", "--addr2line", "--exec-path")  # each names a program perf runs
 OPAQUE_SUBCOMMANDS = {
     "mise": frozenset({"run", "exec", "x", "r"}),
     "npm": frozenset({"run", "run-script", "exec", "x", "explore"}),  # explore: a shell in a package
@@ -235,7 +267,7 @@ LOOP_HEADS = frozenset({"while", "until", "for", "select"})
 REDIRECTS = frozenset({">", ">>", "<", "<<", "2>", "&>"})
 UNSURE_PATH_CHARS = frozenset("$`*?[{\\")  # expansions the gate does not perform
 PWD_NAMES = ("$PWD", "${PWD}")  # the shell's own directory, unless the script assigns PWD
-LINE = "\n"  # between the lines of a runner body (the shell items turn a newline into ``;``)
+LINE = "\n"  # between the lines of a runner body (the shell items turn an unquoted newline into ``;``)
 # a script that may redefine cd or change how it resolves: the walk does not follow it
 UNTRACKABLE_RE = re.compile(
     r"\b(?:CDPATH|shopt|alias|enable|eval|trap|source|function)\b|\w\s*\(\s*\)"
@@ -656,9 +688,44 @@ def mark_literal_semicolons(text: str) -> str:
     return "".join(out)
 
 
+def bash_escapes(text: str) -> str:
+    """Newlines and escapes read in the pass that tracks quotes, as bash reads them (spec
+    gate-f63-f65, story 3, F-64): an unquoted newline is a separator; a quoted one stays in its
+    word; a backslash-newline is removed outside single quotes, and only when the backslash is not
+    itself escaped (``a\\\\<nl>b`` is ``a\\``, then ``b``). A ``replace`` before the pass read the
+    escaped backslash as a continuation and hid the next line from the rows. In double quotes,
+    ``\\$`` and ``\\``` are ``$`` and ````` to bash, which shlex keeps as two characters: a
+    ``bash -c`` string then reached its reader in another form (T01 review: ``bash -c "echo
+    \\$'it\\\\'s'; git push --force …"``)."""
+    out, quote, i = [], "", 0
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            out.append(c)
+            quote = "" if c == "'" else quote
+        elif c == "\\" and i + 1 < len(text):
+            following = text[i + 1]
+            if quote == '"' and following in "$`":
+                out.append(following)
+            elif following != "\n":
+                out.append(text[i : i + 2])
+            i += 2
+            continue
+        elif quote == '"':
+            out.append(c)
+            quote = "" if c == '"' else quote
+        elif c == "\n":
+            out.append(" ; ")
+        else:
+            out.append(c)
+            quote = c if c in "'\"" else ""
+        i += 1
+    return "".join(out)
+
+
 def shell_items(command: str) -> list[str | list[str]]:
     """The argv-like segments of a shell command and the operator tokens between them, in order."""
-    joined = mark_literal_semicolons(command.replace("\\\n", " ").replace("\n", " ; "))
+    joined = mark_literal_semicolons(bash_escapes(command))
     lexer = shlex.shlex(joined, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""  # shlex would drop the rest of ``nix develop .#dev -c …`` as a comment
@@ -2205,14 +2272,31 @@ def gh_unknown_command(plain: list[str]) -> bool:
     return bool(word) and not option_word(word) and word not in GH_COMMANDS
 
 
+def runs_given_program(plain: list[str]) -> bool:
+    """An editor, debugger, profiler or launcher of PROGRAM_RUNNERS or its family pattern; its
+    ``--version`` or ``--help`` alone is silent, and so are perf's reads (spec gate-f63-f65)."""
+    head = plain[0]
+    if head not in PROGRAM_RUNNERS and not PROGRAM_RUNNER_FAMILY_RE.fullmatch(head):
+        return False
+    if len(plain) == 2 and plain[1] in SOLE_INFO_OPTIONS:
+        return False
+    if head.startswith("perf"):
+        sub = plain[1] if len(plain) > 1 else ""
+        names_program = any(word.startswith(PERF_PROGRAM_OPTIONS) for word in plain[2:])
+        return not (sub in PERF_READS or (sub in PERF_REPORTS and not names_program))
+    return True
+
+
 def opaque_as_read(plain: list[str]) -> bool:
     if not plain:
         return False
     head = plain[0]
+    if runs_given_program(plain):
+        return True
     if head in OPAQUE or head.startswith("$") or head == "env" or head in WRAPPER_OPTIONS:
         # a leftover ``env`` or wrapper carries options the gate does not read
         return True
-    if head == "git" and git_alias_set(plain):
+    if head == "git" and (git_alias_set(plain) or git_command_line_exec(plain)):
         return True
     if head == "mise":  # run/exec, a global flag, or the ``mise <task>`` shorthand
         sub = plain[1] if len(plain) > 1 else ""
@@ -3230,6 +3314,24 @@ def expand_units(
             expand_units(hole.body, hole.span, here, state, reached, entries)
 
 
+def body_substitutions(entries: list, state: ShellState, reached: Reached, depth: int = 0) -> list:
+    """The substitutions inside a shell ``-c`` body the expansion left opaque, expanded as units, so
+    a ``never`` row in ``bash -c "echo \\$(rm -rf /)"`` denies as at the top level (wrap security
+    review: the body read as bash passes it holds ``$(…)``, which kept it opaque)."""
+    extra: list = []
+    for segment, _, _, dirs in entries:
+        body = shell_body(strip_wrappers(segment))
+        if body is None or ("$(" not in body and "`" not in body):
+            continue
+        inner = shell.scan(body, frozenset(shell.sentinels(body)))
+        for hole in [] if inner.error else inner.holes.values():
+            if hole.body is not None:
+                expand_units(hole.body, hole.span, dirs, state, reached, extra)
+    if extra and depth < MAX_EXPANSION:
+        extra.extend(body_substitutions(extra, state, reached, depth + 1))
+    return extra
+
+
 def canonical(tokens: list[str]) -> list[str]:
     steps = (
         expand_push_flags,
@@ -3308,6 +3410,38 @@ def git_alias_set(plain: list[str]) -> bool:
             value = arg.partition("=")[2] or following
         if value.lower().startswith("alias."):
             return True
+    return False
+
+
+GIT_GLOBAL_VALUES = frozenset(
+    {"-c", "-C", "--config-env", "--git-dir", "--work-tree", "--namespace", "--attr-source"}
+)
+GIT_EDITOR_KEYS = frozenset({"core.editor", "sequence.editor"})
+SAFE_COMMAND_VALUES = frozenset({"", "true", ":", "cat"})  # an editor or pager that runs nothing
+
+
+def git_command_line_exec(plain: list[str]) -> bool:
+    """``git -c core.fsmonitor=x status``, ``--config-env``, ``--exec-path=<dir>``: a key whose value
+    git runs, or a folder of git's own commands, set on the command line before the verb, as ``git
+    config`` would set it (spec gate-f63-f65, story 6, F-70). The verb's own options (``git clone
+    -c``, ``--upload-pack``) are F-72, for the owner. A pager key is left out (a pager never
+    runs without a terminal, Q5), and an editor key with a safe value stays silent."""
+    index = 1
+    while index < len(plain) and plain[index].startswith("-"):
+        arg = plain[index]
+        following = plain[index + 1] if index + 1 < len(plain) else ""
+        if arg.startswith("--exec-path="):
+            return True  # without ``=``, git prints its own folder and exits (T04 review)
+        value = following if arg == "-c" else ""
+        if arg.startswith("--config-env"):
+            value = arg.partition("=")[2] or following
+        key, _, setting = value.partition("=")
+        lowered = key.lower()
+        pager = lowered == "core.pager" or lowered.startswith("pager.")
+        safe_editor = arg == "-c" and lowered in GIT_EDITOR_KEYS and setting.strip() in SAFE_COMMAND_VALUES
+        if key and git_exec_key(key) and not pager and not safe_editor:
+            return True
+        index += 2 if arg in GIT_GLOBAL_VALUES else 1
     return False
 
 
@@ -3935,10 +4069,11 @@ class GlobBudget:
 
     entries: int
     deadline: float
+    dotglob: bool = False  # the command turns dotglob on: a glob reaches dotfiles (gate-f63-f65)
 
     @classmethod
-    def fresh(cls) -> GlobBudget:
-        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE)
+    def fresh(cls, dotglob: bool = False) -> GlobBudget:
+        return cls(GLOB_ENTRIES_MAX, time.monotonic() + GLOB_DEADLINE, dotglob)
 
     def take(self) -> bool:
         """One more entry; False once the entries or the time are spent."""
@@ -4435,6 +4570,56 @@ def with_known_folders(token: str, cwd: str | None) -> str | None:
     return token
 
 
+PLAIN_OPTION_RE = re.compile(r"[A-Za-z_]+")
+GLOBDOTS = "globdots"  # zsh's name, read without case or underscores
+# read from the quote-stripped text, so a shell's flag one level down counts (``bash -c 'bash -O
+# dotglob -c …'``, ``find -exec bash -O dotglob``), and zsh's inversions (T05 review)
+DOTGLOB_TEXT_RE = re.compile(
+    r"(?:^|[\s;&|(`])(?:-O\s+dotglob|-o\s+glob_?dots|\+o\s+no_?glob_?dots)\b"
+    r"|\bunsetopt\b[^;&|\n]{0,256}?\bno_?glob_?dots\b|\boptions\[glob_?dots\]",  # bounded (wrap review)
+    re.IGNORECASE,
+)
+ZSH_GLOBDOTS_LETTER = "4"  # zsh's one-letter flag for GLOB_DOTS (zsh, set and setopt)
+
+
+def dotglob_on(segments: list[list[str]], command: str) -> bool:
+    """Whether the command may turn on dotglob (bash) or globdots (zsh), so a glob reaches dotfiles
+    (spec gate-f63-f65, story 5, Q4). Read from the words of every segment, ``bash -c`` bodies
+    included, so ``dot''glob`` is ``dotglob``; an option name that is not plain (an expansion) counts.
+    ``GLOBIGNORE`` set in any way turns dotglob on too."""
+    text = re.sub(r"[\\'\"]", "", command)
+    if sets_start_variable(text, "GLOBIGNORE") or DOTGLOB_TEXT_RE.search(text):
+        return True
+    try:  # the written segments too: ``bash -O dotglob -c …`` is placed as its body only
+        written = split_segments(command)
+    except ValueError:
+        return True  # words the splitter cannot read: assume the worst
+    return any(segment_turns_dotglob_on(strip_wrappers(segment)) for segment in [*segments, *written])
+
+
+def segment_turns_dotglob_on(plain: list[str]) -> bool:
+    head = plain[0] if plain else ""
+    words = plain[1:]
+
+    def names(option: str) -> bool:
+        return (
+            option == "dotglob"
+            or option.replace("_", "").lower() == GLOBDOTS
+            or not PLAIN_OPTION_RE.fullmatch(option)
+        )
+
+    if head == "shopt" and any(w.startswith("-") and "s" in w for w in words):
+        return any(names(w) for w in words if not w.startswith("-"))
+    if head in ("zsh", "set", "setopt") and any(
+        w[:1] == "-" and w[1:2] != "-" and ZSH_GLOBDOTS_LETTER in w for w in words
+    ):
+        return True
+    if head == "setopt":
+        return any(names(w) for w in words if not w.startswith("-"))
+    takes = {"-O", "-o"} if head in SHELLS else {"-o"} if head == "set" else set()
+    return any(w in takes and names(v) for w, v in itertools.pairwise(words))
+
+
 def names_meet(last: str, pattern: str) -> bool:
     """Whether a glob's last segment and a row's last segment can name the same file, either way
     round (``.mc?.json`` and ``.mcp.json``; ``.claude.json.b*`` and ``.claude.json.backup*``).
@@ -4449,7 +4634,7 @@ def glob_names_asked_file(token: str, cwd: str | None, protected: list[Rule], bu
     lexical "could match" comes first, so only such globs list a folder."""
     glob, _ = path_glob(os.path.expanduser(token))
     last = glob.rstrip("/").rsplit("/", 1)[-1]
-    if GLOB_HOLES & set(last) and not last.startswith("."):
+    if GLOB_HOLES & set(last) and not last.startswith(".") and not budget.dotglob:
         return False  # without dotglob, bash reaches a dotfile only through a leading literal dot
     asked = [r for r in protected if r.decision == "ask" and names_meet(last, r.pattern)]
     if "/../" not in glob:  # a ``..`` after a hole defeats the lexical check (T05 review)
@@ -4470,6 +4655,7 @@ def protected_file_touched(
     paths: list[str] | None = None,
     visited: Dirs = frozenset(),
     homes: frozenset[str] = frozenset(),
+    dotglob: bool = False,
 ) -> str | None:
     """A shell word that names, or with a hole in it could name, a file protected by a ``never``
     Edit/Write rule, or that names one an ``ask`` row covers (``~/.claude.json`` and ``.mcp.json``,
@@ -4483,7 +4669,7 @@ def protected_file_touched(
     anchors = protected_anchors(protected)
     start = directories_of(Path(cwd or os.getcwd()))
     homed = home_cd_targets([segment for segment, _ in placed])
-    budget = GlobBudget.fresh()
+    budget = GlobBudget.fresh(dotglob)
     fallback: str | None = None
     jobs = [(segment, dirs, True) for segment, dirs in placed]
     segments = [segment for segment, _ in placed]
@@ -6134,6 +6320,130 @@ def outside_script(argv: list[str], dirs: Dirs, cwd: str | None, holes: dict) ->
     return None
 
 
+ASSIGNMENT_WORD_RE = re.compile(r"([A-Za-z_]\w*)\+?=(.*)", re.DOTALL)
+SEARCH_PATH_SETTERS = frozenset({"export", "declare", "typeset", "local", "readonly", "env"})
+SEARCH_PATH_READERS = frozenset({"read", "mapfile", "readarray", "printf"})  # set it from input
+
+
+# where a program looks for its libraries or modules ahead of the system's: read by value from the
+# assignment words, never by name from the text (spec gate-f63-f65, story 4, Q3); an entry outside
+# the project, or one the gate cannot place, asks
+SEARCH_PATHS = frozenset(
+    "LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH "
+    "DYLD_FALLBACK_FRAMEWORK_PATH PYTHONPATH PYTHONUSERBASE PERL5LIB PERLLIB RUBYLIB NODE_PATH "
+    "LUA_PATH LUA_CPATH CLASSPATH GEM_PATH GEM_HOME ERL_LIBS".split()
+    + [f"LUA_{kind}PATH_5_{minor}" for kind in ("", "C") for minor in range(1, 5)]  # T03 review
+)
+SEARCH_PATH_NAMES = "|".join(sorted(SEARCH_PATHS))
+# other ways a command sets a search path, read from its text (T03 review): a nameref to it, a loop
+# or getopts variable
+SEARCH_PATH_INDIRECT_RE = re.compile(
+    rf"\b(?:for|select)\s+(?:{SEARCH_PATH_NAMES})\s+in\b|\bgetopts\s+\S+\s+(?:{SEARCH_PATH_NAMES})\b"
+    rf"|\b(?:declare|typeset|local)\s+(?:-\w+\s+)*\w+=(?:{SEARCH_PATH_NAMES})\b"
+)
+PWD_ASSIGNED_RE = re.compile(r"(?<!\$)(?<!\$\{)\bPWD\b")  # the script names PWD other than as $PWD
+
+
+def program_walk(segment: list[str]) -> tuple[list[str], list[str]]:
+    """The assignment words before the segment's program, past reserved words, wrappers and prefix
+    commands (``time``, ``if``, ``{``, ``nice env``, ``command``; T03 review), and the words from its
+    program on."""
+    found: list[str] = []
+    tokens = list(segment)
+    while tokens:
+        if ASSIGNMENT_WORD_RE.fullmatch(tokens[0]):
+            found.append(tokens.pop(0))
+            continue
+        if tokens[0] in SEARCH_PATH_SETTERS:
+            break
+        rest = drop_wrapper(tokens)
+        if rest is None:
+            break
+        tokens = rest
+    return found, tokens
+
+
+def assignment_words(segment: list[str]) -> list[str]:
+    """The assignment words the segment's program runs under, and those a setter takes: every one
+    for ``export`` or ``declare``, those before its program for ``env`` (wrap code review: ``env grep
+    NAME=x f`` is grep's data)."""
+    found, rest = program_walk(segment)
+    if not rest or rest[0] not in SEARCH_PATH_SETTERS:
+        return found
+    words = rest[1:]
+    if rest[0] == "env":
+        words = list(
+            itertools.takewhile(lambda w: w.startswith("-") or ASSIGNMENT_WORD_RE.fullmatch(w), words)
+        )
+    return found + [word for word in words if ASSIGNMENT_WORD_RE.fullmatch(word)]
+
+
+@functools.lru_cache(maxsize=8)
+def search_path_facts(text: str) -> tuple[bool, bool]:
+    """Read once per command, not per segment (wrap code review): whether it sets a search path
+    indirectly, and whether ``$PWD`` keeps its meaning (the command names PWD nowhere else)."""
+    return bool(SEARCH_PATH_INDIRECT_RE.search(text)), not PWD_ASSIGNED_RE.search(text)
+
+
+def search_path_reason(segment: list[str], dirs: Dirs, cwd: str | None, holes: dict, text: str) -> str | None:
+    """A search path (SEARCH_PATHS) set in the segment with an entry outside the project, or one the
+    gate cannot place, asks (spec gate-f63-f65, story 4, Q3). Read from the assignment words, so a
+    ``grep`` for the name stays silent. An empty entry or ``.`` is the folder the segment runs in,
+    ``$PWD`` and ``~+`` are that folder unless the command names PWD, and the variable's own name is
+    the inherited value (the F-59 class). ``text`` is the whole command."""
+    _, program = program_walk(segment)
+    if (
+        program[:1]
+        and program[0] in SEARCH_PATH_READERS
+        and any(word.removeprefix("-v") in SEARCH_PATHS for word in program)
+    ):
+        return "a search path set from input: the gate cannot place it"
+    indirect, pwd_known = search_path_facts(text)
+    if indirect:
+        return "a search path set through a nameref, a loop or getopts: the gate cannot place it"
+    root = Path(cwd or os.getcwd()).resolve()
+    bases = placed_bases(None, dirs, root)
+    for word in assignment_words(segment):
+        name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
+        if name not in SEARCH_PATHS:
+            continue
+        for entry in value.split(":"):
+            if not search_entry_inside(entry, name, bases, root, holes, pwd_known):
+                return f"{name} loads code from outside the project: '{show(entry, holes)[:60]}'"
+    return None
+
+
+EDITOR_VARIABLES = frozenset({"GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "EDITOR", "VISUAL"})
+
+
+def editor_variable_reason(segment: list[str], holes: dict) -> str | None:
+    """An editor variable set to a command other than a safe one (empty, ``true``, ``:``, ``cat``)
+    asks: git, crontab and the rest run it without a terminal (spec gate-f63-f65, story 6, Q5). Read
+    from the assignment words, so a ``grep`` for the name stays silent."""
+    for word in assignment_words(segment):
+        name, value = ASSIGNMENT_WORD_RE.fullmatch(word).groups()
+        if name in EDITOR_VARIABLES and value.strip() not in SAFE_COMMAND_VALUES:
+            return f"{name} names a command a program runs: '{show(value, holes)[:60]}'"
+    return None
+
+
+def search_entry_inside(
+    entry: str, name: str, bases: list[Path] | None, root: Path, holes: dict, pwd_known: bool
+) -> bool:
+    """Whether one entry of a search path lies in the project from every folder the segment runs in."""
+    shown = show(entry, holes)
+    if shown in (f"${name}", f"${{{name}}}"):
+        return True  # the inherited value
+    if name == "CLASSPATH" and shown.endswith("*") and "*" not in shown[:-1]:
+        entry = shown[:-1]  # Java's own wildcard, every jar of a folder (T03 review)
+    here = (*PWD_NAMES, "~+") if pwd_known else ()
+    lead = next((word for word in here if entry == word or entry.startswith(word + "/")), None)
+    entry = "." + entry[len(lead) :] if lead else entry or "."
+    if entry.startswith("~") and entry != "~" and not entry.startswith("~/"):
+        return False  # ``~-`` (OLDPWD), ``~user``: a folder the gate does not place
+    return word_inside(entry, bases, root)
+
+
 def script_words(argv: list[str]) -> tuple[list[str], str | None]:
     """The files an interpreter, awk or sed runs or loads, and the folder it changes into first;
     none when it already asks for its inline code or runs an installed plugin's file."""
@@ -6686,11 +6996,20 @@ def protected_verdict(
     return Verdict(ASK, None, f"shell access to a protected file '{show(touched, holes)[:60]}'")
 
 
+# a longer command is refused unread: judging it may outrun the hook, and an ask would let padding
+# turn a never row into an approvable prompt (F-73, owner: deny on both)
+MAX_COMMAND_CHARS = 32768
+SPLIT_IT = "split it into shorter commands"
+TOO_LONG = f"the command is too long to read in time (over {MAX_COMMAND_CHARS} characters); {SPLIT_IT}"
+
+
 def judge_bash(
     command: str, rules: list[Rule], agent: str | None, cwd: str | None = None
 ) -> tuple[Verdict, list[tuple[str, list[Rule]]]]:
     """Judge every segment of the command and of every substitution body; the most restrictive
     verdict wins. Also return the trace."""
+    if len(command) > MAX_COMMAND_CHARS:
+        return Verdict(DENY, None, TOO_LONG), [(command[:60], [])]
     bash_rules = [r for r in rules if applies(r, "Bash", agent)]
     scanned = shell.scan(command)
     if scanned.error:
@@ -6701,6 +7020,7 @@ def judge_bash(
     entries: list[tuple[list[str], str, shell.Scan, Dirs]] = []
     start = directories_of(Path(cwd or os.getcwd()))
     expand_units(scanned, "", start, shell_state(command), reached, entries)
+    entries.extend(body_substitutions(entries, shell_state(command), reached))
     variables = variables_of(command, scanned)
     entries = [
         (reading, origin, unit, dirs)
@@ -6712,7 +7032,8 @@ def judge_bash(
     homed = {Path(folder) for folder in home_cd_targets([segment for segment, _ in placed])}
     directories = sorted({d for _, dirs in placed for d in (dirs or ())} | set(start or ()) | homed)
     reached.paths.extend(program_writes([segment for segment, _ in placed], holes))
-    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited)
+    dotglob = dotglob_on([segment for segment, _ in placed], command)
+    touched = protected_file_touched(placed, cwd, rules, reached.paths, reached.visited, dotglob=dotglob)
     in_protected = protected_cwd(directories, rules)
     if touched:
         best = protected_verdict(touched, holes, placed, cwd, rules, reached)
@@ -6737,7 +7058,11 @@ def judge_bash(
             verdict = Verdict(ASK, None, "a downloader reads options the gate does not see (a config file)")
         if extraction_unplaced(program_of(segment)) and outranks(Verdict(ASK, None, ""), verdict):
             verdict = Verdict(ASK, None, "absolute or rewritten member names: it may land anywhere")
-        outside = outside_script(program_of(segment), dirs, cwd, holes)
+        outside = (
+            outside_script(program_of(segment), dirs, cwd, holes)
+            or search_path_reason(segment, dirs, cwd, holes, command)
+            or editor_variable_reason(segment, holes)
+        )
         if outside and outranks(Verdict(ASK, None, ""), verdict) and not any(map(allow_counts, matched)):
             verdict = Verdict(ASK, None, outside)
         # every folder the segment may run in; None when the walk cannot know (``cd ~``)
@@ -6777,6 +7102,24 @@ START_VARIABLES = (
     # last three: Bun's flags, a Python home with its sitecustomize, a PHP ini with a prepend file)
     "NODE_OPTIONS PERL5OPT RUBYOPT PYTHONSTARTUP PYTHONINSPECT BUN_OPTIONS PYTHONHOME "
     "PHP_INI_SCAN_DIR "
+    # a perf config can name the objdump or addr2line perf report runs (spec gate-f63-f65, T02 review)
+    "PERF_CONFIG PERF_EXEC_PATH "
+    # a library, an agent or code any program of its kind loads (spec gate-f63-f65, story 4, F-65):
+    # the dynamic loader's, OpenSSL's engine config, every JVM's, .NET's, Lua's, Perl's debugger,
+    # Erlang's flags (-eval); the LD_, DYLD_ and profiler names by their prefix, START_PREFIXES
+    "GCONV_PATH OPENSSL_CONF JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS DOTNET_STARTUP_HOOKS "
+    "LUA_INIT PERL5DB ERL_AFLAGS ERL_FLAGS ERL_ZFLAGS "
+    # T03 review: the module folders GIO, GTK, Qt, GStreamer, Vulkan, Mesa, gdk-pixbuf, OpenSSL and
+    # .NET load every library from, into every program of their kind
+    "GIO_EXTRA_MODULES GIO_MODULE_DIR GTK_MODULES GTK_PATH QT_PLUGIN_PATH GST_PLUGIN_PATH "
+    "GST_PLUGIN_SYSTEM_PATH VK_LAYER_PATH VK_ICD_FILENAMES LIBGL_DRIVERS_PATH GDK_PIXBUF_MODULE_FILE "
+    "OPENSSL_MODULES OPENSSL_ENGINES DOTNET_ADDITIONAL_DEPS "
+    # a command git or less runs, or a config or command folder git reads instead of its own (spec
+    # gate-f63-f65, story 6, F-70); GIT_CONFIG_KEY_<n> and _VALUE_<n> by their prefix. The pagers
+    # are left out: none runs without a terminal (Q5)
+    "GIT_SSH_COMMAND GIT_SSH GIT_PROXY_COMMAND GIT_EXEC_PATH GIT_ASKPASS SSH_ASKPASS GIT_EXTERNAL_DIFF "
+    "GIT_TEMPLATE_DIR GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG GIT_CONFIG_PARAMETERS "
+    "GIT_CONFIG_COUNT LESSOPEN LESSCLOSE "
     # where Claude Code reads its config and environment (spec gate-f58, story 3, Q8); the
     # CLAUDE_CODE_ names (SIMPLE, SAFE_MODE, RESTRICTED: hooks off; PLUGIN_DIRS, SHELL_PREFIX, …)
     # by their prefix, START_PREFIXES
@@ -6804,14 +7147,20 @@ COMPUTED_EXPORT_RE = re.compile(
 )
 
 
-START_PREFIXES = ("CLAUDE_CODE_",)  # every name under the prefix is a start variable (Q8)
+START_PREFIXES = (
+    *("CLAUDE_CODE_", "LD_", "DYLD_", "CORECLR_PROFILER", "COR_PROFILER", "LUA_INIT_"),
+    *("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"),
+)
+# the search paths a prefix would name are left to their value reading (search_path_reason)
+PREFIX_EXCLUDED = "|".join(sorted(SEARCH_PATHS))
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 
 
 def sets_start_variable(text: str, name: str, prefix: bool = False) -> bool:
     """Assigned, handed to a setter, or made the target of a nameref (``declare -n h=BASH_ENV``);
     with ``prefix``, any name that starts with ``name``."""
-    word = re.escape(name) + (r"\w+" if prefix else "")
+    # a prefix names every word under it but the search paths, read by value (spec gate-f63-f65)
+    word = rf"(?!(?:{PREFIX_EXCLUDED})\b){re.escape(name)}\w+" if prefix else re.escape(name)
     # after a comma, an equals sign or a bracket too: ``((a=1,NAME=1))``, ``let x=NAME=1``,
     # ``a[NAME=1]=x`` assign it (spec gate-f58, T03 review)
     return bool(
@@ -7413,7 +7762,46 @@ def stamp_suffix(cwd: str | None) -> str:
     return f" · stamp: {line}"[:STAMP_SUFFIX_LIMIT]
 
 
-def gate(stdin: str) -> str | None:
+# Claude Code runs a call whose hook outlives its 10 s timeout, so the gate answers first (F-73);
+# under agy, gate-agy.sh's own deadline (COBOT_GATE_DEADLINE) denies first
+GATE_DEADLINE = 7.0  # seconds from the process start; the answer and the shim fit in the rest
+MIN_DEADLINE = 0.1  # a start-up that already spent the budget still leaves the timer something to fire
+TOO_SLOW = f"the command takes too long to judge within the hook's time limit; {SPLIT_IT}"
+
+
+class GateDeadline(BaseException):
+    """The gate's timer ran out. Not an ``Exception``, so no reader's broad handler swallows it."""
+
+
+def deadline_reached(signum: int, frame: object) -> None:
+    raise GateDeadline
+
+
+@contextlib.contextmanager
+def deadline(seconds: float) -> Iterator[None]:
+    """Raise GateDeadline in the main thread once ``seconds`` pass; the timer is cleared on exit."""
+    previous = signal.signal(signal.SIGALRM, deadline_reached)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def gate(stdin: str, started: float | None = None) -> str | None:
+    """The Claude Code hook's answer, or deny once GATE_DEADLINE passes since ``started`` (the
+    hook passes PROCESS_STARTED: compiling this script under ``-I`` takes a part of its time)."""
+    left = max(GATE_DEADLINE - (time.monotonic() - (started or time.monotonic())), MIN_DEADLINE)
+    try:
+        with deadline(left):
+            return gate_within(stdin)
+    except GateDeadline:
+        log_event({"tool": "gate", "decision": DENY, "reason": TOO_SLOW})
+        return hook_output(DENY, f"cobot gate: {TOO_SLOW}")
+
+
+def gate_within(stdin: str) -> str | None:
     try:
         payload = json.loads(stdin)
         tool = str(payload.get("tool_name", ""))
@@ -8155,7 +8543,7 @@ def main(argv: list[str]) -> int:
         if runtime not in RUNTIMES:
             print(f"cobot-rules: unknown runtime {runtime!r} (claude or agy)", file=sys.stderr)
             return 2
-        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read())
+        output = gate_agy(sys.stdin.read()) if runtime == "agy" else gate(sys.stdin.read(), PROCESS_STARTED)
         if output:
             print(output)
         return 0

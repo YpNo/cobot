@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 import pytest
 from conftest import GATE_SCRIPT, GATE_SHIM, PLUGIN
@@ -761,6 +762,9 @@ def test_cli_usageError_exitsTwo():
 
 
 def test_main_gate_viaFunction(rules, monkeypatch, capsys):
+    """main() counts the hook deadline from PROCESS_STARTED; the module is loaded once per session,
+    so the test starts a fresh process clock, as a real hook run has (F-73)."""
+    monkeypatch.setattr(rules, "PROCESS_STARTED", time.monotonic())
     monkeypatch.setattr(sys, "stdin", type("S", (), {"read": staticmethod(lambda: payload("git push"))})())
     assert rules.main(["gate"]) == 0
     assert '"ask"' in capsys.readouterr().out

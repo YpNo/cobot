@@ -12,7 +12,7 @@ runs: host
 - pytest + pytest-cov, ruff, shellcheck, markdownlint-cli2, zizmor
 
 ## Environment
-- Claude Code 2.1.311 locally, CI pins 2.1.322; hooks run as the user
+- Claude Code 2.1.311 locally, CI pins 2.1.331; hooks run as the user
 - the directory marketplace serves this checkout to dogfood repos: keep it on `main`, branch in worktrees
 - rtk rewrites Bash to `rtk <cmd>`; git has `safe.bareRepository = explicit`
 

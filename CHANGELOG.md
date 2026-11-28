@@ -190,6 +190,8 @@ All notable changes to this project are documented here. The format follows
   `yq -i`, and `patch` or `git apply` fed such text. A write the gate cannot trace for certain
   asks (`{ echo a; } > f`, `ssh h <<EOF > out`). Command output to a file stays silent. The
   scanner now records each pipeline stage and the stage each redirection belongs to.
+- CI installs Claude Code 2.1.331 in all three places: the quality job (was 2.1.318), the evals
+  and the knowledge refresh (were 2.1.322).
 
 ### Fixed
 
